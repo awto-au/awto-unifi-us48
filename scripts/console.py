@@ -1,0 +1,246 @@
+"""console — US-48 front RJ45 console: one visible tio window + programmatic access via its socket.
+
+- `start()` opens a titled terminal window running `tio -S unix:tmp/tio.us48.sock` (awto-l8 pattern):
+  the window is Dan's console; scripts talk through the socket, never open the tty themselves.
+  tio needs a real tty for -S to carry bytes, hence a window, not a daemon.
+- `Session` = socket client: send, read-until-pattern, read-until-idle.
+- `ymodem_send()` = YMODEM-1K sender over the socket, for U-Boot `loady` (no NIC in U-Boot).
+- Log: tmp/logs/tio-us48.log (tio, plain), tmp/logs/console.log (this module).
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import socket
+import subprocess
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOCK = ROOT / "tmp/tio.us48.sock"
+TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
+LOG = ROOT / "tmp/logs/console.log"
+TTY = os.environ.get("US48_TTY", "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0")
+BAUD = 115200
+TITLE = "US-48 console"
+TERMINALS = [
+    ("ptyxis", lambda t: ["--new-window", "--title", t, "--"]),
+    ("gnome-terminal", lambda t: [f"--title={t}", "--"]),
+    ("konsole", lambda t: ["-p", f"tabtitle={t}", "-e"]),
+]
+# tio binds its socket within ~100 ms of the window opening; 8 s = wedged-launch backstop (awto-l8 ctl.py).
+SOCKET_BUDGET_S = 8.0
+POLL_S = 0.02
+
+
+def log(msg: str) -> None:
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {msg}\n")
+
+
+# ── window lifecycle ─────────────────────────────────────────────────────────
+
+def _socket_alive() -> bool:
+    if not SOCK.exists():
+        return False
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(str(SOCK))
+        return True
+    except OSError:
+        return False
+
+
+def status() -> str:
+    if _socket_alive():
+        return "running"
+    if SOCK.exists():
+        return "stale-socket"
+    return "stopped"
+
+
+def start() -> bool:
+    """Open the console window unless a live one exists. True once the socket answers."""
+    if _socket_alive():
+        return True
+    if SOCK.exists():
+        SOCK.unlink()  # stale socket from a closed window blocks tio's bind
+    if not Path(TTY).exists():
+        raise RuntimeError(f"console adapter missing: {TTY} (check dmesg for pl2303)")
+    TIO_LOG.parent.mkdir(parents=True, exist_ok=True)
+    tio = ["tio", TTY, "-b", str(BAUD), "-L", "--log-file", str(TIO_LOG), "--log-append", "--log-strip",
+           "-S", f"unix:{SOCK}"]
+    for term, args_for in TERMINALS:
+        if shutil.which(term):
+            subprocess.Popen([term] + args_for(TITLE) + tio, cwd=str(ROOT), start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            log(f"window: {term} {' '.join(tio)}")
+            break
+    else:
+        raise RuntimeError("no terminal emulator found (ptyxis/gnome-terminal/konsole)")
+    deadline = time.monotonic() + SOCKET_BUDGET_S
+    while time.monotonic() < deadline:
+        if _socket_alive():
+            return True
+        time.sleep(POLL_S)
+    log(f"socket {SOCK} not up after {SOCKET_BUDGET_S} s")
+    return False
+
+
+# ── socket session ───────────────────────────────────────────────────────────
+
+class Timeout(Exception):
+    pass
+
+
+class Session:
+    def __init__(self) -> None:
+        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.connect(str(SOCK))
+        self.s.setblocking(False)
+        self.buf = b""
+
+    def close(self) -> None:
+        self.s.close()
+
+    def __enter__(self) -> "Session":
+        return self
+
+    def __exit__(self, *_a) -> None:
+        self.close()
+
+    def write(self, data: bytes) -> None:
+        self.s.sendall(data)
+
+    def send_line(self, text: str) -> None:
+        log(f">> {text!r}")
+        self.write(text.encode() + b"\r")
+
+    def _pump(self, wait_s: float) -> bytes:
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                chunk = self.s.recv(65536)
+                if not chunk:
+                    raise ConnectionError("tio socket closed (console window gone?)")
+                self.buf += chunk
+                return chunk
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    return b""
+                time.sleep(POLL_S)
+
+    def expect(self, patterns: list[bytes], budget_s: float, what: str) -> bytes:
+        """Read until any pattern appears; return the matched pattern. Timeout names what was awaited."""
+        t0 = time.monotonic()
+        while True:
+            for p in patterns:
+                i = self.buf.find(p)
+                if i >= 0:
+                    self.buf = self.buf[i + len(p):]
+                    return p
+            left = budget_s - (time.monotonic() - t0)
+            if left <= 0:
+                tail = self.buf[-200:].decode(errors="replace")
+                log(f"timeout {budget_s:.1f} s waiting for {what}; tail={tail!r}")
+                raise Timeout(f"{what}: not seen in {budget_s:.1f} s (last output: {tail!r})")
+            self._pump(min(left, 0.2))
+
+    def read_idle(self, idle_s: float, cap_s: float) -> bytes:
+        """Collect output until the line is idle for idle_s (or cap_s total)."""
+        start, t0, last = len(self.buf), time.monotonic(), time.monotonic()
+        while time.monotonic() - t0 < cap_s:
+            if self._pump(0.05):
+                last = time.monotonic()
+            elif time.monotonic() - last > idle_s:
+                break
+        out = self.buf[start:]
+        self.buf = b""
+        return out
+
+    def get_byte(self, budget_s: float) -> int | None:
+        if not self.buf:
+            self._pump(budget_s)
+        if not self.buf:
+            return None
+        b, self.buf = self.buf[0], self.buf[1:]
+        return b
+
+
+# ── YMODEM-1K sender (U-Boot `loady`) ────────────────────────────────────────
+
+SOH, STX, EOT, ACK, NAK, CAN, CRC_REQ = 0x01, 0x02, 0x04, 0x06, 0x15, 0x18, ord("C")
+# Receiver ACKs a 1 KiB block within one block time: 1029 B * 10 bit / 115200 = 89 ms, + U-Boot
+# flash-free RAM copy (µs). 1.25x rule → 0.12 s is too tight against tio/socket scheduling jitter;
+# 1 s per block, then retry (YMODEM allows 10). Logged with the block number on expiry.
+ACK_BUDGET_S = 1.0
+# U-Boot `loady` starts sending 'C' immediately, then once per ~1 s; 5 s = 5 tries.
+START_BUDGET_S = 5.0
+RETRIES = 10
+
+
+def _crc16(data: bytes) -> int:
+    crc = 0
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
+            crc &= 0xFFFF
+    return crc
+
+
+def _block(seq: int, payload: bytes, size: int) -> bytes:
+    payload = payload.ljust(size, b"\x1a" if size == 1024 and payload else b"\x00")
+    head = bytes([STX if size == 1024 else SOH, seq & 0xFF, 0xFF - (seq & 0xFF)])
+    c = _crc16(payload)
+    return head + payload + bytes([c >> 8, c & 0xFF])
+
+
+def _await(sess: Session, want: set[int], budget_s: float) -> int | None:
+    deadline = time.monotonic() + budget_s
+    while time.monotonic() < deadline:
+        b = sess.get_byte(min(0.2, deadline - time.monotonic()))
+        if b is None:
+            continue
+        if b in want or b == CAN:
+            return b
+    return None
+
+
+def _send_block(sess: Session, blk: bytes, seq: int) -> None:
+    for attempt in range(RETRIES):
+        sess.write(blk)
+        r = _await(sess, {ACK, NAK}, ACK_BUDGET_S)
+        if r == ACK:
+            return
+        if r == CAN:
+            raise RuntimeError(f"ymodem: receiver cancelled at block {seq}")
+        log(f"ymodem: block {seq} {'NAK' if r == NAK else f'no ACK in {ACK_BUDGET_S} s'} (try {attempt + 1})")
+    raise RuntimeError(f"ymodem: block {seq} failed {RETRIES} times")
+
+
+def ymodem_send(sess: Session, path: Path, progress=None) -> None:
+    data = path.read_bytes()
+    sess.buf = b""
+    if _await(sess, {CRC_REQ}, START_BUDGET_S) != CRC_REQ:
+        raise RuntimeError(f"ymodem: no 'C' from receiver in {START_BUDGET_S} s (is `loady` running?)")
+    hdr = path.name.encode() + b"\x00" + str(len(data)).encode() + b"\x00"
+    _send_block(sess, _block(0, hdr, 128), 0)
+    if _await(sess, {CRC_REQ}, START_BUDGET_S) != CRC_REQ:
+        raise RuntimeError("ymodem: no 'C' after header block")
+    nblk = (len(data) + 1023) // 1024
+    t0 = time.monotonic()
+    for i in range(nblk):
+        _send_block(sess, _block(i + 1, data[i * 1024:(i + 1) * 1024], 1024), i + 1)
+        if progress and (i % 256 == 0 or i == nblk - 1):
+            progress(i + 1, nblk, time.monotonic() - t0)
+    for _ in range(RETRIES):
+        sess.write(bytes([EOT]))
+        if _await(sess, {ACK, NAK}, ACK_BUDGET_S) == ACK:
+            break
+    else:
+        raise RuntimeError("ymodem: EOT not acknowledged")
+    if _await(sess, {CRC_REQ}, START_BUDGET_S) == CRC_REQ:
+        _send_block(sess, _block(0, b"", 128), 0)  # end-of-batch
+    log(f"ymodem: sent {path.name} {len(data)} B in {time.monotonic() - t0:.0f} s")

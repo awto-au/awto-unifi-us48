@@ -2,6 +2,7 @@
 
 OpenWrt port + RE for the UniFi US-48-500W. **Public repo** — no absolute paths, no secret values, no backups/firmware/vendor source.
 
+- Entry point: `scripts/dev.py` (`describe`, `doctor`, `console`, `send`, `boot-ram`). Console = one visible tio window; scripts use its socket, never the tty.
 - Build: `python3 scripts/build_openwrt.py` (OpenWrt tree in `tmp/openwrt-build`, overlay = `openwrt/*.patch`).
   Edit the tree, then `--save-patch` to write the diff back.
 - Facts live in `docs/`; findings and open questions go in GitHub issues.
