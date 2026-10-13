@@ -70,6 +70,8 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
   → linux-user-bde / linux-kernel-bde (CMIC: AXI unit 0, PCIe unit 1) + ubnthal / gpiodev → PoE, sensors, fans (MSPI board CPLD/IO)
 ```
 
+- Management `eth0` = `tun` device (`/sys/class/net/eth0 → devices/virtual/net`), no MAC driver, no AMAC IRQ in `/proc/interrupts`. switchdrvr moves CPU frames between the fabric (CMIC packet DMA, IRQs 194/218 `linux-kernel-bde`) and the tun. Live, stock 7.5.15, 2026-10-13. C.
+  - → No management network without the switch SDK; a Linux mgmt port needs switch init + CMIC DMA driver.
 - Internal CLI: `telnet 127.0.0.1 2222` (paced input needed; `enable`, `show environment`).
 - `swctrl stp show` unsupported on 7.5.15.
 

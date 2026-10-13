@@ -38,7 +38,7 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 |---|---|---|
 | 1 | initramfs to shell on serial | serial header + cable |
 | 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | — |
-| 3 | management Ethernet | HR2 AMAC (`brcm,nsp-amac`) wiring to switch CPU port unknown; may need CMIC packet DMA |
+| 3 | management Ethernet | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
 | 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
 | 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |
 | 6 | flash install + sysupgrade | proven backup restore path; layout using kernel0/kernel1 |
