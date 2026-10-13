@@ -631,7 +631,9 @@ def cmd_flash_net(extra: list[str]) -> int:
         while time.monotonic() - t0 < STOCK_NET_S:
             r = _stock_cmd(s, "ip -4 -o addr show eth0", 5.0)
             m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", r[1] if r else "")
-            if m:
+            # 192.168.1.20 = stock's pre-DHCP fallback; only accept an address this host can reach
+            if m and subprocess.run(["ping", "-c", "1", "-W", "1", m.group(1)],
+                                    capture_output=True).returncode == 0:
                 ip = m.group(1)
                 break
             time.sleep(2.0)  # poll interval while switchdrvr brings eth0 up
