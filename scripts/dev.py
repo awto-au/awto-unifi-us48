@@ -129,10 +129,16 @@ def command(summary: str, *, args: str = "", kind: str = "action"):
 # Stock `reboot` → U-Boot banner: switchdrvr teardown + kernel shutdown, unmeasured.
 # 120 s backstop; the first run's log gives the real figure for docs/uboot.md.
 REBOOT_TO_UBOOT_S = 120
-# Any char aborts the 3 s countdown (docs/uboot.md §3). Send one every 100 ms (30 chances),
-# stop when the prompt shows; 5 s past the banner = countdown + margin.
+# Any char aborts the 3 s countdown (docs/uboot.md §3). Send one every 100 ms from "Hit any key";
+# prompt shows within one char time, 2 s = margin. Expiry = autoboot not stopped (stock boots, harmless).
 ABORT_EVERY_S = 0.1
-ABORT_BUDGET_S = 5.0
+ABORT_BUDGET_S = 2.0
+# Banner → "Hit any key": DDR shmoo restore + memtest + PCIe, measured ~1 s (2026-10-13). 10 s = stall detector;
+# seen once: hang at "Restoring Shmoo parameters" after a soft reboot → power-cycle.
+BANNER_TO_COUNTDOWN_S = 10
+SWITCH_IP = "192.168.25.206"
+# LAN ssh login + `reboot` returns in ~2 s; 15 s backstop. Expiry = ask for power-cycle, keep waiting for U-Boot.
+SSH_REBOOT_S = 15
 PROMPT = b"u-boot> "
 # bootm: header + data CRC over 5.6 MB uncached (~2 s, I) then decompress; "Starting kernel" within 15 s.
 BOOTM_BUDGET_S = 15
@@ -176,26 +182,122 @@ def cmd_send(extra: list[str]) -> int:
     return 0 if out else 1
 
 
+# `setenv baudrate` does nothing on this U-Boot (no "press ENTER", stays 115200, 2026-10-13);
+# `loady [off] [baud]` is the only speed switch: ENTER at the new baud starts, ESC at 115200 ends.
+# U-Boot answers in ms; 2 s = window-restart race + margin. Expiry = that baud failed.
+BAUD_REPLY_S = 2.0
+
+
+def _loady_open(s: console.Session, baud: int) -> tuple[console.Session, bool]:
+    """`loady LOAD_ADDR baud`, reopen the window at baud, ENTER → 'Ready for binary'. Session at baud."""
+    s.send_line(f"loady {LOAD_ADDR}" + (f" {baud}" if baud != console.BAUD else ""))
+    if baud == console.BAUD:
+        try:
+            s.expect([b"Ready for binary"], BAUD_REPLY_S, "loady 'Ready for binary'")
+            return s, True
+        except console.Timeout as e:
+            log(str(e), "ERROR")
+            return s, False
+    try:
+        s.expect([b"press ENTER"], BAUD_REPLY_S, f"loady 'press ENTER' for {baud}")
+    except console.Timeout as e:
+        log(str(e), "ERROR")
+        return s, False
+    s.close()
+    if not console.restart(baud):
+        log(f"console window did not come back at {baud}", "FATAL")
+        return console.Session(), False
+    n = console.Session()
+    n.write(b"\r")
+    try:
+        n.expect([b"Ready for binary"], BAUD_REPLY_S, f"'Ready for binary' at {baud}")
+    except console.Timeout as e:
+        log(str(e), "ERROR")
+        return n, False
+    return n, True
+
+
+def _loady_close(s: console.Session, baud: int) -> tuple[console.Session, bool]:
+    """After the transfer (or a CAN abort): U-Boot says 'press ESC' at baud, drops to 115200, waits ESC."""
+    if baud == console.BAUD:
+        return s, True
+    try:
+        s.expect([b"press ESC"], BAUD_REPLY_S, f"loady 'press ESC' at {baud}")
+    except console.Timeout as e:
+        log(str(e), "WARN")  # garbled at a marginal baud; still try ESC at 115200
+    s.close()
+    console.restart(console.BAUD)
+    n = console.Session()
+    n.write(b"\x1b")
+    try:
+        n.expect([PROMPT], BAUD_REPLY_S, "u-boot> back at 115200")
+    except console.Timeout as e:
+        log(str(e), "ERROR")
+        return n, False
+    return n, True
+
+
+@command("find the fastest loady baud (handshake + cancelled transfer per step; RAM only)", kind="action")
+def cmd_baud_sweep(_extra: list[str]) -> int:
+    if not console.restart(console.BAUD):
+        return 1
+    s = console.Session()
+    if not _to_uboot(s):
+        return 1
+    good = console.BAUD
+    for baud in console.BAUD_LADDER:
+        log(f"trying {baud}")
+        s, ok = _loady_open(s, baud)
+        if ok:
+            s.write(bytes([console.CAN] * 5))  # abort the empty transfer
+            s, ok = _loady_close(s, baud)
+        if not ok:
+            log(f"{baud} failed. Fastest clean: {good}. If the console stays silent, power-cycle "
+                f"(U-Boot may be waiting at {baud}).", "FATAL")
+            s.close()
+            return 1
+        log(f"baud {baud}: handshake both ways clean, back at 115200", "ALERT")
+        good = baud
+    log(f"every ladder step clean; fastest {good}", "ALERT")
+    s.close()
+    return 0
+
+
 def _at_uboot(s: console.Session) -> bool:
-    s.send_line("")
-    return PROMPT in s.read_idle(0.3, 2.0)
+    # Not an empty line: U-Boot repeats the last command on bare Enter (could be loady/bootm).
+    s.send_line("echo uboot_probe")
+    out = s.read_idle(0.3, 2.0)
+    return b"\nuboot_probe" in out and PROMPT in out
 
 
 def _to_uboot(s: console.Session) -> bool:
     if _at_uboot(s):
         log("already at u-boot> prompt")
         return True
-    log("rebooting stock firmware over SSH (uplink drops until the test ends)", "WARN")
-    r = subprocess.run([sys.executable, str(REPO / "scripts/us48_ssh.py"), "reboot"],
-                       capture_output=True, text=True)
-    log(f"ssh reboot rc={r.returncode} {r.stdout.strip()} {r.stderr.strip()}")
+    if subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
+        log("rebooting stock firmware over SSH (uplink drops until the test ends)", "WARN")
+        try:
+            r = subprocess.run(["sshpass", "-e", "ssh", "-T", "-o", "ControlMaster=no", "-o", "ControlPath=none",
+                                "-o", "RequiredRSASize=1024", "-o", "HostKeyAlgorithms=+ssh-rsa",
+                                "-o", f"UserKnownHostsFile={REPO / 'private/known_hosts'}",
+                                "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=5",
+                                f"ubnt@{SWITCH_IP}", "reboot"],
+                               env=dict(os.environ, SSHPASS=os.environ.get("SSHPASS", "ubnt")),
+                               capture_output=True, text=True, timeout=SSH_REBOOT_S)
+            log(f"ssh reboot rc={r.returncode}")
+        except subprocess.TimeoutExpired:
+            log(f"ssh reboot did not return in {SSH_REBOOT_S} s — POWER-CYCLE the switch", "WARN")
+    else:
+        log(f"switch not answering ping and not at u-boot> — POWER-CYCLE IT NOW "
+            f"(waiting {REBOOT_TO_UBOOT_S} s for U-Boot)", "WARN")
     t0 = time.monotonic()
     try:
-        s.expect([b"U-Boot", b"Hit any key"], REBOOT_TO_UBOOT_S, "U-Boot banner after reboot")
+        s.expect([b"U-Boot usw"], REBOOT_TO_UBOOT_S, "U-Boot banner")
+        log(f"U-Boot banner after {time.monotonic() - t0:.1f} s")
+        s.expect([b"Hit any key"], BANNER_TO_COUNTDOWN_S, "autoboot countdown (DDR/PCIe init stalled?)")
     except console.Timeout as e:
         log(str(e), "FATAL")
         return False
-    log(f"U-Boot banner {time.monotonic() - t0:.1f} s after reboot; stopping autoboot")
     t1 = time.monotonic()
     while time.monotonic() - t1 < ABORT_BUDGET_S:
         s.write(b" ")
@@ -204,26 +306,31 @@ def _to_uboot(s: console.Session) -> bool:
             s.read_idle(0.3, 1.0)
             log("at u-boot> prompt", "ALERT")
             return True
-    log(f"no u-boot> prompt {ABORT_BUDGET_S} s after banner — autoboot not stopped", "FATAL")
+    log(f"no u-boot> prompt {ABORT_BUDGET_S} s after countdown — autoboot not stopped", "FATAL")
     return False
 
 
 @command("RAM-boot the OpenWrt initramfs: reboot stock -> U-Boot -> loady -> bootm (no flash writes)",
-         args="[--no-boot]", kind="action")
+         args="[--baud N] [--no-boot]", kind="action")
 def cmd_boot_ram(extra: list[str]) -> int:
     if not IMAGE.exists():
         log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
-    if not _ensure_console():
+    baud = int(extra[extra.index("--baud") + 1]) if "--baud" in extra else console.FAST_BAUD
+    # U-Boot always starts at 115200; a previous run may have left the window at another baud.
+    if not console.restart(console.BAUD):
         return 1
     size = IMAGE.stat().st_size
-    with console.Session() as s:
+    s = console.Session()
+    try:
         if not _to_uboot(s):
             return 1
-        s.send_line(f"loady {LOAD_ADDR}")
-        s.read_idle(0.3, 2.0)
-        est = size * 10 / console.BAUD
-        log(f"ymodem: {IMAGE.name} {size} B, ≈{est / 60:.1f} min at {console.BAUD} baud")
+        s, ok = _loady_open(s, baud)
+        if not ok:
+            log(f"loady at {baud} failed — power-cycle if the console is silent, retry slower", "FATAL")
+            return 1
+        est = size * 10 / baud
+        log(f"ymodem: {IMAGE.name} {size} B, ≈{est / 60:.1f} min at {baud} baud")
 
         def progress(i: int, n: int, dt: float) -> None:
             rate = i * 1024 / dt if dt else 0
@@ -234,12 +341,23 @@ def cmd_boot_ram(extra: list[str]) -> int:
         except (RuntimeError, ConnectionError) as e:
             log(str(e), "FATAL")
             return 1
-        out = s.read_idle(0.5, 5.0).decode(errors="replace")
-        m = re.search(r"Total Size\s*=\s*0x([0-9a-fA-F]+)", out)
+        try:
+            s.expect([b"Total Size"], BAUD_REPLY_S, "loady 'Total Size'")
+            out = s.read_idle(0.3, 2.0).decode(errors="replace")
+        except console.Timeout as e:
+            log(str(e), "FATAL")
+            return 1
+        m = re.search(r"=\s*0x([0-9a-fA-F]+)", out)
         got = int(m.group(1), 16) if m else None
-        log(f"U-Boot reports size {got} (file {size})", "INFO" if got == size else "ERROR")
-        if got != size:
+        # YMODEM pads the last 1 KiB block; U-Boot counts whole blocks → got may exceed size by < 1024.
+        ok_size = got is not None and size <= got < size + 1024
+        log(f"U-Boot reports {got} B (file {size} B)", "INFO" if ok_size else "ERROR")
+        if not ok_size:
             log(f"size mismatch; U-Boot said: {out.strip()!r}", "FATAL")
+            return 1
+        s, ok = _loady_close(s, baud)
+        if not ok:
+            log("could not get back to u-boot> at 115200 — power-cycle", "FATAL")
             return 1
         if "--no-boot" in extra:
             log("--no-boot: image loaded, staying at u-boot>", "ALERT")
@@ -262,6 +380,8 @@ def cmd_boot_ram(extra: list[str]) -> int:
         log(f"OpenWrt userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
         s.send_line("")
         s.read_idle(0.5, 3.0)
+    finally:
+        s.close()
     log("power-cycle (or `reboot`) returns to stock — nothing was written to flash", "ALERT")
     return 0
 

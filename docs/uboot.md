@@ -128,6 +128,20 @@ Static: ubnt app (`ubntboot` 0x67032dec, selector 0x67030afc). Live: `ubntbox bo
 - Stock tool: `ubntbox bootsel {init,mark-success,force-fallback [-n],reset-counts,set-bootcount <active|backup> N,status}`. FW auto-rollback (`rc.auto_rollback_watchdog`) is compiled out in 7.5.x (`auto-capable` rc 1). C.
 - A swap to a slot whose image passes CRC needs nothing else: OpenWrt uImage (load 0x18000) in kernel0 + `bootsel force-fallback` boots it. I: untested.
 
+## 8. Console speed
+
+Measured 2026-10-13, PL2303 USB-RS232 cable → front RJ45 (MAX3321), `scripts/dev.py baud-sweep`.
+
+| | Rated max | Board allows | We run | Why the gap |
+|---|---|---|---|---|
+| Console / `loady` | MAX3321: 250 kbps (datasheet) | 460800 clean `loady` handshake both ways, 921600 fails | 115200 interactive, **460800 for `loady`** | 921600: no reply at 921600 / 1041667 / 892857 / 781250 (transceiver slew, I) |
+
+- `setenv baudrate N` does nothing in this U-Boot (no "press ENTER", stays 115200). C.
+- `loady [off] [baud]` switches: "press ENTER" at 115200 → ENTER at N → transfer → "press ESC" at N → ESC at 115200. C.
+- A failed speed leaves U-Boot waiting for ENTER at that speed → power-cycle (nothing saved).
+- Bare Enter at `u-boot>` repeats the last command (could be `loady`/`bootm`): probe with `echo`.
+- 115200 `loady` of 5.6 MB: 9.9 KiB/s ≈ 9.5 min.
+
 ## Hazards
 
 | Command / condition | Effect |
