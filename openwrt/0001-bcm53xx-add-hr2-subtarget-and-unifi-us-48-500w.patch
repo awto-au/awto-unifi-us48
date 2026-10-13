@@ -13,10 +13,10 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..86e82ae
+index 0000000..d7eab99
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,165 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +/*
 + * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
@@ -59,6 +59,26 @@ index 0000000..86e82ae
 +		#address-cells = <1>;
 +		#size-cells = <0>;
 +		clock-frequency = <100000>;
++
++		/* mux0: ch4/5 PoE cards, ch6 LM75 x4, ch0-7 also SFP (docs/board.md); only ch6 described yet */
++		i2c-mux@70 {
++			compatible = "nxp,pca9548";
++			reg = <0x70>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			i2c-mux-idle-disconnect;
++
++			i2c@6 {
++				reg = <6>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				temp@48 { compatible = "national,lm75b"; reg = <0x48>; };
++				temp@49 { compatible = "national,lm75b"; reg = <0x49>; };
++				temp@4a { compatible = "national,lm75b"; reg = <0x4a>; };
++				temp@4b { compatible = "national,lm75b"; reg = <0x4b>; };
++			};
++		};
 +	};
 +};
 +
@@ -164,10 +184,10 @@ index 0000000..86e82ae
 +};
 diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
 new file mode 100644
-index 0000000..6beae02
+index 0000000..f6e48ef
 --- /dev/null
 +++ b/target/linux/bcm53xx/hr2/config-6.18
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,19 @@
 +# CONFIG_ARCH_BCM_5301X is not set
 +# CONFIG_ARCH_BCM_53573 is not set
 +CONFIG_ARCH_BCM_HR2=y
@@ -178,9 +198,15 @@ index 0000000..6beae02
 +CONFIG_DEBUG_BCM_HR2=y
 +CONFIG_DEBUG_UART_PHYS=0x18000400
 +CONFIG_DEBUG_UART_VIRT=0xf1000400
++CONFIG_DEVMEM=y
++CONFIG_HWMON=y
++CONFIG_I2C_MUX_PCA954x=y
++CONFIG_I2C_MUX=y
 +CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
 +CONFIG_PCIE_IPROC_MSI=y
 +CONFIG_PCIE_IPROC_PLATFORM=y
++CONFIG_REGMAP_I2C=y
++CONFIG_SENSORS_LM75=y
 diff --git a/target/linux/bcm53xx/hr2/target.mk b/target/linux/bcm53xx/hr2/target.mk
 new file mode 100644
 index 0000000..7fc9a78
