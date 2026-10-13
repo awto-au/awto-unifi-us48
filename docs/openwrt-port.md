@@ -36,6 +36,7 @@ Image: `pcie0` disabled + SP805/SP804 50 MHz clocks; kernel0 crc `4659639a`. Con
 - MTD: all 7 stock partitions, read-only. C.
 - I2C: `i2c-2` = CMIC SMBus `48000000`, poll mode ("no irq resource"); `i2cdetect -y -r 2` → **only `0x70`** (PCA9548). `i2c-0`/`-1` = ChipcommonB. C.
 - `sp805-wdt 18039000.watchdog: registration successful`; `reboot` → U-Boot banner 5.0 s later. Panic now auto-reboots. C.
+  - After an SP805 reset U-Boot reports PCIe `LINKSTA 0x1001`, "port 0 is not active" (cold boot: `0x9012`, active). Stock kernel then retrains and enumerates `01:00.0/.1` normally → harmless. C.
 - UART: 8250 reports `base_baud = 1562500` (25 MHz from dtsi `osc`); real UART clock 50 MHz → line ran at ~223 kbaud after the driver took over. Fix: `&uart1 { clocks = <&apb_clk>; }`. C (read the shell at 223214 baud).
 
 ## Boot test (milestone 1) — procedure

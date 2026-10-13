@@ -521,6 +521,111 @@ def cmd_boot_flash(extra: list[str]) -> int:
         s.close()
 
 
+# Stock userspace → eth0 has an address: switchdrvr brings the tun up ~60-90 s after the shell (I). 240 s backstop.
+STOCK_NET_S = 240
+# Stock boot from U-Boot (`run bootcmd`): LZMA 13 MB uncompress + init ≈ 90 s (seen 2026-10-14). 180 s backstop.
+STOCK_BOOT_S = 180
+# scp 5.6 MB over 1G LAN to the switch CPU: a few s; dd to mtdblock (erase+write 5.6 MB): ~30 s (I). 120 s each.
+NET_XFER_S = 120
+
+
+def _stock_cmd(s: console.Session, cmd: str, budget_s: float) -> tuple[int, str] | None:
+    """Run a command in the stock shell over serial; return (rc, output)."""
+    s.buf = b""
+    s.send_line(f"{cmd}; echo __rc=$?__")
+    try:
+        s.expect([b"__rc="], budget_s, f"stock: {cmd[:40]}")
+        tail = s.read_idle(0.3, 2.0).decode(errors="replace")
+    except console.Timeout as e:
+        log(str(e), "ERROR")
+        return None
+    m = re.match(r"(\d+)__", tail)
+    return (int(m.group(1)) if m else -1), tail
+
+
+def _stock_shell(s: console.Session) -> bool:
+    """Get to a stock root shell on serial; boots stock from U-Boot if needed."""
+    if _at_uboot(s):
+        log("at u-boot>: booting stock (kernel1)")
+        s.send_line("run bootcmd")
+        try:
+            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after run bootcmd")
+        except console.Timeout as e:
+            log(str(e), "FATAL")
+            return False
+    s.send_line("")
+    try:
+        hit = s.expect([b"login:", b"# ", b"$ "], 6.0, "stock login prompt or shell")
+        if hit == b"login:":
+            s.send_line("ubnt")
+            s.expect([b"Password:"], BAUD_REPLY_S, "stock 'Password:'")
+            s.send_line(os.environ.get("SSHPASS", "ubnt"))
+            s.expect([b"# ", b"$ "], 10.0, "stock shell prompt after login")
+    except console.Timeout as e:
+        log(f"no stock shell on serial ({e})", "FATAL")
+        return False
+    return True
+
+
+@command("write the image to kernel0 FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
+         args="[--no-boot]", kind="action")
+def cmd_flash_net(extra: list[str]) -> int:
+    import hashlib
+    if not IMAGE.exists():
+        log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
+        return 1
+    size = IMAGE.stat().st_size
+    want = hashlib.sha256(IMAGE.read_bytes()).hexdigest()
+    if not console.restart(console.BAUD):
+        return 1
+    s = console.Session()
+    try:
+        if not _stock_shell(s):
+            return 1
+        ip, t0 = None, time.monotonic()
+        while time.monotonic() - t0 < STOCK_NET_S:
+            r = _stock_cmd(s, "ip -4 -o addr show eth0", 5.0)
+            m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", r[1] if r else "")
+            if m:
+                ip = m.group(1)
+                break
+            time.sleep(2.0)  # poll interval while switchdrvr brings eth0 up
+        if not ip:
+            log(f"stock eth0 has no IPv4 after {STOCK_NET_S} s", "FATAL")
+            return 1
+        log(f"stock is at {ip}; scp {IMAGE.name} ({size} B)")
+        ssh_opts = ["-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "RequiredRSASize=1024",
+                    "-o", "HostKeyAlgorithms=+ssh-rsa", "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null", "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=5"]
+        env = dict(os.environ, SSHPASS=os.environ.get("SSHPASS", "ubnt"))
+        t1 = time.monotonic()
+        try:
+            r = subprocess.run(["sshpass", "-e", "scp", "-O"] + ssh_opts + [str(IMAGE), f"ubnt@{ip}:/tmp/us48.bin"],
+                               env=env, capture_output=True, text=True, timeout=NET_XFER_S)
+        except subprocess.TimeoutExpired:
+            log(f"scp did not finish in {NET_XFER_S} s", "FATAL")
+            return 1
+        if r.returncode:
+            log(f"scp rc={r.returncode}: {r.stderr.strip()}", "FATAL")
+            return 1
+        log(f"scp done in {time.monotonic() - t1:.1f} s; writing kernel0 via /dev/mtdblock3", "WARN")
+        r = _stock_cmd(s, "dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 && sync", NET_XFER_S)
+        if not r or r[0] != 0:
+            log(f"dd to mtdblock3 failed: {r}", "FATAL")
+            return 1
+        r = _stock_cmd(s, f"head -c {size} /dev/mtd3ro | sha256sum", 30.0)
+        got = re.search(r"([0-9a-f]{64})", r[1] if r else "")
+        if not got or got.group(1) != want:
+            log(f"kernel0 sha256 {got.group(1) if got else '?'} != {want}", "FATAL")
+            return 1
+        log(f"kernel0 written over LAN and verified (sha256 {want[:16]}…) in {time.monotonic() - t1:.0f} s", "ALERT")
+    finally:
+        s.close()
+    if "--no-boot" in extra:
+        return 0
+    return cmd_boot_flash([])
+
+
 # --------------------------------------------------------------------------
 # Generic commands (template)
 # --------------------------------------------------------------------------
