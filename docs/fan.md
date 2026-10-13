@@ -55,6 +55,21 @@ swctrl env show                  # status
 - Broadcom-derived: SDK/BDE, iProc platform, FastPath core, MSPI.
 - Ubiquiti-specific: `ubntbox`/`libubnt`, MAC gate, board bank sequencing, fan profile.
 
+## Live MSPI capture (stock 7.5.15, 2026-10-14, `scripts/mspi_capture.py`, read-only `/sys/bcm/mem`)
+
+CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; diff level 0 → level 1:
+
+| Reg | level 0 (last xfer = 6-byte chain) | level 1 (last xfer = fan chain) |
+|---|---|---|
+| `+0x14` / `+0x24` (ENDQP, = len−1) | 5 | 6 |
+| TXRAM `0x1540` + 8·i (stride 8) | `00 00 00 00 00 00` (+ stale `aa` @ i=6) | `10 aa aa aa aa aa aa` |
+| CDRAM `0x1640` + 4·i | `80`×5, `00` | `80`×6, … |
+
+- Fan frame = 7 bytes: byte 0 = `level << 4` (C), bytes 1–6 = `0xaa` = every 2-bit port field = 2 (I: PoE mode select 802.3, see PoE report — not LEDs).
+- 6-byte all-zero frame = PoE card chain with PoE off (I).
+- `0x48002000–0x200c` unchanged between levels → not the GP select pins; `CMIC_GP_DATA_OUT` location still open.
+- SPCR0 `0x1500` = `0x8d`, `0x1504` = `0x83` (mode/baud, decode vs OpenBCM `mspi.c`).
+
 ## OpenWrt implication
 
 - Fans are bits 5:4 of byte 0 of a 7-byte write-only MSPI frame; one frame per switch chip (2 fans each, I). Full protocol: [board.md](board.md) MSPI section.

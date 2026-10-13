@@ -710,7 +710,7 @@ def cmd_fan_level(extra: list[str]) -> int:
         r = _stock_cmd(s, f"if [ -e {marker} ] || [ -L {marker} ]; then echo MARKER_EXISTS; false; else "
                           f"mac=$(cat /sys/class/net/eth0/address); (umask 077; set -C; echo $mac > {marker}) "
                           f"&& swctrl fan set level {extra[0]}; rc=$?; rm -f {marker}; [ $rc = 0 ]; fi", 20.0)
-        if not r or r[0] != 0 or "MARKER_EXISTS" in r[1]:
+        if not r or r[0] != 0:  # existing marker → `false` → rc 1 (the echoed command line also contains the word)
             log(f"fan set failed: {r}", "FATAL")
             return 1
         r = _stock_cmd(s, "swctrl env show", 20.0)
