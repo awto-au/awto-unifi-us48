@@ -38,6 +38,8 @@ TARGETS = {
     "libubnt": (FW / "rootfs-selected/lib/libubnt.so.1.0.0", []),
     "switchdrvr": (FW / "rootfs-selected/bin/switchdrvr", []),
     "eswh_switchdrvr": (ROOT / "tmp/eswh/swd/switchdrvr", []),
+    "ubntapp": (ROOT / "tmp/ghidra/in/ubntapp.bin",  # scripts/carve_ubntapp.py; runs at 0x67030000
+                ["-loader", "BinaryLoader", "-processor", "ARM:LE:32:v7", "-loader-baseAddr", "0x67030000"]),
     "uboot": (FW / "unpacked/00-u-boot.bin",
               ["-loader", "BinaryLoader", "-processor", "ARM:LE:32:v7", "-loader-baseAddr", "0x1c000000"]),
 }

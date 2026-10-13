@@ -12,21 +12,23 @@
   - `serial0 = &uart1` → `ttyS0` like stock.
   - flash partitions all `read-only` until restore is proven.
   - `pcie0` enabled (BCM53344 CMIC + BCM53346). `pcie1` left disabled: no evidence of use.
-- Image: `zImage + appended DTB` in a legacy uImage (`uImage none`), load `0x00008000`.
+- Image: `zImage + appended DTB` in a legacy uImage (`uImage none`), load/entry `0x00018000` (as stock;
+  `0x8000` collides with U-Boot's ATAG list — [uboot.md](uboot.md)).
   - `ARM_ATAG_DTB_COMPAT` off → DT `bootargs` win over U-Boot's `mem=`/`mtdparts=`.
   - initramfs only; no sysupgrade image until a flash layout is chosen.
 - Kernel 6.18 (OpenWrt bcm53xx default).
 
 ## Boot test (milestone 1) — not yet run
 
-1. Serial console attached and stock boot captured end-to-end.
-2. Break into U-Boot: `version`, `printenv`, `bdinfo`, `help` — read only, no `saveenv`.
-3. `setenv ipaddr …; setenv serverip …; tftpboot 0x01000000 us48-initramfs.bin; bootm 0x01000000`.
-4. Expected unknowns: RSA-signature check in `bootm`, U-Boot-armed watchdog, PCIe link-up.
-   - Strings place the RSA check in the embedded Ubiquiti app (`go ${ubntaddr}` → `uwrite`), not U-Boot `bootm`;
-     disassembly pending (#1).
-   - Board facts come from UniFi U-Boot/kernel; the D-Link HR2 GPL tree is a hint only.
-5. Fans: stock U-Boot/CPLD default speed is unknown — watch temperature, power off if fans stop.
+Full procedure + evidence: [uboot.md](uboot.md). Summary:
+
+1. Serial console attached and stock boot captured end-to-end. Don't hold the reset button at power-on
+   (bootcmd's `ureset_button` erases `cfg` + `u-boot-env` after ~3 s).
+2. Any key within 3 s stops autoboot. Read-only: `version`, `printenv`, `coninfo`. No `saveenv`, no `reset` (NULL handler), no `sf` writes.
+3. **No Ethernet in U-Boot** (`tftpboot` fails) → `loady 0x01000000`, ymodem-send `us48-initramfs.bin` (≈ 8–10 min at 115200).
+4. `bootm 0x01000000`: header + data CRC only, no RSA (RSA lives in the uncalled ubnt-app path). U-Boot arms the A9
+   watchdog (30 s) and stops it inside `bootm`. Handoff: ATAGs, machine ID 0xBB8, caches/MMU off.
+5. Fans: U-Boot doesn't touch the board-IO chains — power-on default speed unknown; watch temperature.
 
 ## Milestones
 

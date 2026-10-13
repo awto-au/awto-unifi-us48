@@ -165,12 +165,13 @@ index 118a20d..0ab596b 100644
  $(eval $(call BuildImage))
 diff --git a/target/linux/bcm53xx/image/hr2.mk b/target/linux/bcm53xx/image/hr2.mk
 new file mode 100644
-index 0000000..14a4710
+index 0000000..a1fd77c
 --- /dev/null
 +++ b/target/linux/bcm53xx/image/hr2.mk
-@@ -0,0 +1,18 @@
-+# Hurricane 2 switches: stock U-Boot `tftpboot 0x01000000; bootm` takes a legacy uImage.
+@@ -0,0 +1,19 @@
++# Hurricane 2 switches: stock U-Boot (no Ethernet) `loady 0x01000000; bootm` takes a legacy uImage.
 +# zImage + appended DTB; ARM_ATAG_DTB_COMPAT is off, so DT bootargs win over U-Boot's.
++# Load 0x18000 like stock: U-Boot writes ATAGs at 0x8000 after copying the image (docs/uboot.md).
 +
 +define Device/ubnt_unifi-us-48-500w
 +  DEVICE_VENDOR := Ubiquiti
@@ -179,7 +180,7 @@ index 0000000..14a4710
 +  DEVICE_DTS := bcm53344-ubnt-unifi-us-48-500w
 +  DEVICE_DTS_DIR := ../dts
 +  KERNEL_DEPENDS = $$(wildcard ../dts/$$(DEVICE_DTS).dts)
-+  KERNEL_LOADADDR := 0x00008000
++  KERNEL_LOADADDR := 0x00018000
 +  KERNEL := kernel-bin | append-dtb | uImage none
 +  KERNEL_INITRAMFS := kernel-bin | append-dtb | uImage none
 +  KERNEL_INITRAMFS_SUFFIX := .bin
