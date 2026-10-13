@@ -13,13 +13,14 @@ Broadcom Hurricane 2 BCM53344 (Cortex-A9 + switch) with a BCM53346 on PCIe, 48×
 | Serial console | not yet attached — required before any boot test |
 | Switch fabric (48 ports) | no Linux driver; see [docs/openwrt-port.md](docs/openwrt-port.md) |
 | Fan control | stock: discrete presets only (50/70/90/100 %); see [docs/fan.md](docs/fan.md) |
+| PoE / sensors / GPIO | stock reversed statically: 12× BCM59111 behind PCA9548, LM75 ×4; see [docs/board.md](docs/board.md) |
 
 ## Layout
 
 ```
 openwrt/   patches against OpenWrt main (pinned in scripts/build_openwrt.py)
 scripts/   build_openwrt.py, backup.py, verify_firmware.py
-docs/      hardware.md, openwrt-port.md, fan.md, sources.md
+docs/      hardware.md, openwrt-port.md, fan.md, board.md, sources.md
 tmp/       build tree, logs — gitignored, disposable
 private/   backups, stock firmware, vendor source copies, live captures — gitignored, NOT disposable
 ```

@@ -36,7 +36,7 @@
 | 2 | QSPI flash read (mtd), I2C scan read-only, PCIe enumerates `14e4:8344`/`8346` | — |
 | 3 | management Ethernet | HR2 AMAC (`brcm,nsp-amac`) wiring to switch CPU port unknown; may need CMIC packet DMA |
 | 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
-| 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE controller unidentified |
+| 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |
 | 6 | flash install + sysupgrade | proven backup restore path; layout using kernel0/kernel1 |
 
 ## Prior art
