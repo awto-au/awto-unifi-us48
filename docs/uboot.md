@@ -116,6 +116,18 @@ DDR is one 256 MiB block at `0x60000000..0x6fffffff`; the low 128 MiB is also vi
 - The ubnt app copy (`0x07030000..0x0707ffff` alias) is not needed for a manual boot; it can be clobbered once `go` is not used (I: nothing calls it after `bootm`).
 - Page-table note: `0x6xxxxxxx` is mapped device/uncached, so U-Boot itself runs uncached (C, performance only).
 
+## 7. A/B slot selection (bootsel v2)
+
+Static: ubnt app (`ubntboot` 0x67032dec, selector 0x67030afc). Live: `ubntbox bootsel status`, stock 7.5.15, 2026-10-13.
+
+- Record: flash `0x1ee0000` (last 64 KiB of `kernel1`, mtd4 + `0xf00000`), 0x30 B. Magics v1 `0xa34de82b` / v2 `0xa34de82c`. Fields: bootsel, active, backup, active/backup bootcount, max_retry (3), slot_state a/b, force_fallback, hcrc a/b (env `ubnt_hcrc_a/_b`). C.
+- Live: active = kernel1 (7.5.15), backup = kernel0 (6.3.13), counts 0, both GOOD, ff 0. C.
+- Selection: `force_bootsel` env overrides. Else ff = 1 → swap roles, clear ff. Else active bootcount ≥ max_retry → swap roles. Chosen slot must pass uImage magic + hcrc + dcrc, else the other slot. C.
+- **U-Boot never increments bootcount** ("BS: skip bootcount increment (runtime-only policy)" 0x67031044). The OS does it; stock resets via `ubntbox bootsel mark-success` (syswrapper.sh). C.
+  - → No hardware fallback: a slot that boots but never reaches userspace stays selected on every power-up. Only serial or that OS can switch back.
+- Stock tool: `ubntbox bootsel {init,mark-success,force-fallback [-n],reset-counts,set-bootcount <active|backup> N,status}`. FW auto-rollback (`rc.auto_rollback_watchdog`) is compiled out in 7.5.x (`auto-capable` rc 1). C.
+- A swap to a slot whose image passes CRC needs nothing else: OpenWrt uImage (load 0x18000) in kernel0 + `bootsel force-fallback` boots it. I: untested.
+
 ## Hazards
 
 | Command / condition | Effect |
