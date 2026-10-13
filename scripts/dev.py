@@ -650,6 +650,34 @@ def cmd_flash_net(extra: list[str]) -> int:
     return cmd_boot_flash([])
 
 
+@command("stock firmware: set fan preset 0..3 (50/70/90/100 %) or -1 auto; RAM-only (docs/fan.md)",
+         args="<level>", kind="action")
+def cmd_fan_level(extra: list[str]) -> int:
+    if not extra or extra[0] not in ("-1", "0", "1", "2", "3"):
+        log("usage: fan-level <-1|0|1|2|3>", "ERROR")
+        return 2
+    if not console.restart(console.BAUD):
+        return 1
+    s = console.Session()
+    try:
+        if not _stock_shell(s):
+            return 1
+        # MAC gate: swctrl's setter needs the lowercase base MAC in this marker (docs/fan.md "Authorization gate").
+        marker = "/var/run/.swctrl.fan.force"
+        r = _stock_cmd(s, f"if [ -e {marker} ] || [ -L {marker} ]; then echo MARKER_EXISTS; false; else "
+                          f"mac=$(cat /sys/class/net/eth0/address); (umask 077; set -C; echo $mac > {marker}) "
+                          f"&& swctrl fan set level {extra[0]}; rc=$?; rm -f {marker}; [ $rc = 0 ]; fi", 20.0)
+        if not r or r[0] != 0 or "MARKER_EXISTS" in r[1]:
+            log(f"fan set failed: {r}", "FATAL")
+            return 1
+        r = _stock_cmd(s, "swctrl env show", 20.0)
+        log("swctrl env show:\n" + (r[1].strip() if r else "?"))
+        log(f"fan level {extra[0]} set (stock, RAM-only; reverts on reboot)", "ALERT")
+        return 0
+    finally:
+        s.close()
+
+
 # --------------------------------------------------------------------------
 # Generic commands (template)
 # --------------------------------------------------------------------------
