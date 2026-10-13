@@ -126,9 +126,10 @@ def command(summary: str, *, args: str = "", kind: str = "action"):
 # Console + RAM boot
 # --------------------------------------------------------------------------
 
-# Stock `reboot` → U-Boot banner: switchdrvr teardown + kernel shutdown, unmeasured.
-# 120 s backstop; the first run's log gives the real figure for docs/uboot.md.
+# Serial/SSH `reboot` → U-Boot banner measured 20.8 s (2026-10-13); 120 s backstop.
 REBOOT_TO_UBOOT_S = 120
+# Waiting for Dan to power-cycle by hand (halted kernel, no reset handler): human walk + reach, 10 min.
+POWER_CYCLE_WAIT_S = 600
 # Any char aborts the 3 s countdown (docs/uboot.md §3). Send one every 100 ms from "Hit any key";
 # prompt shows within one char time, 2 s = margin. Expiry = autoboot not stopped (stock boots, harmless).
 ABORT_EVERY_S = 0.1
@@ -298,6 +299,7 @@ def _to_uboot(s: console.Session) -> bool:
     if _at_uboot(s):
         log("already at u-boot> prompt")
         return True
+    wait_s = REBOOT_TO_UBOOT_S
     if _serial_reboot(s):
         pass
     elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
@@ -315,10 +317,11 @@ def _to_uboot(s: console.Session) -> bool:
             log(f"ssh reboot did not return in {SSH_REBOOT_S} s — POWER-CYCLE the switch", "WARN")
     else:
         log(f"switch not answering ping and not at u-boot> — POWER-CYCLE IT NOW "
-            f"(waiting {REBOOT_TO_UBOOT_S} s for U-Boot)", "WARN")
+            f"(waiting {POWER_CYCLE_WAIT_S} s for U-Boot)", "WARN")
+        wait_s = POWER_CYCLE_WAIT_S
     t0 = time.monotonic()
     try:
-        s.expect([b"U-Boot usw"], REBOOT_TO_UBOOT_S, "U-Boot banner")
+        s.expect([b"U-Boot usw"], wait_s, "U-Boot banner")
         log(f"U-Boot banner after {time.monotonic() - t0:.1f} s")
         s.expect([b"Hit any key"], BANNER_TO_COUNTDOWN_S, "autoboot countdown (DDR/PCIe init stalled?)")
     except console.Timeout as e:
