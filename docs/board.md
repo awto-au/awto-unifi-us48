@@ -20,8 +20,7 @@ How stock firmware drives PoE, sensors, identity, GPIO, LEDs and SFP I2C. Offlin
 | `libubnt` | RPC client (`ubnt_set_port_poe_attrib`, `board_get_poe_budget`) | C: exports |
 | `switchdrvr` (FastPath + OpenBCM SDK) | all I2C: PoE, temp sensors, SFP; MSPI board IO; GPIO via SDK | C |
 
-- I2C master used by `switchdrvr`: OpenBCM `soc/i2c/smbus.c` on the BCM53344's `CMIC_I2CM_SMBUS_*` registers (soc_reg idx `0x186a` CONFIG, `0x1869` BIT_BANG, `0x186d` MASTER_COMMAND, `0x186f` MASTER_DATA_WRITE). C: `smbus_timeout_recovery` `0x1094050`, `smbus_quick_command` `0x1094d28`.
-- Same register layout as iProc SMBus (`i2c-bcm-iproc`: CONFIG `0x00`, MASTER_COMMAND `0x30`). I: physical block = iProc SMBus0 `0x18008000`. Unverified.
+- I2C master used by `switchdrvr`: OpenBCM `soc/i2c/smbus.c` on the BCM53344's `CMIC_I2CM_SMBUS_*` registers (soc_reg idx `0x186a` CONFIG, `0x1869` BIT_BANG, `0x186d` MASTER_COMMAND, `0x186f` MASTER_DATA_WRITE). C: `smbus_timeout_recovery` `0x1094050`, `smbus_quick_command` `0x1094d28`. Which physical block: see [I2C master](#i2c-master-issue-7).
 - I: kernel has no I2C bus driver (no adapter-name strings found); `/dev/i2c-0`, `/dev/i2c-1` are static nodes in the initramfs cpio (C). Explains "no sysfs clients".
 
 ## I2C topology
@@ -52,6 +51,34 @@ Mux selection (`0x5f5df0`, struct: mux name, select byte at `+0x20`, optional 2n
 | `0x30` | 4+5 | both cards at once — used for broadcast init and firmware download |
 | `0x40` | 6 | LM75 `0x48`..`0x4b` (TEMP-1..4), C: `0x5f65e4` |
 | `0x00` | — | deselect after every PoE access |
+
+## I2C master (issue #7)
+
+Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function names string-derived.
+
+- Binary contains only the CMICm variant of `smbus.c` (`CMIC_I2CM_SMBUS_*`); no `iproc_smbus_*` / `cmicx_smbus_*` code. C.
+- Reg-info layout: `+0` block, `+4` regtype, `+0xc` offset, `+0x10` flags, `+0x14` nFields, `+0x18` fields. Pointer array (index = `soc_reg_t`) at `0x1fb6628`; reg-name table `0x1f1098c`. C.
+
+| Reg (idx) | regtype | offset |
+|---|---|---|
+| `CMIC_I2CM_SMBUS_CONFIG` (`0x186a`) | 9 | `0x00` |
+| `..._TIMING_CONFIG` (`0x1875`) | 9 | `0x04` |
+| `..._ADDRESS` (`0x1868`) | 9 | `0x08` |
+| `..._MASTER_FIFO_CONTROL` (`0x1870`) | 9 | `0x0c` |
+| `..._BIT_BANG_CONTROL` (`0x1869`) | 9 | `0x14` |
+| `..._MASTER_COMMAND` (`0x186d`) | 9 | `0x30` |
+| `..._MASTER_DATA_WRITE` (`0x186f`) / `DATA_READ` (`0x186e`) | 9 | `0x40` / `0x44` |
+| `..._EVENT_ENABLE` / `EVENT_STATUS` (`0x186b` / `0x186c`) | 9 | `0x38` / `0x3c` |
+
+- regtype 9 = `soc_cpureg` ("AKA PCI memory", CMIC register space), not `soc_iprocreg` (AXI, 0xe). I: enum values from OpenBCM `soc_regtype_t` minus the per-pipe types (switch in `soc_reg_addr` `0x126cfbc` handles 1, 2, 4, 9, 0xd, 0xe); `CMIC_GP_DATA_IN/OUT` (`0x2000/0x2004`) share regtype 9. For 9/0xd/0xe `soc_reg_addr` returns the offset with no block base. C.
+- Access path (`smbus_*`): if per-unit mapped base (`0x268146c + unit*0x78`) is non-zero, `*(base + (addr & ~3))`, else BDE read/write callbacks (`0x2681470/74`). So the I2C registers are reached through the CMIC BAR (256 KB window of `linux-user-bde`), not through iProc AXI block access. C.
+- SDK also defines `CHIPCOMMONB_SMBUS` (idx `0xeaf`..`0xebb`, regtype 0xe, AXI `0x18038000`) and `CHIPCOMMONB_SMBUS1_SMBUS` (idx `0xea0`..`0xead`, `0x1803b000`): identical field layout and offsets `0x00..0x4c`. smbus.c never uses them. They match upstream `bcm-hr2.dtsi` `i2c0@0x38000` / `i2c1@0x3b000` (AXI `0x18038000` / `0x1803b000`; the `0x18008000` in issue #7 is wrong). C.
+- SDK AXI access (`soc_iproc_getreg` `0x122b8d0`, BDE `iproc_read`: ioremap for AXI-type device, PAXB window for PCI-type) is used only for ChipcommonA GPIO `0x18000060/64` (`0x5e56cc`, `0x5e57c8`). C.
+- All I2C goes through unit 0's master, including SFP cages of unit 1 (`mux0` select `0x5f5fd8` calls `0x5f5df0(0, ...)`; SFP access `0x5f63d4` opens `sfp0` on unit 0). One global mux-state cache (`0x1d8f9f4`) = one bus. C.
+- Conclusion (I): stock drives the iProc SMBus IP instance inside the CMIC window of the local BCM53344 (a third instance beside the two ChipcommonB ones). Whether upstream `i2c-bcm-iproc` reaches the PCA9548 `0x70`:
+  - DT `i2c0`/`i2c1` (`0x18038000`/`0x1803b000`): only if the board wires the bus to one of those pin sets; no evidence either way.
+  - CMIC instance: `reg = <0x48000000 0x50>` (kernel-bde `IPROC_CMICD_BASE`; I: assumes CMIC BAR offset 0 = AXI `0x48000000`), IRQ via CMIC (not a known GIC SPI; driver wants `interrupts`), and `linux-kernel-bde` must not be loaded.
+- Decide on hardware (read-only): while stock runs, read CONFIG (`+0x00`) and TIMING_CONFIG (`+0x04`) at `0x18038000`, `0x1803b000`, `0x48000000`; the block with `SMB_EN` set and non-reset timing is the master. `switchdrvr` also has a debug dump of CMIC SMBus CONFIG/TIMING/ADDRESS/FIFO (`0x621b8`).
 
 ## PoE
 
@@ -130,7 +157,28 @@ Mux selection (`0x5f5df0`, struct: mux name, select byte at `+0x20`, optional 2n
 | TEMP-1..4 | LM75 `temp0..3` @ `0x48..0x4b` | `mux0 = 0x40` | C: `0x5f65e4` (`TEMP-%d` → `temp%d` N-1) |
 | PoE-01..12 | BCM59111 reg `0x2c` | via PoE monitor task cache, msg `0xe` | C: `PoE-%d` → `0x2c2b08(N-1)`; I: index = card·6 + chip |
 
-- Raw → °C conversion for reg `0x2c` not decoded.
+Sensor read `0x5f65e4(idx, out)`: `out[0]` status (2 = limit > value, 3 = limit <= value, 7 = read failed; I: 2 = Normal), `out[1]` °C, `out[2]` limit. Global sensor index: 0..3 = TEMP-1..4, 4..15 = PoE-01..12. C.
+
+- LM75: SDK `lm75_ioctl` (`0x108d070`): 16-bit register byte-swapped (`rev16`), `tenths = (int16)raw * 5 / 128` (`0x108d27c`: `sxth`, `x + x<<2`, `asr 7`; 0.5 °C per 9-bit LSB). `0x5f65e4` stores `tenths / 10` (signed divide, truncates toward 0). C.
+- BCM59111: `hpcUbntPoeMonitorTask` (`0x610a50`) reads chip msg 4 = reg `0x2c` (`0x60e1c8`) every loop; `°C = 0x16f - 2·raw` (367 - 2·raw) when `raw > 0x53`, else invalid (-9999, valid flag 0) (`0x610b78`). New value is kept only if within ±49 of the cached one (else cached value stays). Cache record 16 B per chip; read back by msg `0xe` handler `0x5ffd04` via `0x2c1f14` (called through trampoline `0x2c2b08`). C. Physical meaning of raw (e.g. 0x8d → 85 °C) not checked against datasheet; observed 65–85 °C live fits raw `0x8d..0x97`. I.
+- Limit table: FastPath hw-class table `0x1d8fe1c + class·0xc` ({type, count, ptr}); class 1 (US-48-500W) → type 0, 16 rows × 4 u32 (°C) at `0x1d8ffec`, picked by column 3 (`0x5f657c`). C.
+
+  | Sensor idx | Name | Col 0..3 (°C) |
+  |---|---|---|
+  | 0 | TEMP-1 | 45, 55, 60, **65** |
+  | 1 | TEMP-2 | 75, 80, 85, **90** |
+  | 2 | TEMP-3 | 50, 60, 65, **70** |
+  | 3 | TEMP-4 | 35, 40, 45, **50** |
+  | 4, 5 | PoE-01, 02 | 45, 55, 65, **75** |
+  | 6 | PoE-03 | 50, 60, 65, **75** |
+  | 7 | PoE-04 | 50, 60, 70, **80** |
+  | 8, 9 | PoE-05, 06 | 50, 60, 70, **85** |
+  | 10 | PoE-07 | 50, 60, 70, **80** |
+  | 11..13 | PoE-08..10 | 45, 55, 65, **75** |
+  | 14 | PoE-11 | 45, 50, 60, **70** |
+  | 15 | PoE-12 | 45, 50, 55, **65** |
+
+  - Bold column = limit shown as alert/max; matches observed TEMP-1 65, TEMP-2 90, TEMP-3 70, TEMP-4 50, PoE 65–85. Columns 0–2: use not traced (I: fan-level step points).
 
 ## GPIO map (SoC ChipcommonA GPIO, `0x18000060` DIN / `0x64` DOUT / `0x68` OUTEN)
 
@@ -140,13 +188,30 @@ Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux 
 |---|---|---|---|
 | 4 | 0 | PSE alarm IRQ | kernel pdata |
 | 5 | 1 | PSE card 1 IRQ | kernel pdata |
-| 6, 7 | 2, 3 | SFP presence (active low) for SDK port ids `0x1a`/`0x1b` | `0x5f5d14` → `0x5e56cc`; I: which cages |
+| 6, 7 | 2, 3 | SFP presence (active low), unit 0: GPIO 6 = front 51, GPIO 7 = front 52 (see [SFP](#sfp-ports-4952)) | `0x5f5d14` → `0x5e56cc` |
 | 10, 11 | 6, 7 | system LED: `led` bit 1 → CCA 6, bit 0 → CCA 7 | `gpiodev` `gpio_set_led`; I: colour per bit |
 | 12 | 8 | PSE card 0 IRQ | kernel pdata |
 | 13 | 9 | BCM59111 reset (pulse low) | ioctl op 1 `0x1087594` |
 | 15 | 11 | reset button, IRQ 267, level-low | `gpiodev` `gpio_reset_irq_setup` (`0xeb62` → 267) |
 
 - switchdrvr "board pin" API `0x5e56cc`/`0x5e57c8`: pins 0–3 = BCM53344 `CMIC_GP_*` (soc_reg `0x1856` DATA_IN, `0x1857` DATA_OUT), pins 4–15 = CCA bits 0–11.
+
+## SFP ports 49-52
+
+Front 49/50 = unit 1 (BCM53346) SDK ports 26/27 (`xe0`/`xe1`), front 51/52 = unit 0 (BCM53344) SDK ports 26/27 (`ge24`/`ge25`) ([port map](#port-map)). Per-unit pins, hw class 1 (board `0xb3440004`). C unless marked.
+
+| Signal | Source | SDK port 26 / 27 | Evidence |
+|---|---|---|---|
+| Presence (active low) | ChipcommonA GPIO DIN `0x18000060` of the owning unit, CCA bit `port - 0x18` | bit 2 / 3 | `0x5f5d14` (`port - 0x14` = board pin 6/7) → `0x5e56cc` → `soc_iproc_getreg(unit, 0x18000060)`; present when bit = 0 |
+| TX disable (I: active high) | `CMIC_GP_DATA_OUT` (soc_reg `0x1857`) of the owning unit, pin `port - 0x18` | pin 2 / 3 | `0x5f75e8` → `0x5e57c8(unit, port - 0x18, present == 0)`: pin high while no module |
+| LOS | module EEPROM, I2C `0x51` byte `0x6e` bit 1 (`(b & 3) >> 1`) | per cage via `mux0` | `hpcSfpLosRead` `0x6179a0` |
+| TX fault | I2C `0x50` byte `0x41` bit 3 (feature flag), then `0x51` byte `0x6e` bit 2 | per cage via `mux0` | `hpcSfpTxFaultRead` `0x617b18` |
+
+- Cage mapping: front 51 = unit 0 GPIO 6 (CCA bit 2) / GP2, front 52 = unit 0 GPIO 7 (CCA bit 3) / GP3. Front 49 / 50 = same bits and pins on **unit 1** (BCM53346's own ChipcommonA and CMIC), reached by the SDK through the PCIe/PAXB window; not Linux GPIOs on the CPU. Chip assignment C (port map), signal-to-physical-cage wiring I.
+- Pins `CMIC_GP` 2/3 do not clash with MSPI selects (unit 0 / unit 1 GP0 on this board class). Output-enable of GP2/GP3 not found in switchdrvr (same as GP0): I: strap/default.
+- No PCA9555 or other I2C expander is used for SFP signals on this board class (`iop*` rows only for `0xb3440001/2` via `0x5e4754`).
+- Linux side: presence for 51/52 readable as GPIO 6/7 (CCA GPIO). 49/50 presence and all four TX-disable lines need CMIC_GP access (unit 0: AXI CMIC; unit 1: PCIe BAR of BCM53346).
+- LOS / TX fault are software-only (module status byte); hardware LOS/TX_FAULT pins not connected to a readable GPIO in this firmware.
 
 ## MSPI board IO (relation to [fan.md](fan.md))
 
@@ -263,10 +328,10 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 
 ## Open questions
 
-- Physical controller behind `CMIC_I2CM_SMBUS` on HR2 (iProc SMBus0 `0x18008000`?) — decides whether upstream `i2c-bcm-iproc` reaches the PoE/sensor bus.
+- I2C master: CMIC instance of the iProc SMBus IP (regtype 9, offsets `0x00..0x4c`), not one of the two DT nodes (`0x18038000`/`0x1803b000`). Open: AXI address of the CMIC window (`0x48000000`?), IRQ, and whether the DT instances are wired to the PCA9548. Read-only register compare on hardware decides ([I2C master](#i2c-master-issue-7)).
 - BCM59111 firmware: licence for redistribution; whether chips keep firmware across warm reboot (stock always reloads?).
-- BCM59111 reg `0x2c` temperature formula.
+- BCM59111 reg `0x2c`: formula decoded (`367 - 2·raw` °C); datasheet meaning of raw unchecked. Limit-table columns 0–2 purpose.
 - MSPI: power-on default of the board-IO chains; meaning of fan byte 0 bits 3:0; LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
-- SFP presence GPIO → cage mapping; SFP+ (49/50) presence source.
+- SFP: pin polarity of TX disable (I), physical cage wiring of unit 1 pins (I); output-enable of CMIC GP2/GP3.
 - Port map: PHY MDIO addresses are SDK defaults, unverified on hardware; front 49–52 LEDs; link LED value semantics.
 - EEPROM offsets of `manufid` / `mfgweek` / `qrid`; use of the `0x1ffe040` bytes.
