@@ -336,80 +336,186 @@ def _to_uboot(s: console.Session) -> bool:
     return False
 
 
-@command("RAM-boot the OpenWrt initramfs: reboot stock -> U-Boot -> loady -> bootm (no flash writes)",
+CAPTURE_HINT = "tmp/logs/console/ (newest us48-*.log)"
+# Backup slot only. kernel1 (stock, active) and the bootsel record at 0x1ee0000 are never written.
+KERNEL0_OFF = 0xE0000
+KERNEL0_LEN = 0xF00000
+# sf erase/write of ≤ 6 MiB on MX25L256: erase ~64 ms/64 KiB → ~6 s, write ~10 s (I).
+# 120 s backstop each; expiry = flash op hung, power-cycle (stock slot untouched).
+SF_BUDGET_S = 120
+
+
+def _load_image(s: console.Session, baud: int) -> tuple[console.Session, int | None]:
+    """loady IMAGE to LOAD_ADDR at baud, back at 115200 after. Returns (session, size) or (session, None)."""
+    size = IMAGE.stat().st_size
+    s, ok = _loady_open(s, baud)
+    if not ok:
+        log(f"loady at {baud} failed — power-cycle if the console is silent, retry slower", "FATAL")
+        return s, None
+    log(f"ymodem: {IMAGE.name} {size} B at {baud} baud")
+
+    def progress(i: int, n: int, dt: float) -> None:
+        rate = i * 1024 / dt if dt else 0
+        log(f"ymodem: {i}/{n} blocks, {rate / 1024:.1f} KiB/s, ETA {(n - i) * 1024 / rate:.0f} s" if rate
+            else f"ymodem: {i}/{n} blocks")
+    try:
+        console.ymodem_send(s, IMAGE, progress)
+        s.expect([b"Total Size"], BAUD_REPLY_S, "loady 'Total Size'")
+        out = s.read_idle(0.3, 2.0).decode(errors="replace")
+    except (RuntimeError, ConnectionError, console.Timeout) as e:
+        log(str(e), "FATAL")
+        return s, None
+    m = re.search(r"=\s*0x([0-9a-fA-F]+)", out)
+    got = int(m.group(1), 16) if m else None
+    # YMODEM pads the last 1 KiB block; U-Boot counts whole blocks → got may exceed size by < 1024.
+    ok_size = got is not None and size <= got < size + 1024
+    log(f"U-Boot reports {got} B (file {size} B)", "INFO" if ok_size else "ERROR")
+    if not ok_size:
+        log(f"size mismatch; U-Boot said: {out.strip()!r}", "FATAL")
+        return s, None
+    s, ok = _loady_close(s, baud)
+    if not ok:
+        log("could not get back to u-boot> at 115200 — power-cycle", "FATAL")
+        return s, None
+    return s, size
+
+
+def _bootm_watch(s: console.Session) -> int:
+    s.send_line(f"bootm {LOAD_ADDR}")
+    try:
+        hit = s.expect([b"Starting kernel", b"Bad Data CRC", b"Bad Header", b"Bad Magic"], BOOTM_BUDGET_S,
+                       "bootm 'Starting kernel'")
+        if hit != b"Starting kernel":
+            log(f"bootm rejected the image ({hit.decode()}) — see {CAPTURE_HINT}", "FATAL")
+            return 1
+        log("U-Boot handed over: Starting kernel", "ALERT")
+        t0 = time.monotonic()
+        hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "OpenWrt userspace")
+    except console.Timeout as e:
+        log(str(e), "FATAL")
+        log(f"full console log: {CAPTURE_HINT}", "FATAL")
+        return 1
+    if hit == b"Kernel panic":
+        log(f"kernel panic {time.monotonic() - t0:.1f} s after handover — see {CAPTURE_HINT}", "FATAL")
+        return 1
+    log(f"OpenWrt userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
+    s.send_line("")
+    s.read_idle(0.5, 3.0)
+    log("power-cycle (or `reboot`) returns to stock slot kernel1", "ALERT")
+    return 0
+
+
+def _uboot_cmd(s: console.Session, cmd: str, ok_pat: bytes, budget_s: float, what: str) -> str | None:
+    s.send_line(cmd)
+    try:
+        s.expect([ok_pat], budget_s, what)
+        return s.read_idle(0.3, 2.0).decode(errors="replace")
+    except console.Timeout as e:
+        log(str(e), "FATAL")
+        return None
+
+
+def _crc32(s: console.Session, addr: int, size: int, what: str) -> str | None:
+    s.send_line(f"crc32 {addr:x} {size:x}")
+    try:
+        s.expect([b"==> "], BAUD_REPLY_S * 5, what)  # crc32 of 6 MiB uncached: ~1 s (I)
+        out = s.read_idle(0.3, 2.0).decode(errors="replace")
+    except console.Timeout as e:
+        log(str(e), "FATAL")
+        return None
+    m = re.match(r"\s*([0-9a-fA-F]{8})", out)
+    return m.group(1).lower() if m else None
+
+
+def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
+    baud = int(extra[extra.index("--baud") + 1]) if "--baud" in extra else console.FAST_BAUD
+    # U-Boot always starts at 115200; a previous run may have left the window at another baud.
+    if not console.restart(console.BAUD):
+        return None, 0
+    s = console.Session()
+    if not _to_uboot(s):
+        s.close()
+        return None, 0
+    return s, baud
+
+
+@command("RAM-boot the OpenWrt initramfs: reboot -> U-Boot -> loady -> bootm (no flash writes)",
          args="[--baud N] [--no-boot]", kind="action")
 def cmd_boot_ram(extra: list[str]) -> int:
     if not IMAGE.exists():
         log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
-    baud = int(extra[extra.index("--baud") + 1]) if "--baud" in extra else console.FAST_BAUD
-    # U-Boot always starts at 115200; a previous run may have left the window at another baud.
-    if not console.restart(console.BAUD):
+    s, baud = _session_at_uboot(extra)
+    if s is None:
         return 1
-    size = IMAGE.stat().st_size
-    s = console.Session()
     try:
-        if not _to_uboot(s):
-            return 1
-        s, ok = _loady_open(s, baud)
-        if not ok:
-            log(f"loady at {baud} failed — power-cycle if the console is silent, retry slower", "FATAL")
-            return 1
-        est = size * 10 / baud
-        log(f"ymodem: {IMAGE.name} {size} B, ≈{est / 60:.1f} min at {baud} baud")
-
-        def progress(i: int, n: int, dt: float) -> None:
-            rate = i * 1024 / dt if dt else 0
-            log(f"ymodem: {i}/{n} blocks, {rate / 1024:.1f} KiB/s, ETA {(n - i) * 1024 / rate:.0f} s" if rate
-                else f"ymodem: {i}/{n} blocks")
-        try:
-            console.ymodem_send(s, IMAGE, progress)
-        except (RuntimeError, ConnectionError) as e:
-            log(str(e), "FATAL")
-            return 1
-        try:
-            s.expect([b"Total Size"], BAUD_REPLY_S, "loady 'Total Size'")
-            out = s.read_idle(0.3, 2.0).decode(errors="replace")
-        except console.Timeout as e:
-            log(str(e), "FATAL")
-            return 1
-        m = re.search(r"=\s*0x([0-9a-fA-F]+)", out)
-        got = int(m.group(1), 16) if m else None
-        # YMODEM pads the last 1 KiB block; U-Boot counts whole blocks → got may exceed size by < 1024.
-        ok_size = got is not None and size <= got < size + 1024
-        log(f"U-Boot reports {got} B (file {size} B)", "INFO" if ok_size else "ERROR")
-        if not ok_size:
-            log(f"size mismatch; U-Boot said: {out.strip()!r}", "FATAL")
-            return 1
-        s, ok = _loady_close(s, baud)
-        if not ok:
-            log("could not get back to u-boot> at 115200 — power-cycle", "FATAL")
+        s, size = _load_image(s, baud)
+        if size is None:
             return 1
         if "--no-boot" in extra:
             log("--no-boot: image loaded, staying at u-boot>", "ALERT")
             return 0
-        s.send_line(f"bootm {LOAD_ADDR}")
-        try:
-            s.expect([b"Starting kernel"], BOOTM_BUDGET_S, "bootm 'Starting kernel'")
-            log("U-Boot handed over: Starting kernel", "ALERT")
-            t0 = time.monotonic()
-            hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S,
-                           "OpenWrt userspace")
-        except console.Timeout as e:
-            log(str(e), "FATAL")
-            log(f"full console log: {console.TIO_LOG.relative_to(REPO)}", "FATAL")
-            return 1
-        if hit == b"Kernel panic":
-            log(f"kernel panic {time.monotonic() - t0:.1f} s after handover — see {console.TIO_LOG.relative_to(REPO)}",
-                "FATAL")
-            return 1
-        log(f"OpenWrt userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
-        s.send_line("")
-        s.read_idle(0.5, 3.0)
+        return _bootm_watch(s)
     finally:
         s.close()
-    log("power-cycle (or `reboot`) returns to stock — nothing was written to flash", "ALERT")
-    return 0
+
+
+@command("write the image to BACKUP slot kernel0 (loady + sf write + read-back CRC), then boot it",
+         args="[--baud N] [--no-boot]", kind="action")
+def cmd_flash_kernel0(extra: list[str]) -> int:
+    if not IMAGE.exists():
+        log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
+        return 1
+    if IMAGE.stat().st_size > KERNEL0_LEN:
+        log(f"image {IMAGE.stat().st_size} B > kernel0 0x{KERNEL0_LEN:x}", "FATAL")
+        return 1
+    s, baud = _session_at_uboot(extra)
+    if s is None:
+        return 1
+    try:
+        s, size = _load_image(s, baud)
+        if size is None:
+            return 1
+        ram_crc = _crc32(s, int(LOAD_ADDR, 16), size, "crc32 of RAM image")
+        if ram_crc is None:
+            return 1
+        erase_len = (size + 0xFFFF) & ~0xFFFF
+        log(f"writing kernel0 @0x{KERNEL0_OFF:x}: erase 0x{erase_len:x}, write 0x{size:x}, RAM crc {ram_crc}", "WARN")
+        for cmd, what in ((f"sf probe 0", "sf probe"),
+                          (f"sf erase {KERNEL0_OFF:x} {erase_len:x}", "sf erase kernel0"),
+                          (f"sf write {LOAD_ADDR} {KERNEL0_OFF:x} {size:x}", "sf write kernel0"),
+                          # Read back to a different RAM address so the check cannot pass on the loady copy.
+                          (f"sf read 0x02000000 {KERNEL0_OFF:x} {size:x}", "sf read-back")):
+            if _uboot_cmd(s, cmd, PROMPT, SF_BUDGET_S, what) is None:
+                return 1
+        back = _crc32(s, 0x02000000, size, "crc32 of read-back")
+        if back != ram_crc:
+            log(f"read-back crc {back} != {ram_crc} — kernel0 NOT good (stock kernel1 untouched)", "FATAL")
+            return 1
+        log(f"kernel0 written and verified (crc {ram_crc}); stock kernel1 + bootsel untouched", "ALERT")
+        if "--no-boot" in extra:
+            return 0
+        return _bootm_watch(s)
+    finally:
+        s.close()
+
+
+@command("boot the image in kernel0: reboot -> U-Boot -> sf read -> bootm (seconds, no serial transfer)",
+         kind="action")
+def cmd_boot_flash(extra: list[str]) -> int:
+    s, _baud = _session_at_uboot(extra)
+    if s is None:
+        return 1
+    try:
+        if _uboot_cmd(s, "sf probe 0", PROMPT, SF_BUDGET_S, "sf probe") is None:
+            return 1
+        # Whole slot: the uImage header carries its own length + CRCs; bootm verifies both.
+        if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF:x} {KERNEL0_LEN:x}", PROMPT, SF_BUDGET_S,
+                      "sf read kernel0") is None:
+            return 1
+        return _bootm_watch(s)
+    finally:
+        s.close()
 
 
 # --------------------------------------------------------------------------
