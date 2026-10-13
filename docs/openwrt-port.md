@@ -11,7 +11,9 @@
 - DTS `target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts`, from upstream `bcm53340-ubnt-unifi-switch8.dts`:
   - `serial0 = &uart1` → `ttyS0` like stock.
   - flash partitions all `read-only` until restore is proven.
-  - `pcie0` enabled (BCM53344 CMIC + BCM53346). `pcie1` left disabled: no evidence of use.
+  - `pcie0` enabled: BCM53346 at `01:00.0`/`01:00.1`. Local BCM53344 CMIC is AXI `0x48000000`, not PCIe (stock `/proc/iomem`). `pcie1` left disabled: no evidence of use.
+  - `i2c@48000000` = CMIC SMBus (`brcm,iproc-i2c`, polled, 100 kHz) → PCA9548 `0x70`. DT `i2c0`/`i2c1` stay disabled (unused by stock). [board.md](board.md#i2c-master-issue-7).
+- Busybox `i2cdetect`/`i2cget`/`i2cset`/`i2cdump`/`devmem` + `kmod-i2c-core` (i2c-dev) for milestone 2; no packages feed needed.
 - Image: `zImage + appended DTB` in a legacy uImage (`uImage none`), load/entry `0x00018000` (as stock;
   `0x8000` collides with U-Boot's ATAG list — [uboot.md](uboot.md)).
   - `ARM_ATAG_DTB_COMPAT` off → DT `bootargs` win over U-Boot's `mem=`/`mtdparts=`.
@@ -35,7 +37,7 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 | # | Goal | Blocker |
 |---|---|---|
 | 1 | initramfs to shell on serial | serial header + cable |
-| 2 | QSPI flash read (mtd), I2C scan read-only, PCIe enumerates `14e4:8344`/`8346` | — |
+| 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | — |
 | 3 | management Ethernet | HR2 AMAC (`brcm,nsp-amac`) wiring to switch CPU port unknown; may need CMIC packet DMA |
 | 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
 | 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |

@@ -13,10 +13,10 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..e02a20d
+index 0000000..defe6a0
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,114 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +/*
 + * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
@@ -46,6 +46,19 @@ index 0000000..e02a20d
 +		device_type = "memory";
 +		reg = <0x00000000 0x08000000>,
 +		      <0x68000000 0x08000000>;
++	};
++
++	/*
++	 * Board I2C (PCA9548 0x70 → PoE, temp, SFP): iProc SMBus inside the BCM53344 CMIC,
++	 * not the ChipcommonB i2c0/i2c1 (unused by stock). No IRQ wired → driver polls.
++	 * 100 kHz: SFP EEPROMs share the mux tree. docs/board.md "I2C master".
++	 */
++	i2c_cmic: i2c@48000000 {
++		compatible = "brcm,iproc-i2c";
++		reg = <0x48000000 0x50>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		clock-frequency = <100000>;
 +	};
 +};
 +
@@ -115,7 +128,7 @@ index 0000000..e02a20d
 +};
 +
 +&pcie0 {
-+	/* 00:00.0 = BCM53344 CMIC, 01:00.x = BCM53346 (stock lspci) */
++	/* 01:00.0/.1 = BCM53346; local BCM53344 CMIC is AXI 0x48000000, not PCIe */
 +	status = "okay";
 +};
 diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
@@ -165,7 +178,7 @@ index 118a20d..0ab596b 100644
  $(eval $(call BuildImage))
 diff --git a/target/linux/bcm53xx/image/hr2.mk b/target/linux/bcm53xx/image/hr2.mk
 new file mode 100644
-index 0000000..a1fd77c
+index 0000000..9017627
 --- /dev/null
 +++ b/target/linux/bcm53xx/image/hr2.mk
 @@ -0,0 +1,19 @@
@@ -185,6 +198,6 @@ index 0000000..a1fd77c
 +  KERNEL_INITRAMFS := kernel-bin | append-dtb | uImage none
 +  KERNEL_INITRAMFS_SUFFIX := .bin
 +  IMAGES :=
-+  DEVICE_PACKAGES := -nvram -osafeloader -oseama -otrx
++  DEVICE_PACKAGES := -nvram -osafeloader -oseama -otrx kmod-i2c-core
 +endef
 +TARGET_DEVICES += ubnt_unifi-us-48-500w

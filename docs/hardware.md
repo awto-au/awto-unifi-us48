@@ -11,10 +11,11 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 | Base MAC | `80:2a:a8:9c:da:d8` |
 | SoC | BCM53344 (Hurricane 2, iProc), ARM Cortex-A9, single core |
 | Second switch chip | BCM53346, PCIe `0000:01:00.0` + `.1` (`14e4:8346`) |
-| CPU-side PCI | `0000:00:00.0` `14e4:8344` (BCM53344 CMIC) |
+| CPU-side PCI | `0000:00:00.0` `14e4:8344`: iProc PCIe root port (no BAR in `/proc/iomem`; I: RC reports the SoC ID) |
+| BCM53344 CMIC | AXI `0x48000000-0x4803ffff` (`bcmiproc-cmicd` in `/proc/iomem`), not PCIe |
 | RAM | 256 MiB: 128 MiB @ `0x00000000` + 128 MiB @ `0x68000000` |
 | Flash | Macronix MX25L25635E, 32 MiB, QSPI (`spi1.0`) |
-| I2C | `/dev/i2c-0`, `/dev/i2c-1`; no sysfs clients enumerated |
+| I2C | `/dev/i2c-0`, `/dev/i2c-1` static nodes, no kernel adapter; switchdrvr drives the CMIC SMBus ([board.md](board.md#i2c-master-issue-7)) |
 | PoE | GPIO IRQs `pse_alarm_int`, `pse_slave_int`, `pse_master_int`; budget reported 436 W |
 | Cooling | firmware reports 4 fans, 16 temperature sensors |
 | Ports | 48× GbE copper, 2× SFP+ (49–50), 2× SFP (51–52) |
@@ -66,7 +67,7 @@ Identical to upstream `bcm53340-ubnt-unifi-switch8.dts`.
 
 ```
 swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastpath/) → switchdrvr
-  → linux-user-bde / linux-kernel-bde (PCIe CMIC) + ubnthal / gpiodev → PoE, sensors, fans (MSPI board CPLD/IO)
+  → linux-user-bde / linux-kernel-bde (CMIC: AXI unit 0, PCIe unit 1) + ubnthal / gpiodev → PoE, sensors, fans (MSPI board CPLD/IO)
 ```
 
 - Internal CLI: `telnet 127.0.0.1 2222` (paced input needed; `enable`, `show environment`).

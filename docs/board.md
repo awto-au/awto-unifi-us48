@@ -75,10 +75,20 @@ Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function 
 - SDK also defines `CHIPCOMMONB_SMBUS` (idx `0xeaf`..`0xebb`, regtype 0xe, AXI `0x18038000`) and `CHIPCOMMONB_SMBUS1_SMBUS` (idx `0xea0`..`0xead`, `0x1803b000`): identical field layout and offsets `0x00..0x4c`. smbus.c never uses them. They match upstream `bcm-hr2.dtsi` `i2c0@0x38000` / `i2c1@0x3b000` (AXI `0x18038000` / `0x1803b000`; the `0x18008000` in issue #7 is wrong). C.
 - SDK AXI access (`soc_iproc_getreg` `0x122b8d0`, BDE `iproc_read`: ioremap for AXI-type device, PAXB window for PCI-type) is used only for ChipcommonA GPIO `0x18000060/64` (`0x5e56cc`, `0x5e57c8`). C.
 - All I2C goes through unit 0's master, including SFP cages of unit 1 (`mux0` select `0x5f5fd8` calls `0x5f5df0(0, ...)`; SFP access `0x5f63d4` opens `sfp0` on unit 0). One global mux-state cache (`0x1d8f9f4`) = one bus. C.
-- Conclusion (I): stock drives the iProc SMBus IP instance inside the CMIC window of the local BCM53344 (a third instance beside the two ChipcommonB ones). Whether upstream `i2c-bcm-iproc` reaches the PCA9548 `0x70`:
-  - DT `i2c0`/`i2c1` (`0x18038000`/`0x1803b000`): only if the board wires the bus to one of those pin sets; no evidence either way.
-  - CMIC instance: `reg = <0x48000000 0x50>` (kernel-bde `IPROC_CMICD_BASE`; I: assumes CMIC BAR offset 0 = AXI `0x48000000`), IRQ via CMIC (not a known GIC SPI; driver wants `interrupts`), and `linux-kernel-bde` must not be loaded.
-- Decide on hardware (read-only): while stock runs, read CONFIG (`+0x00`) and TIMING_CONFIG (`+0x04`) at `0x18038000`, `0x1803b000`, `0x48000000`; the block with `SMB_EN` set and non-reset timing is the master. `switchdrvr` also has a debug dump of CMIC SMBus CONFIG/TIMING/ADDRESS/FIFO (`0x621b8`).
+- Stock drives the iProc SMBus IP instance inside the CMIC window of the local BCM53344 (a third instance beside the two ChipcommonB ones). Linux:
+  - DT `i2c0`/`i2c1` (`0x18038000`/`0x1803b000`): unused by stock (live read below); leave disabled.
+  - CMIC instance: `brcm,iproc-i2c`, `reg = <0x48000000 0x50>`, no `interrupts` → `i2c-bcm-iproc` polls ("no irq resource, falling back to poll mode"). No `linux-kernel-bde`, so nothing else owns the window.
+  - 100 kHz: SFP EEPROM (A0h/A2h) max is 100 kHz on the shared mux tree; IP and PCA9548 do 400 kHz.
+- Live read, stock 7.5.15 with switchdrvr running, 2026-10-13 (`echo R <phys> 1 > /sys/bcm/mem`; result goes to dmesg, not the file):
+
+| Block | CONFIG `+0x00` | TIMING `+0x04` |
+|---|---|---|
+| ChipcommonB SMBus0 `0x18038000` | `0x000f0c00` | `0x19003200` |
+| ChipcommonB SMBus1 `0x1803b000` | `0x000f0c00` | `0x19003200` |
+
+  - Both: `SMB_EN` (bit 30) = 0, `MODE_400` (bit 31) = 0, identical → untouched reset state. Neither drives the PCA9548. C.
+  - Stock `/proc/iomem`: `48000000-4803ffff : bcmiproc-cmicd` → local CMIC is an AXI platform device at `0x48000000` (256 KB), not a PCIe BAR. Unit 1 (BCM53346) CMIC = `0000:01:00.0` BAR `0x0a000000-0x0a03ffff`. C.
+  - **Master = CMIC SMBus at AXI `0x48000000`** (SDK offset 0 in that window). C by elimination + SDK; a direct read of `0x48000000` is not done yet.
 
 ## PoE
 
@@ -328,7 +338,7 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 
 ## Open questions
 
-- I2C master: CMIC instance of the iProc SMBus IP (regtype 9, offsets `0x00..0x4c`), not one of the two DT nodes (`0x18038000`/`0x1803b000`). Open: AXI address of the CMIC window (`0x48000000`?), IRQ, and whether the DT instances are wired to the PCA9548. Read-only register compare on hardware decides ([I2C master](#i2c-master-issue-7)).
+- I2C master = CMIC SMBus at AXI `0x48000000` ([I2C master](#i2c-master-issue-7)). Open: its IRQ (CMIC-internal, no known GIC SPI); whether upstream `i2c-bcm-iproc` works there in polled mode.
 - BCM59111 firmware: licence for redistribution; whether chips keep firmware across warm reboot (stock always reloads?).
 - BCM59111 reg `0x2c`: formula decoded (`367 - 2·raw` °C); datasheet meaning of raw unchecked. Limit-table columns 0–2 purpose.
 - MSPI: power-on default of the board-IO chains; meaning of fan byte 0 bits 3:0; LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
