@@ -72,7 +72,7 @@ def remote_sha(base: list[str], dev: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--host", default=os.environ.get("SWITCH_HOST", "192.168.25.100"))  # DHCP; no reservation yet
+    ap.add_argument("--host", default=os.environ.get("SWITCH_HOST", "192.168.25.206"))  # DHCP reservation
     ap.add_argument("--user", default="ubnt")
     a = ap.parse_args()
     if not os.environ.get("SSHPASS"):
