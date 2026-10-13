@@ -650,6 +650,28 @@ def cmd_flash_net(extra: list[str]) -> int:
     return cmd_boot_flash([])
 
 
+@command("watch serial + LAN continuously; state changes → tmp/logs/us48-watch.log + tmp/us48-status.json",
+         kind="action")
+def cmd_watch(_extra: list[str]) -> int:
+    import watch
+    if not console.start():
+        return 1
+    return watch.run()
+
+
+@command("print current board state (from the watcher)", kind="meta")
+def cmd_status(_extra: list[str]) -> int:
+    import watch
+    st = watch.read_status()
+    if not st:
+        log("no status yet — run: scripts/dev.py watch", "WARN")
+        return 1
+    age = time.time() - st.get("t", 0)
+    log(f"state={st.get('state')} ip={st.get('ip')} ping={st.get('ping')} since={st.get('since')} "
+        f"({age:.0f} s ago) line={st.get('line', '')!r}")
+    return 0
+
+
 @command("stock firmware: set fan preset 0..3 (50/70/90/100 %) or -1 auto; RAM-only (docs/fan.md)",
          args="<level>", kind="action")
 def cmd_fan_level(extra: list[str]) -> int:
