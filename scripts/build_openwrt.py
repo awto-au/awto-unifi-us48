@@ -90,6 +90,12 @@ def overlay() -> None:
     run(["git", "clean", "-fdq", "--", TARGET_DIR])
     for p in sorted(PATCHES.glob("*.patch")):
         run(["git", "apply", str(p)])
+    # openwrt/files/ → OpenWrt's image overlay (bench tools, e.g. us48-fand)
+    files = TREE / "files"
+    if files.exists():
+        shutil.rmtree(files)
+    shutil.copytree(PATCHES / "files", files)
+    log("overlay: openwrt/files -> files/")
 
 
 def save_patch() -> None:

@@ -1,0 +1,61 @@
+#!/bin/sh
+# us48-fand — bench quiet mode for the US-48: fans QUIET until 80 C, FULL until back to 50 C (as awto-unvr fand).
+# Temps: max of the LM75s (hwmon). Fans: 7-byte MSPI board-IO frame on CMIC unit 0, chain (1,0) (docs/fan.md).
+# Bench-only: replaced by a hwmon cooling device + thermal-zone trips (awto-unifi-us48#15, #12, #19).
+
+HIGH=80000; LOW=50000; POLL=2
+QUIET=0x00   # 50 % preset (fan-off bits under test, #12)
+FULL=0x30    # 100 % preset
+MSPI=0x48001500; GP=0x48002000
+GP1=0x0a002000   # BCM53346 CMIC GP (PCIe 01:00.0 BAR 2) = select line B
+PCI1=/sys/bus/pci/devices/0000:01:00.0
+
+w() { devmem "$1" 32 "$2"; }
+
+fan() {  # $1 = byte 0; frame to chain (1,0) = unit 0 fans, then (1,1) = unit 1 fans
+	for b in 0 1; do
+		[ -e $PCI1/enable ] && { w $((GP1 + 4)) $b; w $((GP1 + 8)) 1; }   # B, output
+		frame "$1"
+	done
+}
+
+frame() {
+	w $((GP + 4)) 1; w $((GP + 8)) 1           # GP0 = A = 1, output
+	w $((MSPI + 0x180)) 1                      # CMICM_BSPI_MAST_N_BOOT: MSPI owns the bus
+	w $MSPI 0x8d; w $((MSPI + 4)) 0x83; w $((MSPI + 8)) 1; w $((MSPI + 12)) 1
+	i=0
+	for b in $1 0 0 0 0 0 0; do
+		w $((MSPI + 0x40 + 8 * i)) $b
+		[ $i -lt 6 ] && c=0x80 || c=0
+		w $((MSPI + 0x140 + 4 * i)) $c
+		i=$((i + 1))
+	done
+	w $((MSPI + 0x10)) 0; w $((MSPI + 0x14)) 6; w $((MSPI + 0x20)) 0; w $((MSPI + 0x18)) 0x40
+	n=0; while [ $(( $(devmem $((MSPI + 0x20)) 32) & 1 )) = 0 ] && [ $n -lt 100 ]; do n=$((n + 1)); done  # SPIF
+}
+
+# BCM53346 BAR decode is off until something enables the device (no driver bound yet).
+[ -e $PCI1/enable ] && [ "$(cat $PCI1/enable)" = 0 ] && echo 1 > $PCI1/enable
+
+maxtemp() {
+	m=-1
+	for t in /sys/class/hwmon/hwmon*/temp1_input; do
+		v=$(cat "$t" 2>/dev/null) || continue
+		[ "$v" -gt "$m" ] && m=$v
+	done
+	echo $m
+}
+
+state=full; fan $FULL
+logger -t us48-fand "start: full until temps read (high ${HIGH} low ${LOW})"
+while :; do
+	t=$(maxtemp)
+	if [ "$t" -lt 0 ]; then
+		[ $state = full ] || { fan $FULL; state=full; logger -t us48-fand "no sensors: FULL"; }
+	elif [ $state = full ] && [ "$t" -le $LOW ]; then
+		fan $QUIET; state=quiet; logger -t us48-fand "max ${t} <= ${LOW}: QUIET"
+	elif [ $state = quiet ] && [ "$t" -ge $HIGH ]; then
+		fan $FULL; state=full; logger -t us48-fand "max ${t} >= ${HIGH}: FULL (heat alert)"
+	fi
+	sleep $POLL
+done
