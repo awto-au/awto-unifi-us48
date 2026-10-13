@@ -270,11 +270,37 @@ def _at_uboot(s: console.Session) -> bool:
     return b"\nuboot_probe" in out and PROMPT in out
 
 
+def _serial_reboot(s: console.Session) -> bool:
+    """Stock Linux on the console: log in (vendor default ubnt/ubnt) and `reboot`. No IP or SSH needed."""
+    # The echo probe may have landed as a username: Enter at "Password:" → "Login incorrect" (~3 s busybox
+    # delay) → "login:". 6 s = that delay + margin. Expiry = not stock Linux on the console.
+    s.send_line("")
+    try:
+        hit = s.expect([b"login:", b"# ", b"$ "], 6.0, "stock login prompt or shell")
+    except console.Timeout:
+        return False
+    try:
+        if hit == b"login:":
+            s.send_line("ubnt")
+            s.expect([b"Password:"], BAUD_REPLY_S, "stock login 'Password:'")
+            s.send_line(os.environ.get("SSHPASS", "ubnt"))
+            # Busybox login + profile: ~1 s on stock; 10 s = slow-boot margin. Expiry = not logged in.
+            s.expect([b"# ", b"$ "], 10.0, "stock shell prompt after login")
+    except console.Timeout as e:
+        log(str(e), "WARN")
+        return False
+    log("stock shell on serial: rebooting (uplink drops until the test ends)", "WARN")
+    s.send_line("reboot")
+    return True
+
+
 def _to_uboot(s: console.Session) -> bool:
     if _at_uboot(s):
         log("already at u-boot> prompt")
         return True
-    if subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
+    if _serial_reboot(s):
+        pass
+    elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
         log("rebooting stock firmware over SSH (uplink drops until the test ends)", "WARN")
         try:
             r = subprocess.run(["sshpass", "-e", "ssh", "-T", "-o", "ControlMaster=no", "-o", "ControlPath=none",
