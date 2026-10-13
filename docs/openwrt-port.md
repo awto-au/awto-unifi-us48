@@ -39,6 +39,13 @@ Image: `pcie0` disabled + SP805/SP804 50 MHz clocks; kernel0 crc `4659639a`. Con
   - After an SP805 reset U-Boot reports PCIe `LINKSTA 0x1001`, "port 0 is not active" (cold boot: `0x9012`, active). Stock kernel then retrains and enumerates `01:00.0/.1` normally → harmless. C.
 - UART: 8250 reports `base_baud = 1562500` (25 MHz from dtsi `osc`); real UART clock 50 MHz → line ran at ~223 kbaud after the driver took over. Fix: `&uart1 { clocks = <&apb_clk>; }`. C (read the shell at 223214 baud).
 
+### 2026-10-14: PCIe + watchdog (milestone 2 done)
+
+- Patch 950 (skip APB_ERR_EN on `brcm,iproc-hr2-pcie`) + 951 (config-read abort → all-ones, as pci-imx6, HR2 window only): root port `00:00.0`, BCM53346 `01:00.0` + `01:00.1` (`14e4:8346`), BARs assigned, link 5.0 GT/s x1. C.
+- Without 951: absent `01:00.2` read → external abort → panic. C.
+- SP805 armed from U-Boot before `bootm` (`scripts/dev.py`): early panic/hang → reset ~20 s; Linux `sp805-wdt` (probe 1.15 s) + procd feed it (uptime 23 s, no reset). C.
+- Images now go in over the LAN: `scripts/dev.py flash-net` (scp 7.6 s, dd + sha256, 75 s total), boot with `boot-flash`.
+
 ## Boot test (milestone 1) — procedure
 
 Full procedure + evidence: [uboot.md](uboot.md). Summary:
@@ -56,7 +63,7 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 | # | Goal | Blocker |
 |---|---|---|
 | 1 | initramfs to shell on serial | **done 2026-10-14** (kernel0 boot) |
-| 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | mtd + I2C done 2026-10-14; PCIe needs pcie-iproc patch (APB_ERR_EN) |
+| 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | **done 2026-10-14**: PCIe via patches 950+951 |
 | 3 | management Ethernet | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
 | 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
 | 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |

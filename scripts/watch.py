@@ -36,7 +36,7 @@ RULES = [
     (rb"Linux version 3\.6\.5", "stock-kernel"),
     (rb"Linux version 6\.|Linux version 7\.", "openwrt-kernel"),
     (rb"cfgmtd", "stock-init"),
-    (rb"Please press Enter to activate this console", "stock-console"),
+    (rb"Please press Enter to activate this console", "console-enter"),  # printed by stock AND OpenWrt
     (rb"US-48-500W(-US)?\.[0-9.]+[#$] ", "stock-shell"),
     (rb"US-48-500W login:", "stock-login"),
     (rb"root@OpenWrt", "openwrt-shell"),
