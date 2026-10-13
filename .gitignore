@@ -1,3 +1,4 @@
 tmp/
 private/
 __pycache__/
+.venv/
