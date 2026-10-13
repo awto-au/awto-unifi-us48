@@ -24,7 +24,7 @@
 3. `setenv ipaddr …; setenv serverip …; tftpboot 0x01000000 us48-initramfs.bin; bootm 0x01000000`.
 4. Expected unknowns: RSA-signature check in `bootm`, U-Boot-armed watchdog, PCIe link-up.
    - Strings place the RSA check in the embedded Ubiquiti app (`go ${ubntaddr}` → `uwrite`), not U-Boot `bootm`;
-     disassembly pending (awto-terminal#74).
+     disassembly pending (#1).
    - Board facts come from UniFi U-Boot/kernel; the D-Link HR2 GPL tree is a hint only.
 5. Fans: stock U-Boot/CPLD default speed is unknown — watch temperature, power off if fans stop.
 
