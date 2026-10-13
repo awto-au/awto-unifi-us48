@@ -57,6 +57,8 @@ swctrl env show                  # status
 
 ## OpenWrt implication
 
-- Fans hang off an MSPI-attached board IO device (likely CPLD); 2-bit preset per bank. An OpenWrt fan driver = MSPI write of that byte.
-- Unknown: bank select semantics, default byte value, whether hardware falls back to full speed without a driver.
-- Never guess GPIO/I2C/SPI writes on the live board; capture stock MSPI traffic first.
+- Fans are bits 5:4 of byte 0 of a 7-byte write-only MSPI frame; one frame per switch chip (2 fans each, I). Full protocol: [board.md](board.md) MSPI section.
+- Write sequence for group g (0/1): set GP0 of unit 0 = 1, GP0 of unit 1 = g (select pins A=1, B=g), MSPI mode 3 (CPOL 1, CPHA 1), send 7 bytes: byte 0 = `level<<4`, bytes 1–6 = port LED fields (must be re-sent from a shadow, not zeroed).
+- The frame also carries the front-port link LEDs, so a fan write needs the current LED bytes.
+- Stock default after switchdrvr start: level 1 (70 %). Power-on state before that, and whether hardware falls back to full speed without a driver: unknown.
+- Needs CMIC register access from Linux (GP pins `CMIC_GP_DATA_OUT`) plus the iProc MSPI; never guess writes on the live board — capture stock traffic first.

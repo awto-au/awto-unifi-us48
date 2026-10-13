@@ -121,7 +121,7 @@ Mux selection (`0x5f5df0`, struct: mux name, select byte at `+0x20`, optional 2n
     - bit 1 only (power good) → read `0x03`, set LED state of ports in bits 7:4, push to MSPI.
   - switchdrvr also exports GPIO 4/5/12 via sysfs (`edge both`, `active_low 1`) for hw class 0–4, C: `0x5e52f4`.
 - Budget: ubnthal max 500 W, reserved 64 W → 436 W = observed budget. I: switchdrvr/libubnt `board_get_poe_budget` use these; not traced.
-- PoE LEDs: 2 bits/port in MSPI board IO, 6 bytes per card (`0x125cf2c`, bank 0 = card 0, bank 2 = card 1). C.
+- PoE LEDs: 2 bits/port in MSPI board IO, 6 bytes per card (`0x125cf2c`; select pins (0,0) card 0, (0,1) card 1; see MSPI section). C.
 
 ## Temperature sensors
 
@@ -150,10 +150,47 @@ Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux 
 
 ## MSPI board IO (relation to [fan.md](fan.md))
 
-- One MSPI transport (`soc_mspi_write8` `0x125cb08`) serves fans and PoE LEDs. C.
-- Bank / chip select driven by CMIC GP pins 0–3: `0x125cb24` (4 banks) writes `CMIC_GP_DATA_OUT` bits 1:0; fan path `0x5e9764` (6 banks) sets pins via `0x5e57c8`. C; exact truth tables not decoded.
-- Banks 0/2: PoE LED bytes (6 per card). Banks 1/3: 7-byte frames (`0x125cfc4`), purpose unknown.
-- I: shift-register chain or CPLD for LEDs + fan presets; no PoE power enable path through it (PoE enable is BCM59111 I2C).
+Write-only 8-bit frames to four chains selected by two CMIC GPIO pins. Fans, PoE LEDs and port LEDs share it. C unless marked.
+
+**Controller**
+- SDK `soc_mspi_*` (`mspi.c`) on CMICm register space: SPCR0_LSB `0x1500`, STATUS `0x1520`, TXRAM `0x1540` (stride 8), RXRAM `0x15c0`, CDRAM `0x1640`. Same layout as the iProc QSPI MSPI block (`0x18027200`: TXRAM `+0x40`).
+- I: same physical MSPI/pads as the boot-flash QSPI. Basis: SDK claims the bus with `CMIC_OVERRIDE_STRAP` + `CMICM_BSPI_MAST_N_BOOT`; only one CS exists, so extra devices need external select pins. Unproven: no register-level alias check done.
+- Always unit 0's MSPI (`0x125cb08(0, ...)`); unit 1 contributes only select line B.
+- Setup on first use (`0x5e5d60`): `soc_mspi_config(unit 0, device 0, CPOL 1, CPHA 1)` = SPI mode 3, 8 bit, SPBR 8. Device 0 leaves `CMIC_GP_DATA_OUT` untouched. Read path (`0x5e5df4`) reconfigures CPOL 0 / CPHA 1.
+- Frame = 1..16 bytes, CS held (CDRAM `0x80`) until the last byte. Completion poll: SPIF in STATUS, SDK limit 10 ms.
+- Callers hold a semaphore (`0x5e5d60`); no retries.
+
+**Select lines** (pin A = unit 0 `CMIC_GP_DATA_OUT` bit 0, pin B = unit 1 bit 0; unit 1 skipped on single-chip classes)
+- Pins set before every transfer, never restored. Output-enable of the GP pins not found in switchdrvr (HR2 `soc_mspi_init` does not set it): I: strap/default or bootloader.
+
+| A | B | Frame | Len | Content | Fan-path bank (`0x5e9764`) | SDK-path bank (`0x125cb24`) |
+|---|---|---|---|---|---|---|
+| 0 | 0 | PoE LEDs card 0 (front 1–24) | 6 | 2 bits/port | 0 | 0 |
+| 0 | 1 | PoE LEDs card 1 (front 25–48) | 6 | 2 bits/port | 1 | 2 |
+| 1 | 0 | unit 0: fan + port LEDs front 1–24 | 7 | byte 0 fan, bytes 1–6 LEDs | 2 | 1 |
+| 1 | 1 | unit 1: fan + port LEDs front 25–48 | 7 | same | 3 | 3 |
+
+- The two bank numberings are swapped for (0,1)/(1,0): fan path `A = bank>>1, B = bank&1`; SDK path `A = bank&1, B = bank>>1`. Table is by pin state.
+- Fan-path banks 4, 5 (unit 0 pins GP2/GP3 = 00 / 01) exist only for board `0xb3440007` (12-bit SFP tx-disable out + 12×2-bit in, the only MSPI read: `0x5f77b4`). Not used on US-48-500W. I: other board class.
+
+**Frame layout** (US-48-500W, hw class 1)
+- 2-bit field per port, MSB first: port index `i` → byte `base + (i>>2)`, bits `7-2*(i&3) : 6-2*(i&3)` (masks `fc f3 cf 3f`, `0x15a3818`).
+- PoE frames: `base = 0`. SDK path: byte = BCM59111 chip (0..5), field = channel 1..4 = PSE bits 4–7. Set `01` on power-good, clear on disconnect. HAL path `0x5f6a40` writes `01`/`10` by port state (`0x1d901c4`: 2 for states 4/7, 1 for 1/5/8). Colour per value not known.
+- Port LED frames: `base = 1` (class 1; classes `0xc,0xd,0xf,0x10..0x12` use 0 -> offset test `0x5f6c04`). Writer `0x60620c` maps 9 port states to value 0 (off) / 1 (states 4,7) / 2 (1,2,3,5,6,8); blink = off, 100 ms, on. Front ports 49–52 have no field here: I: separate path (not found).
+- Fan byte 0: bits 5:4 = preset level (0..3, `0x5f6ea8`; read `0x5f6e84`); bits 3:0 cleared by `0x5f6d78` at init (mask 1/2/4/8/0xf; meaning unknown, I: per-fan enable/tach select); bits 7:6 unused.
+- Fan group = chip: unit 0 -> frame (1,0), unit 1 -> frame (1,1). `swctrl` native setter `0x26fb90` writes both when dual-chip. 4 fans -> I: 2 per group.
+
+**Shadows (BSS)**
+- HAL: `0x23e8c08` + 8·bank (fan-path bank 0..5, 6×8 bytes, zeroed by `0x5f782c`); frame lengths `0x23e8c38 + bank` = {6,6,7,7} for classes 0–9; bank 4/5 lengths `0x23e8c3c` = {2,3} only class `0xe`; bank 4 data `0x23e8c28`, bank 5 read buffer `0x23e8c30`. Semaphore `0x23e544c`; "mode set" flag `0x23e5450`.
+- SDK: PoE LED 6 B/card at `0x254aae4`, 7 B/card frames at `0x254aaf4` (never written by any code found; zero), semaphore `0x254aaf0`. Flush all four: `0x1087a84` (bcm59111 driver; call site not found).
+
+**Startup sequence** (switchdrvr per unit, `0x5f7bfc`)
+1. `0x5f782c`: zero shadows; optional `/var/run/fastpath/.poe_defconfig` lines `bank-2 index, byte, hex value` preset bytes of the 7-byte frames (producer not found in rootfs).
+2. `0x5f7ad8`: fan profile type 0 -> byte 0 low nibble cleared, level 1 (70 %) -> byte 0 = `0x10`, frame sent (first MSPI transfer, mode setup).
+3. `0x5f7a54` after PoE firmware reset (`0x61095c`, `0x611834`): rewrite frames (1,0) and (1,1).
+4. PoE events / link changes rewrite single frames afterwards. No MSPI read on this board; no CPLD id/version read.
+- Power-on state before step 2 unknown (shift-register content undefined unless hardware default). Whether fans run full speed until step 2 not known.
+- I: four 74HC595-style daisy chains (write-only, odd frame lengths 6/7 B = 48/56 bit, no readback); a CPLD would normally expose an id read. Board photos would settle it.
 
 ## Board table (`ubnthal.ko`)
 
@@ -194,17 +231,42 @@ Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux 
 
 ## Two-chip layout
 
-- FastPath descriptor `0x1d8be64`: 2 units, device ids `0x8344`, `0x8346`; 4 link entries {unit, port, peer unit, peer port, `0xd`}: unit0 p28 ↔ unit1 p28, unit0 p29 ↔ unit1 p29. C.
-- Snake test scripts (`/usr/etc/switch/snake.es48.{0,1}.soc`): unit 0 = `ge0-ge23` + `ge24`,`ge25`; unit 1 = `ge0-ge23` + `xe0`,`xe1`; inter-chip = 2-port HiGig trunk. C (file content).
-- I: unit 0 carries 24 copper + SFP 51–52 (1G), unit 1 carries 24 copper + SFP+ 49–50 (10G). Which copper block is ports 1–24 not established.
-- Copper PHY MDIO addressing: not decoded.
+- FastPath descriptor `0x1d8be64`: 2 units, device ids `0x8344` (unit 0, BCM53344), `0x8346` (unit 1, BCM53346); 4 link entries {unit, port, peer unit, peer port, speed code `0xd`}: unit 0 p28 <-> unit 1 p28, unit 0 p29 <-> unit 1 p29. C.
+- Inter-chip links: 2 x 13G HiGig (logical ports 28/29 are the HR2 "13G" ports). `0x5fb3cc` sets both ports on both units to speed 13000 Mb/s. C.
+- Snake scripts (`/usr/etc/switch/snake.es48.{0,1}.soc`): unit 0 = `ge0-ge23` + `ge24`,`ge25`; unit 1 = `ge0-ge23` + `xe0`,`xe1`; inter-chip = 2-port HiGig trunk. C.
+
+## Port map
+
+Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called from `0x5e4834`); same code on both units. C.
+
+- `bcm5615x_config = 10`: OpenBCM Option 2 = 24 x 1G (octal PHY) + 2 uplinks (53344: 1G; 53346: 1G/10G) + 2 x 13G HiGig; `p2l_mapping_24_2_2`. C.
+- Physical -> logical (`p2l`): phys 2..9 -> logical 9..2 (reversed), 10..25 identity, 26/28/30/32 -> 26/27/28/29. I: table taken from OpenBCM source, selected by config id (not read from the binary).
+- `phy_port_primary_and_offset_<logical>` (table `0x15a3eac`): logical 2..9 -> `0x0207..0x0200`, 10..17 -> `0x0a00..0x0a07`, 18..25 -> `0x1200..0x1207`. Three octal PHYs per chip; primary/offset follow physical lane. C.
+- `port_phy_addr_<logical>` set only for 18..25 -> `0x14..0x1b`; equals the SDK default for phys 18..25. All other PHY addresses are SDK defaults (`_soc_phy_addr_bcm56150`, by physical port, external MIIM bus 0): phys 2..9 -> `0x02..0x09`, 10..17 -> `0x0b..0x12`, 18..25 -> `0x14..0x1b`. I: not confirmed against hardware.
+- Other props: `phy_an_c73=0`, `phy_an_c37=3`, `trunk_extend=0x1`; unit 1 xe ports: `serdes_if_type_xe.1=9` (SFI), `serdes_preemphasis_xe.1=0x5a54`, `serdes_driver_current_xe.1=0x2020`. C.
+- SerDes: internal QSGMII block `(phys-2)/8` (3 blocks), lane `(phys-2)%8`; uplinks on TSC4 lanes phys 26, 28 (HiGig phys 30, 32). I: SDK table `_hurricane2_phy_addr_default`.
+- Front port (1..52) -> (unit, logical) from the FastPath table at `0x1d8ecb4` (52 x {slot 0, port-1, unit, logical}; lookup `0x5e35c4`). C.
+
+| Front | Unit (chip) | Logical | Octal PHY, MDIO addr (bus 0) |
+|---|---|---|---|
+| 1..8 | 0 (53344) | 2..9 | A, `0x09..0x02` (front 1 = `0x09`, ch7) |
+| 9..16 | 0 | 10..17 | B, `0x0b..0x12` |
+| 17..24 | 0 | 18..25 | C, `0x14..0x1b` |
+| 25..32 | 1 (53346) | 2..9 | A, `0x09..0x02` |
+| 33..40 | 1 | 10..17 | B, `0x0b..0x12` |
+| 41..48 | 1 | 18..25 | C, `0x14..0x1b` |
+| 49, 50 | 1 | 26, 27 (`xe0`, `xe1`) | SFP+, no PHY seen |
+| 51, 52 | 0 | 26, 27 (`ge24`, `ge25`) | SFP, no PHY seen |
+
+- Per-port generator: `scripts/us48_portmap.py`.
+- Port LEDs: no LED-processor microcode or `led*` SDK property found in switchdrvr (only register names); copper port LEDs go through the MSPI frames above. I. Front 49–52 LEDs not located.
 
 ## Open questions
 
 - Physical controller behind `CMIC_I2CM_SMBUS` on HR2 (iProc SMBus0 `0x18008000`?) — decides whether upstream `i2c-bcm-iproc` reaches the PoE/sensor bus.
 - BCM59111 firmware: licence for redistribution; whether chips keep firmware across warm reboot (stock always reloads?).
 - BCM59111 reg `0x2c` temperature formula.
-- MSPI bank truth table; banks 1/3 content; default board-IO state at power-up.
+- MSPI: power-on default of the board-IO chains; meaning of fan byte 0 bits 3:0; LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
 - SFP presence GPIO → cage mapping; SFP+ (49/50) presence source.
-- Front port → (unit, port) map and PHY addresses.
+- Port map: PHY MDIO addresses are SDK defaults, unverified on hardware; front 49–52 LEDs; link LED value semantics.
 - EEPROM offsets of `manufid` / `mfgweek` / `qrid`; use of the `0x1ffe040` bytes.
