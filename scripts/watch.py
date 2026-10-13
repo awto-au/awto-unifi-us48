@@ -77,10 +77,10 @@ def run() -> int:
     st.setdefault("ping", False)
 
     def save(**kv) -> None:
-        changed = {k: v for k, v in kv.items() if st.get(k) != v}
-        if not changed:
-            return
+        changed = {k: v for k, v in kv.items() if st.get(k) != v and k != "line"}
         st.update(kv)
+        if not changed:
+            return  # same state, new line: keep the line, don't log
         st["since"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         st["t"] = time.time()
         STATUS.write_text(json.dumps(st))

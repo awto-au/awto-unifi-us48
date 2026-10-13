@@ -383,7 +383,28 @@ def _load_image(s: console.Session, baud: int) -> tuple[console.Session, int | N
     return s, size
 
 
+# SP805 @0x18039000 (bcm-hr2.dtsi). Armed from U-Boot so a kernel that panics/hangs before sp805-wdt probes
+# still resets the chip (no power-cycle). 50 MHz wdog clock (DT apb_clk): 10 s to IRQ, reset at the 2nd expiry
+# (~20 s). Linux sp805-wdt sees it running and keeps feeding it. RAM-only register writes; chip reset clears it.
+SP805 = 0x18039000
+SP805_LOAD = 50_000_000 * 10
+
+
+def _arm_sp805(s: console.Session) -> bool:
+    for cmd in (f"mw.l {SP805 + 0xC00:x} 1acce551",   # WDTLOCK unlock
+                f"mw.l {SP805:x} {SP805_LOAD:x}",       # WDTLOAD
+                f"mw.l {SP805 + 0x8:x} 3",              # WDTCONTROL = INTEN | RESEN
+                f"md.l {SP805 + 0x8:x} 1"):             # read back CONTROL
+        if _uboot_cmd(s, cmd, PROMPT, BAUD_REPLY_S, cmd) is None:
+            return False
+    log(f"SP805 armed from U-Boot: reset ~{2 * SP805_LOAD / 50e6:.0f} s unless Linux feeds it", "ALERT")
+    return True
+
+
 def _bootm_watch(s: console.Session) -> int:
+    if not _arm_sp805(s):
+        log("could not arm SP805 — not booting without a hardware watchdog", "FATAL")
+        return 1
     s.send_line(f"bootm {LOAD_ADDR}")
     try:
         hit = s.expect([b"Starting kernel", b"Bad Data CRC", b"Bad Header", b"Bad Magic"], BOOTM_BUDGET_S,
