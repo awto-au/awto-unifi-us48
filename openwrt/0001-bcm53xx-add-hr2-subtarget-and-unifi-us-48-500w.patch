@@ -13,10 +13,10 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..e21a148
+index 0000000..fe976eb
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,144 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +/*
 + * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
@@ -63,6 +63,8 @@ index 0000000..e21a148
 +};
 +
 +&uart1 {
++	/* dtsi says osc (25 MHz) → 8250 picks a 2x divisor, line runs at ~223 kbaud. */
++	clocks = <&apb_clk>;
 +	status = "okay";
 +};
 +

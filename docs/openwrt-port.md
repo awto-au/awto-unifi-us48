@@ -28,6 +28,16 @@
 - **No reset handler**: panic → "Reboot failed -- System halted"; needs power-cycle. Stock uses `northstar_restart` (kernel-pse.md). I.
 - Stock U-Boot → our uImage: load 0x18000, `bootm` CRC OK, ATAGs ignored (DT bootargs win). C.
 
+### 2026-10-14: OpenWrt shell (milestone 1 done)
+
+Image: `pcie0` disabled + SP805/SP804 50 MHz clocks; kernel0 crc `4659639a`. Console capture: `tmp/logs/console/us48-20261014-083748.log`.
+
+- Userspace (`root@OpenWrt:~#`, BusyBox 1.38.0) 59 s after `bootm`. C.
+- MTD: all 7 stock partitions, read-only. C.
+- I2C: `i2c-2` = CMIC SMBus `48000000`, poll mode ("no irq resource"); `i2cdetect -y -r 2` → **only `0x70`** (PCA9548). `i2c-0`/`-1` = ChipcommonB. C.
+- `sp805-wdt 18039000.watchdog: registration successful`; `reboot` → U-Boot banner 5.0 s later. Panic now auto-reboots. C.
+- UART: 8250 reports `base_baud = 1562500` (25 MHz from dtsi `osc`); real UART clock 50 MHz → line ran at ~223 kbaud after the driver took over. Fix: `&uart1 { clocks = <&apb_clk>; }`. C (read the shell at 223214 baud).
+
 ## Boot test (milestone 1) — procedure
 
 Full procedure + evidence: [uboot.md](uboot.md). Summary:
@@ -44,8 +54,8 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 
 | # | Goal | Blocker |
 |---|---|---|
-| 1 | initramfs to shell on serial | serial header + cable |
-| 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | — |
+| 1 | initramfs to shell on serial | **done 2026-10-14** (kernel0 boot) |
+| 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | mtd + I2C done 2026-10-14; PCIe needs pcie-iproc patch (APB_ERR_EN) |
 | 3 | management Ethernet | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
 | 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
 | 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |
