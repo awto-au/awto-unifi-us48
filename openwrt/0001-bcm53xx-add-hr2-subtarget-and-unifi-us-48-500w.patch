@@ -13,10 +13,10 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..d7eab99
+index 0000000..a19d7f1
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,184 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +/*
 + * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
@@ -182,12 +182,31 @@ index 0000000..d7eab99
 +	compatible = "brcm,iproc-hr2-pcie", "brcm,iproc-pcie";
 +	status = "okay";
 +};
++
++/* Stock restart (northstar_restart): clear bit 1 of DMU 0x1803f200 — whole-chip reset (awto-unifi-us48#11).
++ * syscon-reboot (prio 192) outranks sp805 restart; SP805 armed from U-Boot still covers early panics. */
++&{/axi@18000000} {
++	dmu: syscon@3f000 {
++		compatible = "syscon";
++		reg = <0x3f000 0x1000>;
++	};
++};
++
++/ {
++	reboot {
++		compatible = "syscon-reboot";
++		regmap = <&dmu>;
++		offset = <0x200>;
++		mask = <0x2>;
++		value = <0x0>;
++	};
++};
 diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
 new file mode 100644
-index 0000000..f6e48ef
+index 0000000..dc39427
 --- /dev/null
 +++ b/target/linux/bcm53xx/hr2/config-6.18
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,22 @@
 +# CONFIG_ARCH_BCM_5301X is not set
 +# CONFIG_ARCH_BCM_53573 is not set
 +CONFIG_ARCH_BCM_HR2=y
@@ -202,9 +221,12 @@ index 0000000..f6e48ef
 +CONFIG_HWMON=y
 +CONFIG_I2C_MUX_PCA954x=y
 +CONFIG_I2C_MUX=y
++CONFIG_MFD_SYSCON=y
 +CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
 +CONFIG_PCIE_IPROC_MSI=y
 +CONFIG_PCIE_IPROC_PLATFORM=y
++CONFIG_POWER_RESET_SYSCON=y
++CONFIG_POWER_RESET=y
 +CONFIG_REGMAP_I2C=y
 +CONFIG_SENSORS_LM75=y
 diff --git a/target/linux/bcm53xx/hr2/target.mk b/target/linux/bcm53xx/hr2/target.mk
