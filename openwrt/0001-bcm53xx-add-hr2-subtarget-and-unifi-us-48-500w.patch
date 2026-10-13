@@ -13,10 +13,10 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..fe976eb
+index 0000000..86e82ae
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,145 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +/*
 + * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
@@ -158,8 +158,9 @@ index 0000000..fe976eb
 +
 +&pcie0 {
 +	/* 01:00.0/.1 = BCM53346; local BCM53344 CMIC is AXI 0x48000000, not PCIe.
-+	 * Disabled: pcie-iproc aborts reading APB_ERR_EN (0xf40), absent on HR2 PAXB. */
-+	status = "disabled";
++	 * HR2 PAXB has no APB_ERR_EN (0xf40): patches-6.18/950 keys off this compatible. */
++	compatible = "brcm,iproc-hr2-pcie", "brcm,iproc-pcie";
++	status = "okay";
 +};
 diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
 new file mode 100644
@@ -231,3 +232,29 @@ index 0000000..9017627
 +  DEVICE_PACKAGES := -nvram -osafeloader -oseama -otrx kmod-i2c-core
 +endef
 +TARGET_DEVICES += ubnt_unifi-us-48-500w
+diff --git a/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch b/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch
+new file mode 100644
+index 0000000..5dd9c27
+--- /dev/null
++++ b/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch
+@@ -0,0 +1,20 @@
++From: awto-unifi-us48
++Subject: [PATCH] PCI: iproc: no APB_ERR_EN on Hurricane 2 PAXB
++
++The HR2 (BCM5334x) PAXB has no APB_ERR_EN register at 0xf40: reading it
++during the config scan of a downstream bus raises an external abort.
++Skip the APB error toggle for "brcm,iproc-hr2-pcie".
++
++--- a/drivers/pci/controller/pcie-iproc.c
+++++ b/drivers/pci/controller/pcie-iproc.c
++@@ -1400,7 +1400,9 @@ static int iproc_pcie_rev_init(struct ip
++ 		break;
++ 	case IPROC_PCIE_PAXB:
++ 		regs = iproc_pcie_reg_paxb;
++-		pcie->has_apb_err_disable = true;
+++		/* HR2 PAXB lacks APB_ERR_EN (0xf40): accessing it aborts */
+++		pcie->has_apb_err_disable =
+++			!of_device_is_compatible(dev->of_node, "brcm,iproc-hr2-pcie");
++ 		if (pcie->need_ob_cfg) {
++ 			pcie->ob_map = paxb_ob_map;
++ 			pcie->ob.nr_windows = ARRAY_SIZE(paxb_ob_map);
