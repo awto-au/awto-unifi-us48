@@ -289,7 +289,7 @@ def _serial_reboot(s: console.Session) -> bool:
     except console.Timeout as e:
         log(str(e), "WARN")
         return False
-    log("stock shell on serial: rebooting (uplink drops until the test ends)", "WARN")
+    log("stock shell on serial: rebooting")
     s.send_line("reboot")
     return True
 
@@ -301,7 +301,7 @@ def _to_uboot(s: console.Session) -> bool:
     if _serial_reboot(s):
         pass
     elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
-        log("rebooting stock firmware over SSH (uplink drops until the test ends)", "WARN")
+        log("rebooting stock firmware over SSH")
         try:
             r = subprocess.run(["sshpass", "-e", "ssh", "-T", "-o", "ControlMaster=no", "-o", "ControlPath=none",
                                 "-o", "RequiredRSASize=1024", "-o", "HostKeyAlgorithms=+ssh-rsa",

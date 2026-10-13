@@ -20,7 +20,15 @@
   - initramfs only; no sysupgrade image until a flash layout is chosen.
 - Kernel 6.18 (OpenWrt bcm53xx default).
 
-## Boot test (milestone 1) — not yet run
+## First boot results (2026-10-13, image in kernel0, `scripts/dev.py flash-kernel0`)
+
+- Kernel 6.18.55 boots: earlycon on UART1 @ 0x18000400, DT model, 2×128 MiB memory, L2C-310, arm_global_timer 200 MHz. C.
+- `timer@34000` / `timer@35000` (SP804): "clock not found" → not registered (harmless; global timer used). C.
+- **PCIe panic**: `iproc_pcie_config_read32` reads APB_ERR_EN (`0xf40`) while scanning behind root port `14e4:8344` → external abort. HR2 PAXB lacks that register; `brcm,iproc-pcie` maps to the PAXB layout that has it. Workaround: `pcie0` disabled. Fix: kernel patch (HR2 compatible without APB_ERR_EN). C.
+- **No reset handler**: panic → "Reboot failed -- System halted"; needs power-cycle. Stock uses `northstar_restart` (kernel-pse.md). I.
+- Stock U-Boot → our uImage: load 0x18000, `bootm` CRC OK, ATAGs ignored (DT bootargs win). C.
+
+## Boot test (milestone 1) — procedure
 
 Full procedure + evidence: [uboot.md](uboot.md). Summary:
 

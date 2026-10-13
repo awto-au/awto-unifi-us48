@@ -246,8 +246,8 @@ class Session:
             self._pump(min(left, 0.2))
 
     def read_idle(self, idle_s: float, cap_s: float) -> bytes:
-        """Collect output until the line is idle for idle_s (or cap_s total)."""
-        start, t0, last = len(self.buf), time.monotonic(), time.monotonic()
+        """Collect output (incl. bytes already buffered past an expect()) until idle for idle_s (or cap_s)."""
+        start, t0, last = 0, time.monotonic(), time.monotonic()
         while time.monotonic() - t0 < cap_s:
             if self._pump(0.05):
                 last = time.monotonic()
