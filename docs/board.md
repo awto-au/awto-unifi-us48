@@ -77,6 +77,7 @@ Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function 
 - All I2C goes through unit 0's master, including SFP cages of unit 1 (`mux0` select `0x5f5fd8` calls `0x5f5df0(0, ...)`; SFP access `0x5f63d4` opens `sfp0` on unit 0). One global mux-state cache (`0x1d8f9f4`) = one bus. C.
 - Stock drives the iProc SMBus IP instance inside the CMIC window of the local BCM53344 (a third instance beside the two ChipcommonB ones). Linux:
   - DT `i2c0`/`i2c1` (`0x18038000`/`0x1803b000`): unused by stock (live read below); leave disabled.
+  - `/sys/bcm/mem` reads on stock are safe for all five blocks (no oops, switchdrvr unaffected).
   - CMIC instance: `brcm,iproc-i2c`, `reg = <0x48000000 0x50>`, no `interrupts` → `i2c-bcm-iproc` polls ("no irq resource, falling back to poll mode"). No `linux-kernel-bde`, so nothing else owns the window.
   - 100 kHz: SFP EEPROM (A0h/A2h) max is 100 kHz on the shared mux tree; IP and PCA9548 do 400 kHz.
 - Live read, stock 7.5.15 with switchdrvr running, 2026-10-13 (`echo R <phys> 1 > /sys/bcm/mem`; result goes to dmesg, not the file):
@@ -85,10 +86,15 @@ Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function 
 |---|---|---|
 | ChipcommonB SMBus0 `0x18038000` | `0x000f0c00` | `0x19003200` |
 | ChipcommonB SMBus1 `0x1803b000` | `0x000f0c00` | `0x19003200` |
+| **Unit 0 CMIC SMBus `0x48000000`** | **`0x400f0c00`** | `0x19003200` |
+| Unit 1 CMIC SMBus (PCIe BAR `0x0a000000`) | `0x400f0c00` | `0x19003200` |
 
-  - Both: `SMB_EN` (bit 30) = 0, `MODE_400` (bit 31) = 0, identical → untouched reset state. Neither drives the PCA9548. C.
+  - ChipcommonB SMBus0/1: `SMB_EN` (bit 30) = 0 → untouched reset state, unused. C.
+  - Unit 0 CMIC: `SMB_EN` = 1 → the active master. `ADDRESS` `+0x08` = 0; `BIT_BANG_CONTROL` `+0x14` = `0xf0000000` (SCL/SDA in = 1, bus idle). C.
+  - All: `MODE_400` (bit 31) = 0 → stock runs 100 kHz, same as the DT node. C.
+  - Unit 1 CMIC SMBus is enabled too (SDK init of both units) but carries no traffic: all I2C goes through unit 0 (above). I.
   - Stock `/proc/iomem`: `48000000-4803ffff : bcmiproc-cmicd` → local CMIC is an AXI platform device at `0x48000000` (256 KB), not a PCIe BAR. Unit 1 (BCM53346) CMIC = `0000:01:00.0` BAR `0x0a000000-0x0a03ffff`. C.
-  - **Master = CMIC SMBus at AXI `0x48000000`** (SDK offset 0 in that window). C by elimination + SDK; a direct read of `0x48000000` is not done yet.
+  - **Master = CMIC SMBus at AXI `0x48000000`** (SDK offset 0 in that window). C: direct read above.
 
 ## PoE
 
