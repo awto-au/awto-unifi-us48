@@ -76,3 +76,4 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
   ES-8-150 experimental image (post 44), US-16-150 boots without Ethernet (post 73);
   [US-8-60W](https://forum.openwrt.org/t/openwrt-support-for-unifi-switch-8-us-8-60w/112888/7) boots without networking.
 - None of these has working switch ports.
+- Full survey + reuse ranking: [prior-art.md](prior-art.md).

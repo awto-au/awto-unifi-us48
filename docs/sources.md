@@ -11,7 +11,7 @@ Third-party source is referenced, not vendored. Local copies (with sha256 manife
 | [D-Link DGS-1210/ME B1 GPL](https://dlink-gpl.s3.amazonaws.com/GPL1900051/DGS-1210-ME-B1-Series_GPLSourceCode.tar.gz) | v7.0.3.0 (2019-05-14) | Linux 3.6.5 iProc/HR2 platform (`CONFIG_MACH_HR2`, iProc GPIO/I2C/PCIe/QSPI/GMAC) | GPL |
 
 - D-Link archive: 226355704 bytes, sha256 `fc4b0316311f4b0b639e980912bb40b49f1bb592047cc24463faca25650dc65e` (local; no publisher hash), 62663 entries.
-- Ubiquiti GPL source for US48P500 6.3.13 / 7.5.15: not found; request from Ubiquiti.
+- Ubiquiti GPL source for US48P500 6.3.13 / 7.5.15: not found; request from Ubiquiti. Candidate: `gpl-4.3.21-USW-PoE` on svanheule.net, unverified ([prior-art.md](prior-art.md)).
 - GitHub code search finds none of `usmDbBoxsFanOverrideSet`, `"swctrl fan"`, `ubnt_hal_sys`, `BCM53344_DEVICE_ID` — index gaps, not absence (OpenBCM has the last one).
 
 ## Related projects
