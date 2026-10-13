@@ -1,0 +1,189 @@
+diff --git a/target/linux/bcm53xx/Makefile b/target/linux/bcm53xx/Makefile
+index 0f65889..ec32bcb 100644
+--- a/target/linux/bcm53xx/Makefile
++++ b/target/linux/bcm53xx/Makefile
+@@ -9,7 +9,7 @@ BOARD:=bcm53xx
+ BOARDNAME:=Broadcom BCM47xx/53xx (ARM)
+ FEATURES:=squashfs nand usb pci pcie gpio pwm ramdisk
+ CPU_TYPE:=cortex-a9
+-SUBTARGETS:=generic
++SUBTARGETS:=generic hr2
+ 
+ KERNEL_PATCHVER:=6.18
+ 
+diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
+new file mode 100644
+index 0000000..e02a20d
+--- /dev/null
++++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -0,0 +1,101 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/*
++ * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W, board 0xeb62)
++ * BCM53344 (HR2, integrated Cortex-A9) + BCM53346 on PCIe.
++ * Based on bcm53340-ubnt-unifi-switch8.dts; flash map matches stock mtdparts.
++ */
++
++/dts-v1/;
++
++#include "bcm-hr2.dtsi"
++
++/ {
++	compatible = "ubnt,unifi-us-48-500w", "brcm,bcm53344", "brcm,hr2";
++	model = "Ubiquiti UniFi Switch 48 PoE 500W";
++
++	aliases {
++		/* stock HR2 kernels register UART1 first: stock ttyS0 == uart1 */
++		serial0 = &uart1;
++	};
++
++	chosen {
++		bootargs = "console=ttyS0,115200 earlycon";
++		stdout-path = "serial0:115200n8";
++	};
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x00000000 0x08000000>,
++		      <0x68000000 0x08000000>;
++	};
++};
++
++&uart1 {
++	status = "okay";
++};
++
++&qspi {
++	status = "okay";
++
++	flash@0 {
++		/* Macronix MX25L25635E, 32 MiB */
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <12500000>;
++		spi-cpol;
++		spi-cpha;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "u-boot";
++				reg = <0x0 0xc0000>;
++				read-only;
++			};
++
++			partition@c0000 {
++				label = "u-boot-env";
++				reg = <0xc0000 0x10000>;
++				read-only;
++			};
++
++			partition@d0000 {
++				label = "shmoo";
++				reg = <0xd0000 0x10000>;
++				read-only;
++			};
++
++			partition@e0000 {
++				label = "kernel0";
++				reg = <0xe0000 0xf00000>;
++				read-only;
++			};
++
++			partition@fe0000 {
++				label = "kernel1";
++				reg = <0xfe0000 0xf10000>;
++				read-only;
++			};
++
++			partition@1ef0000 {
++				label = "cfg";
++				reg = <0x1ef0000 0x100000>;
++				read-only;
++			};
++
++			partition@1ff0000 {
++				label = "EEPROM";
++				reg = <0x1ff0000 0x10000>;
++				read-only;
++			};
++		};
++	};
++};
++
++&pcie0 {
++	/* 00:00.0 = BCM53344 CMIC, 01:00.x = BCM53346 (stock lspci) */
++	status = "okay";
++};
+diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
+new file mode 100644
+index 0000000..6beae02
+--- /dev/null
++++ b/target/linux/bcm53xx/hr2/config-6.18
+@@ -0,0 +1,13 @@
++# CONFIG_ARCH_BCM_5301X is not set
++# CONFIG_ARCH_BCM_53573 is not set
++CONFIG_ARCH_BCM_HR2=y
++# CONFIG_ARCH_BCM_NSP is not set
++CONFIG_CLK_BCM_HR2=y
++# CONFIG_CLK_BCM_NSP is not set
++# CONFIG_DEBUG_BCM_5301X is not set
++CONFIG_DEBUG_BCM_HR2=y
++CONFIG_DEBUG_UART_PHYS=0x18000400
++CONFIG_DEBUG_UART_VIRT=0xf1000400
++CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
++CONFIG_PCIE_IPROC_MSI=y
++CONFIG_PCIE_IPROC_PLATFORM=y
+diff --git a/target/linux/bcm53xx/hr2/target.mk b/target/linux/bcm53xx/hr2/target.mk
+new file mode 100644
+index 0000000..7fc9a78
+--- /dev/null
++++ b/target/linux/bcm53xx/hr2/target.mk
+@@ -0,0 +1,6 @@
++BOARDNAME:=Hurricane 2 (BCM5334x switches)
++
++define Target/Description
++	Broadcom Hurricane 2 (BCM53342/3/4/6) switch SoCs, e.g. UniFi US-48-500W.
++	Initramfs/serial bring-up only: no switch-fabric driver yet.
++endef
+diff --git a/target/linux/bcm53xx/image/Makefile b/target/linux/bcm53xx/image/Makefile
+index 118a20d..0ab596b 100644
+--- a/target/linux/bcm53xx/image/Makefile
++++ b/target/linux/bcm53xx/image/Makefile
+@@ -591,4 +591,9 @@ define Device/tplink_archer-c9-v1
+ endef
+ #TARGET_DEVICES += tplink_archer-c9-v1
+ 
++ifeq ($(SUBTARGET),hr2)
++TARGET_DEVICES :=
++include hr2.mk
++endif
++
+ $(eval $(call BuildImage))
+diff --git a/target/linux/bcm53xx/image/hr2.mk b/target/linux/bcm53xx/image/hr2.mk
+new file mode 100644
+index 0000000..14a4710
+--- /dev/null
++++ b/target/linux/bcm53xx/image/hr2.mk
+@@ -0,0 +1,18 @@
++# Hurricane 2 switches: stock U-Boot `tftpboot 0x01000000; bootm` takes a legacy uImage.
++# zImage + appended DTB; ARM_ATAG_DTB_COMPAT is off, so DT bootargs win over U-Boot's.
++
++define Device/ubnt_unifi-us-48-500w
++  DEVICE_VENDOR := Ubiquiti
++  DEVICE_MODEL := UniFi Switch 48 PoE
++  DEVICE_VARIANT := US-48-500W
++  DEVICE_DTS := bcm53344-ubnt-unifi-us-48-500w
++  DEVICE_DTS_DIR := ../dts
++  KERNEL_DEPENDS = $$(wildcard ../dts/$$(DEVICE_DTS).dts)
++  KERNEL_LOADADDR := 0x00008000
++  KERNEL := kernel-bin | append-dtb | uImage none
++  KERNEL_INITRAMFS := kernel-bin | append-dtb | uImage none
++  KERNEL_INITRAMFS_SUFFIX := .bin
++  IMAGES :=
++  DEVICE_PACKAGES := -nvram -osafeloader -oseama -otrx
++endef
++TARGET_DEVICES += ubnt_unifi-us-48-500w
