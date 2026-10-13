@@ -28,7 +28,9 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 - Stock `ttyS0` = UART1 (`0x18000400`) = upstream DT `uart1`. Verified in the UniFi 7.5.15 kernel:
   `plat_serial8250_port` table at image offset `0xeed820` lists UART1 then UART0 (`scripts/stock_uart_order.py`).
   Same order as D-Link HR2 GPL `mach-iproc/common.c` — D-Link used as a hint only.
-- Header location on the PCB: not yet identified.
+- Front-panel **RJ45 "Console" port**, RS-232 levels (MAX3321 transceiver), Cisco-style: rollover RJ45→DB9 cable
+  (or USB↔RJ45 console cable), 115200 8N1, no flow control ([US-48-500W QSG](https://dl.ubnt.com/qsg/US-48-500W_US-48-750W/US-48-500W_US-48-750W_EN.html)).
+  No case opening or TTL adapter needed.
 - U-Boot `usw-v1.1.6.122-gd2310f3e` (was `usw-v1.1.4.115-g14af1ee6`); `loadaddr=0x01000000`,
   `ubntboot=bootm 0x01000000`; `tftpboot`, `bootm` present.
 - U-Boot contains `FATAL:Image is not RSA signed..Aborting` — unknown whether plain `bootm` enforces it (first boot test answers this).
