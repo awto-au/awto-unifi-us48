@@ -523,8 +523,9 @@ def cmd_boot_flash(extra: list[str]) -> int:
 
 # Stock userspace → eth0 has an address: switchdrvr brings the tun up ~60-90 s after the shell (I). 240 s backstop.
 STOCK_NET_S = 240
-# Stock boot from U-Boot (`run bootcmd`): LZMA 13 MB uncompress + init ≈ 90 s (seen 2026-10-14). 180 s backstop.
-STOCK_BOOT_S = 180
+# Reboot → stock shell prompt: LZMA 13 MB uncompress + kernel + init; reboot→cfgmtd took >175 s (2026-10-14).
+# 300 s ≈ 1.25x a ~240 s worst case. Expiry = stock did not boot; see console capture.
+STOCK_BOOT_S = 300
 # scp 5.6 MB over 1G LAN to the switch CPU: a few s; dd to mtdblock (erase+write 5.6 MB): ~30 s (I). 120 s each.
 NET_XFER_S = 120
 
@@ -532,15 +533,18 @@ NET_XFER_S = 120
 def _stock_cmd(s: console.Session, cmd: str, budget_s: float) -> tuple[int, str] | None:
     """Run a command in the stock shell over serial; return (rc, output)."""
     s.buf = b""
-    s.send_line(f"{cmd}; echo __rc=$?__")
-    try:
-        s.expect([b"__rc="], budget_s, f"stock: {cmd[:40]}")
-        tail = s.read_idle(0.3, 2.0).decode(errors="replace")
-    except console.Timeout as e:
-        log(str(e), "ERROR")
-        return None
-    m = re.match(r"(\d+)__", tail)
-    return (int(m.group(1)) if m else -1), tail
+    # `__r""c=` in the command line, `__rc=` in the output: the tty echo cannot match the marker.
+    s.send_line(f'{cmd}; echo __r""c=$?__')
+    t0 = time.monotonic()
+    while not re.search(rb"__rc=(\d+)__", s.buf):
+        if time.monotonic() - t0 > budget_s:
+            log(f"stock: {cmd[:40]}: no exit marker in {budget_s} s (tail {s.buf[-200:]!r})", "ERROR")
+            return None
+        s._pump(0.2)
+    out = s.buf.decode(errors="replace")
+    s.buf = b""
+    m = re.search(r"__rc=(\d+)__", out)
+    return int(m.group(1)), out[:m.start()]
 
 
 def _stock_shell(s: console.Session) -> bool:
@@ -554,8 +558,28 @@ def _stock_shell(s: console.Session) -> bool:
             log(str(e), "FATAL")
             return False
     s.send_line("")
+    if b"root@OpenWrt" in s.read_idle(0.5, 2.0):
+        # Our image is up: reboot (SP805) → U-Boot autoboots stock kernel1 by itself.
+        log("OpenWrt running: rebooting into stock (kernel1)")
+        s.send_line("reboot")
+        try:
+            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after OpenWrt reboot")
+        except console.Timeout as e:
+            log(str(e), "FATAL")
+            return False
+        s.send_line("")
+    # Stock prints its console prompt only after init scripts finish (minutes after a warm reset):
+    # nudge with Enter every 10 s until a prompt shows, within STOCK_BOOT_S.
+    hit, t0 = None, time.monotonic()
+    while hit is None and time.monotonic() - t0 < STOCK_BOOT_S:
+        try:
+            hit = s.expect([b"login:", b"# ", b"$ "], 10.0, "stock login prompt or shell")
+        except console.Timeout:
+            s.send_line("")
+    if hit is None:
+        log(f"no stock shell on serial after {STOCK_BOOT_S} s", "FATAL")
+        return False
     try:
-        hit = s.expect([b"login:", b"# ", b"$ "], 6.0, "stock login prompt or shell")
         if hit == b"login:":
             s.send_line("ubnt")
             s.expect([b"Password:"], BAUD_REPLY_S, "stock 'Password:'")

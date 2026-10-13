@@ -258,3 +258,101 @@ index 0000000..5dd9c27
 + 		if (pcie->need_ob_cfg) {
 + 			pcie->ob_map = paxb_ob_map;
 + 			pcie->ob.nr_windows = ARRAY_SIZE(paxb_ob_map);
+diff --git a/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch b/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch
+new file mode 100644
+index 0000000..bf922a1
+--- /dev/null
++++ b/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch
+@@ -0,0 +1,92 @@
++From: awto-unifi-us48
++Subject: [PATCH] PCI: iproc: tolerate config-read aborts on Hurricane 2
++
++HR2 PAXB answers a config read of an absent function (e.g. 01:00.2 of
++the multi-function BCM53346) with an external abort instead of all-ones,
++and has no APB_ERR_EN to mask it. Like pci-imx6, catch the abort and make
++the load return all-ones, only for faults inside the HR2 config window.
++
++--- a/drivers/pci/controller/pcie-iproc-platform.c
+++++ b/drivers/pci/controller/pcie-iproc-platform.c
++@@ -18,6 +18,43 @@
++ #include "../pci.h"
++ #include "pcie-iproc.h"
++ 
+++#ifdef CONFIG_ARM
+++#include <asm/bug.h>
+++#include <asm/ptrace.h>
+++#include <linux/signal.h>
+++
+++/* HR2 config window (virtual), set at probe; 0 = no HR2 controller yet */
+++static unsigned long iproc_hr2_cfg_start, iproc_hr2_cfg_end;
+++
+++static int iproc_hr2_pcie_abort_handler(unsigned long addr, unsigned int fsr,
+++					struct pt_regs *regs)
+++{
+++	unsigned long pc = instruction_pointer(regs);
+++	unsigned long instr = *(unsigned long *)pc;
+++	int reg = (instr >> 12) & 15;
+++
+++	if (!iproc_hr2_cfg_start || addr < iproc_hr2_cfg_start ||
+++	    addr >= iproc_hr2_cfg_end)
+++		return 1;
+++
+++	/* LDR/LDRB: make it look like it read all-ones (as pci-imx6) */
+++	if ((instr & 0x0c100000) == 0x04100000) {
+++		regs->uregs[reg] = (instr & 0x00400000) ? 255 : -1;
+++		regs->ARM_pc += 4;
+++		return 0;
+++	}
+++
+++	/* LDRH/LDRSH etc. */
+++	if ((instr & 0x0e100090) == 0x00100090) {
+++		regs->uregs[reg] = -1;
+++		regs->ARM_pc += 4;
+++		return 0;
+++	}
+++
+++	return 1;
+++}
+++#endif
+++
++ static const struct of_device_id iproc_pcie_of_match_table[] = {
++ 	{
++ 		.compatible = "brcm,iproc-pcie",
++@@ -67,6 +104,13 @@
++ 		return -ENOMEM;
++ 	}
++ 	pcie->base_addr = reg.start;
+++#ifdef CONFIG_ARM
+++	if (of_device_is_compatible(np, "brcm,iproc-hr2-pcie")) {
+++		iproc_hr2_cfg_end = (unsigned long)pcie->base + resource_size(&reg);
+++		iproc_hr2_cfg_start = (unsigned long)pcie->base;
+++		dev_info(dev, "HR2: config-read aborts return all-ones\n");
+++	}
+++#endif
++ 
++ 	if (of_property_read_bool(np, "brcm,pcie-ob")) {
++ 		u32 val;
++@@ -137,7 +181,22 @@
++ 	.remove = iproc_pltfm_pcie_remove,
++ 	.shutdown = iproc_pltfm_pcie_shutdown,
++ };
++-module_platform_driver(iproc_pltfm_pcie_driver);
+++
+++static int __init iproc_pltfm_pcie_init(void)
+++{
+++#ifdef CONFIG_ARM
+++	struct device_node *np = of_find_compatible_node(NULL, NULL, "brcm,iproc-hr2-pcie");
+++
+++	/* hook_fault_code is __init: install before probe (which may defer) */
+++	if (np) {
+++		of_node_put(np);
+++		hook_fault_code(8, iproc_hr2_pcie_abort_handler, SIGBUS, 0,
+++				"external abort on non-linefetch");
+++	}
+++#endif
+++	return platform_driver_register(&iproc_pltfm_pcie_driver);
+++}
+++device_initcall(iproc_pltfm_pcie_init);
++ 
++ MODULE_AUTHOR("Ray Jui <rjui@broadcom.com>");
++ MODULE_DESCRIPTION("Broadcom iPROC PCIe platform driver");
