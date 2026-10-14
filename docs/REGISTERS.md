@@ -4,10 +4,10 @@ Offline DB of every `soc_reg_info` and `soc_mem_info` entry of the stock SDK (hu
 
 ## Regenerate
 
-- `python3 scripts/hr2_regdb.py [BIN]` → `tmp/regdb/hr2_regs.tsv`, `hr2_mems.tsv`, `hr2_blocks.tsv`. Default BIN = `private/firmware/rootfs-selected/bin/switchdrvr` (sha256 `d76ef864…8593c7`). Log `tmp/logs/hr2_regdb.log`.
-- `python3 scripts/gen_hr2_regs.py` → `tmp/regdb/hr2-regs.h` (`HR2_<REG>_OFFS`, `HR2_<REG>_<FIELD>_MASK` GENMASK, `HR2_MEM_<MEM>_BASE/_INDEX_MAX/_BYTES/_<FIELD>_BP/_LEN`) and `tmp/regdb/hr2_regs.py` (`REGS`, `MEMS`, `BLOCKS`, `decode()`, `by_offset()`).
-- Lookup: `python3 tmp/regdb/hr2_regs.py <NAME|0xOFFSET> [VALUE]` → field decode.
-- Generated files stay in `tmp/` (gitignored). Not committed: licence of Broadcom-derived names undecided (needs-dan).
+- `python3 scripts/hr2_regdb.py [BIN]` → `regdb/hr2_regs.tsv`, `hr2_mems.tsv`, `hr2_blocks.tsv`. Default BIN = `private/firmware/rootfs-selected/bin/switchdrvr` (sha256 `d76ef864…8593c7`). Log `tmp/logs/hr2_regdb.log`.
+- `python3 scripts/gen_hr2_regs.py` → `regdb/hr2-regs.h` (`HR2_<REG>_OFFS`, `HR2_<REG>_<FIELD>_MASK` GENMASK, `HR2_MEM_<MEM>_BASE/_INDEX_MAX/_BYTES/_<FIELD>_BP/_LEN`) and `regdb/hr2_regs.py` (`REGS`, `MEMS`, `BLOCKS`, `decode()`, `by_offset()`).
+- Lookup: `python3 regdb/hr2_regs.py <NAME|0xOFFSET> [VALUE]` → field decode.
+- `regdb/` is generated and committed (#43); regenerate, never hand-edit.
 - Only for the 7.5.15 binary: name/field table VAs are constants in `scripts/smbus_regdb.py`; the reg_info array and `soc_driver_t` are located by scan/check, a mismatch aborts.
 
 ## Table layout (C)

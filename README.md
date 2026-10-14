@@ -20,9 +20,10 @@ Broadcom Hurricane 2 BCM53344 (Cortex-A9 + switch) with a BCM53346 on PCIe, 48×
 ```
 openwrt/   patches against OpenWrt main (pinned in scripts/build_openwrt.py)
 scripts/   build_openwrt.py, backup.py, verify_firmware.py
-docs/      hardware.md, openwrt-port.md, fan.md, board.md, sources.md
+docs/      hardware.md, openwrt-port.md, fan.md, board.md, sources.md, REGISTERS.md
+regdb/     HR2 register/memory tables generated from stock switchdrvr (scripts/hr2_regdb.py, gen_hr2_regs.py)
 tmp/       build tree, logs — gitignored, disposable
-private/   backups, stock firmware, vendor source copies, live captures — gitignored, NOT disposable
+private/   backups, stock firmware, live captures — gitignored, NOT disposable
 ```
 
 ## Build

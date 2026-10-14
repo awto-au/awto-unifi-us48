@@ -12,7 +12,7 @@ block-row mask, w7, base, gran, bytes | nFields << 16, fields ptr. Mem block bit
 Mem names: 3 consecutive pointer tables of equal length ending at the first mem_info struct, all indexed by
 soc_mem_t: [0] short alias (sparse), [1] user-facing name, [2] full SDK name (VLAN_TAB, MMU_XQ0, ...).
 
-Usage: python3 scripts/hr2_regdb.py [BIN] [--out tmp/regdb]
+Usage: python3 scripts/hr2_regdb.py [BIN] [--out regdb]
 Writes hr2_regs.tsv, hr2_mems.tsv, hr2_blocks.tsv. Needs pyelftools. Log: tmp/logs/hr2_regdb.log.
 """
 import argparse
@@ -164,7 +164,7 @@ def main():
     root = repo_root()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("bin", nargs="?", default=str(root / "private/firmware/rootfs-selected/bin/switchdrvr"))
-    ap.add_argument("--out", default=str(root / "tmp/regdb"))
+    ap.add_argument("--out", default=str(root / "regdb"))
     a = ap.parse_args()
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

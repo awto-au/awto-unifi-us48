@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Generate hr2-regs.h (offsets + GENMASK fields) and hr2_regs.py (lookup module) from the HR2 DB TSVs.
 
-Input: tmp/regdb/hr2_regs.tsv, hr2_mems.tsv, hr2_blocks.tsv (scripts/hr2_regdb.py).
-Output: tmp/regdb/hr2-regs.h, tmp/regdb/hr2_regs.py. Generated, never hand-edited, never committed
-(licence of the Broadcom-derived names is undecided). Log: tmp/logs/gen_hr2_regs.log.
+Input: regdb/hr2_regs.tsv, hr2_mems.tsv, hr2_blocks.tsv (scripts/hr2_regdb.py).
+Output: regdb/hr2-regs.h, regdb/hr2_regs.py. Generated, never hand-edited; committed (#43).
+Log: tmp/logs/gen_hr2_regs.log.
 
-Usage: python3 scripts/gen_hr2_regs.py [--dir tmp/regdb]
+Usage: python3 scripts/gen_hr2_regs.py [--dir regdb]
 """
 import argparse
 import csv
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 def main():
     root = repo_root()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--dir", default=str(root / "tmp/regdb"))
+    ap.add_argument("--dir", default=str(root / "regdb"))
     a = ap.parse_args()
     d = pathlib.Path(a.dir)
     log = root / "tmp/logs/gen_hr2_regs.log"
