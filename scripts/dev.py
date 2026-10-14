@@ -51,7 +51,8 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import console  # noqa: E402
 
-IMAGE = REPO / "tmp/tftp/us48-initramfs.bin"
+# $US48_IMAGE overrides, e.g. tmp/mainline/us48-mainline.bin (#15).
+IMAGE = Path(os.environ.get("US48_IMAGE") or REPO / "tmp/tftp/us48-initramfs.bin").resolve()
 LOAD_ADDR = "0x01000000"  # U-Boot scratch RAM, docs/uboot.md §6
 
 # --------------------------------------------------------------------------
@@ -236,6 +237,26 @@ def _loady_close(s: console.Session, baud: int) -> tuple[console.Session, bool]:
         log(str(e), "ERROR")
         return n, False
     return n, True
+
+
+@command("recover U-Boot stuck in an interrupted loady (CAN flood at FAST_BAUD, ESC at 115200), then boot stock",
+         args="[--stay]", kind="action")
+def cmd_abort_loady(extra: list[str]) -> int:
+    if not console.restart(console.FAST_BAUD):
+        return 1
+    s = console.Session()
+    # One 1K block + header ≈ 1030 B: a CAN run longer than that ends any partial block (worked 2026-10-13).
+    s.write(bytes([console.CAN] * 1100))
+    s, ok = _loady_close(s, console.FAST_BAUD)
+    if not ok:
+        log("no u-boot> after CAN + ESC: power-cycle", "FATAL")
+        s.close()
+        return 1
+    if "--stay" not in extra:
+        s.send_line("run bootcmd")
+        log("u-boot> recovered: booting stock (kernel1)", "ALERT")
+    s.close()
+    return 0
 
 
 @command("find the fastest loady baud (handshake + cancelled transfer per step; RAM only)", kind="action")
