@@ -1,13 +1,16 @@
 # Mainline Linux port (issue #15)
 
 - Develop on latest mainline, then backport to OpenWrt 6.18 (`openwrt/`, patches-6.18/950+951).
-- Base: torvalds/linux tag `v7.3-rc7`, shallow clone in `tmp/linux-mainline`, branch `us48`.
+- Base: torvalds/linux tag `v7.3-rc7`; branch `awto/us48/mainline-v7.3-rc7` (local, not pushed).
+- Tree: `tmp/linux-mainline` = `git worktree` of the machine-shared Linux store (#45), not a clone.
+  - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
+  - Never `--depth`, `git gc` or `git repack` in the store or its worktrees (machine timer does gc).
 - Series: `mainline/0001..0007-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
 - Config fragment: `mainline/us48.config`.
 
 ## Build
 
-- `python3 scripts/build_mainline.py` — rebuilds branch `us48` from `mainline/*.patch` (`git am`), configures, builds, packs.
+- `python3 scripts/build_mainline.py` — rebuilds the branch from `mainline/*.patch` (`git am`), configures, builds, packs.
 - Config: `multi_v7_defconfig` + `mainline/us48.config` + initramfs from `tmp/openwrt-build/.../root-bcm53xx`
   (staged copy + `/init -> sbin/init` + `/dev/console` node, root-owned).
 - Toolchain: OpenWrt gcc 14.4 musl (`tmp/openwrt-build/staging_dir`). mkimage from the OpenWrt host dir.
@@ -16,7 +19,7 @@
 - `CONFIG_ARM_ATAG_DTB_COMPAT` off; DT has no bootargs, so `CONFIG_CMDLINE="console=ttyS0,115200 earlycon"` applies.
 - Flags: `--keep-branch` (build tree as is), `--save-patches` (branch -> `mainline/`), `--checkpatch`, `--dtbs-check`, `--prepare-only`.
 - Logs: `tmp/logs/build_mainline.log`, `build_mainline-make.log`, `build_mainline-dtbs_check.log`.
-- Edit flow: change `tmp/linux-mainline` on `us48`, commit, `--save-patches`, commit `mainline/`.
+- Edit flow: change `tmp/linux-mainline` on the branch, commit, `--save-patches`, commit `mainline/`.
 
 ## Patches
 

@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """build_mainline — mainline Linux image for the UniFi US-48-500W (BCM53344, Hurricane 2).
 
-- Tree: tmp/linux-mainline (shallow torvalds/linux, tag BASE). Branch `us48` = BASE + mainline/*.patch.
+- Tree: tmp/linux-mainline = worktree of the machine Linux store (#45), reached via the gitignored
+  symlink tmp/linux-store (or $US48_LINUX_STORE / --store). Created on first run; tag BASE fetched from
+  the store's `origin` (mainline) if missing. Never --depth, never gc in the store.
+- Branch BRANCH (awto/us48/mainline-BASE) = BASE + mainline/*.patch; local to the store, not pushed.
 - Config: multi_v7_defconfig + mainline/us48.config; initramfs from the OpenWrt bcm53xx rootfs (+ /init, /dev/console).
 - Output: tmp/mainline/us48-mainline.bin = legacy uImage, load/entry 0x00018000, zImage + appended DTB
   (same format as tmp/tftp/us48-initramfs.bin: stock U-Boot `loady 0x01000000; bootm`).
 - Logs: tmp/logs/build_mainline.log; make output tmp/logs/build_mainline-make.log.
 
 Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs-check] [--prepare-only] [--jobs N]
-  default          rebuild branch us48 from mainline/*.patch (git am), configure, build, pack
+  default          rebuild the branch from mainline/*.patch (git am), configure, build, pack
   --keep-branch    build the branch as it is (after editing the tree); skips git am
-  --save-patches   git format-patch BASE..us48 -> mainline/ (replaces old patches), then exit
+  --save-patches   git format-patch BASE..BRANCH -> mainline/ (replaces old patches), then exit
   --checkpatch     scripts/checkpatch.pl --strict on every commit of the branch, then exit
   --dtbs-check     make dtbs_check for the new board DTS (dtschema from tmp/dtschema-venv), then exit
 """
@@ -43,8 +46,11 @@ PATCHES = ROOT / "mainline"
 FRAGMENT = PATCHES / "us48.config"
 LOG = ROOT / "tmp/logs/build_mainline.log"
 MAKE_LOG = ROOT / "tmp/logs/build_mainline-make.log"
+STORE_LINK = ROOT / "tmp/linux-store"  # symlink -> machine Linux store; no host path in this repo
 BASE = "v7.3-rc7"
-BRANCH = "us48"
+BRANCH = f"awto/us48/mainline-{BASE}"
+# tag fetch: objects mostly in the store already, ~300 MB worst case at >=1 MB/s; checkout of ~96k files ~60 s
+FETCH_TIMEOUT, WORKTREE_TIMEOUT = 600, 300
 DTB = "broadcom/bcm53344-ubnt-unifi-us-48-500w.dtb"
 OWRT = ROOT / "tmp/openwrt-build"
 CROSS = OWRT / "staging_dir/toolchain-arm_cortex-a9_gcc-14.4.0_musl_eabi/bin/arm-openwrt-linux-muslgnueabi-"
@@ -77,6 +83,39 @@ def run(cmd, cwd=TREE, out=None, env=None, check=True) -> int:
 
 def git_out(*args) -> str:
     return subprocess.run(["git", *args], cwd=TREE, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def store_git(store: Path, *args, timeout: int) -> subprocess.CompletedProcess:
+    log(f"$ git -C {store} " + " ".join(args))
+    try:
+        r = subprocess.run(["git", "-C", str(store), *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        log(f"abort: git {args[0]} in the store gave no result within {timeout} s")
+        sys.exit(4)
+    return r
+
+
+def ensure_tree(store: Path) -> None:
+    """tmp/linux-mainline as a worktree of the store at BRANCH (or BASE); no-op if it exists."""
+    if (TREE / ".git").exists():
+        return
+    shallow = store_git(store, "rev-parse", "--is-shallow-repository", timeout=30).stdout.strip()
+    if shallow != "false":
+        log(f"abort: {store} is not a full Linux store (link tmp/linux-store to it, or --store; #45)")
+        sys.exit(4)
+    if store_git(store, "rev-parse", "-q", "--verify", f"refs/tags/{BASE}", timeout=30).returncode:
+        r = store_git(store, "fetch", "--no-tags", "origin", f"refs/tags/{BASE}:refs/tags/{BASE}", timeout=FETCH_TIMEOUT)
+        if r.returncode:
+            log(f"abort: fetch {BASE}: {r.stderr.strip()}")
+            sys.exit(4)
+    has_branch = not store_git(store, "rev-parse", "-q", "--verify", f"refs/heads/{BRANCH}", timeout=30).returncode
+    store_git(store, "worktree", "prune", timeout=30)
+    args = [str(TREE), BRANCH] if has_branch else ["--detach", str(TREE), BASE]
+    r = store_git(store, "worktree", "add", *args, timeout=WORKTREE_TIMEOUT)
+    if r.returncode:
+        log(f"abort: worktree add: {r.stderr.strip()}")
+        sys.exit(4)
+    log(f"worktree {TREE.relative_to(ROOT)} @ {BRANCH if has_branch else BASE}")
 
 
 def rebuild_branch() -> None:
@@ -190,9 +229,12 @@ def main() -> int:
     ap.add_argument("--checkpatch", action="store_true")
     ap.add_argument("--dtbs-check", action="store_true")
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),
+                    help="machine Linux store (default $US48_LINUX_STORE, else tmp/linux-store)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    ensure_tree(a.store)
     if a.save_patches:
         save_patches()
         return 0

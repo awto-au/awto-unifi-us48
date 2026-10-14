@@ -29,7 +29,12 @@ private/   backups, stock firmware, live captures — gitignored, NOT disposable
 ## Build
 
 ```bash
+# one-time: gitignored links to the machine-shared Linux store, OpenWrt dl cache, ccache (#45)
+ln -s <linux-store> tmp/linux-store
+ln -s <openwrt-dl> tmp/openwrt-dl
+ln -s <ccache-openwrt> tmp/ccache-openwrt
 python3 scripts/build_openwrt.py          # -> tmp/tftp/us48-initramfs.bin
+python3 scripts/build_mainline.py         # -> tmp/mainline/us48-mainline.bin
 ```
 
 ## Safety

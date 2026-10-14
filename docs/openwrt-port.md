@@ -20,6 +20,14 @@
   - initramfs only; no sysupgrade image until a flash layout is chosen.
 - Kernel 6.18 (OpenWrt bcm53xx default).
 
+## Build tree
+
+- `tmp/openwrt-build`: shallow clone of OpenWrt main at `OWRT_COMMIT` (`scripts/build_openwrt.py`).
+- Downloads + ccache are machine-shared (#45): `.config` gets `CONFIG_DEVEL=y`, `CONFIG_DOWNLOAD_FOLDER`, `CONFIG_CCACHE=y`, `CONFIG_CCACHE_DIR`.
+  - Paths: gitignored symlinks `tmp/openwrt-dl`, `tmp/ccache-openwrt` (or `$US48_OPENWRT_DL` / `$US48_CCACHE_DIR`, `--dl-dir` / `--ccache-dir`); build aborts if missing.
+  - `DEVEL=y` is required: without it `make defconfig` drops both options.
+  - Other buildroots share the dirs: only add files, never delete.
+
 ## First boot results (2026-10-13, image in kernel0, `scripts/dev.py flash-kernel0`)
 
 - Kernel 6.18.55 boots: earlycon on UART1 @ 0x18000400, DT model, 2×128 MiB memory, L2C-310, arm_global_timer 200 MHz. C.

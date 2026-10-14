@@ -4,11 +4,14 @@
 - Tree: tmp/openwrt-build, OpenWrt main at OWRT_COMMIT. Reset (checkout + clean target/linux/bcm53xx)
   then `git apply` of openwrt/*.patch in name order, every run.
 - .config: bcm53xx/hr2, this device, initramfs only; `make defconfig` fills the rest.
+- Downloads + ccache: the machine-shared dirs (#45), via gitignored symlinks tmp/openwrt-dl and
+  tmp/ccache-openwrt (or $US48_OPENWRT_DL / $US48_CCACHE_DIR, --dl-dir / --ccache-dir).
+  Shared with other buildroots: never delete from them.
 - Phases: disk check -> clone/pin -> overlay -> .config -> download -> make.
 - Output: tmp/tftp/us48-initramfs.bin (legacy uImage for stock `tftpboot 0x01000000; bootm`).
 - nice 19 / ionice idle. Log: tmp/logs/build_openwrt.log; make output: tmp/logs/build_openwrt-make.log.
 
-Usage: build_openwrt.py [--jobs N] [--prepare-only] [--kernel-only] [--save-patch]
+Usage: build_openwrt.py [--jobs N] [--prepare-only] [--kernel-only] [--save-patch] [--dl-dir D] [--ccache-dir D]
   --save-patch: write the current tree diff back to openwrt/0001-*.patch (after editing the tree).
 """
 
@@ -20,7 +23,19 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+
+def repo_root() -> Path:
+    env = os.environ.get("AWTO_UNIFI_US48_REPO")
+    if env:
+        return Path(env)
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                       cwd=Path(__file__).resolve().parent)
+    if r.returncode == 0 and r.stdout.strip():
+        return Path(r.stdout.strip())
+    return Path(__file__).resolve().parent.parent
+
+
+ROOT = repo_root()
 TREE = ROOT / "tmp/openwrt-build"
 PATCHES = ROOT / "openwrt"
 TFTP = ROOT / "tmp/tftp"
@@ -31,6 +46,8 @@ OWRT_COMMIT = "0ad1348fb2a7f49c9c5941d4d8c98f88b6974e8d"  # main, 2026-10-13
 TARGET_DIR = "target/linux/bcm53xx"
 DEVICE = "ubnt_unifi-us-48-500w"
 OUT = f"bin/targets/bcm53xx/hr2/openwrt-bcm53xx-hr2-{DEVICE}-initramfs.bin"  # KERNEL_INITRAMFS_SUFFIX .bin
+DL_LINK = ROOT / "tmp/openwrt-dl"  # symlinks -> machine-shared dirs; no host path in this repo
+CCACHE_LINK = ROOT / "tmp/ccache-openwrt"
 MIN_FREE_GB = 30  # full toolchain + kernel build
 NICE = ["nice", "-n", "19", "ionice", "-c3"]
 CONFIG = f"""CONFIG_TARGET_bcm53xx=y
@@ -66,6 +83,23 @@ def run(cmd, cwd=TREE, out=None, check=True):
         log(f"FAILED rc={r.returncode}: {' '.join(map(str, cmd))}" + (f" (see {out})" if out else ""))
         sys.exit(r.returncode)
     return r.returncode
+
+
+def shared_config(dl: Path, cc: Path) -> str:
+    """Shared download folder + ccache; both options are hidden unless DEVEL=y."""
+    for d in (dl, cc):
+        if not d.is_dir():
+            log(f"abort: {d} missing: link it to the shared dir (docs/openwrt-port.md, #45)")
+            sys.exit(2)
+    return f'CONFIG_DEVEL=y\nCONFIG_DOWNLOAD_FOLDER="{dl}"\nCONFIG_CCACHE=y\nCONFIG_CCACHE_DIR="{cc}"\n'
+
+
+def check_config(want: str) -> None:
+    have = set((TREE / ".config").read_text().splitlines())
+    missing = [x for x in want.splitlines() if x not in have]
+    if missing:
+        log(f"abort: lost after defconfig: {missing}")
+        sys.exit(3)
 
 
 def disk_ok() -> None:
@@ -111,6 +145,10 @@ def main() -> int:
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--kernel-only", action="store_true")
     ap.add_argument("--save-patch", action="store_true")
+    ap.add_argument("--dl-dir", type=Path, default=Path(os.environ.get("US48_OPENWRT_DL", DL_LINK)),
+                    help="shared OpenWrt download folder (default $US48_OPENWRT_DL, else tmp/openwrt-dl)")
+    ap.add_argument("--ccache-dir", type=Path, default=Path(os.environ.get("US48_CCACHE_DIR", CCACHE_LINK)),
+                    help="shared ccache dir (default $US48_CCACHE_DIR, else tmp/ccache-openwrt)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     if a.save_patch:
@@ -119,8 +157,10 @@ def main() -> int:
     disk_ok()
     clone()
     overlay()
-    (TREE / ".config").write_text(CONFIG)
+    shared = shared_config(a.dl_dir.absolute(), a.ccache_dir.absolute())
+    (TREE / ".config").write_text(CONFIG + shared)
     run(["make", "defconfig"], out=MAKE_LOG)
+    check_config(shared)
     if a.prepare_only:
         log("prepared")
         return 0
