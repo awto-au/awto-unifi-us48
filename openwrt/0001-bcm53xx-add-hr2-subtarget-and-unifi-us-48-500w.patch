@@ -404,3 +404,30 @@ index 0000000..bf922a1
 + 
 + MODULE_AUTHOR("Ray Jui <rjui@broadcom.com>");
 + MODULE_DESCRIPTION("Broadcom iPROC PCIe platform driver");
+diff --git a/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch b/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch
+new file mode 100644
+index 0000000..001df55
+--- /dev/null
++++ b/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch
+@@ -0,0 +1,21 @@
++From: awto-unifi-us48
++Subject: [PATCH] PCI: iproc: do not assert PERST# at shutdown on Hurricane 2
++
++iproc_pcie_shutdown() clears RC_PCIE_RST_OUTPUT. On HR2, IPROC_PCIE_CLK_CTRL
++survives the DMU/watchdog chip reset, so the endpoint stays in reset into
++U-Boot and the next kernel. The vendor kernel never asserts it; match that.
++
++--- a/drivers/pci/controller/pcie-iproc-platform.c
+++++ b/drivers/pci/controller/pcie-iproc-platform.c
++@@ -169,6 +169,11 @@
++ {
++ 	struct iproc_pcie *pcie = platform_get_drvdata(pdev);
++
+++	/* HR2: CLK_CTRL survives the chip reset, so PERST# would stay asserted into the next
+++	 * boot (stock never asserts it); leave the endpoint running like stock. us48#11 */
+++	if (of_device_is_compatible(pdev->dev.of_node, "brcm,iproc-hr2-pcie"))
+++		return;
+++
++ 	iproc_pcie_shutdown(pcie);
++ }
++

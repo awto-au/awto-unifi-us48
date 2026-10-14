@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+# PoE off on all ports at boot (us48-poe-off). 13: right after logd (12), so the readback is logged.
+
+START=13
+
+boot() {
+	/usr/sbin/us48-poe-off
+}
+
+start() {
+	/usr/sbin/us48-poe-off
+}
