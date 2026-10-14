@@ -1,0 +1,26 @@
+From daa9ca674ef4a845eec1e4480b1e83fc2fd51f3d Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:54:42 +1100
+Subject: [PATCH 6/7] dt-bindings: mfd: syscon: Add brcm,hr2-dmu
+
+The DMU (device management unit) block of the Broadcom Hurricane 2 SoC
+holds the reset control register used for restarting the chip. Add a
+compatible so it can be described as a syscon.
+
+Signed-off-by: TODO
+---
+ Documentation/devicetree/bindings/mfd/syscon.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/mfd/syscon.yaml b/Documentation/devicetree/bindings/mfd/syscon.yaml
+index 945a168b6..c896e7b92 100644
+--- a/Documentation/devicetree/bindings/mfd/syscon.yaml
++++ b/Documentation/devicetree/bindings/mfd/syscon.yaml
+@@ -52,6 +52,7 @@ properties:
+               - atmel,sama5d4-sfrbu
+               - axis,artpec6-syscon
+               - brcm,cru-clkset
++              - brcm,hr2-dmu
+               - brcm,sr-cdru
+               - brcm,sr-mhb
+               - cirrus,ep7209-syscon1

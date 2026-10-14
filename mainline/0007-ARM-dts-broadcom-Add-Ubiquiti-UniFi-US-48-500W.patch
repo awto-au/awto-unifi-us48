@@ -1,0 +1,200 @@
+From b4c84056bc3f44a8b7e5b07f0e3b91dee5fe05b5 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:52:04 +1100
+Subject: [PATCH 7/7] ARM: dts: broadcom: Add Ubiquiti UniFi US-48-500W
+
+Add the Ubiquiti UniFi Switch 48 PoE 500W: BCM53344 Hurricane 2 with
+128+128 MiB RAM, 32 MiB SPI NOR, a BCM53346 switch behind PCIe, the
+CMIC SMBus with a PCA9548 mux and four LM75 temperature sensors, and
+a syscon-reboot using the DMU reset bit that the stock firmware uses.
+
+The console is the second UART, as on other Hurricane 2 boards. No
+bootargs are given, they are provided by the bootloader or the kernel
+configuration.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/Makefile           |   3 +-
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 159 ++++++++++++++++++
+ 2 files changed, 161 insertions(+), 1 deletion(-)
+ create mode 100644 arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+
+diff --git a/arch/arm/boot/dts/broadcom/Makefile b/arch/arm/boot/dts/broadcom/Makefile
+index 2552e11b5..b4b1605a1 100644
+--- a/arch/arm/boot/dts/broadcom/Makefile
++++ b/arch/arm/boot/dts/broadcom/Makefile
+@@ -108,7 +108,8 @@ dtb-$(CONFIG_ARCH_BCM_CYGNUS) += \
+ 	bcm958300k.dtb \
+ 	bcm958305k.dtb
+ dtb-$(CONFIG_ARCH_BCM_HR2) += \
+-	bcm53340-ubnt-unifi-switch8.dtb
++	bcm53340-ubnt-unifi-switch8.dtb \
++	bcm53344-ubnt-unifi-us-48-500w.dtb
+ dtb-$(CONFIG_ARCH_BCM_MOBILE) += \
+ 	bcm28155-ap.dtb \
+ 	bcm21664-garnet.dtb \
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+new file mode 100644
+index 000000000..aa3496b47
+--- /dev/null
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -0,0 +1,159 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/*
++ * DTS for Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W)
++ *
++ * The BCM53344 Hurricane 2 SoC is the board controller, a BCM53346
++ * switch is attached via PCIe.
++ */
++
++/dts-v1/;
++
++#include "bcm-hr2.dtsi"
++
++/ {
++	compatible = "ubnt,unifi-us-48-500w", "brcm,bcm53344", "brcm,hr2";
++	model = "Ubiquiti UniFi Switch 48 PoE 500W";
++
++	aliases {
++		serial0 = &uart1;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x00000000 0x08000000>,
++		      <0x68000000 0x08000000>;
++	};
++
++	reboot {
++		compatible = "syscon-reboot";
++		regmap = <&dmu>;
++		offset = <0x200>;
++		mask = <0x2>;
++		value = <0x0>;
++	};
++
++	/* SMBus controller in the CMIC of the BCM53344, no interrupt wired */
++	i2c@48000000 {
++		compatible = "brcm,iproc-i2c";
++		reg = <0x48000000 0x50>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		clock-frequency = <100000>;
++
++		i2c-mux@70 {
++			compatible = "nxp,pca9548";
++			reg = <0x70>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			i2c-mux-idle-disconnect;
++
++			i2c@6 {
++				reg = <6>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				temperature-sensor@48 {
++					compatible = "national,lm75b";
++					reg = <0x48>;
++				};
++
++				temperature-sensor@49 {
++					compatible = "national,lm75b";
++					reg = <0x49>;
++				};
++
++				temperature-sensor@4a {
++					compatible = "national,lm75b";
++					reg = <0x4a>;
++				};
++
++				temperature-sensor@4b {
++					compatible = "national,lm75b";
++					reg = <0x4b>;
++				};
++			};
++		};
++	};
++};
++
++/* Stock firmware restarts by clearing bit 1 of the DMU register at 0x3f200 */
++&{/axi@18000000} {
++	dmu: syscon@3f000 {
++		compatible = "brcm,hr2-dmu", "syscon";
++		reg = <0x3f000 0x1000>;
++	};
++};
++
++&uart1 {
++	status = "okay";
++};
++
++&qspi {
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <12500000>;
++		spi-cpol;
++		spi-cpha;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "u-boot";
++				reg = <0x0 0xc0000>;
++				read-only;
++			};
++
++			partition@c0000 {
++				label = "u-boot-env";
++				reg = <0xc0000 0x10000>;
++				read-only;
++			};
++
++			partition@d0000 {
++				label = "shmoo";
++				reg = <0xd0000 0x10000>;
++				read-only;
++			};
++
++			partition@e0000 {
++				label = "kernel0";
++				reg = <0xe0000 0xf00000>;
++				read-only;
++			};
++
++			partition@fe0000 {
++				label = "kernel1";
++				reg = <0xfe0000 0xf10000>;
++				read-only;
++			};
++
++			partition@1ef0000 {
++				label = "cfg";
++				reg = <0x1ef0000 0x100000>;
++				read-only;
++			};
++
++			partition@1ff0000 {
++				label = "EEPROM";
++				reg = <0x1ff0000 0x10000>;
++				read-only;
++			};
++		};
++	};
++};
++
++&pcie0 {
++	/* BCM53346 switch, no APB_ERR_EN register on Hurricane 2 */
++	compatible = "brcm,iproc-hr2-pcie", "brcm,iproc-pcie";
++	status = "okay";
++};

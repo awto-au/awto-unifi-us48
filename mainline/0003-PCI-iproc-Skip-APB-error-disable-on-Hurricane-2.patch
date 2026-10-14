@@ -1,0 +1,29 @@
+From b160cf426d366a5627775f5c8d285ef2ded61748 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:51:24 +1100
+Subject: [PATCH 3/7] PCI: iproc: Skip APB error disable on Hurricane 2
+
+The Hurricane 2 (BCM5334x) PAXB has no APB_ERR_EN register at 0xf40.
+Reading it while scanning a downstream bus raises an external abort,
+so do not set has_apb_err_disable for brcm,iproc-hr2-pcie.
+
+Signed-off-by: TODO
+---
+ drivers/pci/controller/pcie-iproc.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/pci/controller/pcie-iproc.c b/drivers/pci/controller/pcie-iproc.c
+index afb3aa38a..4a2a2cfba 100644
+--- a/drivers/pci/controller/pcie-iproc.c
++++ b/drivers/pci/controller/pcie-iproc.c
+@@ -1388,7 +1388,9 @@ static int iproc_pcie_rev_init(struct iproc_pcie *pcie)
+ 		break;
+ 	case IPROC_PCIE_PAXB:
+ 		regs = iproc_pcie_reg_paxb;
+-		pcie->has_apb_err_disable = true;
++		/* Hurricane 2 has no APB_ERR_EN register, accessing it aborts */
++		pcie->has_apb_err_disable =
++			!of_device_is_compatible(dev->of_node, "brcm,iproc-hr2-pcie");
+ 		if (pcie->need_ob_cfg) {
+ 			pcie->ob_map = paxb_ob_map;
+ 			pcie->ob.nr_windows = ARRAY_SIZE(paxb_ob_map);

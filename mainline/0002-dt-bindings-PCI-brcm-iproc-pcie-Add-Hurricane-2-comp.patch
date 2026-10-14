@@ -1,0 +1,58 @@
+From 1dd5d11756d971b1e04abdcda222e1424204fca9 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:51:19 +1100
+Subject: [PATCH 2/7] dt-bindings: PCI: brcm,iproc-pcie: Add Hurricane 2
+ compatible
+
+The Hurricane 2 PAXB lacks the APB error enable register (offset
+0xf40) that the generic iProc PAXB code toggles around config accesses,
+and needs a dedicated compatible to skip it. Add brcm,iproc-hr2-pcie,
+to be used together with the brcm,iproc-pcie fallback.
+
+Signed-off-by: TODO
+---
+ .../bindings/pci/brcm,iproc-pcie.yaml         | 31 ++++++++++++-------
+ 1 file changed, 19 insertions(+), 12 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/pci/brcm,iproc-pcie.yaml b/Documentation/devicetree/bindings/pci/brcm,iproc-pcie.yaml
+index 18e798124..7220f71a9 100644
+--- a/Documentation/devicetree/bindings/pci/brcm,iproc-pcie.yaml
++++ b/Documentation/devicetree/bindings/pci/brcm,iproc-pcie.yaml
+@@ -15,18 +15,25 @@ allOf:
+ 
+ properties:
+   compatible:
+-    items:
+-      - enum:
+-          # for the first generation of PAXB based controller, used in SoCs
+-          # including NSP, Cygnus, NS2, and Pegasus
+-          - brcm,iproc-pcie
+-          # for the second generation of PAXB-based controllers, used in
+-          # Stingray
+-          - brcm,iproc-pcie-paxb-v2
+-          # For the first generation of PAXC based controller, used in NS2
+-          - brcm,iproc-pcie-paxc
+-          # For the second generation of PAXC based controller, used in Stingray
+-          - brcm,iproc-pcie-paxc-v2
++    oneOf:
++      - items:
++          - enum:
++              # for the first generation of PAXB based controller, used in
++              # SoCs including NSP, Cygnus, NS2, and Pegasus
++              - brcm,iproc-pcie
++              # for the second generation of PAXB-based controllers, used in
++              # Stingray
++              - brcm,iproc-pcie-paxb-v2
++              # For the first generation of PAXC based controller, used in NS2
++              - brcm,iproc-pcie-paxc
++              # For the second generation of PAXC based controller, used in
++              # Stingray
++              - brcm,iproc-pcie-paxc-v2
++
++      # PAXB without the APB error enable register, used in Hurricane 2
++      - items:
++          - const: brcm,iproc-hr2-pcie
++          - const: brcm,iproc-pcie
+ 
+   reg:
+     maxItems: 1

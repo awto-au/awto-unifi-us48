@@ -1,0 +1,81 @@
+From f412e93a98012754e0018bb1f44946d54358c9c7 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:51:59 +1100
+Subject: [PATCH 5/7] ARM: dts: broadcom: bcm-hr2: Add 50 MHz APB clock for
+ UART/SP804/SP805
+
+The UARTs were clocked from the 25 MHz oscillator, while the 8250 UARTs
+on Hurricane 2 run from the 50 MHz APB clock, so the line ran at a wrong
+baud rate. The SP804 timers and the SP805 watchdog had no clocks at all
+and never probed, which also left the system without a restart handler.
+
+Add a fixed 50 MHz APB clock and use it for the UARTs, SP804 timers and
+the SP805 watchdog.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/bcm-hr2.dtsi | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+index 75545b10e..a2e3f3898 100644
+--- a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
++++ b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+@@ -123,6 +123,12 @@ osc: oscillator {
+ 			clock-frequency = <25000000>;
+ 		};
+ 
++		apb_clk: clock-apb {
++			#clock-cells = <0>;
++			compatible = "fixed-clock";
++			clock-frequency = <50000000>;
++		};
++
+ 		periph_clk: periph_clk {
+ 			#clock-cells = <0>;
+ 			compatible = "fixed-factor-clock";
+@@ -142,7 +148,7 @@ uart0: serial@300 {
+ 			compatible = "ns16550a";
+ 			reg = <0x0300 0x100>;
+ 			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
+-			clocks = <&osc>;
++			clocks = <&apb_clk>;
+ 			status = "disabled";
+ 		};
+ 
+@@ -150,7 +156,7 @@ uart1: serial@400 {
+ 			compatible = "ns16550a";
+ 			reg = <0x0400 0x100>;
+ 			interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
+-			clocks = <&osc>;
++			clocks = <&apb_clk>;
+ 			status = "disabled";
+ 		};
+ 
+@@ -251,6 +257,8 @@ ccbtimer0: timer@34000 {
+ 			reg = <0x34000 0x1000>;
+ 			interrupts = <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&apb_clk>, <&apb_clk>, <&apb_clk>;
++			clock-names = "timer0clk", "timer1clk", "apb_pclk";
+ 		};
+ 
+ 		ccbtimer1: timer@35000 {
+@@ -258,6 +266,8 @@ ccbtimer1: timer@35000 {
+ 			reg = <0x35000 0x1000>;
+ 			interrupts = <GIC_SPI 99 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&apb_clk>, <&apb_clk>, <&apb_clk>;
++			clock-names = "timer0clk", "timer1clk", "apb_pclk";
+ 		};
+ 
+ 		i2c0: i2c@38000 {
+@@ -273,6 +283,8 @@ watchdog: watchdog@39000 {
+ 			compatible = "arm,sp805", "arm,primecell";
+ 			reg = <0x39000 0x1000>;
+ 			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&apb_clk>, <&apb_clk>;
++			clock-names = "wdog_clk", "apb_pclk";
+ 		};
+ 
+ 		i2c1: i2c@3b000 {

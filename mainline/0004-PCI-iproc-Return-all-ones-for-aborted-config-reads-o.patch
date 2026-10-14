@@ -1,0 +1,126 @@
+From ee54863f304e78490ef062532b0692108445b3bb Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:51:45 +1100
+Subject: [PATCH 4/7] PCI: iproc: Return all-ones for aborted config reads on
+ Hurricane 2
+
+The Hurricane 2 PAXB answers a config read of an absent function, such
+as 01:00.2 of the multi-function BCM53346 behind it, with an external
+abort instead of all-ones. Without APB_ERR_EN to mask it, the abort
+oopses during enumeration.
+
+Like pci-imx6, hook the external abort fault and make the faulting load
+return all-ones, only for faults inside the register window of a
+Hurricane 2 controller (pcie0 and pcie1). hook_fault_code() is __init
+and not exported, so this is only available when the driver is built in.
+
+Signed-off-by: TODO
+---
+ drivers/pci/controller/pcie-iproc-platform.c | 87 ++++++++++++++++++++
+ 1 file changed, 87 insertions(+)
+
+diff --git a/drivers/pci/controller/pcie-iproc-platform.c b/drivers/pci/controller/pcie-iproc-platform.c
+index 4c9a0c4bb..d6f654ce6 100644
+--- a/drivers/pci/controller/pcie-iproc-platform.c
++++ b/drivers/pci/controller/pcie-iproc-platform.c
+@@ -18,6 +18,89 @@
+ #include "../pci.h"
+ #include "pcie-iproc.h"
+ 
++/*
++ * Hurricane 2 answers a config read of an absent function with an external
++ * abort instead of all-ones. Like pci-imx6, fix up the aborted load. The
++ * fault hook is __init and not exported, so this needs a built-in driver.
++ */
++#if defined(CONFIG_ARM) && !defined(CONFIG_THUMB2_KERNEL) && !defined(MODULE)
++#define IPROC_HR2_ABORT_FIXUP
++
++#include <linux/signal.h>
++#include <linux/bug.h>
++#include <asm/ptrace.h>
++
++#define IPROC_HR2_MAX_PCIE	2
++
++static struct {
++	unsigned long start;
++	unsigned long end;
++} iproc_hr2_win[IPROC_HR2_MAX_PCIE];
++
++static int iproc_hr2_abort_handler(unsigned long addr, unsigned int fsr,
++				   struct pt_regs *regs)
++{
++	unsigned long pc = instruction_pointer(regs);
++	unsigned long instr = *(unsigned long *)pc;
++	int reg = (instr >> 12) & 15;
++	bool match = false;
++	int i;
++
++	for (i = 0; i < IPROC_HR2_MAX_PCIE; i++)
++		if (addr >= iproc_hr2_win[i].start && addr < iproc_hr2_win[i].end)
++			match = true;
++	if (!match)
++		return 1;
++
++	/* LDR/LDRB */
++	if ((instr & 0x0c100000) == 0x04100000) {
++		regs->uregs[reg] = (instr & 0x00400000) ? 255 : -1;
++		regs->ARM_pc += 4;
++		return 0;
++	}
++
++	/* LDRH/LDRSH/LDRSB */
++	if ((instr & 0x0e100090) == 0x00100090) {
++		regs->uregs[reg] = -1;
++		regs->ARM_pc += 4;
++		return 0;
++	}
++
++	return 1;
++}
++
++static void iproc_hr2_abort_add(struct device *dev, void __iomem *base,
++				resource_size_t size)
++{
++	int i;
++
++	for (i = 0; i < IPROC_HR2_MAX_PCIE; i++) {
++		if (iproc_hr2_win[i].end)
++			continue;
++		iproc_hr2_win[i].start = (unsigned long)base;
++		iproc_hr2_win[i].end = (unsigned long)base + size;
++		return;
++	}
++	dev_warn(dev, "no free config abort window\n");
++}
++
++static int __init iproc_hr2_abort_init(void)
++{
++	struct device_node *np;
++
++	np = of_find_compatible_node(NULL, NULL, "brcm,iproc-hr2-pcie");
++	if (!np)
++		return 0;
++	of_node_put(np);
++
++	/* before the first probe, which may read an absent function */
++	hook_fault_code(8, iproc_hr2_abort_handler, SIGBUS, 0,
++			"external abort on non-linefetch");
++	return 0;
++}
++postcore_initcall(iproc_hr2_abort_init);
++#endif
++
+ static const struct of_device_id iproc_pcie_of_match_table[] = {
+ 	{
+ 		.compatible = "brcm,iproc-pcie",
+@@ -67,6 +150,10 @@ static int iproc_pltfm_pcie_probe(struct platform_device *pdev)
+ 		return -ENOMEM;
+ 	}
+ 	pcie->base_addr = reg.start;
++#ifdef IPROC_HR2_ABORT_FIXUP
++	if (of_device_is_compatible(np, "brcm,iproc-hr2-pcie"))
++		iproc_hr2_abort_add(dev, pcie->base, resource_size(&reg));
++#endif
+ 
+ 	if (of_property_read_bool(np, "brcm,pcie-ob")) {
+ 		u32 val;

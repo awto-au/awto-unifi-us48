@@ -1,0 +1,42 @@
+From a771b92695da1d042542bdbc3fd866da1b9dae1c Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Wed, 14 Oct 2026 10:51:13 +1100
+Subject: [PATCH 1/7] dt-bindings: arm: bcm: hr2: Add Ubiquiti UniFi US-48-500W
+
+The UniFi Switch 48 PoE 500W (US-48-500W) uses a BCM53344 Hurricane 2
+SoC, while the binding only allows brcm,bcm53342 as the SoC compatible.
+Add a second compatible list for the board with brcm,bcm53344.
+
+Signed-off-by: TODO
+---
+ .../devicetree/bindings/arm/bcm/brcm,hr2.yaml   | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/arm/bcm/brcm,hr2.yaml b/Documentation/devicetree/bindings/arm/bcm/brcm,hr2.yaml
+index cc6add0e9..c4d901781 100644
+--- a/Documentation/devicetree/bindings/arm/bcm/brcm,hr2.yaml
++++ b/Documentation/devicetree/bindings/arm/bcm/brcm,hr2.yaml
+@@ -19,11 +19,18 @@ properties:
+   $nodename:
+     const: '/'
+   compatible:
+-    items:
+-      - enum:
+-          - ubnt,unifi-switch8
+-      - const: brcm,bcm53342
+-      - const: brcm,hr2
++    oneOf:
++      - items:
++          - enum:
++              - ubnt,unifi-switch8
++          - const: brcm,bcm53342
++          - const: brcm,hr2
++
++      - items:
++          - enum:
++              - ubnt,unifi-us-48-500w
++          - const: brcm,bcm53344
++          - const: brcm,hr2
+ 
+ additionalProperties: true
+ 
