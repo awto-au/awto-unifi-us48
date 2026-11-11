@@ -323,19 +323,20 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 - `bcm5615x_config = 10`: OpenBCM Option 2 = 24 x 1G (octal PHY) + 2 uplinks (53344: 1G; 53346: 1G/10G) + 2 x 13G HiGig; `p2l_mapping_24_2_2`. C.
 - Physical -> logical (`p2l`): phys 2..9 -> logical 9..2 (reversed), 10..25 identity, 26/28/30/32 -> 26/27/28/29. I: table taken from OpenBCM source, selected by config id (not read from the binary).
 - `phy_port_primary_and_offset_<logical>` (table `0x15a3eac`): logical 2..9 -> `0x0207..0x0200`, 10..17 -> `0x0a00..0x0a07`, 18..25 -> `0x1200..0x1207`. Three octal PHYs per chip; primary/offset follow physical lane. C.
-- `port_phy_addr_<logical>` set only for 18..25 -> `0x14..0x1b`; equals the SDK default for phys 18..25. All other PHY addresses are SDK defaults (`_soc_phy_addr_bcm56150`, by physical port, external MIIM bus 0): phys 2..9 -> `0x02..0x09`, 10..17 -> `0x0b..0x12`, 18..25 -> `0x14..0x1b`. I: not confirmed against hardware.
+- `port_phy_addr_<logical>` set only for 18..25 -> `0x14..0x1b` (external MIIM bus 0). C.
+- **Live MIIM scan, unit 0** (2026-11-12, OpenWrt, `scripts/miim.py`): only **one external octal PHY**, at external bus 0 `0x14..0x1b` (ID `0x600d845b`, front 17..24). Front 1..16 use the **16 integrated copper PHYs** on internal bus 0, at `1..4, 6..9, 11..14, 16..19` (ID `0x600d85b0`). Internal bus 1 `2, 4, 6, 8` = SerDes cores (ID `0x600d8770`). The SDK-default 'external `0x02..0x09` / `0x0b..0x12`' map does not answer. C. Front-port → internal address not mapped yet. #4.
 - Other props: `phy_an_c73=0`, `phy_an_c37=3`, `trunk_extend=0x1`; unit 1 xe ports: `serdes_if_type_xe.1=9` (SFI), `serdes_preemphasis_xe.1=0x5a54`, `serdes_driver_current_xe.1=0x2020`. C.
 - SerDes: internal QSGMII block `(phys-2)/8` (3 blocks), lane `(phys-2)%8`; uplinks on TSC4 lanes phys 26, 28 (HiGig phys 30, 32). I: SDK table `_hurricane2_phy_addr_default`.
 - Front port (1..52) -> (unit, logical) from the FastPath table at `0x1d8ecb4` (52 x {slot 0, port-1, unit, logical}; lookup `0x5e35c4`). C.
 
-| Front | Unit (chip) | Logical | Octal PHY, MDIO addr (bus 0) |
+| Front | Unit (chip) | Logical | PHY (MDIO) |
 |---|---|---|---|
-| 1..8 | 0 (53344) | 2..9 | A, `0x09..0x02` (front 1 = `0x09`, ch7) |
-| 9..16 | 0 | 10..17 | B, `0x0b..0x12` |
-| 17..24 | 0 | 18..25 | C, `0x14..0x1b` |
-| 25..32 | 1 (53346) | 2..9 | A, `0x09..0x02` |
-| 33..40 | 1 | 10..17 | B, `0x0b..0x12` |
-| 41..48 | 1 | 18..25 | C, `0x14..0x1b` |
+| 1..8 | 0 (53344) | 2..9 | integrated GPHY, internal bus 0 (addr per port TBD) |
+| 9..16 | 0 | 10..17 | integrated GPHY, internal bus 0 (addr per port TBD) |
+| 17..24 | 0 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` |
+| 25..32 | 1 (53346) | 2..9 | I: as unit 0 (not scanned) |
+| 33..40 | 1 | 10..17 | I: as unit 0 (not scanned) |
+| 41..48 | 1 | 18..25 | I: as unit 0, external `0x14..0x1b` (not scanned) |
 | 49, 50 | 1 | 26, 27 (`xe0`, `xe1`) | SFP+, no PHY seen |
 | 51, 52 | 0 | 26, 27 (`ge24`, `ge25`) | SFP, no PHY seen |
 

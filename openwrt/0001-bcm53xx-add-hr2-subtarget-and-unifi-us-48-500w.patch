@@ -1,5 +1,5 @@
 diff --git a/target/linux/bcm53xx/Makefile b/target/linux/bcm53xx/Makefile
-index 0f65889..ec32bcb 100644
+index 0f658891..ec32bcb3 100644
 --- a/target/linux/bcm53xx/Makefile
 +++ b/target/linux/bcm53xx/Makefile
 @@ -9,7 +9,7 @@ BOARD:=bcm53xx
@@ -13,7 +13,7 @@ index 0f65889..ec32bcb 100644
  
 diff --git a/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 new file mode 100644
-index 0000000..a19d7f1
+index 00000000..a19d7f1a
 --- /dev/null
 +++ b/target/linux/bcm53xx/dts/bcm53344-ubnt-unifi-us-48-500w.dts
 @@ -0,0 +1,184 @@
@@ -203,35 +203,59 @@ index 0000000..a19d7f1
 +};
 diff --git a/target/linux/bcm53xx/hr2/config-6.18 b/target/linux/bcm53xx/hr2/config-6.18
 new file mode 100644
-index 0000000..dc39427
+index 00000000..8012ee44
 --- /dev/null
 +++ b/target/linux/bcm53xx/hr2/config-6.18
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,46 @@
 +# CONFIG_ARCH_BCM_5301X is not set
 +# CONFIG_ARCH_BCM_53573 is not set
 +CONFIG_ARCH_BCM_HR2=y
 +# CONFIG_ARCH_BCM_NSP is not set
 +CONFIG_CLK_BCM_HR2=y
 +# CONFIG_CLK_BCM_NSP is not set
++CONFIG_DEBUG_ATOMIC_SLEEP=y
 +# CONFIG_DEBUG_BCM_5301X is not set
 +CONFIG_DEBUG_BCM_HR2=y
++CONFIG_DEBUG_FS=y
++CONFIG_DEBUG_FS_ALLOW_ALL=y
++CONFIG_DEBUG_KERNEL=y
++CONFIG_DEBUG_LIST=y
++CONFIG_DEBUG_MUTEXES=y
++CONFIG_DEBUG_SPINLOCK=y
 +CONFIG_DEBUG_UART_PHYS=0x18000400
 +CONFIG_DEBUG_UART_VIRT=0xf1000400
++CONFIG_DETECT_HUNG_TASK=y
 +CONFIG_DEVMEM=y
++CONFIG_DYNAMIC_DEBUG=y
++CONFIG_DYNAMIC_DEBUG_CORE=y
++CONFIG_EVENT_TRACING=y
++CONFIG_FTRACE=y
 +CONFIG_HWMON=y
 +CONFIG_I2C_MUX_PCA954x=y
 +CONFIG_I2C_MUX=y
++CONFIG_IKCONFIG=y
++CONFIG_IKCONFIG_PROC=y
++CONFIG_KALLSYMS_ALL=y
++CONFIG_KPROBE_EVENTS=y
++CONFIG_KPROBES=y
++CONFIG_MAGIC_SYSRQ=y
++CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
++CONFIG_MAGIC_SYSRQ_SERIAL=y
 +CONFIG_MFD_SYSCON=y
 +CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
 +CONFIG_PCIE_IPROC_MSI=y
 +CONFIG_PCIE_IPROC_PLATFORM=y
++CONFIG_PERF_EVENTS=y
 +CONFIG_POWER_RESET_SYSCON=y
 +CONFIG_POWER_RESET=y
++CONFIG_PRINTK_TIME=y
 +CONFIG_REGMAP_I2C=y
++CONFIG_SCHED_STACK_END_CHECK=y
 +CONFIG_SENSORS_LM75=y
++CONFIG_STACKTRACE=y
 diff --git a/target/linux/bcm53xx/hr2/target.mk b/target/linux/bcm53xx/hr2/target.mk
 new file mode 100644
-index 0000000..7fc9a78
+index 00000000..7fc9a785
 --- /dev/null
 +++ b/target/linux/bcm53xx/hr2/target.mk
 @@ -0,0 +1,6 @@
@@ -242,7 +266,7 @@ index 0000000..7fc9a78
 +	Initramfs/serial bring-up only: no switch-fabric driver yet.
 +endef
 diff --git a/target/linux/bcm53xx/image/Makefile b/target/linux/bcm53xx/image/Makefile
-index 118a20d..0ab596b 100644
+index 118a20d4..0ab596bb 100644
 --- a/target/linux/bcm53xx/image/Makefile
 +++ b/target/linux/bcm53xx/image/Makefile
 @@ -591,4 +591,9 @@ define Device/tplink_archer-c9-v1
@@ -257,7 +281,7 @@ index 118a20d..0ab596b 100644
  $(eval $(call BuildImage))
 diff --git a/target/linux/bcm53xx/image/hr2.mk b/target/linux/bcm53xx/image/hr2.mk
 new file mode 100644
-index 0000000..9017627
+index 00000000..90176275
 --- /dev/null
 +++ b/target/linux/bcm53xx/image/hr2.mk
 @@ -0,0 +1,19 @@
@@ -282,7 +306,7 @@ index 0000000..9017627
 +TARGET_DEVICES += ubnt_unifi-us-48-500w
 diff --git a/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch b/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch
 new file mode 100644
-index 0000000..5dd9c27
+index 00000000..5dd9c27f
 --- /dev/null
 +++ b/target/linux/bcm53xx/patches-6.18/950-pcie-iproc-hr2-no-apb-err-en.patch
 @@ -0,0 +1,20 @@
@@ -308,7 +332,7 @@ index 0000000..5dd9c27
 + 			pcie->ob.nr_windows = ARRAY_SIZE(paxb_ob_map);
 diff --git a/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch b/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch
 new file mode 100644
-index 0000000..bf922a1
+index 00000000..bf922a10
 --- /dev/null
 +++ b/target/linux/bcm53xx/patches-6.18/951-pcie-iproc-hr2-config-abort.patch
 @@ -0,0 +1,92 @@
@@ -406,7 +430,7 @@ index 0000000..bf922a1
 + MODULE_DESCRIPTION("Broadcom iPROC PCIe platform driver");
 diff --git a/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch b/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch
 new file mode 100644
-index 0000000..001df55
+index 00000000..001df556
 --- /dev/null
 +++ b/target/linux/bcm53xx/patches-6.18/952-pcie-iproc-hr2-keep-perst-released.patch
 @@ -0,0 +1,21 @@

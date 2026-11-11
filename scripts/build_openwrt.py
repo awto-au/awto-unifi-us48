@@ -50,6 +50,17 @@ DL_LINK = ROOT / "tmp/openwrt-dl"  # symlinks -> machine-shared dirs; no host pa
 CCACHE_LINK = ROOT / "tmp/ccache-openwrt"
 MIN_FREE_GB = 30  # full toolchain + kernel build
 NICE = ["nice", "-n", "19", "ionice", "-c3"]
+# Debug profile for the switch-driver work (#4): wide busybox + tracing/debug tools from the base tree (no feeds).
+# Initramfs only: the image must stay < kernel0 (15 MiB). Kernel-side debug is in hr2/config-6.18.
+DEBUG_APPLETS = ("HEXDUMP XXD OD STRINGS TOP FREE WATCH NC TELNET PING PING6 IFCONFIG ROUTE NETSTAT ARP ARPING "
+                 "DMESG LSPCI LSUSB LSMOD INSMOD RMMOD MODPROBE MODINFO DEPMOD TRACEROUTE FUSER PIDOF PGREP PKILL "
+                 "KILLALL MICROCOM TIME TIMEOUT SEQ SHUF TAC REV CMP DIFF XARGS BASE64 CRC32 SHA256SUM SHA1SUM "
+                 "I2CTRANSFER BLOCKDEV SETSERIAL STTY FEATURE_EDITING FEATURE_EDITING_HISTORY").split()
+DEBUG_PACKAGES = ("strace gdbserver perf trace-cmd tcpdump ethtool pciutils usbutils i2c-tools ip-full devlink "
+                  "kmod-tun kmod-ikconfig").split()  # base tree only: lsof/procps-ng are feed packages
+# perf's package DEPENDS on the OpenWrt symbol, not the raw CONFIG_PERF_EVENTS in hr2/config-6.18.
+DEBUG_CONFIG = "".join(f"CONFIG_BUSYBOX_CONFIG_{a}=y\n" for a in DEBUG_APPLETS) + \
+    "".join(f"CONFIG_PACKAGE_{p}=y\n" for p in DEBUG_PACKAGES) + "CONFIG_KERNEL_PERF_EVENTS=y\n"
 CONFIG = f"""CONFIG_TARGET_bcm53xx=y
 CONFIG_TARGET_bcm53xx_hr2=y
 CONFIG_TARGET_bcm53xx_hr2_DEVICE_{DEVICE}=y
@@ -62,7 +73,7 @@ CONFIG_BUSYBOX_CONFIG_I2CSET=y
 CONFIG_BUSYBOX_CONFIG_I2CDUMP=y
 CONFIG_BUSYBOX_CONFIG_DEVMEM=y
 CONFIG_KERNEL_DEVMEM=y
-"""  # busybox i2c/devmem: milestone-2 bring-up without the packages feed
+{DEBUG_CONFIG}"""  # busybox i2c/devmem: milestone-2 bring-up without the packages feed
 
 
 def log(msg: str) -> None:
@@ -139,6 +150,16 @@ def save_patch() -> None:
     log(f"saved {p.relative_to(ROOT)}")
 
 
+def host_python_links() -> None:
+    """Prereq links staging_dir/host/bin/python{,3} to a versioned host python once; an OS upgrade removes it."""
+    for name in ("python", "python3"):
+        p = TREE / "staging_dir/host/bin" / name
+        if p.is_symlink() and not p.exists():
+            log(f"{p.relative_to(ROOT)} -> {os.readlink(p)} is dangling; relinking to /usr/bin/python3")
+            p.unlink()
+            p.symlink_to("/usr/bin/python3")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
@@ -156,6 +177,7 @@ def main() -> int:
         return 0
     disk_ok()
     clone()
+    host_python_links()
     overlay()
     shared = shared_config(a.dl_dir.absolute(), a.ccache_dir.absolute())
     (TREE / ".config").write_text(CONFIG + shared)

@@ -643,6 +643,24 @@ def _stock_shell(s: console.Session) -> bool:
     return True
 
 
+@command("run a command in whatever shell is on the console (no login) and wait for its exit marker",
+         args='"cmd" [budget_s]', kind="action")
+def cmd_sh(extra: list[str]) -> int:
+    if not extra:
+        log('usage: sh "cmd" [budget_s]', "ERROR")
+        return 2
+    # Default 20 s: shell commands answer in ms; long loops pass their own budget.
+    budget = float(extra[1]) if len(extra) > 1 else 20.0
+    if not _ensure_console():
+        return 1
+    with console.Session() as s:
+        r = _stock_cmd(s, extra[0], budget)
+    if r is None:
+        return 1
+    sys.stdout.write(r[1] + "\n")
+    return r[0]
+
+
 @command("run a command in the stock shell over serial (logs in if needed) and print its output",
          args='"cmd" [budget_s]', kind="action")
 def cmd_stock_sh(extra: list[str]) -> int:

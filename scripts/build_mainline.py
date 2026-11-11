@@ -47,7 +47,7 @@ FRAGMENT = PATCHES / "us48.config"
 LOG = ROOT / "tmp/logs/build_mainline.log"
 MAKE_LOG = ROOT / "tmp/logs/build_mainline-make.log"
 STORE_LINK = ROOT / "tmp/linux-store"  # symlink -> machine Linux store; no host path in this repo
-BASE = "v7.3-rc7"
+BASE = "v7.4-rc1"
 BRANCH = f"awto/us48/mainline-{BASE}"
 # tag fetch: objects mostly in the store already, ~300 MB worst case at >=1 MB/s; checkout of ~96k files ~60 s
 FETCH_TIMEOUT, WORKTREE_TIMEOUT = 600, 300
@@ -154,7 +154,11 @@ def checkpatch() -> int:
 
 
 def make_env(venv: bool = False) -> dict:
-    env = dict(os.environ, ARCH="arm", CROSS_COMPILE=str(CROSS), STAGING_DIR=str(OWRT / "staging_dir"))  # STAGING_DIR: silences wrapper warning
+    # Own empty staging dir: the OpenWrt wrapper adds $STAGING_DIR/usr/include, and 7.4's -Werror=missing-include-dirs
+    # rejects it when absent (OpenWrt's staging_dir has none).
+    staging = ROOT / "tmp/mainline/staging"
+    (staging / "usr/include").mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, ARCH="arm", CROSS_COMPILE=str(CROSS), STAGING_DIR=str(staging))
     if venv:
         env["PATH"] = f"{VENV_BIN}:{env['PATH']}"
     return env
