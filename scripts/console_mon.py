@@ -23,23 +23,27 @@ CAPTURE_DIR = console.ROOT / "tmp/logs/console"
 
 
 def capture(proc: subprocess.Popen, path: Path) -> None:
-    # tio binds its socket within ~100 ms; poll until bound or tio exits.
-    while proc.poll() is None and not console.SOCK.exists():
-        time.sleep(console.POLL_S)
-    try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(str(console.SOCK))
-    except OSError as e:
-        console.log(f"capture: cannot connect: {e}")
-        return
+    # Reconnect until tio exits: in US48_HOST mode ssh -L binds SOCK before the remote tio listens, so an early
+    # connect gets EOF at once. POLL_S between tries; tio binds within ~100 ms.
     with path.open("ab") as f:
-        while True:
-            chunk = s.recv(65536)
-            if not chunk:
-                break
-            f.write(chunk)
-            f.flush()
-    s.close()
+        while proc.poll() is None:
+            if not console.SOCK.exists():
+                time.sleep(console.POLL_S)
+                continue
+            try:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.connect(str(console.SOCK))
+            except OSError:
+                time.sleep(console.POLL_S)
+                continue
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                f.flush()
+            s.close()
+            time.sleep(console.POLL_S)
 
 
 def main() -> int:
