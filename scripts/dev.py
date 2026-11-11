@@ -484,6 +484,16 @@ def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
     return s, baud
 
 
+@command("reboot to the u-boot> prompt and stay there (nothing boots; for mw/md experiments)", kind="action")
+def cmd_uboot(extra: list[str]) -> int:
+    s, _baud = _session_at_uboot(extra)
+    if s is None:
+        return 1
+    s.close()
+    log("at u-boot>: staying (run `abort-loady` or `boot-flash` to leave)", "ALERT")
+    return 0
+
+
 @command("RAM-boot the OpenWrt initramfs: reboot -> U-Boot -> loady -> bootm (no flash writes)",
          args="[--baud N] [--no-boot]", kind="action")
 def cmd_boot_ram(extra: list[str]) -> int:

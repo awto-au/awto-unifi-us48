@@ -23,7 +23,7 @@ SOCK = ROOT / "tmp/tio.us48.sock"
 TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
 LOG = ROOT / "tmp/logs/console.log"
 TTY = os.environ.get("US48_TTY", "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0")
-# Adapter on another box (e.g. fedora-hpelite): tio runs there via `ssh -t`, its socket forwarded to SOCK.
+# Adapter on another box (e.g. lizard): tio runs there via `ssh -t`, its socket forwarded to SOCK.
 HOST = os.environ.get("US48_HOST", "")
 RSOCK = "/tmp/tio.us48.sock"  # on HOST
 BAUD = 115200
@@ -116,10 +116,12 @@ def _mon_pids() -> list[int]:
     for p in Path("/proc").iterdir():
         if p.name.isdigit():
             try:
-                if str(MON).encode() in (p / "cmdline").read_bytes():
-                    pids.append(int(p.name))
+                cmd = (p / "cmdline").read_bytes().split(b"\0")
             except OSError:
                 continue
+            # The python monitor only: a terminal emulator's argv also names MON and outlives a dead monitor.
+            if cmd and b"python" in cmd[0] and str(MON).encode() in cmd:
+                pids.append(int(p.name))
     return pids
 
 
