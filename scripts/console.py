@@ -6,6 +6,7 @@
 - `restart(baud)` changes baud inside that window (console_mon respawns tio); never a second window.
 - `Session` = socket client: send, read-until-pattern, read-until-idle.
 - `ymodem_send()` = YMODEM-1K sender over the socket, for U-Boot `loady` (no NIC in U-Boot).
+- Adapter on another box: `US48_HOST=<ssh host>` runs tio there over `ssh -t`, socket forwarded to the same path.
 - Log: tmp/logs/tio-us48.log (tio, plain), tmp/logs/console.log (this module).
 """
 from __future__ import annotations
@@ -22,6 +23,9 @@ SOCK = ROOT / "tmp/tio.us48.sock"
 TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
 LOG = ROOT / "tmp/logs/console.log"
 TTY = os.environ.get("US48_TTY", "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0")
+# Adapter on another box (e.g. fedora-hpelite): tio runs there via `ssh -t`, its socket forwarded to SOCK.
+HOST = os.environ.get("US48_HOST", "")
+RSOCK = "/tmp/tio.us48.sock"  # on HOST
 BAUD = 115200
 TITLE = "US-48 console"
 # loady speed ladder: MAX3321 transceiver is a 250 kbps part on paper; tested past it on purpose
@@ -52,6 +56,14 @@ def _socket_alive() -> bool:
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(str(SOCK))
+            if HOST:
+                # ssh accepts locally before the remote tio binds; a dead forward closes at once (EOF).
+                # tio sends nothing on connect, so silence for one LAN round trip + margin = alive.
+                s.settimeout(0.3)
+                try:
+                    return s.recv(1, socket.MSG_PEEK) != b""
+                except TimeoutError:
+                    return True
         return True
     except OSError:
         return False
@@ -73,7 +85,7 @@ def _tio_pids() -> list[int]:
                 cmd = (p / "cmdline").read_bytes().split(b"\0")
             except OSError:
                 continue
-            if cmd and cmd[0].endswith(b"tio") and str(SOCK).encode() in b" ".join(cmd):
+            if cmd and cmd[0].endswith((b"tio", b"ssh")) and str(SOCK).encode() in b" ".join(cmd):
                 pids.append(int(p.name))
     return pids
 
@@ -91,6 +103,10 @@ def read_baud() -> int:
 
 
 def tio_argv(baud: int) -> list[str]:
+    if HOST:
+        # Killing this ssh (baud change) hangs up the remote tio; console_mon still captures locally.
+        return ["ssh", "-t", "-o", "ExitOnForwardFailure=yes", "-o", "StreamLocalBindUnlink=yes",
+                "-L", f"{SOCK}:{RSOCK}", HOST, f"rm -f {RSOCK}; exec tio {TTY} -b {baud} -L -S unix:{RSOCK}"]
     return ["tio", TTY, "-b", str(baud), "-L", "--log-file", str(TIO_LOG), "--log-append", "--log-strip",
             "-S", f"unix:{SOCK}"]
 
@@ -146,6 +162,15 @@ def _end_tio(pids: list[int]) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
+def tty_present() -> bool:
+    if not HOST:
+        return Path(TTY).exists()
+    # LAN ssh login answers in < 1 s; 10 s bounds a slow auth. Expiry = treated as missing.
+    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", HOST, f"test -e {TTY}"],
+                       capture_output=True, timeout=10)
+    return r.returncode == 0
+
+
 def start() -> bool:
     """Open THE console window (console_mon) unless one is running. True once the socket answers."""
     if _mon_pids():
@@ -156,11 +181,12 @@ def start() -> bool:
         _end_tio(legacy)
     if SOCK.exists():
         SOCK.unlink()
-    if not Path(TTY).exists():
-        raise RuntimeError(f"console adapter missing: {TTY} (check dmesg for pl2303)")
+    if not tty_present():
+        raise RuntimeError(f"console adapter missing: {HOST + ':' if HOST else ''}{TTY} (check dmesg for pl2303)")
     TIO_LOG.parent.mkdir(parents=True, exist_ok=True)
     RESPAWN.unlink(missing_ok=True)
-    cmd = ["/usr/bin/python3", str(MON)]
+    # env passes HOST through: the terminal server does not inherit our environment.
+    cmd = ["env", f"US48_HOST={HOST}", f"US48_TTY={TTY}", "/usr/bin/python3", str(MON)]
     for term, args_for in TERMINALS:
         if shutil.which(term):
             subprocess.Popen([term] + args_for(TITLE) + cmd, cwd=str(ROOT), start_new_session=True,

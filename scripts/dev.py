@@ -787,8 +787,9 @@ def cmd_doctor(_extra: list[str]) -> int:
         ok = shutil.which(tool) is not None
         log(f"{tool:10s} : {'ok' if ok else 'MISSING'}", "INFO" if ok else "ERROR")
         bad += not ok
-    ok = Path(console.TTY).exists()
-    log(f"console tty: {console.TTY} {'ok' if ok else 'MISSING'}", "INFO" if ok else "ERROR")
+    ok = console.tty_present()
+    where = f"{console.HOST}:" if console.HOST else ""
+    log(f"console tty: {where}{console.TTY} {'ok' if ok else 'MISSING'}", "INFO" if ok else "ERROR")
     bad += not ok
     log(f"console    : {console.status()}")
     ok = IMAGE.exists()
