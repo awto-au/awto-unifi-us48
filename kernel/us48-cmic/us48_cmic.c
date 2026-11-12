@@ -167,6 +167,9 @@ static void cpu_path_init(struct us48_cmic *u)
 /* VLAN_PROFILE_TAB.L2_MISS_TOCPU: redirects (not copies) L2 misses to the CPU, own TX included. Test knob. */
 static bool l2_miss_cpu;
 module_param(l2_miss_cpu, bool, 0444);
+/* VLAN_PROFILE_TAB.L2_PFM [1:0] (port filter mode): -1 keep stock, 0..3 set. Decides unknown-unicast flooding. */
+static int l2_pfm = -1;
+module_param(l2_pfm, int, 0444);
 
 static void l2_miss_set(struct us48_cmic *u)
 {
@@ -178,6 +181,8 @@ static void l2_miss_set(struct us48_cmic *u)
 	if (sbus(u, 0x07, BLK_IPIPE, prof, e, 1))
 		return;
 	e[0] = l2_miss_cpu ? e[0] | BIT(18) : e[0] & ~BIT(18);
+	if (l2_pfm >= 0)
+		e[0] = (e[0] & ~3u) | (l2_pfm & 3);
 	sbus(u, 0x09, BLK_IPIPE, prof, e, 1);
 	dev_info(&u->pdev->dev, "VLAN_PROFILE %08x: %08x\n", prof, e[0]);
 }
@@ -252,6 +257,10 @@ static void set_field(u32 *e, int lsb, int width, u64 v)
 }
 
 /* Insert the static L2X entry for our MAC (off: rely on l2_miss_cpu). Module id of the entry is unverified. */
+/* Log the module header + status words of the next N received frames (RX bring-up, #4). */
+static uint rx_dump;
+module_param(rx_dump, uint, 0644);
+
 static bool l2_static = true;
 module_param(l2_static, bool, 0444);
 
@@ -267,6 +276,7 @@ static int l2_add_cpu(struct us48_cmic *u, const u8 *mac)
 	set_field(e, 14, 48, ether_addr_to_u64(mac));	/* MAC_ADDR */
 	set_field(e, 62, 6, 0);				/* PORT_NUM: CPU */
 	set_field(e, 68, 7, UNIT1_MODID);		/* MODULE_ID */
+	set_field(e, 91, 1, 1);				/* CPU: copy to CPU */
 	set_field(e, 97, 1, 1);				/* STATIC_BIT */
 	set_field(e, 99, 1, 1);				/* VALID */
 	for (i = 0; i < 4; i++)
@@ -316,6 +326,16 @@ static void rx_one(struct us48_cmic *u, int i)
 	u8 *p = u->rx_buf + i * BUF_SZ;
 	unsigned int len = w15 & 0xffff;
 	struct sk_buff *skb;
+
+	if (rx_dump) {
+		rx_dump--;
+		netdev_info(nd, "RX dcb%d len %u: hdr %08x %08x %08x %08x st %08x %08x %08x %08x %08x w15 %08x da %pM\n",
+			    i, len, le32_to_cpu(u->rx_dcb[16 * i + 2]), le32_to_cpu(u->rx_dcb[16 * i + 3]),
+			    le32_to_cpu(u->rx_dcb[16 * i + 4]), le32_to_cpu(u->rx_dcb[16 * i + 5]),
+			    le32_to_cpu(u->rx_dcb[16 * i + 6]), le32_to_cpu(u->rx_dcb[16 * i + 7]),
+			    le32_to_cpu(u->rx_dcb[16 * i + 8]), le32_to_cpu(u->rx_dcb[16 * i + 12]),
+			    le32_to_cpu(u->rx_dcb[16 * i + 13]), w15, p);
+	}
 
 	if ((w15 & DCB_W15_ERR) || len < ETH_ZLEN + ETH_FCS_LEN || len > BUF_SZ) {
 		nd->stats.rx_errors++;
