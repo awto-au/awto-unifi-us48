@@ -1,0 +1,2 @@
+[target.armv7-unknown-linux-musleabi]
+linker = "../private/tools/arm-linux-musleabi-cross/bin/arm-linux-musleabi-gcc"

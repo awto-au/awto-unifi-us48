@@ -1,0 +1,9 @@
+[package]
+name = "a2ctl"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Host tool for a2 (US-48 unit 1 Cortex-A9): PCIe window access, CoreSight start, SRAM stub loader"
+
+[dependencies]
+libc = "0.2"
