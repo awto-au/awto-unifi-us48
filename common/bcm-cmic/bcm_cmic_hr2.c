@@ -115,10 +115,6 @@ static void private_vlan_init(struct bcm_cmic_unit *u)
 	static const int stg[] = { 0, 1, 2 * XE1_PORT, 2 * XE1_PORT + 1 };	/* SP_TREE 3 = forward */
 	u32 e[4], g[3], one = 1;
 
-	if (bcm_cmic_mem_read(u, BLK_IPIPE, VLAN_TAB(OUR_VID), e, 4, NULL) || (e[1] & BIT(6))) {	/* VALID b38 */
-		pr_warn("bcm-cmic: VLAN %d not free (or unreadable): not touching\n", OUR_VID);
-		return;
-	}
 	if (bcm_cmic_mem_read(u, BLK_IPIPE, VLAN_TAB(1), e, 4, NULL) ||
 	    bcm_cmic_mem_read(u, BLK_EPIPE, EGR_VLAN(1), g, 3, NULL))
 		return;
@@ -126,7 +122,8 @@ static void private_vlan_init(struct bcm_cmic_unit *u)
 	set_even_parity(e, 126);
 	bcm_cmic_mem_write(u, BLK_IPIPE, VLAN_TAB(OUR_VID), e, 4);
 	g[0] = BIT(0) | BIT(XE1_PORT) | BIT(30);	/* UT_BITMAP 0:30, PORT_BITMAP 30:30 (low bits) */
-	g[1] = BIT(XE1_PORT - 2);			/* PORT_BITMAP bit 30 + 27 = 57 = w1 bit 25 */
+	/* PORT_BITMAP bit 30 + 27 = 57 = w1 bit 25; keep VLAN 1's EGR STG (w1 b31:28), else STG 0 = unconfigured */
+	g[1] = (g[1] & 0xf0000000) | BIT(XE1_PORT - 2);
 	set_even_parity(g, 76);
 	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_VLAN(OUR_VID), g, 3);
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
