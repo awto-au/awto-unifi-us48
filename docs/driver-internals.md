@@ -98,7 +98,7 @@ Tags: C = confirmed in binary or source, I = inferred. Sources:
 
 ## 2. Chip init order
 
-Stock = `soc_reset` -> `soc_reset_bcm56150_a0` @0x100827c, then `soc_misc_init` @0x1209500 -> `soc_hurricane2_misc_init` @0x1039668. OM = `bcm56150_a0_bmd_reset.c` + `_init.c`. Both agree on order; SW adds PLL programming and GPHY power-up that OM leaves blank.
+Stock = `soc_reset` -> `soc_reset_bcm56150_a0` @0x100827c, then `soc_misc_init` @0x1209500 -> `soc_hurricane2_misc_init` @0x1039668. OM = `bcm56150_a0_bmd_reset.c` + `_init.c`. Both agree on order; SW adds PLL programming that OM leaves blank (and IDDQ power-down for 53342/53343 only).
 
 ### Reset (SW @0x100827c, OM `_bmd_reset`)
 1. (OM) CMIC init for endianness; write `CMIC_CPS_RESET.CPS_RESET=1` (RDB `CMIC_CPS_RESET` 0x10220, regtype cpureg); wait 10 ms; redo endian init. C (OM), SW path not traced
@@ -111,14 +111,14 @@ Stock = `soc_reset` -> `soc_reset_bcm56150_a0` @0x100827c, then `soc_misc_init` 
 7. `TOP_SOFT_RESET_REG`: EP, IP, MMU released; wait. C
 8. PVTMON: `TOP_PVTMON_CTRL_0` (FUNC_MODE_SEL 0, MEASUREMENT_CALLIBRATION 5, BG_ADJ 3), pulse `TOP_SOFT_RESET_REG_2.TEMP_MON_PEAK_RST_L` 0->1, `TOP_PVTMON_CTRL_1` (SELECT 0, RESET_N 0->1). C
 9. (SW only) XG/BS PLL `CML_2ED_OUT_EN=0`, `TOP_MISC_CONTROL_1.*_SW_OVWR`. C
-10. **(SW only) GPHY power-up**: `TOP_QGPHY_CTRL_0` (IDDQ_BIAS 0xc cleared, EXT_PWRDOWN 0xff00 cleared, per quad), `TOP_QSGMII2X_CTRL.IDDQ` cleared per QSGMII2X block (loop of 4 iterations in the trace). Exact per-iteration values not extracted (chip-id dependent branches). C (registers), I (values)
+10. **(SW only) QGPHY/QSGMII2X IDDQ**: SETS `TOP_QGPHY_CTRL_0` IDDQ_BIAS=0xc, EXT_PWRDOWN=0xff00 and `TOP_QSGMII2X_CTRL.IDDQ` (3 or 7) only when the device id is 0x8342/0x8343 (BCM53342/53343 powersave parts, unused quads powered down). BCM53344/53346 (0x8344/0x8346) take no IDDQ writes: all PHYs stay at reset-default power. Details in section 10. C
 11. (OM) for each XLPORT first port: `XLPORT_XGXS0_CTRL_REG` REFIN_EN=1, PWRDWN=0, wait 1.1 ms, RSTB_HW=1, wait 1.1 ms, RSTB_REFCLK=1, RSTB_PLL=1; then `XLPORT_MAC_CONTROL.XMAC0_RESET` 1 then 0. C
 
 ### Init (SW @0x1039668, OM `_bmd_init`)
 1. Pipe reset: `ING_HW_RESET_CONTROL_1=0`; `ING_HW_RESET_CONTROL_2` {RESET_ALL, VALID, COUNT=0x8000}; `EGR_HW_RESET_CONTROL_0=0`; `EGR_HW_RESET_CONTROL_1` {RESET_ALL, VALID, COUNT=0x4000}. Poll `ING_HW_RESET_CONTROL_2.DONE` and `EGR_HW_RESET_CONTROL_1.DONE` (OM: 5 ms limit, 1 ms steps), then write both control regs to 0. C
 2. Port maps: `ING_PHYS_TO_LOGIC_MAP[phys]` (invalid = 0x1f), `EGR_LOGIC_TO_PHYS_MAP[logical]` (invalid = 0x3f), `MMU_LOGIC_TO_PHYS_MAP[logical]` (invalid = 0x3f). C (OM)
 3. Core PLL: `TOP_MISC_CONTROL_1.CMIC_TO_CORE_PLL_LOAD=1`, `TOP_CORE_PLL_CTRL4.MSTR_CH0_MDIV=0x19`, `TOP_CORE_PLL_CTRL2.LOAD_EN_CH0/1=1` (OM comment: 135 MHz when any TSC port > 1G). SW does the same with MDIV 0x19 or 0x87 depending on config. C
-4. TDM: `IARB_TDM_CONTROL` {DISABLE=1, TDM_WRAP_PTR=83}; fill `IARB_TDM_TABLE[i].PORT_NUM` (physical) and `MMU_ARB_TDM_TABLE[i].PORT_NUM` (logical, 63 = empty; last entry WRAP_EN=1) from a per-config table; then `IARB_TDM_CONTROL` {DISABLE=0, WRAP_PTR=size-1}. OM tables: `bcm56150_a0_bmd_init.c:33-189` (embedded, powersave, cascade, ...). Which one stock uses for `bcm5615x_config=10` not extracted. I
+4. TDM: `IARB_TDM_CONTROL` {DISABLE=1, TDM_WRAP_PTR=83}; fill `IARB_TDM_TABLE[i].PORT_NUM` (physical) and `MMU_ARB_TDM_TABLE[i].PORT_NUM` (logical, 63 = empty; last entry WRAP_EN=1) from a per-config table; then `IARB_TDM_CONTROL` {DISABLE=0, WRAP_PTR=size-1}. OM tables: `bcm56150_a0_bmd_init.c:33-189` (embedded, powersave, cascade, ...). Stock for `bcm5615x_config=10` = `hu2_tdm_cascade` (section 10). C
 5. `MISCCONFIG.METERING_CLK_EN=1`. `CMIC_RATE_ADJUST` and `CMIC_RATE_ADJUST_INT_MDIO` DIVISOR=40, DIVIDEND=1 (5 MHz MDC from 200 MHz). C (OM)
 6. `RDBGC0_SELECT.BITMAP=0x0400ad11`. C (OM)
 7. MMU: `CFAPCONFIG.CFAPPOOLSIZE=max`; `IP_TO_CMICM_CREDIT_TRANSFER` {TRANSFER_ENABLE, NUM_OF_CREDITS=32}; `HOLCOSPKTSETLIMIT[mport][cos 0..7] = (XQ0 entries)/8`; `PKTAGINGTIMER=0`, `PKTAGINGLIMIT=0`; `MMUPORTENABLE` = bitmap of MMU ports (CPU + GPORT + XLPORT). C (OM)
@@ -142,7 +142,7 @@ Registers (OM `xgsm_cmic.h`, offsets in CMC0; RDB has the `CMIC_CMC0_*` equivale
 | CMC_HOSTMEM_ADDR_REMAP[0..3] | see RDB | PCI host memory remap |
 - 4 channels per CMC; OM uses `CMIC_NUM_PKT_DMA_CHAN=4`. C
 - OM PCI remap values when unit is behind PCIe (unit 1 case): `0x144D2450, 0x19617595, 0x1E75C6DA, 0x1f` into `CMIC_CMC_HOSTMEM_ADDR_REMAP[0..3]`. C (OM `_bmd_init.c:846`). Relevant to unit 1 over PCIe, to be confirmed against `libbde/shbde_iproc.c`.
-- The OM DMA helper (`bmdi/arch/xgsm_dma.c`: start/poll/abort) is not in the vendor subset; channel start sequence (write DESC, then CTRL with DMA_EN, poll CHAIN_DONE) is the standard CMICm flow. I
+- OM DMA helper `bmd/PKG/arch/xgsm/xgsm_dma.c` now in the vendor store; exact recipe in section 5. C
 
 DCB (descriptor), 64 bytes = 16 words, little index = word number (OM `bcm56150_a0_defs.h:76476+`, `:102260+`). C
 | Word | Bits | RX_DCB | TX_DCB |
@@ -164,7 +164,7 @@ DCB (descriptor), 64 bytes = 16 words, little index = word number (OM `bcm56150_
 - RX status words 6-14 carry PBE fields: REASON (CPU opcode, 48 bits at big-endian bits 224..271), COS, VFI, timestamp (802.1AS, always 32-bit), tag status, etc. Full list in `bcm56150_a0_defs.h:76476-76540`.
 - TX (OM `_bmd_tx.c`): two DCBs per packet: DCB0 = first 16 (or 12 untagged) bytes with SG, CHAIN, STAT, HG + module header; DCB1 = rest starting at offset 16 (VLAN tag stripped), STAT. For HiGig frames the offset grows by the HiGig/HiGig2 header size. C
 - RX (OM `_bmd_rx*.c`): one DCB per buffer, ADDR+BYTE_COUNT; start channel; CPU port must be in `EPC_LINK_BMAP_64` (bit 0) for packets to reach the CPU; stop = clear that bit then abort DMA. C
-- Open: whether unit 1 CPU traffic uses unit 1's own CMC over PCIe or HiGig to unit 0. Not answerable from OM/stock static; stock BDE modules are the next place to look. **Open**
+- Unit 1 CPU path: own CMC over PCIe (stock starts RX on every unit), see section 8. C
 
 ## 4. Internal GPHY and MIIM mapping
 
@@ -189,9 +189,216 @@ OM `phy/PKG/bus/bcm56150_miim_int/bcm56150_miim_int.c`, `phy/PKG/chip/bcm56150/b
   6. EEE off: `EEE_803D` LPI_FEATURE_ENABLE=0, `EEE_ADV` 1000BASE-T/100BASE-TX = 0, `EEE_STAT_CTRL` all 0, `MII_BUFFER_CONTROL_0.DISABLE_LOC_LPI_HALF_DUPLEX=1` (on instance 0 of the octal).
   7. LEDs: `LED_SELECTOR_1/2`, `LED_CTRL=8`, `EXP_LED_SELECTOR=0`, `SPARE_CTRL` link LED modes 0; `LED_GPIO_CTRL.CURRENT_LED_DISABLE=0xf`.
 - No errata writes beyond DSP_TAP10 in OM. Stock `soc_hurricane2` side adds the TOP QGPHY power control (reset section step 10). C / I
-- QSGMII / TSC SerDes init for XLPORT ports 26-33 via `bmd_phy_mode_set("tsc")` + `bmd_phy_fw_base_set(0x0f00)` + `bmd_phy_init` (OM `_bmd_init.c:808-833`); TSC register-level sequence is in `phy/PKG/chip/tsc`, not yet read. **Not done**
+- QSGMII / TSC SerDes init for XLPORT ports 26-33 via `bmd_phy_mode_set("tsc")` + `bmd_phy_fw_base_set(0x0f00)` + `bmd_phy_init` (OM `_bmd_init.c:808-833`); TSC register-level sequence: section 9. GPHY register addresses: section 7.
 
-## 5. Not done / open
-- Port-index bits in the SBUS address for ports > first in a block (section 1).
-- Which header variant HR2 uses at runtime (section 1): resolve with the first live read.
-- Stock TDM table choice for `bcm5615x_config=10`; per-iteration QGPHY/QSGMII IDDQ values; unit-1 DMA path; TSC SerDes sequence; BDE module behaviour; GPL archive fetch.
+## 5. First-packet recipe: CMC0 packet DMA (RX ch1, TX ch0)
+
+Sources: OM `bmd/PKG/arch/xgsm/xgsm_dma.c`, `bmd/PKG/chip/bcm56150_a0/bcm56150_a0_bmd_{rx,tx,init}.c`, `cdk/PKG/arch/xgsm/xgsm_cmic.h`. SW = `soc_dma_init` @0x1207c00, `soc_dma_chan_config` @0x1206d48, `soc_dma_start_chain` @0x120290c, `soc_dma_abort_channel` @0x12034f4, `soc_cmicm` hostmem remap @0x120c598, rx COS map @0x13cdf78/0x13ce5f4 (`bcm/common/rx.c`).
+All addresses are AXI abs = 0x48000000 + CMC0 offset.
+
+### Channels and registers
+| Item | Value | Tag |
+|---|---|---|
+| TX channel | ch0, DIRECTION=1 (OM `XGSM_DMA_TX_CHAN 0`; SW `chan_config(0, type 1, 0x11)`) | C |
+| RX channel | ch1, DIRECTION=0 (OM `XGSM_DMA_RX_CHAN 1`; SW `chan_config(1, type 2, 0x11)`); ch2/ch3 unused (type 0) in SW | C |
+| DMA_CTRL[ch] | `0x48031140 + 4*ch` (ch0 `0x48031140`, ch1 `0x48031144`) | C |
+| DMA_DESC[ch] | `0x48031158 + 4*ch` (ch0 `..158`, ch1 `..15c`) | C |
+| DMA_STAT | `0x48031150`: [3:0] CHAIN_DONE, [7:4] DESC_DONE, [11:8] DMA_ACTIVE, [15:12] STWT addr-decode err, [19:16] PKTWRRD addr-decode err, [23:20] DESCRD addr-decode err, [27:24] STWR ECC err, [31:28] PKTWR ECC err (per channel bit) | C |
+| DMA_STAT_CLR | `0x483111a4`: bit ch = DESCRD_CMPLT_CLR, bit 4+ch = INTR_COALESCING_CLR | C |
+| DMA_CURR_DESC[ch] | `0x483111a8 + 4*ch` (RDB; read-only progress) | C |
+| COS_CTRL_RX_0/1[ch] | `0x48031168 + 8*ch` / `0x4803116c + 8*ch` (ch1: `..170` / `..174`); bit n of RX_0 = CPU COS n (0..31), RX_1 = COS 32..47 | C (OM stride `4*i*2`, SW @0x13ce5f4 `(chan&3)*8`) |
+| CMIC_RXBUF_EP_RLS_CRED | `0x4801a000` (not in CMC), bit0 RELEASE_ALL_CREDITS | C (OM) |
+| PKT_COUNT per channel | `0x48031480 + 8*ch` (+0 RXPKT, +4 TXPKT), total RX `0x483114a0`, TX `0x483114a4`; use to confirm traffic | C (RDB), I (which counter a TX/RX channel bumps) |
+| IRQ_STAT0 | `0x48031400`: ch0 DESC_DONE b14, CHAIN_DONE b15; ch1 DESC_DONE b12, CHAIN_DONE b13 | C (RDB) |
+| Host IRQ mask | `CMC0_PCIE_IRQ_MASK0/1` `0x48031414/0x48031418`; OM clears both (polled); SW unmasks CHAIN_DONE (`0x8000 >> (2*ch)`) | C (OM), I (mask reg SW uses for the ARM host) |
+
+DMA_CTRL bits: b0 DIRECTION, b1 DMA_EN, b2 ABORT_DMA, b3 SEL_INTR_ON_DESC_OR_PKT, b4 PKTDMA_ENDIANESS, b5 DESC_ENDIANESS, b6 DROP_RX_PKT_ON_CHAIN_END, b7 RLD_STS_UPD_DIS. C
+
+### One-time init (OM `bmd_xgsm_dma_init`, SW `soc_dma_init` + `chan_config`)
+1. DMA_CTRL[0..3]: keep only bits 5:4 (SW: `val & 0x30`); set endianness bits only for a big-endian host (OM). ARM-LE host, AXI: leave 5:4 = 0. Warm boot from stock: read them first and keep what stock left. C (SW), I (LE value)
+2. `CMIC_RXBUF_EP_RLS_CRED` <- 1. C (OM)
+3. `COS_CTRL_RX_0[ch1]` <- 0xffffffff, `COS_CTRL_RX_1[ch1]` <- 0xffff (all 48 CPU COS to the RX channel). C (OM)
+4. ch0: `DMA_CTRL[0]` = (old & 0x30) | DIRECTION(1) = 0x01. ch1: `DMA_CTRL[1]` = (old & 0x30) | 0 = 0x00. SW additionally clears DMA_EN and writes `DMA_STAT_CLR` bit ch first; SW sets b3 only for flag INTR_ON_DESC (not used on ch0/1). C
+5. Chip side (already set by stock on warm boot, else init section 2 step 7/9): `IP_TO_CMICM_CREDIT_TRANSFER` {TRANSFER_ENABLE b6, NUM_OF_CREDITS=32} (= 0x60), `MMUPORTENABLE` bit for CPU mport, `EGR_ENABLE[phys 0].PRT_ENABLE`, `PORT_TAB[0]` as other ports. C (OM)
+6. PCIe host only (unit 1): HOSTMEM remap, section 8. Not needed for unit 0 (AXI). C
+
+Warm-boot hazard (I): stock leaves ch0/ch1 DMA_EN=1 with DESC pointing into stock memory. Before step 1 read `DMA_CTRL[0..1]` and `DMA_STAT`; if DMA_ACTIVE or DMA_EN set, run the abort sequence below, else stale writes land in freed RAM.
+
+### Abort (SW @0x12034f4, OM `bmd_xgsm_dma_chan_abort`)
+1. If `DMA_STAT.DMA_ACTIVE[ch]` (bit 8+ch) set: write `DMA_CTRL[ch] |= DMA_EN|ABORT` (SW writes EN then EN|ABORT; OM sets ABORT only).
+2. Poll `DMA_STAT` until bit 8+ch clear. SW: 1 ms steps, limit `pdma_timeout_usec` default 500000 us (SW backstop). Expected: one in-flight descriptor, tens of us (I). On expiry log `ch, DMA_STAT, DMA_CTRL`.
+3. `DMA_CTRL[ch] &= ~(DMA_EN|ABORT)`; `DMA_STAT_CLR |= 1<<ch`. C
+
+### DCB (64 bytes, 16 words, 16-byte aligned, bus address; same layout both directions)
+| Word | Bits | Field |
+|---|---|---|
+| 0 | 31:0 | ADDR: bus address of the buffer |
+| 1 | 15:0 | BYTE_COUNT (RX: buffer size; TX: bytes of this fragment) |
+| 1 | 16 / 17 / 18 | CHAIN (next DCB follows in memory) / SG (packet continues in next DCB) / RELOAD |
+| 1 | 19 / 20 / 21 / 22 | TX only: HG (module header in w2-w5 valid) / STAT / PAUSE / PURGE |
+| 2-5 | | module header, 16 bytes (TX: stream-of-bytes header, RX: HiGig2-format header written by HW) |
+| 6-14 | | RX status written by HW: w7[29:16] PKT_LENGTH, w12[7:0] SRC_PORT (logical), REASON/COS/VFI in the PBE fields (`bcm56150_a0_defs.h:76476`) |
+| 15 | 15:0 | BYTES_TRANSFERRED (written by HW) |
+| 15 | 16 / 17 / 18 | RX only: END / START / ERROR |
+| 15 | 31 | DONE (HW sets; zero the DCB before use) |
+- C (OM defs `RX_DCB_*`, `TX_DCB_*`).
+
+### RX recipe, one packet (OM `rx_start/rx_poll/rx_stop`)
+1. Allocate coherent DCB (64 B) + packet buffer (stock pkt_size 0x4000; 2 KB is enough for a test). Zero DCB; `w0` = buffer bus addr; `w1` = BYTE_COUNT; CHAIN=SG=RELOAD=0. C
+2. Flush DCB; `DMA_DESC[1]` <- DCB bus addr; `DMA_CTRL[1] |= DMA_EN` (read-modify-write; value 0x02 when step 4 above left 0x00). OM inserts a memory barrier between the two writes. C
+3. Set `EPC_LINK_BMAP_64` bit 0 (CPU). OM does this after the DMA start. C
+4. Detect: poll `DMA_STAT` bit 5 (CH1 DESC_DONE; OM) or bit 13 of IRQ_STAT0 (SW uses CHAIN_DONE, `DMA_STAT` bit 1). Then invalidate DCB: `w15` bit 31 DONE, `w15[15:0]` length, `w12[7:0]` source logical port, `w7[29:16]` PKT_LENGTH. C
+5. Clear: `DMA_STAT_CLR` <- 1<<1; `DMA_CTRL[1] &= ~DMA_EN`. (OM `_clear_chan`.) C
+6. Stop: clear `EPC_LINK_BMAP_64` bit 0, then abort. C
+- Frame length = `w15[15:0]` (BYTES_TRANSFERRED), compare with `w7[29:16]` PKT_LENGTH; whether the 4 CRC bytes are included and how the VLAN tag appears (per `EGR_VLAN` UT_BITMAP bit 0) is not stated in OM. I
+- Continuous RX = chain of DCBs (CHAIN=1, final DCB RELOAD or controlled by DROP_RX_PKT_ON_CHAIN_END b6); SW chains 4 DCBs (`pkts_per_chain` 4, cfg in hpcHardwareInit). C
+
+### TX recipe, one packet to a specific port (OM `bmd_tx`, HG-header form)
+1. Two DCBs in one 128-byte coherent block, zeroed. Packet in a buffer P (DA, SA, tag if any, payload; CRC appended by MAC).
+2. DCB0: `w0` = P, `w1` = `0x001B0000 | 16` (BYTE_COUNT 16, or 12 if untagged and tag stripped; flags SG b17, CHAIN b16, HG b19, STAT b20), module header `w2 = 0x81000000`, `w3 = dest logical port` (front 1 = 2), `w4 = (txq << 8) | 0x00040000` (txq 0), `w5 = 0`. C (OM `_dcb_init`)
+3. DCB1: `w0` = P + 16, `w1` = `0x00100000 | (len - 16)` (STAT only; no HG/SG/CHAIN), module header words zero. For untagged-strip case the 4 tag bytes at P+12 are skipped (hdr 12, offset 16). C
+4. Flush; `DMA_DESC[0]` <- DCB0 bus addr; `DMA_CTRL[0] |= DMA_EN` (0x03 with DIRECTION). C
+5. Done = `DMA_STAT` bit 0 (CH0 CHAIN_DONE). Then `DMA_STAT_CLR` <- 1, `DMA_CTRL[0] &= ~DMA_EN`. DCB1 `w15` bit 31 DONE. C
+6. Timeout: one 64 B frame should complete in tens of us (I); poll up to 1 ms then abort (stock step uses 1 ms steps).
+- Normal switched TX (no HG, pkt->port < 0 in OM): HG=0 on both DCBs, module header unused, frame enters the ingress pipeline as from the CPU port. C (OM branch), I (behaviour)
+- Egress of the TX frame needs: `EPC_LINK_BMAP_64` bit for the dest port, dest port in the VLAN it uses (EGR_VLAN), `EGR_ENABLE`. I
+
+### What gets a frame from front 1 (unit 0, logical 2, phys 9) to the CPU (port 0)
+Checks in order; items marked "stock" are already set after a warm boot from stock (live 2026-11-12: switch config survives).
+1. MAC/link: GPORT0 port 0 (`MAC_0` 0x802AA89C live) RX enabled, GPHY link up (BMCR power-down bit 11 cleared). C (OM init 10)
+2. `PORT_TAB[2]` (IPIPE blk 10, base `0x04000000`, 8 words): PORT_VID=1 (w0 bits 24+, spans w0/w1 bits 35:24), FILTER_ENABLE b0, OUTER_TPID_ENABLE=1. C (OM `_port_init`)
+3. `VLAN_TAB[vid]`: VALID (w1 b6), PORT_BITMAP (w0 bits 29:0) has bit 2 (ingress filter) and bit 0 (CPU), STG id (w1 bits 15:7). C (OM `vlan_create`, `vlan_port_add`)
+4. STP: `STG_TAB[stg].SP_TREE_PORT2` (w0 bits 5:4) = 3 forwarding. 0 disabled, 1 blocking/listening, 2 learning (stock had front 1 discarding). Same for `EGR_VLAN_STG`. Recipe in section 6. C
+5. L2 flood: DA unknown or broadcast, `VLAN_PROFILE_TAB[VLAN_TAB.VLAN_PROFILE_PTR].L2_PFM`=1 (OM profile: L2_PFM=1; `L2_MISS_TOCPU` b18 would force a copy for DLF) so the frame is flooded to the VLAN's PORT_BITMAP, which includes port 0. A unicast DA learnt at port 0 (L2X entry, MODULE_ID/PORT_NUM 0) goes only to the CPU. C (OM profile), I (flood semantics of PFM=1)
+6. Egress side: `EGR_VLAN[vid]` VALID (w2 b4), PORT_BITMAP bit 0 (field starts at bit 30, so port p = bit 30+p: p0 = w0 b30), `EGR_ENABLE[0].PRT_ENABLE`. OM never sets the CPU's `EGR_VLAN_STG`/`STG_TAB` state (stays 0). C (OM)
+7. `EPC_LINK_BMAP_64` (IPIPE reg `0x46002700`, bits 29:0, bit = logical port) bit 0 = 1. OM `rx_start` sets it only for the CPU; `switching_init` sets all front ports. C
+8. MMU: `MMUPORTENABLE` includes the CPU mport, HOL limits for CPU COS queues, `IP_TO_CMICM_CREDIT_TRANSFER` enabled, `CMIC_RXBUF_EP_RLS_CRED` released. C (OM)
+9. CMIC: RX DCB armed on ch1 and `COS_CTRL_RX_*[ch1]` admits the packet's CPU COS (0xffffffff/0xffff admits all). C
+- Reason code in the RX status (w6-w14, REASON bits: bit2 DLF, bit0 CPU-learn/unknown VLAN, bit4 L2 table copy) says why the frame was copied; a flooded frame needs no copy-to-CPU reason. I
+
+## 6. First-packet recipe: STP/VLAN state via S-channel memory ops
+
+Memory read/write on xgsm (OM `cdk_xgsm_mem_read/write`, `xgsm_mem.c:28-163`; same transport as section 1, block only in the header):
+- READ_MEMORY 0x07: send {hdr, addr}; reply {ack hdr 0x08, data words}. `hdr` = `0x07<<26 | blk<<20 | datalen<<7`, datalen = entry words * 4, ACC_TYPE 0. C
+- WRITE_MEMORY 0x09: send {hdr, addr, data words...}, reads nothing back (OM reads 0 words; DONE still signals). `hdr` = `0x09<<26 | blk<<20 | datalen<<7`. C
+- `addr` = memory base (RDB `base`) + entry index, plain add, no port bits, no block bits. C (OM `xgsm_blockport_addr.c`: `addr = offset + idx`), I (HW accepts the OM form for memories like for registers)
+- Ack header expectation for a mem read: `0x08<<26 | 14<<20 | datalen<<7` (CMIC src block 14), e.g. 0x20e00400 for 8 bytes. I (by analogy with the reg ack 0x30E00200)
+- Entry word order: data words are the entry little-endian by 32-bit word, bit n of the entry = word n/32 bit n%32 (`cdk_field32_set` on word arrays). C
+- Parity: STG_TAB/VLAN_TAB/EGR_VLAN/EGR_VLAN_STG have EVEN_PARITY fields; OM writes them as read-modify-write without touching parity, so HW generates it. I
+
+### Tables (RDB `hr2_mems.tsv`, OM defs; blk 10 = IPIPE, 11 = EPIPE)
+| Memory | blk | base | entries | bytes / words | Fields used |
+|---|---|---|---|---|---|
+| `VLAN_TAB` (RDB `QVLAN`) | 10 | `0x14000000` | 4096 | 16 / 4 | PORT_BITMAP [29:0]; VALID b38 (w1 b6); STG [47:39] (w1 b15:7); VLAN_PROFILE_PTR [63:60] (w1 b31:28); EVEN_PARITY b126 |
+| `STG_TAB` (RDB `STG`) | 10 | `0x14040000` | 256 | 8 / 2 | SP_TREE_PORTn = bits [2n+1:2n], n 0..29 (w0 = ports 0-15, w1 b27:0 = ports 16-29); EVEN_PARITY b60 (w1 b28) |
+| `EGR_VLAN` | 11 | `0x100c0000` | 4096 | 10 / 3 | UT_BITMAP [29:0]; PORT_BITMAP [59:30] (port p = bit 30+p); STG [67:60]; VALID b68 (w2 b4) |
+| `EGR_VLAN_STG` | 11 | `0x10100000` | 256 | 8 / 2 | same layout as STG_TAB |
+| `PORT_TAB` | 10 | `0x04000000` | 30 | 29 / 8 | PORT_VID [35:24], FILTER_ENABLE b0, OUTER_TPID_ENABLE [88:85] |
+| `EGR_ENABLE` | 11 | `0x345c0000` | 34 | 1 / 1 | PRT_ENABLE b0, index = physical port (OM `_port_init`) |
+- STP state values (OM `xgsm_stp_xlate.c`): 0 disabled, 1 blocking and listening, 2 learning, 3 forwarding. C
+- `bmd_port_stp_set` (OM) writes STG_TAB[1] then copies the same 8 bytes to EGR_VLAN_STG[1]; OM assumes VLAN 1 uses STG 1. C. Use `VLAN_TAB[vid].STG` instead.
+- Logical port index only; SP_TREE_PORT0 is the CPU and OM leaves it 0. OM stops at port 29 (HR2 table has 30 slots). C
+
+### Exact words: set logical port 2 to forwarding in VLAN 1 (STG id read from VLAN_TAB)
+All values hex. `W` = write to `CMC0 SCHAN_MESSAGE[i]` +0x3100c+4i, then `SCHAN_CTRL` handshake from section 1.
+1. Read VLAN_TAB[1]: send `{1ca00800, 14000001}`; reply = ack + 4 words v0..v3. `stg = (v1 >> 7) & 0x1ff`, check `v1 & 0x40` (VALID), check v0 bit 2 (port 2 member) and bit 0 (CPU member).
+2. Read STG_TAB[stg]: send `{1ca00400, 14040000+stg}`; reply ack + s0, s1.
+3. `s0 = (s0 & ~0x30) | 0x30` (port 2 = forwarding). Write STG_TAB: send `{24a00400, 14040000+stg, s0, s1}`.
+4. Read EGR_VLAN_STG[stg]: send `{1cb00400, 10100000+stg}`; reply e0, e1. `e0 = (e0 & ~0x30) | 0x30`. Write: send `{24b00400, 10100000+stg, e0, e1}`.
+5. If port 2 / CPU are not in the VLAN: VLAN_TAB write `{24a00800, 14000001, v0 | 0x5, v1, v2, v3}` (bits 2 and 0). EGR_VLAN[1]: read `{1cb00600, 100c0001}` -> g0,g1,g2; `g0 |= 1<<30` (CPU, port 0), `g1 |= 1<<0` (port 2, field bit 32); optionally `g0 |= 0x4` for untagged egress on port 2; write `{24b00600, 100c0001, g0, g1, g2}`.
+6. Verify by reading back both STG entries; `SCHAN_CTRL` error bits must stay 0 (NACK = bad block/addr).
+- Header derivations: 0x07<<26 = 0x1c000000, blk 10<<20 = 0x00a00000, blk 11<<20 = 0x00b00000, 8 B<<7 = 0x400, 16 B<<7 = 0x800, 12 B<<7 = 0x600, 0x09<<26 = 0x24000000. C (arithmetic)
+- Register-side companions: `EPC_LINK_BMAP_64` read `{2ca00200, 46002700}`, set bits 0 and 2, write `{34a00200, 46002700, val}`. C (OM), I (bit = logical port)
+- Expected live starting state: stock had front 1 discarding, so `s0 bits 5:4` is 0 or 1 now.
+
+## 7. BCM54282-family GPHY (BCM56150 internal octal) register definitions
+
+OM `phy/PKG/chip/bcm54282/bcm54282_defs.h` (now in the vendor store), driver `bcm56150/bcm56150_drv.c` calls these. Access class is encoded in the high bits of each define. C
+| Register | Address form | Fields used |
+|---|---|---|
+| `MII_CTRL` | clause 22 reg 0x00 | RESET b15, LOOPBACK b14, SPEED_SEL0 b13, AUTONEG b12, POWER_DOWN b11, ISOLATE b10, RESTART_AN b9, FULL_DUPLEX b8, SPEED_SEL1 b6 |
+| `MII_GB_CTRL` | reg 0x09 | SWITCH_DEV b10, CAP_1000BASE_T_FD b9, CAP_1000BASE_T_HD b8 |
+| `MII_PHY_ECR` | reg 0x10 | LED_TRAFFIC_EN b5 |
+| `MII_AUX_CTRL` | reg 0x18 shadow 000 | EXT_PKT_LEN b14, ENABLE_DSP_CLOCK b11, RESERVED b10 |
+| `SPARE_CTRL` | reg 0x1c shadow 0x02 | LINK_SPEED_LED_MODE b2, LINK_LED_MODE b0 |
+| `LED_CTRL` | reg 0x1c shadow 0x09 | whole reg = 0x8 |
+| `LED_SELECTOR_1/2` | reg 0x1c shadow 0x0d / 0x0e | 1 = 0x10 (LED1 sel 0, LED2 sel 1), 2 = 0x63 (LED3 sel 3, LED4 sel 6) |
+| `LED_GPIO_CTRL` | reg 0x1c shadow 0x0f | CURRENT_LED_DISABLE [3:0]: 0 then 0xf at end of init |
+| `SGMII_SLAVE` | reg 0x1c shadow 0x15 | SGMII_SLAVE_AUTO_DETECT b0 |
+| `AUTO_DETECT_MEDIUM` | reg 0x1c shadow 0x1e | QFSD_WITH_SYNC_STATUS b5; others 0 |
+| `MODE_CTRL` | reg 0x1c shadow 0x1f | MODE_SEL [2:1] = 0 (SGMII to copper) |
+| `POWER_MII_CTRL` | RDB 0x02a | SUPER_ISOLATE b5 = 0 |
+| `DSP_TAP10` | RDB 0x125 | write 0x011b |
+| `MII_BUFFER_CONTROL_0` | RDB 0x800 | DISABLE_LOC_LPI_HALF_DUPLEX b15 = 1, AUTOGREEEN_ENABLE b0 = 0; written on lane/instance 0 of the octal |
+| `TOP_MISC_GLOBAL_RESET` | RDB 0x82b | TOP_MII_REG_SOFT_RST b15, RESET_1588 b10 (both written 1, rest 0) |
+| `EXP_LED_SELECTOR` | expansion reg 0x0f04 via reg 0x15 | whole = 0 |
+| `EEE_STAT_CTRL` | expansion reg 0x0faf | all 0 |
+| `EEE_ADV` | clause 45 dev 7 reg 0x3c | EEE_1000BASE_T b2, EEE_100BASE_TX b1 = 0 |
+| `EEE_803D` | clause 45 dev 7 reg 0x803d | LPI_FEATURE_ENABLE b15, EEE_CAPABILITY_USING_QSGMII_AN b14 = 0 |
+- Access encodings in the defines: `PHY_REG_ACC_RAW` (plain), `_BRCM_SHADOW` (low byte = reg, bits 15:8 = shadow select), `_BRCM_RDB` (RDB offset), upper bits of EEE/EXP defines = dev/expansion address. The generic accessors live in `phy/phy_reg.c`, not vendored: standard BRCM scheme assumed (reg 0x18/0x1c shadow select; RDB via reg 0x1e address + 0x1f data; expansion via reg 0x17 select + 0x15 data). I
+- Init-order (as in section 4): top reset -> AUX_CTRL (0x0c00) -> DSP_TAP10 -> SUPER_ISOLATE -> LED current -> MODE_SEL -> `MII_CTRL.POWER_DOWN=0` -> GB_CTRL -> MII_CTRL {FD, SPEED_SEL1, AUTONEG, RESTART_AN} (= 0x1340) -> SGMII_SLAVE -> AUTO_DETECT -> ECR -> EXT_PKT_LEN -> EEE off -> LEDs. `MII_AUX_CTRL` first write = `b11|b10` = 0x0c00. C (derived from fields)
+
+## 8. Unit 1 (BCM53346) CPU path
+
+- **Own CMIC over PCIe.** Stock `hpcHardwareInit` (`broad_hpc_binds.c`, FUN_001299b8) loops over every unit and calls `bcm_rx_init(unit)` + `bcm_rx_start(unit, cfg)` (`FUN_00a72a44`, `FUN_00a739ac`), cfg pkt_size 0x4000, 4 pkts per chain. No cross-unit CPU routing in that loop. C
+- Both units go through the same SDK DMA code (`soc_dma_*` take a `unit`); unit 1's CMC base is the PCIe BAR (`0000:01:00.0`, board.md), DCB/packet memory = host RAM reached by PCIe bus master. C (code), I (stock actually sees RX on unit 1; CPU ports of unit 1 are also in the cpudb)
+- HiGig 2x13G between the units (unit 0 p28/29 <-> unit 1 p28/29) carries stacking/trunk traffic; stock uses the `cpudb`/`bcm_stk_*` stack code (`modmap`, `modport`), i.e. traffic for another unit's ports may be HiGig-forwarded, but CPU-bound frames from unit 1 ports go to unit 1's own CMIC. I
+- PCIe host memory remap (SW `FUN_0120c598`, gated by feature bit `+0x124d50 & 0x80000` and a PCI-bus test): case A writes `CMC0_HOSTMEM_ADDR_REMAP_0..2` (`+0x31474`, `+0x31478`, `+0x3147c`) = `0x144d2450`, `0x19617595`, `0x1e75c6da`, `_3` (`+0x314ac`) = `0x1f`; case B (flag 0x4000 set) = `0x248e2860`, `0x29a279a5`, `0x2eb6caea`, `0x2f` then a `+0x31470` field update. OM uses case A. Each 6-bit field is a PCIe address-bit remap for DMA, so host buffers must be below the window the iProc PAXB maps (U-Boot/DT dependent). C (values), I (meaning of case B)
+- Endianness: OM `cmic_xgsm_endian_flags_get` inverts DMA endianness if the iProc PCIe bridge byte-swaps; for an LE ARM host with plain PCIe leave DMA_CTRL 5:4 = 0. I
+- Unit 1 is reached after unit 0 config; use unit 0 CMC0 for the first packet, repeat the same recipe on unit 1 via PCIe BAR + remap (section 5) later. I
+- BDE: stock uses `/dev/linux-user-bde` (strings); no `bcm-knet` netif. The OpenBCM `linux-kernel-bde` (`private/reference`) registers the AXI CMIC `0x48000000` (IRQ 194) and PCIe devices as separate BDE units. C
+
+## 9. TSC SerDes init (unit 1 xe0/xe1, SFI)
+
+- Driver = **`bcmi_tsc_xgxs`** (OM `phy/PKG/chip/bcmi_tsc_xgxs/`), not `bcmi_tsce_xgxs` (Eagle-based): `phy/PKG/chip/bcm56150/phy_depend.def` includes `BCMI_TSC_XGXS` (+ QSGMII serdes), TSCE is not selected for BCM56150. C
+- Access: TSC regs are 16-bit clause 22 on the internal bus 1 address `1 + (phys-26)` (section 4); define `0x0010xxxx|IBLK` = block `addr>>8`, reg `addr&0x1f`: write MIIM reg 0x1f = block, then access reg. E.g. `SETUP` 0x00109000 = block 0x1090 reg 0. C (`xgsm_miim_iblk_write.c`)
+- Lane addressing for per-lane regs (`ANATX_DRIVER` 0xc017, ...): `READLN/WRITELN/WRITEALL` select lane in the block address (not decoded here). I
+- OM entry per port (`_bmd_init.c:808`): `bmd_phy_probe`; `bmd_phy_mode_set(port, "tsc", SERDES, 0|1)` (4-lane: 0; 1/2-lane: 1 + `2LANE` flag); `bmd_phy_fw_base_set(.., 0x0f00)` on subport 0; `bmd_phy_init`. Board reset callback for 10G config: Rx lane map 0x0123, Tx lane map 0x3210, polarity 0 (no inversion) (`board_bcm56150_10g.c`). C
+
+### `_tsc_init_stage_0` (before firmware; primary lane only)
+Registers (block:reg): `SETUP` 0x1090:00, `RESET` 0x1090:01, `POWER` 0x1090:02, `ANAPLL_STATUS` 0x1090:10, `ANATX_DRIVER` 0xc017, `TX_X4_MISC` 0xc113, `RX_X4_PMA_CONTROL_0` 0xc137, `CONTROLS` 0xc188, `DSC_MISC_CTRL0` 0xc21e, `PRBSCTRL` 0xc031, `FIRMWARE_MODE` 0xc260, `UC_CTRL` 0xc20e. C
+1. `SETUP.PORT_MODE_SEL` [6:4] / `SINGLE_PORT_MODE` b3: 4 x 1-lane = 0 (`pm_4port_3_2_1_0`), 2 x 2-lane = 3, 1 x 4-lane = 4 (+ SPM=1). (Mode for xe0/xe1 on phys 26/28 = lanes 0 and 2: 1-lane mode if SFI is single-lane; unknown which, I.)
+2. `ANATX_DRIVER.ELEC_IDLE` b15 = 1 on all lanes; `RESET.RESET_PLL` b7 = 0; `POWER.POWER_ON_TIMER_ENABLE` b4 = 1; `POWER.TX_PWRDWN_ANALOG` [11:8] = 0, `RX_PWRDWN_ANALOG` [15:12] = 0; wait 1 ms.
+3. `DSC_MISC_CTRL0.RXSEQSTART_AN_DISABLE` = 1 (all lanes); `TEMPERATURE` 0x10f014: FORCE_TEMPERATURE=1, TEMP_IDX=8, TEMPERATURE=678.
+4. `RESET.RX_RESET_ANALOG` [15:12] |= lane mask, `TX_RESET_ANALOG` [11:8] |= lane mask; `DSC_MISC_CTRL0.RXSEQSTART` = 1; wait 1 ms.
+5. `SETUP.START_SEQUENCER` b7 = 0; `SETUP.REFCLK_SEL` [15:13] = 3 (156.25 MHz); wait 2 ms. `LANETEST.LFCK_BYPASS` = 0. `ANAPLL_TIMER1.VCOSTEPTIME` = 1.
+6. Timers (all registers in block 0x1090.. via defs): CL73_BREAK_LINK 0x10ed, CL37_RESTART 0x029a, CL37_ACK 0x029a, CL37_ERROR 0x055d, CL73_ERROR 0x1a10, CL73_DME_LOCK 0x14d4, IGNORE_LINK 0x07d0, LINK_FAIL_INHIBIT_CL72 0x8236, _NOT_CL72 0x1a10, PD_SD 0x029a, LINK_UP 0x029a, CL72_MAX_WAIT 0x8236, CL72_WAIT 0x01fe; `PRBSCTRL` PRBS_INV_TX/RX = 1 (all lanes).
+7. TX FIR defaults: KX main 0x3f; OS post/main/pre = 0/0x3f/0; BR 0x16/0x25/0x4; KR 0x16/0x25/0x4; 2P5 0/0x3f/0.
+8. `SETUP.FORCE_PLL_MODE_AFE_SEL` b12 = 1, `DEFAULT_PLL_MODE_AFE` [11:8] = 0xa (div66); wait 1 ms. `TX_X4_CREDIT0` = 0, `TX_X4_PCS_CLOCKCNT0` = 0 (all lanes).
+9. **Microcode download** (`bcmi_tsc_xgxs_firmware_set`): `COMMAND` (0x10ffc2) INIT_CMD b15 = 1; poll `DOWNLOAD_STATUS` (0x10ffc5) INIT_DONE b15, 1 ms steps, limit 200 ms (OM); `COMMAND2` (0x10ffca) TMR_EN [3:0] = 0xf; `RAMWORD` (0x10ffc0) = aligned_len-1 (aligned 16 B); `ADDRESS` (0x10ffc1) = 0; `COMMAND` = WRITE b3 | RUN b0; write every 16-bit LE word of the image to `WRDATA` (0x10ffc3); `COMMAND` = STOP b1; check `DOWNLOAD_STATUS` ERR0 b0 / ERR1 b1 = 0; `CRC` (0x10f015) = 0 (CRC calc enabled); `COMMAND` = MDIO_UC_RESET_N b4 (starts the 8051). Image = OM `bcmi_tsc_xgxs_ucode.c` (`tsc_ucode_bin`, 32728 bytes), not copied here. C
+10. `SETUP.START_SEQUENCER` = 1; poll `ANAPLL_STATUS.PLLSEQPASS` b11, 1 ms steps, limit 200 ms (OM `PLL_LOCK_MSEC`).
+- Stage 1 (`firmware_check`): poll `CRC` (0x10f015) != 0 up to 100 ms (OM `CRC_CALC_MSEC`), then read `VERSION` (0x10f010) for the log; no compare against an expected value. C
+
+### `_tsc_init_stage_2` (after firmware)
+1. Wait 1 ms; read `ANAPLL_STATUS`. `CONTROLS.PD_KX4_EN`, `PD_KX_EN` = 0 (no parallel detect).
+2. Credits off: `TX_X4_CREDIT0.CREDITENABLE` = 0, `TX_X4_PCS_CLOCKCNT0.PCS_CREDITENABLE` = 0; `TX_X4_MISC.ENABLE_TX_LANE` = 0, `RSTB_TX_LANE` = 0; uC rx lane control off (`0x4d0/0x5d0/0x6d0/0x7d0` RAM-command writes `0x0d00`, offset `| 3<<20`); `RX_X4_PMA_CONTROL_0.RSTB_LANE` = 0.
+3. AN abilities (CL73_BASE_ABIL_0, OVER1G_ABIL_0/1, CL37_BASE_ABIL, CL72_MISC2 SW_ACTUAL_SPEED 0x1b); for a 1-lane port: CL73 10GBASE_KR + 1000BASE_KX; `FIRMWARE_MODE` = 0; encode/decode: `TX_X4_ENCODE_0.ENCODEMODE` = 5, `TX_X4_MISC.SCR_MODE` = 3, `RX_X4_PCS_CONTROL_0` DECODERMODE 1 / DESC2_MODE 1, `RX_X4_DECODE_CONTROL_0.BLOCK_SYNC_MODE` = 1; credits `TX_X4_CREDIT0` CLOCKCNT0 0x21 + CREDITENABLE 1; `TX_X4_CREDIT1` 0x84; LOOPCNT0 1; MAC_CREDITGENCNT 4; CL49/CL48/CL82 RF/LF/LI enables = 1.
+4. TX amplitude defaults: `ANATX_DRIVER` IDRIVER [11:8] = 9, IPREDRIVER [7:4] = 9, POST2_COEFF [14:12] = 0; `CL72_TX_FIR_TAP` (0xc?) FORCE b15 = 1, POST [14:10] 0, MAIN [9:4] 0x3f, PRE [3:0] 0.
+5. `RESET.RX_RESET_ANALOG` / `TX_RESET_ANALOG` &= ~lane mask (release); wait 1 ms; uC rx lane control on (`0x0e00`); notify ChangeToFiber.
+- All steps C (OM source), values for registers outside those listed are in `bcmi_tsc_xgxs_drv.c:2143-2776`.
+
+### SFI + per-port settings (stock soc properties for unit 1 xe: `serdes_if_type_xe.1=9`, `serdes_preemphasis_xe.1=0x5a54`, `serdes_driver_current_xe.1=0x2020`)
+- OM `_tsc_txdrv_set` driver profile `SFI`: POST2 2, IDRIVER 2, IPREDRIVER 2, preemph word `0x12<<10 | 0x2d<<4 | 1<<15` = `0xcad0` (OM SFI default). C
+- `CL72_TX_FIR_TAP` field layout: FORCE b15, POST [14:10], MAIN [9:4], PRE [3:0]. Stock value **`0x5a54` = FORCE 0, POST 0x16, MAIN 0x25, PRE 0x4** = the KR/BR default taps from stage 0 (so the uC/CL72 default set applies, no force). C (layout, arithmetic), I (that the property is written to this register)
+- `0x2020` for `serdes_driver_current`: not decodable from OM. If written as the whole `ANATX_DRIVER` it would be POST2 2, IDRIVER 0, IPREDRIVER 2 (IDRIVER 0 looks wrong); if per lane nibbles {0,2,0,2}. Open. I
+- Lane/port facts for the board: unit 1 xe0/xe1 are SDK ports 26/27 on TSC0 (phys 26 and 28 per board.md), HiGig phys 30/32 on TSC1 (13G). I
+
+## 10. TDM table for `bcm5615x_config=10`, IDDQ
+
+- Stock (BCM53344 and BCM53346, config 10, also 1/11/12) selects **`hu2_tdm_cascade`**, 75 entries (OpenBCM `_soc_hu2_tdm_init`, `private/reference/openbcm-hurricane2.c:3200-3475`; OM `tdm_cascade` identical). C (source), I (stock binary built from the same code; not re-traced)
+```
+2 14 26 28 30 32 | 3 15 26 28 30 32 | 4 16 26 28 30 32 | 5 17 26 28 30 32 | 0
+6 18 26 28 30 32 | 7 19 26 28 30 32 | 8 20 26 28 30 32 | 9 21 26 28 30 32 | 63
+10 22 26 28 30 32 | 11 23 26 28 30 32 | 12 24 26 28 30 32 | 13 25 26 28 30 32 | 63
+```
+- Values are physical ports (0 = CPU, 63 = empty slot). Same 75 values go to `IARB_TDM_TABLE[i].PORT_NUM`; `MMU_ARB_TDM_TABLE[i].PORT_NUM` = logical (`p2l[phys]`, 63 for 63; logical 2..9 = phys 9..2); last entry `WRAP_EN`=1. C
+- Sequence: `IARB_TDM_CONTROL` {DISABLE=1, TDM_WRAP_PTR=83}; write both tables; `IARB_TDM_CONTROL` {DISABLE=0, TDM_WRAP_PTR=74}. C
+- Phys 26/28 = the 2 uplinks (1G/10G), 30/32 = the 2 HiGig 13G ports (option 2: `p2l_mapping_24_2_2`). C (board.md)
+- QGPHY IDDQ: see section 2 step 10. For BCM53344/53346 no `TOP_QGPHY_CTRL_0` / `TOP_QSGMII2X_CTRL` writes occur (those only run for device ids 0x8342/0x8343; condition is the device id returned by `soc_cm_get_id`, local var in `soc_reset_bcm56150_a0` @0x100827c, branches at ~0x1009f44). Reset defaults: QGPHY_RST_L=0xf released, IDDQ/EXT_PWRDOWN cleared. C (branch), I (reset defaults, regdb shows reset value 0)
+- Other device-id gated writes in the same function that apply to 0x8344/0x8346: `TOP_XG_PLL0/1_CTRL_3` and `TOP_BS_PLL0/1_CTRL_3` `CML_2ED_OUT_EN` = 0, `TOP_MISC_CONTROL_1` `CMIC_TO_XG_PLL0/1_SW_OVWR`, `CMIC_TO_BS_PLL0/1_SW_OVWR` = 1. C
+
+## 11. Not done / open
+- Whether the S-channel address word needs more than `offset + index` for memories (live check: read STG_TAB entry 1 and compare with a SBUS-DMA-free sanity register).
+- Which xgsm/xgsd header: resolved (xgsm).
+- Unit 1: xe port mode (1-lane vs 2-lane SFI), `serdes_driver_current` decode, firmware download over MIIM bus 1 timing.
+- BDE module behaviour (stock `.ko`), GPL archive fetch, per-lane TSC address mapping.
