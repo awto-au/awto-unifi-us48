@@ -341,7 +341,12 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 | 51, 52 | 0 | 26, 27 (`ge24`, `ge25`) | SFP, no PHY seen |
 
 - Per-port generator: `scripts/us48_portmap.py`.
-- Port LEDs: no LED-processor microcode or `led*` SDK property found in switchdrvr (only register names); copper port LEDs go through the MSPI frames above. I. Front 49–52 LEDs not located.
+- Port LEDs, corrected: stock DOES load an on-chip LED processor (CMICd LEDUP) program. `0x5fb3cc` (`ubnt_hal_sys.c`, per-board vtable entry at descriptor `+0x14`, all 10 board descriptors `0x1d8bb68..0x1d8ca50`, stride `0x1a8`) calls `0x120f064(unit, prog, 0x100)` -> `0x120ed64(unit, uc 0, prog, 256)`. C. Two-chip board types (switch cases `0x33`/`0x35`) load the same 256-byte program into unit 0 and unit 1. C. Which board `*param_1` value is the US-48-500W: I.
+  - `0x120ed64` sequence: clear LEDUP control bit 0 (stop); write 256 program bytes as 32-bit words into program RAM; zero data-RAM words `0x80..0xff`; set control bit 0 (start). CMICd bases: control `0x20000`, program RAM `0x20800`, data RAM `0x20400` (non-CMICd `0x1000`/`0x1800`/`0x1c00`). Same CMIC window for unit 1 (PCIe BAR2). C.
+  - Programs (256-byte slots, ELF file offset = VA - `0x10000`): `0x15a38ac` (164 B used), `0x15a39ac` (168), `0x15a3aac` (186), `0x15a3bac` (167), `0x15a3cac` (152), `0x15a3dac` (152); the two-chip cases use `0x15a38ac`. Starts `02 02 60 e0 06 e0 d2 0a 70 16 ...` (standard Broadcom LED-processor opcodes; not disassembled). C (offsets), I (opcode meaning).
+  - Other 256-byte LED programs: `0x1411a54` (`0x6f2e8`, sets data-RAM byte `0xbf`) and `0x1d51ba4` (`0x6f6a0`, sets data-RAM byte `0xbe` = count), both followed by `0x6ed04` / `0x6eb08` (CMIC LED pin config RMW). I: SDK locator/blink helpers.
+  - Hidden `ubntdiag ledtest` ([stock-debug-cli.md](stock-debug-cli.md)) loads tiny test programs (68 B: `67 36` repeated, `0x15a3f34` / `0x15a4034`..`0x15a4434`) into LEDUP and writes the MSPI 2-bit-per-port frames (`0x5f6a40`), so link/act LEDs are LEDUP and PoE LEDs are MSPI. C (code), I (colour mapping).
+  - Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain; front 49-52.
 
 ## Open questions
 
