@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W), second-stage U-Boot.
+ * Node layout follows bcm-hr2.dtsi + the board DTS in the Linux tree
+ * (mainline/0005, 0007); only what U-Boot uses at M1 is listed.
+ */
+
+/dts-v1/;
+
+/ {
+	compatible = "ubnt,unifi-us-48-500w", "brcm,bcm53344", "brcm,hr2";
+	model = "Ubiquiti UniFi Switch 48 PoE 500W";
+	interrupt-parent = <&gic>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	aliases {
+		serial0 = &uart1;
+		watchdog0 = &watchdog;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a9";
+			reg = <0x0>;
+		};
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x08000000>,
+		      <0x68000000 0x08000000>;
+	};
+
+	clocks {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		apb_clk: clock-apb {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <50000000>;
+		};
+
+		periph_clk: periph_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <200000000>;
+		};
+	};
+
+	mpcore@19000000 {
+		compatible = "simple-bus";
+		ranges = <0x00000000 0x19000000 0x00023000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		timer@20200 {
+			compatible = "arm,cortex-a9-global-timer";
+			reg = <0x20200 0x100>;
+			clocks = <&periph_clk>;
+		};
+
+		gic: interrupt-controller@21000 {
+			compatible = "arm,cortex-a9-gic";
+			#interrupt-cells = <3>;
+			#address-cells = <0>;
+			interrupt-controller;
+			reg = <0x21000 0x1000>,
+			      <0x20100 0x100>;
+		};
+	};
+
+	axi@18000000 {
+		compatible = "simple-bus";
+		ranges = <0x00000000 0x18000000 0x0011c40c>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		uart1: serial@400 {
+			compatible = "ns16550a";
+			reg = <0x0400 0x100>;
+			clock-frequency = <50000000>;
+		};
+
+		watchdog: watchdog@39000 {
+			compatible = "arm,sp805", "arm,primecell";
+			reg = <0x39000 0x1000>;
+			clocks = <&apb_clk>, <&apb_clk>;
+			clock-names = "wdog_clk", "apb_pclk";
+			/* running at entry (dev.py arms it); first expiry = IRQ, second = reset */
+			timeout-sec = <10>;
+			u-boot,autostart;
+		};
+
+		dmu: syscon@3f000 {
+			compatible = "brcm,hr2-dmu", "syscon";
+			reg = <0x3f000 0x1000>;
+		};
+	};
+
+	/* same restart as Linux: clear DMU 0x3f200 bit 1 */
+	reboot {
+		compatible = "syscon-reboot";
+		regmap = <&dmu>;
+		offset = <0x200>;
+		mask = <0x2>;
+		value = <0x0>;
+	};
+};

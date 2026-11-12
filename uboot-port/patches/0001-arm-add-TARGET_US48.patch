@@ -1,0 +1,33 @@
+Subject: arm: add TARGET_US48 and source the board Kconfig
+
+Base: U-Boot v2026.07. The board files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 514bf2000b4..f9a2316d824 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -718,6 +718,16 @@ config TARGET_VEXPRESS_CA9X4
+ 	select CPU_V7A
+ 	select PL01X_SERIAL
+ 
++config TARGET_US48
++	bool "Support Ubiquiti UniFi Switch 48 PoE 500W (Broadcom Hurricane 2)"
++	select CPU_V7A
++	select DM
++	select DM_SERIAL
++	select OF_CONTROL
++	select TIMER
++	select SYS_NS16550
++	select ARM_GLOBAL_TIMER
++
+ config TARGET_BCMNS
+ 	bool "Support Broadcom Northstar"
+ 	select CPU_V7A
+@@ -2424,6 +2434,7 @@ source "board/armltd/vexpress/Kconfig"
+ source "board/armltd/vexpress64/Kconfig"
+ source "board/cortina/presidio-asic/Kconfig"
+ source "board/broadcom/bcmns/Kconfig"
++source "board/ubiquiti/us48/Kconfig"
+ source "board/broadcom/bcmns3/Kconfig"
+ source "board/cavium/thunderx/Kconfig"
+ source "board/eets/pdu001/Kconfig"

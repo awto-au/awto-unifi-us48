@@ -1,0 +1,6 @@
+US48 BOARD
+S:	Maintained
+F:	arch/arm/dts/us48-uboot.dts
+F:	board/ubiquiti/us48/
+F:	configs/us48_defconfig
+F:	include/configs/us48.h

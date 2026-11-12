@@ -1,0 +1,12 @@
+if TARGET_US48
+
+config SYS_BOARD
+	default "us48"
+
+config SYS_VENDOR
+	default "ubiquiti"
+
+config SYS_CONFIG_NAME
+	default "us48"
+
+endif
