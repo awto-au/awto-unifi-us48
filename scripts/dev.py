@@ -715,14 +715,18 @@ def cmd_flash_net(extra: list[str]) -> int:
                     "-o", "UserKnownHostsFile=/dev/null", "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=5"]
         env = dict(os.environ, SSHPASS=os.environ.get("SSHPASS", "ubnt"))
         t1 = time.monotonic()
-        try:
-            r = subprocess.run(["sshpass", "-e", "scp", "-O"] + ssh_opts + [str(IMAGE), f"ubnt@{ip}:/tmp/us48.bin"],
-                               env=env, capture_output=True, text=True, timeout=NET_XFER_S)
-        except subprocess.TimeoutExpired:
-            log(f"scp did not finish in {NET_XFER_S} s", "FATAL")
-            return 1
+        # 2 tries: stock restarts dropbear during startup and resets the first copy (seen 2026-11-12).
+        for attempt in (1, 2):
+            try:
+                r = subprocess.run(["sshpass", "-e", "scp", "-O"] + ssh_opts + [str(IMAGE), f"ubnt@{ip}:/tmp/us48.bin"],
+                                   env=env, capture_output=True, text=True, timeout=NET_XFER_S)
+            except subprocess.TimeoutExpired:
+                log(f"scp did not finish in {NET_XFER_S} s", "FATAL")
+                return 1
+            if not r.returncode:
+                break
+            log(f"scp try {attempt} rc={r.returncode}: {r.stderr.strip()}", "WARN" if attempt == 1 else "FATAL")
         if r.returncode:
-            log(f"scp rc={r.returncode}: {r.stderr.strip()}", "FATAL")
             return 1
         log(f"scp done in {time.monotonic() - t1:.1f} s; writing kernel0 via /dev/mtdblock3", "WARN")
         r = _stock_cmd(s, "dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 && sync", NET_XFER_S)
