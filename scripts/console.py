@@ -26,6 +26,7 @@ TTY = os.environ.get("US48_TTY", "/dev/serial/by-id/usb-Prolific_Technology_Inc.
 # Adapter on another box (e.g. lizard): tio runs there via `ssh -t`, its socket forwarded to SOCK.
 HOST = os.environ.get("US48_HOST", "")
 RSOCK = "/tmp/tio.us48.sock"  # on HOST
+RPID = "/tmp/tio.us48.pid"  # on HOST: our tio's pid, so a new start ends one orphaned by a dropped link
 BAUD = 115200
 TITLE = "US-48 console"
 # loady speed ladder: MAX3321 transceiver is a 250 kbps part on paper; tested past it on purpose
@@ -105,8 +106,13 @@ def read_baud() -> int:
 def tio_argv(baud: int) -> list[str]:
     if HOST:
         # Killing this ssh (baud change) hangs up the remote tio; console_mon still captures locally.
+        # Keepalive 5 s x 3: a dead link drops in ~15 s (LAN RTT < 1 ms). The pidfile lets the next start end the
+        # tio a dropped link left holding the tty; $$ becomes tio's pid after exec.
+        remote = (f"[ -f {RPID} ] && kill $(cat {RPID}) 2>/dev/null; rm -f {RSOCK}; echo $$ > {RPID}; "
+                  f"exec tio {TTY} -b {baud} -L -S unix:{RSOCK}")
         return ["ssh", "-t", "-o", "ExitOnForwardFailure=yes", "-o", "StreamLocalBindUnlink=yes",
-                "-L", f"{SOCK}:{RSOCK}", HOST, f"rm -f {RSOCK}; exec tio {TTY} -b {baud} -L -S unix:{RSOCK}"]
+                "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3",
+                "-L", f"{SOCK}:{RSOCK}", HOST, remote]
     return ["tio", TTY, "-b", str(baud), "-L", "--log-file", str(TIO_LOG), "--log-append", "--log-strip",
             "-S", f"unix:{SOCK}"]
 
