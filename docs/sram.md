@@ -35,3 +35,9 @@ Related: [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md), [
 - Unit 1 has the same SRAM: 0x1b000000 (window page 0x1b000001) and 0x1b003000 (page 0x1b003001) read random power-on contents and accept writes through the BAR0+0x7000 window, so the host can load code into it over PCIe. Size assumed 16 KiB like unit 0; 0x1b004000 not probed (a fault there would abort the host). C (probe 2026-11-13, #53)
 - Unit 1's A9 is out of reset and powered (same CRU/OTP/IDM state as unit 0); its entry mechanism is not known. See #53.
 - BAR4 16 MB windows of both functions read zero and ignore writes (not RAM). C
+
+## a2 (unit 1 A9) runs code from SRAM (2026-11-13, #53)
+- Debug block of a2 at AXI 0x19010000 is readable and authorised: DIDR 0x35137041, `AUTHSTATUS` 0xff, CoreSight CIDR valid. a2 is out of reset and idles in the boot ROM (PC sample 0xffff00d8) with BOOT_DEV 0. C
+- Method that works: load a program into unit-1 SRAM (0x1b000000) via the host window, unlock (LAR 0xC5ACCE55 @+0xfb0), set DSCR.HDBGen (b14), DRCR HRQ -> halted, DSCR.ITRen (b13), `DTRRX` = entry, ITR `mrc p14,0,r0,c0,c5,0` (0xee100e15) then `mov pc,r0` (0xe1a0f000), clear ITRen, DRCR RRQ|CSE. Result: marker 0xa2a2a2a2 written and counter incrementing in SRAM, PC sample 0x1b00000c. C (`scripts/a2_force_pc.py`, `tools/a2_test.S`)
+- Undo: pulse `CRU_CONTROL` (unit 1 0x1803e000) bit 4 low then high; a2 returns to the ROM. C
+- Not yet: any I/O from a2, DDR for it (none known), a2 doing useful work; SRAM is 16 KiB.
