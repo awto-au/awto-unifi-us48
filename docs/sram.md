@@ -41,3 +41,11 @@ Related: [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md), [
 - Method that works: load a program into unit-1 SRAM (0x1b000000) via the host window, unlock (LAR 0xC5ACCE55 @+0xfb0), set DSCR.HDBGen (b14), DRCR HRQ -> halted, DSCR.ITRen (b13), `DTRRX` = entry, ITR `mrc p14,0,r0,c0,c5,0` (0xee100e15) then `mov pc,r0` (0xe1a0f000), clear ITRen, DRCR RRQ|CSE. Result: marker 0xa2a2a2a2 written and counter incrementing in SRAM, PC sample 0x1b00000c. C (`scripts/a2_force_pc.py`, `tools/a2_test.S`)
 - Undo: pulse `CRU_CONTROL` (unit 1 0x1803e000) bit 4 low then high; a2 returns to the ROM. C
 - Not yet: any I/O from a2, DDR for it (none known), a2 doing useful work; SRAM is 16 KiB.
+
+## What a2 can run from (measured 2026-11-13, `scripts/a2_bench.py`, `tools/a2_bench.S`, #53)
+- Test: 2-instruction loop x 20000, timed with the A9 global timer (periph clock), a2 MMU off.
+- Instruction cache off: SRAM 16.5 ticks/iteration, host RAM (a1 DDR through PAXB OARR_0 = 0x08000001, OMAP 0, AXI 0x0a800000) 62.5. Instruction cache on (SCTLR.I): both 5.5, i.e. loops running from host RAM are as fast as from SRAM once cached. C
+- Consequence: a2 code is not limited to 16 KiB; size is bounded by the OARR window (64 MB each, OARR_0/OARR_1). Data in host RAM stays uncached with the MMU off (PCIe round trip per access); a cacheable mapping (MMU on) or the L2-as-RAM trick is needed for fast data. I
+- Routing pitfall: AXI 0x60000000+ is the unused DDR controller (a2 stalls, cannot be halted, recover with ARM_RST_N); use OARR bases inside the PCIe-routed range 0x08000000-0x0fffffff. C
+- Not executable: switch packet-buffer RAMs (MMU CBP data/header, ~1.5 MB) and table memories; they are S-channel-only. I
+- L2-as-RAM (PL310 lockdown by line, 128 KiB at 0x50000000, as stock U-Boot does on a1) is available to a2 in principle; needs MMU setup (section attrs TEX=101 C=B=0 S=1) and the lock sequence from a2. Not done. I
