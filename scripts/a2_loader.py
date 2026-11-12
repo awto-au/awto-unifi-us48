@@ -2,6 +2,7 @@
 """Host loader for a2 (unit 1 Cortex-A9): start the SRAM stub, then load/run code and peek/poke a2's bus view.
 
 Usage (board at uboot-2, US48_HOST=lizard):
+  a2_loader.py reset                 pulse CRU_CONTROL.ARM_RST_N on unit 1 (a2 back to the boot ROM; recovers a hung a2)
   a2_loader.py start                 halt a2 via CoreSight, inject jump to the stub (tmp/a2/a2_stub.bin), wait for ready
   a2_loader.py status                ready magic, seq, heartbeat (heartbeat moving = stub alive)
   a2_loader.py read ADDR [N]         a2 reads N words at ADDR in ITS address map
@@ -140,7 +141,12 @@ def main():
         s.read_idle(1.0, 3.0)
         a2 = A2(s)
         try:
-            if op == "start":
+            if op == "reset":
+                a2.page(0x1803E000)
+                a2.wr(0, 0x20)
+                a2.wr(0, 0x30)
+                log("CRU_CONTROL after pulse", hex(a2.rd(0)[0]))
+            elif op == "start":
                 a2.start()
             elif op == "status":
                 m = a2.mbox()
