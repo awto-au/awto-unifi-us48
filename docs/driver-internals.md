@@ -603,3 +603,19 @@ Do 13.2 first; the failing level selects the step. xe0 (front 49) has no light: 
 - Register it polls on unit 1: the TSC PHY driver's `link_get`, i.e. MIIM reads of `RX_X4_PCS_LIVE_STATUS` (0xc154) LINK_STATUS b1 and the latched `RX_X4_PCS_LATCHED_STATUS_0` (0xc153) LINK_STATUS_LL b8, as in OM. C (OM), I (stock identical; stock TSC driver not decompiled)
 - What it writes on link-up: `XLPORT_TXFIFO_CTRL` pulse, then `XLMAC_CTRL` = TX_EN 1, RX_EN 1, SOFT_RESET 0 (0x1003 here), later `EPC_LINK_BMAP` and port forwarding state. C (MAC part), I (rest)
 - Consequence: the live 0x1041 is what `enable_set(0)` leaves; it is consistent with "stock saw link down" and does not indicate a stock bug. A fix has to make the PCS lock (b) first, or do (a) by hand.
+
+### 13.5 Verified on HW: bring a stock-disabled xe port up (2026-11-12, unit 1 xe1 = front 50, 10G DAC)
+Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 (lane) for every `0xc...` write; MAC via unit-1 S-channel (block 5, lane in low byte). C (all steps, live)
+| # | Write | Before → after | Effect |
+|---|---|---|---|
+| 1 | `RX_X4_RX_SIGDET` 0xc138 ← 0x0009 (clear b2/b1) | 0x000D | PMD live 0x6 → 0xF (SIGNAL_OK + PMD_LOCK) |
+| 2 | `TX_X4_MISC` 0xc113 ← 0xC1CB (ENABLE_TX_LANE + RSTB_TX_LANE) | 0xC1C8 | |
+| 3 | `RX_X4_PMA_CONTROL_0` 0xc137 ← 0x0001 (RSTB_LANE) | 0x0000 | PCS live 0x0003 (SYNC + LINK) |
+| 4 | `XLPORT_TXFIFO_CTRL` lane 2 ← 0x7, then 0x4; `XLMAC_CTRL` lane 2 ← 0x1003; `XLMAC_CLEAR_RX_LSS_STATUS` ← 7, 0 | XLMAC_CTRL 0x1041 | MAC on, LSS 0. Far end still sent RF: no RX counted |
+| 5 | `ANATX_DRIVER` 0xc017 ← 0x2020 (clear b15) | 0xA020 | 0x2020 = stock `serdes_driver_current_xe` |
+| 6 | 0xc01a ← 0x0000 (clear b0) | 0x0001 | |
+| 7 | `TX_X4_CREDIT1` 0xc101 ← 0x0084; `TX_X4_CREDIT0` 0xc100 ← 0x4021 (CREDITENABLE b14) | 0x0000 / 0x0021 | PCS live 0x0083 (RF b7 from far end) |
+| 8 | `TX_X4_MISC` 0xc113 ← 0xC1C8 then 0xC1CB (TX lane reset pulse after credits) | | **PCS live 0x0003, RF gone; RPKT/RBCA/RMCA/RBYT rising, RFCS 0** |
+- Stock's port disable leaves all of: RX_SIGDET force, RX lane reset, TX lane disabled + in reset, ANATX b15, 0xc01a b0, TX credits off (CREDIT0.CREDITENABLE 0, CREDIT1 0). A driver's enable must undo each; order matters: credits before the TX lane reset release.
+- `XLPORT_FAULT_LINK_STATUS` lane 2 stayed 0x1 after RF cleared: treat as latched, judge by PCS live b7 / `XLMAC_RX_LSS_STATUS`.
+- XLPORT MIB is lane-indexed by the low address byte (RPKT lane 0 = 0, lane 2 live).
