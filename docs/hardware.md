@@ -78,3 +78,11 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
 ## Backups
 
 - `scripts/backup.py` (read-only, verified). Snapshots taken 2026-10-12 in `private/backups/`: `20261012T033725Z` (6.3.13), `20261012T055324Z` (7.5.15). Not committed.
+
+## Unit 1 (BCM53346) MDIO scan (2026-11-13, `scripts/mdio_scan_u1.py`, #31)
+- Clause-22 ID1/ID2, PHY 0-31, internal buses 0-3 and external buses 0-2 via unit 1's own CMIC MIIM (uboot-2). C
+- Internal bus 0: 16 PHYs at 1-4, 6-9, 11-14, 16-19, ID `0x600d:0x85b0` (integrated GPHYs). C
+- External bus 0: 8 PHYs at 20-27, ID `0x600d:0x845b` (external octal PHY). 16 + 8 = 24 copper ports = front 25-48. C
+- Internal bus 1: `0x600d:0x8770` at 2, 4, 6, 8; `0x0143:0xbff0` at 17 and 31 (SerDes/other internal devices; not identified). C
+- Internal buses 2-3, external buses 1-2: no response. C
+- Same shape as unit 0 (16 integrated + one external octal PHY).
