@@ -1,0 +1,25 @@
+Subject: lib: hook lib/bcm-cmic (staged by sync_bcm_cmic.py)
+
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/lib/Kconfig b/lib/Kconfig
+index 9e0f0ad7d06..a35c4f9cc72 100644
+--- a/lib/Kconfig
++++ b/lib/Kconfig
+@@ -1335,3 +1335,5 @@ config UTHREAD_STACK_SIZE
+ endmenu
+ 
+ source "lib/fwu_updates/Kconfig"
++
++source "lib/bcm-cmic/Kconfig"
+diff --git a/lib/Makefile b/lib/Makefile
+index d0ffabc2b47..8b82145b781 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -179,4 +179,6 @@ quiet_cmd_build_OID_registry = GEN     $@
+ 
+ clean-files     += oid_registry_data.c
+ 
++obj-$(CONFIG_BCM_CMIC) += bcm-cmic/
++
+ subdir-ccflags-$(CONFIG_CC_OPTIMIZE_LIBS_FOR_SPEED) += -O2

@@ -2,7 +2,7 @@
 /*
  * Ubiquiti UniFi Switch 48 PoE 500W (US-48-500W), second-stage U-Boot.
  * Node layout follows bcm-hr2.dtsi + the board DTS in the Linux tree
- * (mainline/0005, 0007); only what U-Boot uses at M1 is listed.
+ * (mainline/0005, 0007); only what U-Boot uses (M1 + M2 QSPI) is listed.
  */
 
 /dts-v1/;
@@ -90,6 +90,28 @@
 			compatible = "ns16550a";
 			reg = <0x0400 0x100>;
 			clock-frequency = <50000000>;
+		};
+
+		/*
+		 * reg values: bcm-hr2.dtsi qspi@27200 (mspi 0x27200/0x184, bspi 0x27000/0x124).
+		 * bspi_raf = bspi + 0x100 (RAF regs 0x00..0x20, the tail of the 0x124 bspi window,
+		 * as Linux spi-bcm-qspi); U-Boot iproc_qspi wants it as its own reg-name.
+		 */
+		qspi: spi@27200 {
+			compatible = "brcm,iproc-qspi";
+			reg = <0x27200 0x184>, <0x27000 0x124>, <0x27100 0x24>;
+			reg-names = "mspi", "bspi", "bspi_raf";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* mainline/0007: jedec,spi-nor, 12.5 MHz, mode 3; MX25L25635E 32 MiB, no partitions here */
+			flash@0 {
+				compatible = "jedec,spi-nor";
+				reg = <0>;
+				spi-max-frequency = <12500000>;
+				spi-cpol;
+				spi-cpha;
+			};
 		};
 
 		watchdog: watchdog@39000 {

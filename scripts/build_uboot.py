@@ -3,6 +3,7 @@
 
 - Tree: tmp/u-boot-v2026.07 = detached worktree of the machine U-Boot store (#45) at TAG, reached via the
   gitignored symlink tmp/u-boot-store (or $US48_UBOOT_STORE / --store). Never a clone, never gc in the store.
+- Shared core: common/bcm-cmic/ staged read-only into lib/bcm-cmic by scripts/sync_bcm_cmic.py every build.
 - Scaffold: uboot-port/ (tracked) is copied into the tree every build; uboot-port/patches/*.patch are
   applied with git apply after the tree is reset to pristine, then PATCH_MARKERS are verified.
 - Build: out of tree in tmp/uboot-build, OpenWrt cross toolchain, STAGING_DIR = empty dir.
@@ -11,7 +12,7 @@
 - Logs: tmp/logs/build_uboot.log.
 
 Usage: build_uboot.py [--clean] [--save-patches] [--jobs N]
-  --save-patches   write the tree's tracked-file diff to uboot-port/patches/0001-*.patch, then exit
+  --save-patches   write the tree's tracked-file diffs to uboot-port/patches/000N-*.patch (PATCH_SETS), then exit
   --clean          remove the build dir first
 """
 
@@ -53,6 +54,7 @@ STAGING = OUTDIR / "staging"
 MKUIMAGE = ROOT / "scripts/mkuimage.py"
 LOADADDR = 0x04000000  # = CONFIG_TEXT_BASE in us48_defconfig, checked after the build
 DEFCONFIG = "us48_defconfig"
+MAX_IMAGE = 1 << 20  # ~1 MiB at 9.9 KiB/s loady = ~100 s; room below the 0x04000000..0x07030000 free area
 # worktree add: ~9k files, seconds; store git calls are local
 GIT_TIMEOUT = 120
 # stall guard (awto-dan#53): no output for STALL_S = hung; backstop = 3x a ~2 min cold build
@@ -67,15 +69,28 @@ FILES = {
     "board/ubiquiti/us48/MAINTAINERS": "board/ubiquiti/us48/MAINTAINERS",
     "board/ubiquiti/us48/board.c": "board/ubiquiti/us48/board.c",
     "include/configs/us48.h": "include/configs/us48.h",
+    "cmd/bcm_cmic.c": "cmd/bcm_cmic.c",
     "configs/us48_defconfig": "configs/us48_defconfig",
 }
 # tree path -> (marker, patch that supplies it)
 PATCH_MARKERS = {
     "arch/arm/Kconfig": ("config TARGET_US48", "0001-arm-add-TARGET_US48.patch"),
+    "lib/Makefile": ("bcm-cmic/", "0002-lib-wire-bcm-cmic.patch"),
+    "lib/Kconfig": ("lib/bcm-cmic/Kconfig", "0002-lib-wire-bcm-cmic.patch"),
+    "cmd/Makefile": ("CONFIG_CMD_BCM_CMIC", "0003-cmd-wire-bcm-cmic.patch"),
+    "cmd/sf.c": ("disabled in this build (read-only)", "0004-cmd-sf-read-only.patch"),
 }
-SAVED_PATCH = PATCHES / "0001-arm-add-TARGET_US48.patch"
+# patch file -> (subject, tracked files it covers); --save-patches writes one patch per entry
+PATCH_SETS = {
+    "0001-arm-add-TARGET_US48.patch": ("arm: add TARGET_US48 and source the board Kconfig", ["arch/arm/Kconfig"]),
+    "0002-lib-wire-bcm-cmic.patch": ("lib: hook lib/bcm-cmic (staged by sync_bcm_cmic.py)", ["lib/Kconfig", "lib/Makefile"]),
+    "0003-cmd-wire-bcm-cmic.patch": ("cmd: build bcm_cmic.c", ["cmd/Makefile"]),
+    "0004-cmd-sf-read-only.patch": ("cmd: sf accepts probe and read only (us48 never writes flash)", ["cmd/sf.c"]),
+}
 # Make a file in the tree dirty that is not meant to be: only these tracked files may differ from TAG
-EXPECTED_DIRTY = {"arch/arm/Kconfig"}
+EXPECTED_DIRTY = {f for _, fs in PATCH_SETS.values() for f in fs}
+SYNC = ROOT / "scripts/sync_bcm_cmic.py"
+CORE_DIR = "lib/bcm-cmic"  # staged shared core, untracked in the tree
 
 
 def log(msg: str) -> None:
@@ -120,6 +135,7 @@ def reset_tree() -> None:
         if p.exists():
             p.unlink()
     shutil.rmtree(TREE / "board/ubiquiti", ignore_errors=True)
+    shutil.rmtree(TREE / CORE_DIR, ignore_errors=True)
     log(f"reset {TREE.relative_to(ROOT)} to {TAG}")
 
 
@@ -133,6 +149,10 @@ def stage() -> None:
         d.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SCAFFOLD / src, d)
     log(f"staged {len(FILES)} files from uboot-port/")
+    r = subprocess.run([sys.executable, "-I", str(SYNC), "stage", "uboot", "--dest", str(TREE / CORE_DIR)],
+                       capture_output=True, text=True, env=dict(os.environ, US48_REPO=str(ROOT)))
+    if r.returncode:
+        die(f"sync_bcm_cmic: {r.stdout.strip()} {r.stderr.strip()}")
     missing = [f"  {rel}: no {m!r}, supplied by patches/{p}" for rel, (m, p) in PATCH_MARKERS.items()
                if m not in (TREE / rel).read_text()]
     if missing:
@@ -144,14 +164,15 @@ def stage() -> None:
 
 
 def save_patches() -> None:
-    diff = git("diff", "--no-ext-diff", "--", *sorted(EXPECTED_DIRTY)).stdout
-    if not diff:
-        die("no tracked changes in the tree to save")
     PATCHES.mkdir(parents=True, exist_ok=True)
-    head = ("Subject: arm: add TARGET_US48 and source the board Kconfig\n\n"
-            f"Base: U-Boot {TAG}. The board files are staged from uboot-port/ by scripts/build_uboot.py.\n\n")
-    SAVED_PATCH.write_text(head + diff)
-    log(f"wrote {SAVED_PATCH.relative_to(ROOT)}")
+    for name, (subject, files) in PATCH_SETS.items():
+        diff = git("diff", "--no-ext-diff", "--", *files).stdout
+        if not diff:
+            die(f"no tracked changes in the tree for {name}")
+        head = (f"Subject: {subject}\n\nBase: U-Boot {TAG}. Other files are staged from uboot-port/ by "
+                "scripts/build_uboot.py.\n\n")
+        (PATCHES / name).write_text(head + diff)
+        log(f"wrote patches/{name}")
 
 
 def make_env() -> dict:
@@ -220,7 +241,9 @@ def build(jobs: int) -> int:
         return 1
     cfg = (BUILD / ".config").read_text().splitlines()
     for want in ("CONFIG_TARGET_US48=y", "CONFIG_SKIP_LOWLEVEL_INIT=y", "CONFIG_WDT_SP805=y", "CONFIG_WATCHDOG=y",
-                 "CONFIG_ARM_GLOBAL_TIMER=y", "CONFIG_SYSRESET_SYSCON=y", "CONFIG_CMD_LOADB=y", f"CONFIG_TEXT_BASE=0x{LOADADDR:08x}"):
+                 "CONFIG_ARM_GLOBAL_TIMER=y", "CONFIG_SYSRESET_SYSCON=y", "CONFIG_CMD_LOADB=y", "CONFIG_CMD_SF=y", "CONFIG_IPROC_QSPI=y",
+                 "CONFIG_SPI_FLASH_MACRONIX=y", "CONFIG_CMD_BCM_CMIC=y", "# CONFIG_SPI_FLASH_UNLOCK_ALL is not set",
+                 f"CONFIG_TEXT_BASE=0x{LOADADDR:08x}"):
         if want not in cfg:
             die(f"{want} missing from the final .config")
     if run(NICE + ["make", o, f"-j{jobs}"]):
@@ -239,6 +262,8 @@ def pack() -> None:
         die(f"mkuimage: {r.stderr.strip()}")
     log(r.stdout.strip())
     log(f"u-boot-dtb.bin {binp.stat().st_size} B, chain image {OUT.stat().st_size} B -> {OUT.relative_to(ROOT)}")
+    if OUT.stat().st_size > MAX_IMAGE:
+        die(f"chain image over the {MAX_IMAGE} B budget (loady time + stock bootm window)")
 
 
 def main() -> int:

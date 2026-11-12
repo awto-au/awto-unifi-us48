@@ -1,6 +1,6 @@
 Subject: arm: add TARGET_US48 and source the board Kconfig
 
-Base: U-Boot v2026.07. The board files are staged from uboot-port/ by scripts/build_uboot.py.
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index 514bf2000b4..f9a2316d824 100644

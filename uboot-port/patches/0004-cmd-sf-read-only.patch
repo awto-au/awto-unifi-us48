@@ -1,0 +1,21 @@
+Subject: cmd: sf accepts probe and read only (us48 never writes flash)
+
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/cmd/sf.c b/cmd/sf.c
+index b5b7f671fb9..d5119f7065e 100644
+--- a/cmd/sf.c
++++ b/cmd/sf.c
+@@ -601,6 +601,12 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
+ 	if (strcmp(cmd, "probe") == 0)
+ 		return do_spi_flash_probe(argc, argv);
+ 
++	/* us48: read-only build, a write could hit u-boot, bootsel, kernel1 or EEPROM */
++	if (strcmp(cmd, "read")) {
++		printf("sf %s: disabled in this build (read-only)\n", cmd);
++		return CMD_RET_FAILURE;
++	}
++
+ 	/* The remaining commands require a selected device */
+ 	if (!flash) {
+ 		puts("No SPI flash selected. Please run `sf probe'\n");

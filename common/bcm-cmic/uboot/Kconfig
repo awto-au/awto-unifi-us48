@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0
+config BCM_CMIC
+	bool "Broadcom CMIC shared core (S-channel, MIIM)"
+	help
+	  Core shared with Linux, staged from common/bcm-cmic/ by sync_bcm_cmic.py.
+
+config BCM_CMIC_UNIT0_BASE
+	hex "Unit 0 CMIC base address"
+	depends on BCM_CMIC
+	default 0x48000000
+	help
+	  BCM53344 CMIC on AXI (docs/driver-internals.md section 8).
+
+config CMD_BCM_CMIC
+	bool "cmic, schan, smem, miim: read-only CMIC examination commands"
+	depends on BCM_CMIC
+	default y
