@@ -297,7 +297,7 @@ def _classify_tail(raw: bytes) -> str | None:
     """State from the END of the output only (stale prompts earlier in the stream never match)."""
     t = ANSI.sub(b"", raw)[-400:]
     e = t.rstrip()
-    if e.endswith(b"us48-uboot>"):
+    if e.endswith((b"uboot-2>", b"us48-uboot>")):
         return "ourboot"
     if e.endswith(b"u-boot>"):
         return "uboot"
@@ -535,7 +535,7 @@ def _bootm_watch(s: console.Session, slot: str = "openwrt") -> int:
         t0 = time.monotonic()
         if slot == "uboot":
             # Our second stage: DDR is up, banner + prompt in ~2 s; 20 s = 10x. It feeds the SP805 itself.
-            s.expect([b"us48-uboot>"], 20.0, "second-stage prompt")
+            s.expect([b"uboot-2>", b"us48-uboot>"], 20.0, "second-stage prompt")
             log(f"second-stage U-Boot prompt {time.monotonic() - t0:.1f} s after handover", "ALERT")
             return 0
         hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "OpenWrt userspace")

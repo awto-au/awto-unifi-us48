@@ -1,6 +1,6 @@
 # uboot-port: second-stage mainline U-Boot (issue #46, milestones M1, M2, M3 net, read-only exam commands)
 
-Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt (verified on hardware). M3 = Ethernet on xe1 (build only). M2 + exam commands: build only, not yet run on the board. M1 verified on the board 2026-11-12: `us48-uboot>` prompt, `bdinfo` (2 banks, reloc 0x6ffbe000), `sleep 25` no reset, `reset` via DMU returns to stock U-Boot.
+Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt (verified on hardware). M3 = Ethernet on xe1 (build only). M2 + exam commands: build only, not yet run on the board. M1 verified on the board 2026-11-12: `uboot-2>` prompt, `bdinfo` (2 banks, reloc 0x6ffbe000), `sleep 25` no reset, `reset` via DMU returns to stock U-Boot.
 
 ## Layout
 - `arch/arm/dts/us48-uboot.dts`: standalone DT (ns16550a UART1, A9 global timer, SP805, DMU syscon-reboot, 2 RAM banks).
@@ -43,7 +43,7 @@ Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial
 ## Test from the stock prompt (coordinator, hardware)
 1. Stock U-Boot prompt. `loady 0x01000000 460800`, send `tmp/uboot/us48-uboot-chain.bin` (YMODEM; 192 KiB at about 9.9 KiB/s = 20 s).
 2. Arm the SP805 as `dev.py` does before every bootm: `mw.l 18039c00 1acce551`, `mw.l 18039000 1dcd6500`, `mw.l 18039008 3`.
-3. `bootm 0x01000000`. Expect the stock "Starting kernel" lines, then `U-Boot 2026.07 ... us48-<sha>` and `us48-uboot> ` at 115200 (stock's console was at 460800: switch the host side back to 115200).
+3. `bootm 0x01000000`. Expect the stock "Starting kernel" lines, then `U-Boot 2026.07 ... us48-<sha>` and `uboot-2> ` at 115200 (stock's console was at 460800: switch the host side back to 115200).
 4. At our prompt:
    - `md.l 0x18000400 4`, `bdinfo` (two banks, `relocaddr` just below `0x70000000`).
    - `wdt dev` / `wdt list`: SP805 `Started ... (10s timeout)` is printed at boot; the cyclic feeds it every 1 s.
@@ -65,7 +65,7 @@ Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial
 - `sf` stays read-only; the net driver never calls `sf probe`.
 
 ### M3 hardware test (coordinator)
-1. `dev.py boot-flash --slot uboot` (or the `loady` + `bootm` chain), prompt `us48-uboot>`.
+1. `dev.py boot-flash --slot uboot` (or the `loady` + `bootm` chain), prompt `uboot-2>`.
 2. `ping 192.168.25.11` (expect `is alive`, first tries may time out while STP converges).
 3. `tftpboot 0x01000000 us48-initramfs.bin` (host serves `192.168.25.30`; override with `setenv serverip`).
 4. `iminfo 0x01000000` (header + data CRC OK), then `bootm 0x01000000` as before.
