@@ -42,12 +42,24 @@ def run(s, cmd: str, budget: float) -> str:
     return s.buf.decode(errors="replace")
 
 
+# A dropped echo line corrupts the file (seen 2026-11-12: md5 "none"); the md5 check catches it, resend whole.
+TRIES = 3
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("local", type=Path)
     ap.add_argument("remote")
     ap.add_argument("--chunk", type=int, default=256)
     a = ap.parse_args()
+    for n in range(1, TRIES + 1):
+        if push(a) == 0:
+            return 0
+        log(f"try {n}/{TRIES} failed")
+    return 1
+
+
+def push(a) -> int:
     data = a.local.read_bytes()
     want = hashlib.md5(data).hexdigest()
     b64 = base64.b64encode(data).decode()

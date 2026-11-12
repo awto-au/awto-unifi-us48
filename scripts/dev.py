@@ -285,11 +285,80 @@ def cmd_baud_sweep(_extra: list[str]) -> int:
     return 0
 
 
+# Reboot -> stock shell prompt: LZMA 13 MB uncompress + kernel + init; reboot->cfgmtd took >175 s (2026-10-14).
+# 300 s = 1.25x a ~240 s worst case. Expiry = stock did not boot; see console capture.
+STOCK_BOOT_S = 300
+ANSI = re.compile(rb"\x1b\[[0-9;]*[A-Za-z]")
+# Silent board: nothing at all in this long means no console output to wait for (dead / wrong baud).
+SILENT_S = 15.0
+
+
+def _classify_tail(raw: bytes) -> str | None:
+    """State from the END of the output only (stale prompts earlier in the stream never match)."""
+    t = ANSI.sub(b"", raw)[-400:]
+    e = t.rstrip()
+    if e.endswith(b"u-boot>"):
+        return "uboot"
+    if e.endswith(b"login:"):
+        return "stock-login"
+    if e.endswith(b"activate this console."):
+        return "press-enter"
+    if e.endswith((b"#", b"$")):
+        return "openwrt" if b"OpenWrt" in t else "stock-shell"
+    i = t.rfind(b"Hit any key")
+    if i >= 0 and re.fullmatch(rb"Hit any key to stop autoboot:[\s\x08\d]*", t[i:]):
+        return "countdown"
+    return None
+
+
+def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
+    """Passive first: listen, never type into a booting board. Ctrl-C only after 2 s of silence.
+
+    Returns uboot | countdown | stock-login | stock-shell | openwrt | press-enter | reset-loop | silent | unknown.
+    Ctrl-C is harmless at u-boot>, a shell and a login prompt, and each answers with a prompt we can read.
+    """
+    t0, acc, ever = time.monotonic(), b"", False
+    s.buf = b""
+    while time.monotonic() - t0 < budget_s:
+        data = s.read_idle(2.0, 6.0)
+        if data:
+            ever = True
+            acc = (acc + data)[-4000:]
+            if acc.count(b"U-Boot usw") >= 3:
+                return "reset-loop"
+            st = _classify_tail(acc)
+            if st:
+                s.buf = b""
+                return st
+            continue
+        if not ever and time.monotonic() - t0 > SILENT_S:
+            return "silent"
+        s.write(b"\x03")
+        acc = (acc + s.read_idle(0.7, 3.0))[-4000:]
+        st = _classify_tail(acc)
+        if st:
+            s.buf = b""
+            return st
+        ever = ever or bool(acc)
+    return "unknown"
+
+
+def _abort_countdown(s: console.Session) -> bool:
+    t1 = time.monotonic()
+    while time.monotonic() - t1 < ABORT_BUDGET_S:
+        s.write(b" ")
+        s._pump(ABORT_EVERY_S)
+        if PROMPT in s.buf:
+            s.read_idle(0.3, 1.0)
+            return True
+    return False
+
+
 def _at_uboot(s: console.Session) -> bool:
-    # Not an empty line: U-Boot repeats the last command on bare Enter (could be loady/bootm).
-    s.send_line("echo uboot_probe")
-    out = s.read_idle(0.3, 2.0)
-    return b"\nuboot_probe" in out and PROMPT in out
+    st = _board_state(s, 20.0)
+    if st == "countdown":
+        st = "uboot" if _abort_countdown(s) else st
+    return st == "uboot"
 
 
 def _serial_reboot(s: console.Session) -> bool:
@@ -317,11 +386,19 @@ def _serial_reboot(s: console.Session) -> bool:
 
 
 def _to_uboot(s: console.Session) -> bool:
-    if _at_uboot(s):
+    st = _board_state(s)
+    log(f"board state: {st}")
+    if st == "countdown" and _abort_countdown(s):
+        log("at u-boot> prompt", "ALERT")
+        return True
+    if st == "uboot":
         log("already at u-boot> prompt")
         return True
+    if st == "reset-loop":
+        log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
+        return False
     wait_s = REBOOT_TO_UBOOT_S
-    if _serial_reboot(s):
+    if st in ("stock-login", "stock-shell", "openwrt", "press-enter") and _serial_reboot(s):
         pass
     elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
         log("rebooting stock firmware over SSH")
@@ -575,9 +652,6 @@ def cmd_boot_flash(extra: list[str]) -> int:
 
 # Stock userspace → eth0 has an address: switchdrvr brings the tun up ~60-90 s after the shell (I). 240 s backstop.
 STOCK_NET_S = 240
-# Reboot → stock shell prompt: LZMA 13 MB uncompress + kernel + init; reboot→cfgmtd took >175 s (2026-10-14).
-# 300 s ≈ 1.25x a ~240 s worst case. Expiry = stock did not boot; see console capture.
-STOCK_BOOT_S = 300
 # scp 5.6 MB over 1G LAN to the switch CPU: a few s; dd to mtdblock (erase+write 5.6 MB): ~30 s (I). 120 s each.
 NET_XFER_S = 120
 
@@ -596,22 +670,33 @@ def _stock_cmd(s: console.Session, cmd: str, budget_s: float) -> tuple[int, str]
     out = s.buf.decode(errors="replace")
     s.buf = b""
     m = re.search(r"__rc=(\d+)__", out)
-    return int(m.group(1)), out[:m.start()]
+    body = out[:m.start()]
+    # Drop the tty echo of our own command line (ends with the marker text): saves tokens, keeps real output.
+    k = body.rfind('__r""c=$?__')
+    if k >= 0:
+        body = body[k + len('__r""c=$?__'):].lstrip("\r\n")
+    return int(m.group(1)), body
 
 
 def _stock_shell(s: console.Session) -> bool:
     """Get to a stock root shell on serial; boots stock from U-Boot if needed."""
-    if _at_uboot(s):
-        log("at u-boot>: booting stock (kernel1)")
-        s.send_line("run bootcmd")
+    st = _board_state(s)
+    log(f"board state: {st}")
+    if st == "reset-loop":
+        log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
+        return False
+    if st in ("uboot", "countdown"):
+        if st == "uboot":
+            log("at u-boot>: booting stock (kernel1)")
+            s.send_line("run bootcmd")
         try:
-            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after run bootcmd")
+            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after boot")
         except console.Timeout as e:
             log(str(e), "FATAL")
             return False
     s.send_line("")
-    if b"root@OpenWrt" in s.read_idle(0.5, 2.0):
-        # Our image is up: reboot (SP805) → U-Boot autoboots stock kernel1 by itself.
+    if st == "openwrt":
+        # Our image is up: reboot (SP805) -> U-Boot autoboots stock kernel1 by itself.
         log("OpenWrt running: rebooting into stock (kernel1)")
         s.send_line("reboot")
         try:
@@ -679,6 +764,48 @@ def cmd_stock_sh(extra: list[str]) -> int:
         return 1
     sys.stdout.write(r[1] + "\n")
     return r[0]
+
+
+@command("push a kernel module over serial (md5, 3 tries), rmmod/insmod it, give xe0 an IP, ping a host",
+         args="[module.ko] [--ip A.B.C.D] [--ping A.B.C.D] [-- insmod args...]", kind="action")
+def cmd_cmic_load(extra: list[str]) -> int:
+    ko = REPO / "kernel/us48-cmic/us48_cmic.ko"
+    ip, ping, mod_args = os.environ.get("US48_IP", "192.168.25.207"), "192.168.25.11", ""
+    rest = list(extra)
+    if "--" in rest:
+        i = rest.index("--")
+        mod_args, rest = " ".join(rest[i + 1:]), rest[:i]
+    while rest:
+        a = rest.pop(0)
+        if a == "--ip":
+            ip = rest.pop(0)
+        elif a == "--ping":
+            ping = rest.pop(0)
+        else:
+            ko = Path(a)
+    if not ko.exists():
+        log(f"{ko} missing: python3 scripts/build_us48_cmic.py", "FATAL")
+        return 1
+    if not _ensure_console():
+        return 1
+    r = subprocess.run([sys.executable, str(REPO / "scripts/push_file.py"), str(ko), f"/tmp/{ko.name}"],
+                       capture_output=True, text=True, timeout=120)  # 80 KB at ~7 KB/s = 12 s, x3 tries
+    if r.returncode != 0:
+        log("push failed:\n" + r.stdout[-400:], "FATAL")
+        return 1
+    mod = ko.stem
+    # ping budget: 4 pings x 1 s + ARP; the tail of dmesg shows the driver's own verdict.
+    cmd = (f"rmmod {mod} 2>/dev/null; insmod /tmp/{ko.name} {mod_args}; "
+           f"echo 1 > /proc/sys/net/ipv6/conf/xe0/disable_ipv6; ip addr flush dev xe0; "
+           f"ip addr add {ip}/24 dev xe0; ip link set xe0 up; "
+           f"dmesg | grep -E 'us48_cmic|xe0' | tail -6; ping -c 4 -W 1 {ping} | tail -2; "
+           f"ip -s link show xe0 | grep -A1 -E 'RX|TX'")
+    with console.Session() as s:
+        res = _stock_cmd(s, cmd, 40.0)
+    if res is None:
+        return 1
+    sys.stdout.write(res[1] + "\n")
+    return 0
 
 
 @command("write the image to kernel0 FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
