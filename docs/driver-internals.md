@@ -622,7 +622,7 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
-Symptom (live, Linux 6.18, mainline `pcie-iproc`, no `dma-ranges`): `us48_cmic` DCB at bus `0x0110e000`, buffer `0x01124000`, RX ch1 armed; `CMC0_DMA_CURR_DESC[1]` advanced, RX counter 0x46, but no DCB status word / buffer byte appeared and DESC_DONE stayed 0. Remap regs = stock case A, `+0x31470` = 0x8.
+Symptom was: RX ch1 armed, `CURR_DESC` advanced, nothing written. Resolved in 14.4 (VLAN/STG membership, not PCIe).
 Sources: OM `cdk/.../bcm56150_a0_cmic.h:9743-10025` (RDB descriptions), OM `libbde/shared/shbde_iproc.c` (added to the vendor store, `/vendors/broadcom/openmdk/README.md`), OpenBCM `linux-kernel-bde.c:2571-2603`, stock `switchdrvr` `FUN_0120c598`, stock kernel `soc_pcie_init` @`0xc033ea84`, mainline `pcie-iproc.c`.
 
 ### 14.1 What `CMC0_HOSTMEM_ADDR_REMAP_*` does
@@ -651,7 +651,7 @@ Sources: OM `cdk/.../bcm56150_a0_cmic.h:9743-10025` (RDB descriptions), OM `libb
   | `PAXB_OARR_2_UPPER` | `0x2d64` | `dma_hi_bits` (1 on PAXB_0) |
   | `PAXB_ENDIANESS` | `0x2030` | 0x01010101, read back; != 1 -> write 0 (LE) |
   | `PAXB_OARR_FUNC0_MSI_PAGE` | `0x2d34` | `|= 1` only if MSI |
-- **Our module writes none of these.** Linux asserts then releases PERST# on every RC probe (`iproc_pcie_perst_ctrl(true)` / `(false)` before the link check, `pcie-iproc.c:1474`; stock `soc_pcie_init` does the same: CLK_CTRL `= 3` then `= 1`). PERST# resets the endpoint's PCIe core registers but not the CMIC (remap and DMA regs survived the warm boot). Stock re-arms `OARR_2` only afterwards, from the BDE. So after a Linux boot `OARR_2` is most likely 0 = no AXI->PCIe window: every CMC host access falls into an unclaimed AXI range. C (all code facts), I (PERST# clears PAXB regs; to be read, 14.5 step 1)
+- **Our module writes none of these.** Linux asserts then releases PERST# on every RC probe (`iproc_pcie_perst_ctrl(true)` / `(false)` before the link check, `pcie-iproc.c:1474`; stock `soc_pcie_init` does the same: CLK_CTRL `= 3` then `= 1`). PERST# resets the endpoint's PCIe core registers but not the CMIC (remap and DMA regs survived the warm boot). Stock re-arms `OARR_2` afterwards, from the BDE. Live under Linux `OARR_2` still reads 1 (14.4): PERST# does not clear it here. C
 - Window size: `OARR_2` lower 0x1 = enable with size cfg 0; size not decoded. Stock DCBs sat at `~0x075f_xxxx`, so >= 128 MiB. Keep bus addresses < `0x08000000`. I
 
 ### 14.3 Host side (BCM53344 RC PAXB, `0x18012000`) and what mainline does
@@ -662,24 +662,17 @@ Sources: OM `cdk/.../bcm56150_a0_cmic.h:9743-10025` (RDB descriptions), OM `libb
 - RAM layout: DT `memory@0` = `0x0..0x08000000` + `0x68000000..0x70000000`. Stock ran `mem=128M@0x0` (second-stage doc) = only the low alias, consistent with one inbound region at PCIe base 0 of ~128 MiB. A buffer in the high bank (bus `0x68000000`, remap index 6) would miss it. RC outbound window is bus `0x08000000-0x0fffffff` (hr2 dtsi `ranges`): host RAM below `0x08000000` does not collide. C (DT, ranges), I (window size, stock intent)
 - A 32-bit `dma_set_mask_and_coherent` does not keep allocations low: with two banks, `dma_alloc_coherent` may return `0x68xxxxxx`. I
 
-### 14.4 Why "DCB read advanced, writes vanished" proves less than it looks
-- `CURR_DESC` advancing and the CMIC RX counter (ingress, before DMA) do not show that the descriptor read returned real data. A PCIe memory read that fails (no OARR window, or no RC inbound map) completes with UR/CA, the engine gets junk, advances; a posted write has no completion and is silently dropped. A fully broken path therefore looks like "reads advance, writes vanish". C (PCIe protocol), I (applies here)
-- The sticky evidence is in `DMA_STAT` (section 5): `[23:20]` DESCRD address-decode error, `[19:16]` PKTWR/RD decode error, `[15:12]` STWT decode error. Not recorded in the live run. C (bit map), I (which bit sets here)
-- Residual asymmetry if the DCB read really succeeded: window and inbound map are fine for reads, and writes still fail; then suspects are `PAXB_PCIE_EP_AXI_CONFIG` (`0x2104`) write attributes and RC inbound write permission. I
-
-### 14.5 Fix and verification
-Order matters; steps 1 and 2 are read-only.
-1. **Endpoint dump (BAR0, read-only; the BDE itself touches these offsets):** `0x2030`, `0x2104`, `0x2c08`, `0x2d34`, `0x2d60`, `0x2d64`. Expect `0x2d60 == 0` if 14.2 is right. `(0x2c08 >> 12) & 1` must be 0 (PAXB_0, case A); otherwise stop. I (offsets C from BDE)
-2. **RC dump (read-only, `/dev/mem` or a debug read in the platform driver):** `0x18012000 + {0xd08, 0xd0c, 0xc80}` only. These three are the offsets stock itself writes, so they decode on HR2. Do **not** probe other RC offsets blind: HR2 aborts on missing registers (`0xf40`, patch 950). I
-3. **Endpoint writes (C, `shbde_iproc_paxb_init`), in the module probe after `pci_set_master`, before arming DMA:**
-   - `BAR0+0x2104 <- 0`
-   - `BAR0+0x2d60 <- 0x1`
-   - `BAR0+0x2d64 <- 1` (`1 + pci_num`; 1 for the live PAXB_0)
-   - leave `0x2030` if it reads 0; else write 0 (LE, C BDE branch)
-   - keep the live remap (case A); to set explicitly: `_0 0x144d2450`, `_1 0x19617595`, `_2 0x1e75c6da`, `_3 0x1f` (C).
-4. **RC write, only if step 2 shows `+0xd08 == 0`:** `0x18012000+0xd08 <- 1`, `+0xc80 <- 0x80` (C stock values, I meaning). Belongs in an out-of-tree DT-gated patch next to patches 950-952 (HR2 compat only), never `dma-ranges`. I
-5. **Keep buffers low:** allocate DCB/buffers below `0x08000000`: print `dcb_dma`/`buf_dma` and fail if >= `0x08000000`; if the allocator returns high pages use a `reserved-memory` low region (DT, I) instead of relying on the mask.
-6. **Verify with one frame, by physical address:** pre-fill DCB (64 B) and buffer (first 64 B) with `0xA5`, arm ch1 as in section 5, send one frame (ARP broadcast on front 1 side), then read the DCB and buffer back **by physical address** (`/dev/mem` at `0x0110e000` / `0x01124000`, or `devmem` words) and `DMA_STAT`:
-   - pass: DCB `w15` bit 31 DONE, `w15[15:0]` = frame length, `w12[7:0]` = source logical port, buffer starts with the frame's DA; `DMA_STAT` bit 5 (CH1 DESC_DONE), decode-error nibbles 0.
-   - fail with unchanged `0xA5`: re-read `DMA_STAT [23:12]` and the 14.5 step 1/2 registers; `DESCRD` error set -> window/inbound (steps 3/4), clear -> write attributes (14.4).
-   - Abort the channel before any `rmmod` (section 5 abort) so the engine never writes into freed RAM.
+### 14.4 Result (live 2026-11-12, commit after 03e51a9)
+- Root cause: no frame was ever switched to the CPU. Unit-1 VLAN 1 held only ports 28/29: CPU (0) and xe1 (27, front 50) missing from `VLAN_TAB`/`EGR_VLAN`, and both `disabled` in STG 1. The PCIe DMA path was fine. C
+- PCIe state as Linux finds it (read live, no writes needed): endpoint BAR0 `0x2030`=0, `0x2104`=0, `0x2c08`=0x18012001 (b12 clear = PAXB_0, case A), `OARR_2`/`_UPPER` = 1/1; RC `+0xd08`=1, `+0xd0c`=0, `+0xc80`=0x80; remap = case A. C
+- `CURR_DESC` advancing + CMIC RX counter is not proof of a delivered frame; a 0xA5 pre-fill of DCB + buffer is the check. C
+- Table writes (S-channel mem ops, unit 1, entry 1):
+  | Table | Blk | Addr | Before | After |
+  |---|---|---|---|---|
+  | `VLAN_TAB` | IPIPE 10 | `0x14000001` | w0 `0x30000000` | w0 `0x38000001` (+CPU, +27) |
+  | `STG_TAB` | IPIPE 10 | `0x14040001` | `0x0, 0x0F000000` | `0x3, 0x0FC00000` (CPU + 27 forwarding) |
+  | `EGR_VLAN_STG` | EPIPE 11 | `0x10100001` | same as STG_TAB | same as STG_TAB |
+  | `EGR_VLAN` | EPIPE 11 | `0x100c0001` | `0x30000000, 0x1C000000` | `0x70000000, 0x1E000000` (PORT_BITMAP +0, +27) |
+  - Each adds an even bit count, so `EVEN_PARITY` stays valid. `PORT_TAB[27]` PORT_VID = 1, EN_IFILTER 0. C
+- First frame: 68 B ARP broadcast, `w12` src port 27, DONE/start/end set, err 0, VLAN 1 tag kept (`81 00 00 01`), within 100 ms of arming. C
+- Abort the channel before any `rmmod` (section 5 abort) so the engine never writes into freed RAM.

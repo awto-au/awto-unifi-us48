@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * us48_cmic: bring-up module for the BCM53346 (unit 1) CMIC on the UniFi US-48-500W.
- * Step 2: abort the RX/TX DMA stock left running (it points into RAM we now own), then
- * receive one frame on CMC0 ch1 into a coherent buffer. docs/driver-internals.md sections 1 and 5.
+ * Step 2: abort the RX/TX DMA stock left running, add CPU + xe1 to VLAN/STG 1, receive one
+ * frame on CMC0 ch1 into a coherent buffer. docs/driver-internals.md sections 1, 5, 14.
  */
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
@@ -28,12 +28,19 @@
 #define DMA_DESC(ch)		(0x31158 + 4 * (ch))
 #define COS_CTRL_RX_0(ch)	(0x31168 + 8 * (ch))
 #define COS_CTRL_RX_1(ch)	(0x3116c + 8 * (ch))
+#define DMA_CURR_DESC(ch)	(0x311a8 + 4 * (ch))
 #define DMA_STAT_CLR		0x311a4
 #define RX_CH			1
 #define RX_BUF			2048
 /* EPC_LINK_BMAP_64: IPIPE block 10, 64-bit; bit 0 = CPU port. */
 #define BLK_IPIPE		10
 #define EPC_LINK_BMAP_64	0x46002700
+#define BLK_EPIPE		11
+#define VLAN_TAB(i)		(0x14000000 + (i))
+#define STG_TAB(i)		(0x14040000 + (i))
+#define EGR_VLAN(i)		(0x100c0000 + (i))
+#define EGR_VLAN_STG(i)		(0x10100000 + (i))
+#define XE1_PORT		27	/* front 50 */
 /* One SBUS op answers in a few us; 10 ms = 1000x backstop. Expiry = op abandoned, logged. */
 #define SCHAN_TIMEOUT_US	10000
 /* Abort completes after one in-flight descriptor (tens of us); 10 ms backstop, logged on expiry. */
@@ -41,6 +48,8 @@
 /* House-LAN broadcasts reach port 50 every few s; poll 100 ms for 30 s. Expiry = no frame, logged. */
 #define RX_POLL_MS		100
 #define RX_POLLS		300
+/* Pre-fill pattern: any word still 0xA5A5A5A5 was never written by the chip (driver-internals 14.5 step 6). */
+#define FILL			0xa5a5a5a5
 
 struct us48_cmic {
 	struct pci_dev *pdev;
@@ -56,10 +65,11 @@ struct us48_cmic {
 static u32 rd(struct us48_cmic *u, u32 off) { return ioread32(u->cmic + off); }
 static void wr(struct us48_cmic *u, u32 off, u32 v) { iowrite32(v, u->cmic + off); }
 
-/* SBUS register op; words = data words (1 or 2). Header layout: driver-internals section 1. */
-static int schan(struct us48_cmic *u, bool write, u32 blk, u32 addr, u32 *data, int words)
+/* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09. Header layout: section 1. */
+static int sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words)
 {
-	u32 op = write ? 0x0d : 0x0b, ctrl;
+	bool write = op == 0x0d || op == 0x09;
+	u32 ctrl;
 	int i, ret;
 
 	wr(u, SCHAN_CTRL, 0);
@@ -71,8 +81,8 @@ static int schan(struct us48_cmic *u, bool write, u32 blk, u32 addr, u32 *data, 
 	ret = readl_poll_timeout_atomic(u->cmic + SCHAN_CTRL, ctrl, ctrl & (SCHAN_DONE | SCHAN_ERRS),
 					1, SCHAN_TIMEOUT_US);
 	if (ret || (ctrl & SCHAN_ERRS)) {
-		dev_err(&u->pdev->dev, "schan %s blk %u addr %08x: ctrl %08x after %u us\n",
-			write ? "write" : "read", blk, addr, ctrl, SCHAN_TIMEOUT_US);
+		dev_err(&u->pdev->dev, "sbus op %02x blk %u addr %08x: ctrl %08x after %u us\n",
+			op, blk, addr, ctrl, SCHAN_TIMEOUT_US);
 		wr(u, SCHAN_CTRL, 0);
 		return ret ?: -EIO;
 	}
@@ -80,6 +90,40 @@ static int schan(struct us48_cmic *u, bool write, u32 blk, u32 addr, u32 *data, 
 		data[i] = rd(u, SCHAN_MSG(1 + i));
 	wr(u, SCHAN_CTRL, 0);
 	return 0;
+}
+
+/* Set bits (bit numbers into the entry) and keep EVEN_PARITY at bit par consistent. */
+static void smem_set_bits(struct us48_cmic *u, u32 blk, u32 addr, int words, int par,
+			  const int *bits, int n)
+{
+	u32 e[4];
+	int i, flips = 0;
+
+	if (sbus(u, 0x07, blk, addr, e, words))
+		return;
+	for (i = 0; i < n; i++) {
+		if (!(e[bits[i] / 32] & BIT(bits[i] % 32)))
+			flips++;
+		e[bits[i] / 32] |= BIT(bits[i] % 32);
+	}
+	if (flips & 1)
+		e[par / 32] ^= BIT(par % 32);
+	if (flips)
+		sbus(u, 0x09, blk, addr, e, words);
+	dev_info(&u->pdev->dev, "mem %u/%08x: %d bit(s) set, w0 %08x w1 %08x\n", blk, addr, flips, e[0], e[1]);
+}
+
+/* VLAN 1 + STG 1 lack the CPU and xe1 (27) after stock: add both (driver-internals 14.4). */
+static void cpu_path_init(struct us48_cmic *u)
+{
+	static const int vlan[] = { 0, XE1_PORT };			/* PORT_BITMAP 0:30 */
+	static const int egr[] = { 30, 30 + XE1_PORT };			/* PORT_BITMAP 30:30 */
+	static const int stg[] = { 0, 1, 2 * XE1_PORT, 2 * XE1_PORT + 1 };	/* SP_TREE 3 = forward */
+
+	smem_set_bits(u, BLK_IPIPE, VLAN_TAB(1), 4, 126, vlan, 2);
+	smem_set_bits(u, BLK_EPIPE, EGR_VLAN(1), 3, 76, egr, 2);
+	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
+	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(1), 2, 60, stg, 4);
 }
 
 static void dma_abort(struct us48_cmic *u, int ch)
@@ -107,13 +151,16 @@ static void rx_work_fn(struct work_struct *w)
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, rx_work);
 	u32 w15 = le32_to_cpu(READ_ONCE(u->dcb[15]));
 
-	if (!(w15 & BIT(31))) {
+	if (w15 == FILL || !(w15 & BIT(31))) {
 		if (++u->polls < RX_POLLS) {
 			schedule_delayed_work(&u->rx_work, msecs_to_jiffies(RX_POLL_MS));
 			return;
 		}
-		dev_warn(&u->pdev->dev, "no frame in %u ms; DMA_STAT %08x CTRL %08x\n",
-			 RX_POLLS * RX_POLL_MS, rd(u, DMA_STAT), rd(u, DMA_CTRL(RX_CH)));
+		dev_warn(&u->pdev->dev, "no frame in %u ms; DMA_STAT %08x CTRL %08x CURR %08x\n",
+			 RX_POLLS * RX_POLL_MS, rd(u, DMA_STAT), rd(u, DMA_CTRL(RX_CH)),
+			 rd(u, DMA_CURR_DESC(RX_CH)));
+		print_hex_dump(KERN_INFO, "us48_cmic dcb: ", DUMP_PREFIX_OFFSET, 16, 4, u->dcb, 64, false);
+		print_hex_dump(KERN_INFO, "us48_cmic buf: ", DUMP_PREFIX_OFFSET, 16, 4, u->buf, 32, false);
 		rx_stop(u);
 		return;
 	}
@@ -168,23 +215,25 @@ static int us48_cmic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	u->buf = dmam_alloc_coherent(&pdev->dev, RX_BUF, &u->buf_dma, GFP_KERNEL);
 	if (!u->dcb || !u->buf)
 		return -ENOMEM;
-	memset(u->dcb, 0, 64);
+	memset(u->dcb, 0xa5, 64);
+	memset(u->buf, 0xa5, 64);
 	u->dcb[0] = cpu_to_le32(u->buf_dma);
 	u->dcb[1] = cpu_to_le32(RX_BUF);
 	wmb();
 	wr(u, DMA_DESC(RX_CH), u->dcb_dma);
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) | DMA_EN);
-	dev_info(&pdev->dev, "RX armed: DCB %pad buf %pad, ch1 CTRL %08x\n",
-		 &u->dcb_dma, &u->buf_dma, rd(u, DMA_CTRL(RX_CH)));
+	dev_info(&pdev->dev, "RX armed: DCB %pad buf %pad, ch1 CTRL %08x DMA_STAT %08x\n",
+		 &u->dcb_dma, &u->buf_dma, rd(u, DMA_CTRL(RX_CH)), rd(u, DMA_STAT));
 
-	if (!schan(u, false, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2)) {
+	if (!sbus(u, 0x0b, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2)) {
 		dev_info(&pdev->dev, "EPC_LINK_BMAP_64 %08x_%08x\n", link[1], link[0]);
 		if (!(link[0] & BIT(0))) {
 			link[0] |= BIT(0);
-			schan(u, true, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
+			sbus(u, 0x0d, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
 		}
 	}
 
+	cpu_path_init(u);
 	INIT_DELAYED_WORK(&u->rx_work, rx_work_fn);
 	schedule_delayed_work(&u->rx_work, msecs_to_jiffies(RX_POLL_MS));
 	return 0;
