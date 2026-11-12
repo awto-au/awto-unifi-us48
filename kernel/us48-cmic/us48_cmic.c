@@ -498,6 +498,18 @@ static int us48_cmic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	return 0;
 }
 
+/* Reboot keeps unit 1 out of reset (PERST# held released, patch 952): a live DMA hangs stock U-Boot's PCIe init. */
+static void us48_cmic_shutdown(struct pci_dev *pdev)
+{
+	struct us48_cmic *u = pci_get_drvdata(pdev);
+
+	if (!u)
+		return;
+	dma_abort(u, RX_CH);
+	dma_abort(u, TX_CH);
+	pci_clear_master(pdev);
+}
+
 static const struct pci_device_id us48_cmic_ids[] = {
 	/* Function 1 (01:00.1) shares the ID; probe rejects it, only function 0 carries the CMIC. */
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x8346) },
@@ -509,6 +521,7 @@ static struct pci_driver us48_cmic_driver = {
 	.name		= "us48_cmic",
 	.id_table	= us48_cmic_ids,
 	.probe		= us48_cmic_probe,
+	.shutdown	= us48_cmic_shutdown,
 };
 module_pci_driver(us48_cmic_driver);
 
