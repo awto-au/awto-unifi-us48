@@ -108,9 +108,15 @@ def tio_argv(baud: int) -> list[str]:
         # Killing this ssh (baud change) hangs up the remote tio; console_mon still captures locally.
         # Keepalive 5 s x 3: a dead link drops in ~15 s (LAN RTT < 1 ms). The pidfile lets the next start end the
         # tio a dropped link left holding the tty; $$ becomes tio's pid after exec.
-        remote = (f"[ -f {RPID} ] && kill $(cat {RPID}) 2>/dev/null; rm -f {RSOCK}; echo $$ > {RPID}; "
+        # kill is async: wait for the old tio to release the tty (ms; 3 s bound as in _end_tio, then SIGKILL).
+        remote = (f"p=$(cat {RPID} 2>/dev/null); if [ \"$(cat /proc/$p/comm 2>/dev/null)\" = tio ]; then "
+                  f"kill $p; i=0; "
+                  f"while kill -0 $p 2>/dev/null && [ $i -lt 60 ]; do sleep 0.05; i=$((i+1)); done; "
+                  f"kill -9 $p 2>/dev/null; fi; rm -f {RSOCK}; echo $$ > {RPID}; "
                   f"exec tio {TTY} -b {baud} -L -S unix:{RSOCK}")
-        return ["ssh", "-t", "-o", "ExitOnForwardFailure=yes", "-o", "StreamLocalBindUnlink=yes",
+        # Own connection, never the ControlMaster: a muxed -L lives in the master, survives our ssh and blocks
+        # the next bind (socket never reappears after a baud respawn).
+        return ["ssh", "-t", "-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ExitOnForwardFailure=yes", "-o", "StreamLocalBindUnlink=yes",
                 "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3",
                 "-L", f"{SOCK}:{RSOCK}", HOST, remote]
     return ["tio", TTY, "-b", str(baud), "-L", "--log-file", str(TIO_LOG), "--log-append", "--log-strip",

@@ -25,11 +25,22 @@ CAPTURE_DIR = console.ROOT / "tmp/logs/console"
 def capture(proc: subprocess.Popen, path: Path) -> None:
     # Reconnect until tio exits: in US48_HOST mode ssh -L binds SOCK before the remote tio listens, so an early
     # connect gets EOF at once. POLL_S between tries; tio binds within ~100 ms.
+    # Socket gone while ssh lives = forward lost (seen after a baud respawn): respawn ssh. LAN login binds in
+    # < 1 s; 3 s bound, then logged + respawned.
+    missing_since = None
     with path.open("ab") as f:
         while proc.poll() is None:
             if not console.SOCK.exists():
+                if console.HOST:
+                    missing_since = missing_since or time.monotonic()
+                    if time.monotonic() - missing_since > 3.0:
+                        print(f"[console_mon] {console.SOCK.name} missing 3 s with ssh up: respawning", flush=True)
+                        console.RESPAWN.touch()
+                        proc.terminate()
+                        return
                 time.sleep(console.POLL_S)
                 continue
+            missing_since = None
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(str(console.SOCK))
