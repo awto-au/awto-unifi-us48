@@ -76,24 +76,25 @@ Tags: C = confirmed in binary or source, I = inferred. Sources:
 - Register offsets in RDB/OM `*_defs.h` are identical (e.g. UMAC_REV_ID 0x12200, XLPORT_ENABLE_REG 0x2020b00). C
 - SW `soc_reg_addr` @0x126cfbc builds `offset | (blk & 0xf) << 20 | (blk >> 4) << 30` and derives the header DST_BLK from those bits (@0x12688cc: `(addr & 0xffffff) >> 20 | (addr >> 30) << 4`). The address word sent is that full value. C
 - OM sends `offset | blkport` only, block only in the header (`xgsm_blockport_addr.c`, `xgsm_port_addr.c`). C
-- HW presumably ignores block bits in the address word (OM works without). Use the SW form first (known good on this build) and OM form as fallback. I
-- Port index within block: OM ORs `blkport` (0-based position in the block's port bitmap) into low bits; array reg idx adds `idx * 0x100`. SW ORs `portword << 12` (@0x126d4xx, portword = 2nd word of a per-port table). Conflict not resolved: several GPORT offsets have bit 12/13 set, so SW's term is probably not a plain port index. **Open**, doesn't affect logical port 2 (index 0). I
+- **HW: use the OM form.** Address word = `offset | blkport`, block only in the header. Live 2026-11-12 (#47): `UMAC_REV_ID` via `0x00012200` → 0x00030601; the SW form `0x00212200` → 0x00000000 (another register). C
+- **Port index = low byte** (OM `blkport`). Live: `MAC_0` written via `0x00010301` read back only at 0x10301; `0x11300` is another register (0x00018100). SW's `portword << 12` is not a port index on HR2. C
 
 ### Worked example: read UMAC_REV_ID, unit 0, logical port 2 (front 1)
 - Register: `UMAC_REV_ID` (RDB idx 51657, type port, block GPORT, offset 0x12200, reset 0x00030601; fields PATCH 7:0, MINOR 15:8, MAJOR 23:16).
 - Logical port 2 = first port of GPORT0 (block 2), block-port index 0. Physical port is 9 (see section 4) but SBUS uses the logical number.
 - DST_BLK = 2, OPCODE = 0x0b, DATA_LEN = 4, ACC_TYPE = 0:
   - header = `0x0b << 26 | 2 << 20 | 4 << 7` = **0x2c200200**
-  - address = `0x12200 | (2 << 20)` = **0x00212200** (OM form: 0x00012200)
-- Steps (AXI base 0x48000000, CMC0):
+  - address = **0x00012200** (offset only; port index 0)
+- Steps (AXI base 0x48000000, CMC0), verified on HW 2026-11-12:
   1. write `0x2c200200` -> 0x4803100c
-  2. write `0x00212200` -> 0x48031010
+  2. write `0x00012200` -> 0x48031010
   3. write `0x00000001` -> 0x48031000
   4. read 0x48031000 until bit1 set; fail if bit20/21/22 set (then read 0x48031008, abort per above)
-  5. read 0x4803100c = ack header (opcode field `0x0c`, i.e. `0x30......`; remaining bits I), read 0x48031010 = data, expect 0x00030601
+  5. read 0x4803100c = ack header **0x30E00200** (opcode 0x0c, src blk 14 CMIC, 4 bytes), read 0x48031010 = **0x00030601**
   6. write `0x00000000` -> 0x48031000
-- xgsd alternative header (I): 0x2c100200.
-- Fully-specified write example, same port: COMMAND_CONFIG (0x10200): header `0x0d<<26 | 2<<20 | 4<<7` = 0x34200200, words {hdr, 0x00210200, value}, CTRL start, poll, CTRL clear. C (format), untested on HW.
+- Header layout is xgsm (CMICm): confirmed by the ack above. C
+- Write: header `0x0d<<26 | blk<<20 | 4<<7` (blk 2: 0x34200200), words {hdr, `offset|port`, value}, CTRL start, poll, clear. Ack 0x38E00000. Verified on `MAC_0`. C
+- Console lines over ~400 chars get cut; keep on-box helper commands short.
 
 ## 2. Chip init order
 
