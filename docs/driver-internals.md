@@ -402,3 +402,78 @@ Registers (block:reg): `SETUP` 0x1090:00, `RESET` 0x1090:01, `POWER` 0x1090:02, 
 - Which xgsm/xgsd header: resolved (xgsm).
 - Unit 1: xe port mode (1-lane vs 2-lane SFI), `serdes_driver_current` decode, firmware download over MIIM bus 1 timing.
 - BDE module behaviour (stock `.ko`), GPL archive fetch, per-lane TSC address mapping.
+
+## 12. Internal GPHY <-> GPORT path (QSGMII)
+
+Question: front 1 (logical 2, phys 9, GPORT0 MAC 0, GPHY internal bus 0 addr 9) has PHY link and PHY RX counter, GPORT MIBs stay 0 with UMAC RX/TX enabled (#47). Tags: C = read in source/stock decompile, I = inferred, not verified on HW.
+
+### 12.1 Findings (no QSGMII2X init exists for these ports)
+- **No OpenMDK or stock code configures a SerDes between the integrated GPHYs and GPORT0/1.** C
+  - OM `bcm56150_a0_bmd_reset.c`: only releases `TOP_SOFT_RESET_REG` QSGMII2X0-2 (+FIFO), GP0-2, `QGPHY_RST_L=0xf` (section 2 step 5). Never writes `TOP_QSGMII2X_CTRL`, `TOP_QGPHY_CTRL_0/1`, `GPORT_MAC_CRS_SEL`, `GPORT_SGN_DET_SEL`, `GPORT_MODE_REG`.
+  - OM GPHY driver `bcm56150_drv.c` (section 4/7) has no SerDes access.
+  - Stock: `TOP_QSGMII2X_CTRL` (id 0xc495) / `TOP_QGPHY_CTRL_0` (0xc493) written only in the 0x8342/0x8343 branch (section 10). No constant reference to `GPORT_MAC_CRS_SEL` (0x581a) or `GPORT_SGN_DET_SEL` (0x5822) in the whole export. BCM53344/53346 take reset defaults.
+- **QSGMII SerDes cores serve GPORT2 (phys 18-25, front 17-24), not GPORT0/1.** C/I
+  - OM `bcm56150_miim_int`: p18-25 -> internal bus 1 addr `((p-2)&~7)+1` = 17 (lanes share one address); p2-17 -> bus 0 GPHYs.
+  - OpenBCM `soc_hu2_get_port_mapping` (`private/reference/openbcm-hurricane2.c:2155`, `:2688-2760`): property `serdes_qsgmii_sgmii_override=2` ("QSGMII forced to SGMII") keeps only phys 18 and 22 of 18-25 and leaves 2-17 untouched.
+  - TOP clock-valid status text: "QGPHY_inst0/1 **or** QSGMII2X_inst0", "QGPHY_inst2/3 or QSGMII2X_inst1", "QSGMII2X_inst2" alone. GPORT0 = QGPHY inst 0/1, GPORT1 = inst 2/3, GPORT2 = QSGMII2X2. I
+  - The "QSGMII" in the GPHY driver name / EEE field `EEE_CAPABILITY_USING_QSGMII_AN` refers to the GPHY's MAC-side interface, which is internal and has no MDIO-visible SerDes core in OM.
+- **Internal bus 1 addrs 2/4/6/8 (ID 0x600d8770) are TSC cores, not QSGMII.** C
+  - `bcmi_tsc_xgxs_drv.c`: `BCM_SERDES_PHY_ID0 0x600d`, `ID1 0x8770`, SERDES_ID model 0x11 (section 9).
+  - QSGMII 65nm core ID is `0x0143`/`0xbff0` (reg 2/3), SERDES_ID0 model 0x07 (`bcmi_qsgmii_serdes_drv.c`). Not seen in the live scan (bus 1 addr 17 silent).
+  - OM maps TSC lanes to bus 1 addr `1+(p-26)` (odd addrs for p26/28/30/32); live answers are at 2/4/6/8, i.e. +1. Offset unexplained (I).
+- Lane mapping for phys 9 (logical 2): C
+  - GPORT0 MAC 0 (live: S-channel port index 0 is logical 2).
+  - GPHY: bus 0 addr 9, octal instance `9-p` = 0 (OM; lane 0 of the octal phys 2-9; the one OM writes `MII_BUFFER_CONTROL_0` on).
+  - TOP bit for this lane in `QGPHY_CTRL_0.EXT_PWRDOWN[15:0]`: not documented, likely bit 0 (I).
+
+### 12.2 QSGMII SerDes (GPORT2 only), register facts
+- Addressing (I, accessor `phy_aer_iblk_*` not vendored): define `0xBBBBRR` = block `BBBB`, MIIM reg 0x1f <- block, then reg `RR & 0x1f`; lane via AER reg `0xffde` (lane in low bits, `inst & 7`).
+- Regs (C, `bcmi_qsgmii_serdes_defs.h`): `MIICNTL` 0x0000, `MIISTAT` 0x0001 (link b2), `XGXSSTATUS` 0x8001 (TXPLL_LOCK b11, SEQUENCER_DONE b9, SEQUENCER_PASS b8), `PLL_STATUS` 0x8050 (PLLSEQPASS b11), `TX_DRIVER` 0x8067, `RX_SIGDET` 0x80b4 (RX_SIGDET b4), `RX_CONTROL_PCIE` 0x80ba, `INDCOMBCTRL` 0x8105, `CONTROL1000X1` 0x8300, `CONTROL1000X2` 0x8301, `STATUS1000X1` 0x8304 (SGMII_MODE b0, LINK b1, DUPLEX b2, SPEED [4:3]), `GP_1000XSTATUS1` 0x8124 (same layout), `SERDES_ID0` 0x8310 (MODEL [5:0] = 7).
+- OM init (C): `TX_DRIVER` DRIVER_FIXED_ENB=1, DRV_AMP=5; `INDCOMBCTRL` DISPARITY_EN_VAL, DISPERROR_EN_SYNC_VAL, DISPERROR_EN_VAL, DISPERROR_EN_FORCE = 1; `RX_CONTROL_PCIE` COMMA_ADJ_EN_R, COMMA_ADJ_EN_FORCE_R = 1; mode notify -> `CONTROL1000X1.FIBER_MODE_1000X` = 1 (fiber) or 0 (passthru). Stop: `MIICNTL` PWRDWN_SW only for lane > 1.
+- Stock `phy_qsgmii65_init` (`0x10a58b4`, C): `MIICNTL` bit15 reset, poll clear (10 ms stock limit); property `serdes_qsgmii_sgmii_override` 1/2 -> `0x8015` hi byte 0x1100 under `0x8000` bit13 toggles (default 0 skips); `MIICNTL` = 0x0140 (or 0x1340 + reg 4 = 0x01a0 for AN); `0x8300` value 0x40 (|0x10 `serdes_automedium`, |1 `serdes_fiber_pref`, |0x20 `serdes_sgmii_master`) mask 0x51/0x71; `0x8301` value 1 (5 if AN) mask 0x25; `0x8302` value 0x60 mask 0x66 only with `serdes_fifo_low_latency`.
+- TOP regs (C, OM defs + regdb): `TOP_QSGMII2X_CTRL` 0x02033400: REFCLK_PD [2:0], PWRDWN [5:3], IDDQ [8:6], INT_REFCLK_EN [11:9], QSGMII_DEF [17:12] ("configures the lane into QSGMII mode"), REF_CLKFREQ_SEL [20:18]; one bit per instance 0-2. Reset values all 0.
+
+### 12.3 Read-only checks
+S-channel words (header, address): READ_REG op 0x0b, header = `0x2c000000 | blk<<20 | 0x200`. TOP (blk 16) `0x2d000200`; GPORT (blk 2) `0x2c200200`; IPIPE (blk 10) `0x2ca00200`. Address of a port register = offset | port index (section 1). P = port index used for logical 2.
+| # | What | Header | Address | Bits / expected |
+|---|---|---|---|---|
+| 1 | `MAC_MODE` (UMAC status) | 0x2c200200 | 0x00011100 \| P | **b5 LINK_STATUS** = link input from the PHY side to the MAC; [1:0] MAC_SPEED (2 = 1G); b2 duplex (0 = full). LINK_STATUS=0 means the GPHY->MAC sideband link is not seen. C (reg), I (it gates RX) |
+| 2 | `COMMAND_CONFIG` | 0x2c200200 | 0x00010200 \| P | b0 TX_ENA, b1 RX_ENA, [3:2] ETH_SPEED, b13 SW_RESET, b22 ENA_EXT_CONFIG (1 = speed/duplex from PHY pins, ETH_SPEED ignored). Last seen 0x0180005B |
+| 3 | `TOP_QGPHY_CTRL_0` | 0x2d000200 | 0x02033800 | EXT_PWRDOWN [15:0] (1 = port in low power; expect 0 for our lane), IDDQ_BIAS [19:16] (1 = bias off; expect 0), FORCE_DLL_EN [23:20], CK25_DISABLE [27:24] (expect 0), PLL_SEL_DIV5 b28 (0 = 25 MHz ref) |
+| 4 | `TOP_MISC_STATUS` | 0x2d000200 | 0x02031800 | QGPHY_PLL_LOCK [4:1] expect 0xf (value & 0x1e = 0x1e) |
+| 5 | `TOP_SOFT_RESET_REG` | 0x2d000200 | 0x02030400 | QGPHY_RST_L [19:16] = 0xf, QSGMII2X0-2 b9-11, FIFO b12-14, GP0-2 b6-8 (live 0x000FFFFF) |
+| 6 | `TOP_QSGMII2X_CTRL` | 0x2d000200 | 0x02033400 | IDDQ/PWRDWN/REFCLK_PD expect 0; informational for GPORT0/1 |
+| 7 | `TOP_QGPHY_CTRL_1` | 0x2d000200 | 0x02033c00 | EEE defaults per quad; informational |
+| 8 | `TOP_L1_RCVD_CLK_VALID_STATUS_1` | 0x2d000200 | 0x0204c800 | QC0 [7:0] = link of the 8 ports of QGPHY inst 0/1 (GPORT0), QC1 [15:8] GPORT1, QC2 [23:16] GPORT2. Front 1: bit 0, or bit 7 if `GPORT_LINK_STATUS_TO_CMIC.TRANSPOSE` swizzles (I). Cross-check against MAC_MODE.LINK_STATUS |
+| 9 | `GPORT_MAC_CRS_SEL`, `GPORT_SGN_DET_SEL` | 0x2c200200 | 0x02022200, 0x02022300 | 8 bits, one per MAC, PHY vs SerDes source for CRS / signal-detect; reset 0, never written by OM/stock; expect 0 |
+| 10 | `GPORT_CONFIG`, `GPORT_MODE_REG`, `GPORT_LINK_STATUS_TO_CMIC` | 0x2c200200 | 0x02020000, 0x02020100, 0x02020500 | GPORT_EN b0 = 1; TRANSPOSE b0 |
+| 11 | `LINK_STATUS_64` (IPIPE) | 0x2ca00200 | 0x46002c00 | b2 = logical 2 link (1 = up); compare with SW-set `EPC_LINK_BMAP_64` 0x46002700. Source of the HW bitmap not traced (I) |
+| 12 | GPHY MIIM bus 0 addr 9, no RDB needed | n/a | reg 1, reg 0x19 (AUX_STATUS), reg 0x10 (ECR), reg 0x1c shadow 0x1f (MODE_CTRL = 0x7CA0 seen) | BMSR b2 link; MII_CTRL b10 ISOLATE = 0, b11 PDN = 0 |
+| 13 | GPHY RDB 0x02a `POWER_MII_CTRL` (after 12.4 enter-RDB) | n/a | n/a | **b5 SUPER_ISOLATE** must be 0; stock sets it at reset (0x6e2) then clears, so a 1 here isolates the MAC interface (I) |
+- Reading checks 1/8/13 first discriminates: link bit 0 in MAC_MODE with PHY link up = sideband path (SUPER_ISOLATE / EXT_PWRDOWN / EN bits); link bit 1 but MIB still 0 = MAC datapath (reset/clock) or PORT_TAB/EP side, not the PHY.
+
+### 12.4 RDB access on the BCM54282-family GPHY
+- RDB must be **enabled first**. C (stock `0x10c9be4`, `0x10cb564`, `0x10cbc98`, `0x10d0ca0`; same pattern in all four, around every RDB access):
+  1. enter: MIIM reg **0x17 <- 0x0F7E**, reg **0x15 <- 0x0000** (expansion select 0x0f7e, data 0).
+  2. access: reg **0x1E <- RDB address**, then reg **0x1F** read (data) or write (data); read-modify-write keeps the 0x1E pointer.
+  3. exit: reg **0x1E <- 0x0087**, reg **0x1F <- 0x8000** (restores legacy meaning of 0x1E/0x1F).
+- Without step 1, reg 0x1E is the legacy `TEST1` (OM `BCM54282_TEST1r` = 0x1e RAW) so RDB reads return junk/0: matches the live "RDB 0x02a / 0x125 read 0". I
+- Legacy regs (0x00-0x1d) stay reachable in RDB mode; stock does enter/exit per access, so do not leave RDB mode on across other MIIM users.
+- Stock `phy_bcm542xx_reset_setup` (`0x10d116c`, C), RDB writes in order: 0x82b = 0x8400; rev-dependent block (0x28 = 0xc00, 0x152 = 0x8787, 0x156 = 0x17d, 0x28 = 0x400, 0x1c0 = 0xd771, 0x1c2 = 0x72, 0x1cf = 6, 0xd8 = 0x20, 0x1cc = 0x500, 0x1c5 = 0xc100, 0xff = 0x1000, 0xfb = 0x7c00 then 0, 0x2a = 0x6e2 or 0x6c2 per property `port_super_isolate` default 2); then always 0x28 = 0xc00, **0x125 = 0x011b**, **0x2a &= ~0x20**, 0x1f = 0xbc00. OM has the 0x82b, 0x125, 0x2a subset only (section 7). Meaning of the rev block and 0x28 is unknown (I).
+- Stock also uses a second address per octal (`phy_port_primary_and_offset`: primary lane addr and offset) for some RDB regs (0x83c); lane 0 of the octal = front 1 (addr 9). I
+
+### 12.5 Minimal write sequence for one port (warm boot from stock)
+Order matters: PHY side first, then MAC. Skip steps whose read-only check already shows the target value.
+| Step | Write | Tag |
+|---|---|---|
+| 1 | GPHY bus 0 addr 9 MII reg 0 <- 0x1340 (clears PDN; done already) | C (OM), done live |
+| 2 | RDB enter: reg 0x17 <- 0x0F7E, reg 0x15 <- 0x0000 | C (stock) |
+| 3 | RDB 0x02a: reg 0x1E <- 0x002A; reg 0x1F RMW `&= ~0x0020` (SUPER_ISOLATE=0) | C (stock + OM) for the write, I that it is set after warm boot |
+| 4 | RDB 0x125: reg 0x1E <- 0x0125; reg 0x1F <- 0x011B (DSP_TAP10) | C (stock + OM) |
+| 5 | RDB exit: reg 0x1E <- 0x0087; reg 0x1F <- 0x8000 | C (stock) |
+| 6 | Only if check 3 shows the lane's EXT_PWRDOWN bit set: S-channel RMW of `TOP_QGPHY_CTRL_0` (write header 0x35000200, address 0x02033800) clearing that bit (and IDDQ_BIAS if set) | I (stock never writes it for 53344/6) |
+| 7 | MAC reset pulse (OM `_bmd_port_mode_set`; write header 0x34200200, address 0x00010200 \| P): `0x01802058` (SW_RESET=1, RX/TX off) -> `0x0180205B` (speed 1G, RX+TX on) -> `0x0180005B` (SW_RESET=0) | C (OM sequence), I (our earlier single write skipped the SW_RESET pulse) |
+| 8 | Re-read checks 1, 2 and the MIB (`GRPKT`, GPORT port reg offset 0x1b00 per regdb, address \| P) | n/a |
+- No QSGMII2X / TSC write is part of this sequence: none exists for GPORT0/1 in source or stock (12.1).
+- If check 1 shows LINK_STATUS=1 and checks 3/13 are already clean, steps 3-6 are no-ops and the remaining suspects are MAC reset/clock (step 7) and the S-channel port index / block pick for the MIB read (verify the same `P` hits `MAC_0`). I
+- Open: whether anything besides SUPER_ISOLATE / EXT_PWRDOWN gates the GPHY->MAC interface; stock's per-port enable (`phy_enable_set`, RDB reg 0 b11 + reg 0x1a bits) was seen but not fully traced (`0x10d0f54`, case 0x2b).
