@@ -61,3 +61,42 @@ GitLab search needs a login (not covered); Codeberg/sr.ht had no hits. "Last act
 8. **ubnteeprom** → EEPROM-partition MAC/identity for milestone 3 and #33.
 </content>
 </invoke>
+
+## Chip family (HR2 BCM5334x/BCM5615x and relatives)
+
+Survey for #48, 2026-11-12. Sources: `gh search code|repos`, `gh api` tree listings, playwrong search. GitLab code search needs a login (not covered); Codeberg/sr.ht/Bitbucket/SourceForge searches returned nothing relevant.
+Licence column decides use: GPL = adapt into kernel; Broadcom permissive = read for register/sequence meaning; "Open Broadcom" = ISC-style header in Broadcom iProc BSPs.
+
+### Answers
+
+1. **AMAC wiring (#46):** no public code attaches the HR2 AMAC to a switch port.
+   - Broadcom's iProc U-Boot (`bcmiproc_eth.c`, `CONFIG_HURRICANE2`) and its Linux `et`/gmac twin treat HR2 AMAC0 as a standalone MAC with a 10/100 PHY (`bcmiproc_phy5221`, MDIO addr `CONFIG_GMAC_NUM+1` or `et0phyaddr`), plus `AMAC_IDM0_IO_CONTROL_DIRECT` bits `DIRECT_GMII_MODE`, `DEST_SYNC_MODE_EN`, `CLK_250_SEL` cleared.
+   - The RoboSwitch attach (`CHIP_HAS_ROBO`) is NS/NSP only. HR2 has no robo/P4/P5 mux; Helix4/Katana2 instead call `gmac_set_amac_mdio(1)` + SerDes init (AMAC drives a SerDes).
+   - → HR2 AMAC = management MAC to an external PHY, not a switch port. Fits #46 (SerDes status 0/0, stock never uses it). No evidence for a switch-side port. US-48 board wiring still unconfirmed.
+2. **S-channel / CMIC DMA / TSC / QSGMII / init, any licence:** see table. Only GPL pieces: `linux-kernel-bde` (IPROC_CMICD, CMIC 0x48000000, IRQ 194), `bcm-knet` (CMIC packet DMA incl. CMICm regs; no S-channel). S-channel, SerDes and init are Broadcom-licensed (OpenMDK/OpenBCM/SDK mirrors); nothing BSD/MIT/GPL for S-channel on HR2 except as a reimplementation (edgecore-5610 RE, ffn_bcm.c, other chip).
+3. **Mainline-quality XGS switchdev:** none. Mainline has only `gpio-xgs-iproc`, `brcm,hr2` DT, iproc PCIe/clk. Best attempt: henrymao-zz `bcm-switchdev*.c` (stubs, Trident3). Other repos (Meraki, ONL, ONIE, EdgeNOS) are SDK + KNET.
+
+### Table
+
+| Project | Link | Chips | Covers | Licence | Last activity | What we reuse |
+|---|---|---|---|---|---|---|
+| Broadcom iProc U-Boot (as in MX64 tree) | [clayface/U-boot-MX64-20190430_MX64](https://github.com/clayface/U-boot-MX64-20190430_MX64) (`arch/arm/cpu/armv7/hurricane2`, `include/configs/hurricane2.h`, `drivers/net/bcmiproc_{eth,ethHw,phy5221}.c`) | HR2, Helix4, NS/NSP, KT2 | U-Boot AMAC driver (DMA rings, PHY), HR2 lowlevel_init/DDR, `ethaddr 00:90:4c:06:a5:72` (same placeholder as stock US-48 U-Boot: stock = this base, eth stripped) | Open Broadcom (ISC-style header) / GPLv2 U-Boot | 2022-05 | #46: AMAC driver to restore; confirms HR2 AMAC attach |
+| Same base, other forks | [halmartin/u-boot-ms225](https://github.com/halmartin/u-boot-ms225), [hodgesds/t1600g-28ts_gpl](https://github.com/hodgesds/t1600g-28ts_gpl) (`ldk/3.4.5_RC3/.../bcmiproc_eth.c`), [lukasstockner/ap325-apboot-openwrt](https://github.com/lukasstockner/ap325-apboot-openwrt), [opencomputeproject/onie](https://github.com/opencomputeproject/onie) (`machine/accton/*`, `machine/dni/dni_3048up`, U-Boot + 3.2.69 `mach-iproc` patches) | iProc incl. HR2/HX4 | Cross-check of the same driver; ONIE = clean patch series | GPLv2 / Open Broadcom | 2019-2026 | Diff against MX64 tree; ONIE patches easiest to read |
+| Broadcom iProc Linux GMAC `et` driver | [ONL arm-iproc-all 3.2 patches](https://github.com/opencomputeproject/OpenNetworkLinux/tree/master/packages/base/any/kernels/3.2-lts/configs/arm-iproc-all/patches) (`bcmdrivers_gmac_src_et_sys_etcgmac.c.patch`, `bcmiproc_phy5221`, `iproc_mdio`), [riptidewave93/meraki-linux](https://github.com/riptidewave93/meraki-linux) | HR2 (`CONFIG_MACH_HR2`), HX4, NSP | Vendor AMAC driver, MDIO | GPLv2 / Open Broadcom | 2022-01 / 2026-02 | Reference only; mainline `bgmac` + `brcm,nsp-amac` already in `bcm-hr2.dtsi` |
+| Meraki MS220 GPL kernel | [halmartin/switch-11-22-ms220](https://github.com/halmartin/switch-11-22-ms220) (`mach-bcm/xldk/`, `drivers/net/ethernet/broadcom/mdio/cmicd_mdio.c`, `iproc_regs.h`, `socregs_*_open.h`) | Hurricane3 (XLDK), CMICd MIIM | Broadcom XLDK clocks/PLL/IDM, CMIC MIIM driver with full `CMIC_CMC*_MIIM_*` field layout | GPLv2 / Open Broadcom | 2020-09 | MIIM param/ctrl layout (matches `scripts/miim.py`); XLDK IDM + PLL code |
+| Broadcom OpenMDK | [Broadcom/OpenMDK](https://github.com/Broadcom/OpenMDK) | bcm53344 (ARCH xgsm, DEPEND bcm56150), bcm53346, bcm56150_a0 | CDK S-channel (`xgs_schan.c`, `xgsm_schan.c`, `xgsd_schan.c`), BMD DMA (`xgsm_dma.c`), BMD init (`bcm56150_a0_bmd_*`), PHY lib (bcm54xx, `bcmi_tsce/tsc/qsgmii/quadsgmii/unicore*`), `libbde/shbde_iproc.c` (iProc PCIe/AXI window setup for switch-as-PCIe-endpoint = unit 1), `board_bcm56150_{10g,13g}.c` | Broadcom permissive (use/modify/distribute source, no reverse-engineering of binaries, keep notices); not GPL | 2025-08 | Primary source for register meaning + init order; already in vendor store (#47) |
+| Broadcom OpenBCM / SDK mirrors | [bisdn/OpenBCM](https://github.com/bisdn/OpenBCM) (`sdk-6.5.{16,20,26,27}`), [jarsy/bcm-sdk](https://github.com/jarsy/bcm-sdk), [plappermaul/broadcom-switches](https://github.com/plappermaul/broadcom-switches), [copslock/broadcom_cpri](https://github.com/copslock/broadcom_cpri), [sysdevguru/bcm-switch-firmware-compilation](https://github.com/sysdevguru/bcm-switch-firmware-compilation), [ariavie/bcm](https://github.com/ariavie/bcm), [sonix-network/broadcom-leds](https://github.com/sonix-network/broadcom-leds) | HR2 via `src/soc/esw/hurricane2.c`, `bcm/esw/hurricane2/*` | Full SDK: SOC S-channel layer, `soc/esw/hurricane2.c` init, MMU/port/VLAN tables, TSC/Unicore/QSGMII drivers | Broadcom SDK licence (source; not GPL) | 2018-2023 | Name/field semantics; era-matched to stock via 6.3/6.4 (plappermaul) |
+| OpenBCM GPL kernel modules | `sdk-6.5.20/systems/bde/linux/kernel/linux-kernel-bde.c`, `.../modules/bcm-knet/bcm-knet.c` (also in sonic-buildimage `saibcm-modules`, edge-core/ols-nos) | iProc CMICd (`brcm,iproc-cmicd`, 0x48000000, IRQ 194), CMICm/CMICx | BDE (AXI + PCIe, DT-probed) and KNET CMIC DMA netdevs (`CMICM_DMA_CTRLr` 0x31140 etc.) | GPLv2 (`MODULE_LICENSE("GPL")`) | 2023-08 / ongoing in SONiC | Only GPL CMIC packet-DMA reference: register offsets, descriptor chain, IRQ masks, rx/tx. Adapt into in-kernel driver |
+| Broadcom SDKLT / ngbde | `ngbde_iproc_probe.c` in [sonic-net/sonic-buildimage](https://github.com/sonic-net/sonic-buildimage) saibcm-modules | newer XGS (not HR2) | New-gen BDE iProc probe (DT) | GPLv2 (modules) | active | DT probe shape only |
+| wrightca1/edgenos, Salvaged-silicon/nosaic-switch | [edgenos](https://github.com/wrightca1/edgenos), [nosaic-switch](https://github.com/Salvaged-silicon/nosaic-switch) (`datapath/helix4/bde.c`) | Helix4 AS4610-54 | BDE, DTS, packaging, SDK daemon | MIT / Apache-2.0 | 2026-09/10 | Nearest working relative; see #42 row |
+| Meraki MS225 / brumby DTS | [halmartin/meraki-builder](https://github.com/halmartin/meraki-builder) | HR3-class | `brcm,iproc-cmicd` DT node examples | GPLv2 | 2021 | DT node shape for CMIC |
+| edgecore-5610 RE, ffn_bcm.c, henrymao-zz `bcm-switchdev` | see #42 rows above | Trident+, Qumran, TD3 | SDK-free S-channel, switchdev skeleton | none / GPLv2 / mixed | 2025-2026 | Method only; not HR2 layouts |
+| Mainline Linux | `drivers/gpio/gpio-xgs-iproc.c`, `Documentation/devicetree/bindings/arm/bcm/brcm,hr2.yaml`, `bcm-hr2.dtsi` | HR2 | gpio (CCA/CMIC GP), DT, clk, PCIe iproc | GPLv2 | maintained | No switch/CMIC/S-channel driver anywhere in mainline |
+| Broadcom product briefs | [53334-PB](https://docs.broadcom.com/doc/53334-PB), [53346-PB](https://docs.broadcom.com/doc/53346-PB) | BCM53334/53346 | Marketing-level only; no programming guide, no CMIC doc public | Broadcom | n/a | None (not fetched to vendor store; body empty via playwrong) |
+
+### Not found
+
+- HR2/XGS datasheet or CMIC programming guide (NDA); only product briefs.
+- Any open S-channel / TSC / QSGMII driver under GPL or permissive licence for HR2 other than the Broadcom-licensed OpenMDK/SDK.
+- Any mainline-quality DSA/switchdev for XGS; no mailing-list series.
+- Any HR2 U-Boot with an AMAC-to-switch-port path.
