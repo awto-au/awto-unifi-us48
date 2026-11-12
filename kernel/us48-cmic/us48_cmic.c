@@ -53,6 +53,8 @@
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
 #define VLAN_PROFILE_TAB(i)	(0x14080000 + (i))
+#define L2X			0x1c000000	/* hashed: TABLE_INSERT, no index */
+#define UNIT1_MODID		1		/* PORT_TAB.MY_MODID, read live */
 #define XE1_PORT		27	/* front 50 */
 #define XE1_LANE		2	/* TSC0 lane, XLPORT low address byte */
 #define BLK_XLPORT		5
@@ -93,10 +95,10 @@ struct us48_cmic {
 static u32 rd(struct us48_cmic *u, u32 off) { return ioread32(u->cmic + off); }
 static void wr(struct us48_cmic *u, u32 off, u32 v) { iowrite32(v, u->cmic + off); }
 
-/* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09. Header layout: section 1. */
+/* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09, table insert 0x24. Section 1. */
 static int sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words)
 {
-	bool write = op == 0x0d || op == 0x09;
+	bool write = op == 0x0d || op == 0x09 || op == 0x24;
 	u32 ctrl;
 	int i, ret;
 
@@ -175,6 +177,9 @@ static void l2_miss_set(struct us48_cmic *u)
 /* true: module header straight to xe1 (no L2 learning); false: CPU-port ingress, switched + learnt. */
 static bool tx_direct = true;
 module_param(tx_direct, bool, 0644);
+/* Module-header dest port: logical 27 or physical 28 for xe1 (which one HR2 wants is under test, #4). */
+static uint tx_port = XE1_PORT;
+module_param(tx_port, uint, 0644);
 
 static int tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
 {
@@ -227,6 +232,33 @@ static void xe1_enable(struct us48_cmic *u)
 	v[0] = 0;
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | XE1_LANE, v, 2);
 	dev_info(&u->pdev->dev, "xe1 (front 50) enable sequence done\n");
+}
+
+static void set_field(u32 *e, int lsb, int width, u64 v)
+{
+	int i;
+
+	for (i = 0; i < width; i++)
+		if (v & BIT_ULL(i))
+			e[(lsb + i) / 32] |= BIT((lsb + i) % 32);
+}
+
+/* Static L2X entry: our MAC in VLAN 1 -> CPU (modid 1, port 0). TX bypasses learning (module header). */
+static int l2_add_cpu(struct us48_cmic *u, const u8 *mac)
+{
+	u32 e[4] = { };
+	int i, ones = 0;
+
+	set_field(e, 2, 12, 1);				/* VLAN_ID */
+	set_field(e, 14, 48, ether_addr_to_u64(mac));	/* MAC_ADDR */
+	set_field(e, 62, 6, 0);				/* PORT_NUM: CPU */
+	set_field(e, 68, 7, UNIT1_MODID);		/* MODULE_ID */
+	set_field(e, 97, 1, 1);				/* STATIC_BIT */
+	set_field(e, 99, 1, 1);				/* VALID */
+	for (i = 0; i < 4; i++)
+		ones += hweight32(e[i]);
+	set_field(e, 100, 1, ones & 1);			/* EVEN_PARITY */
+	return sbus(u, 0x24, BLK_IPIPE, L2X, e, 4);
 }
 
 static void dma_abort(struct us48_cmic *u, int ch)
@@ -341,7 +373,7 @@ static enum hrtimer_restart us48_poll_timer(struct hrtimer *t)
 	return HRTIMER_RESTART;
 }
 
-/* TX to port 27 with the module header (section 5 TX recipe): DCB0 = DA+SA (12 B), DCB1 = rest at +16. */
+/* TX to xe1 with the module header (OM bcm56150_a0_bmd_tx): DCB0 = DA+SA (12 B), DCB1 = rest at +16, HG on both. */
 static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 {
 	struct us48_cmic *u = netdev_priv(nd);
@@ -361,11 +393,12 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 				   (tx_direct ? DCB_W1_HG : 0));
 	if (tx_direct) {
 		u->tx_dcb[2] = cpu_to_le32(0x81000000);
-		u->tx_dcb[3] = cpu_to_le32(XE1_PORT);
+		u->tx_dcb[3] = cpu_to_le32(READ_ONCE(tx_port));
 		u->tx_dcb[4] = cpu_to_le32(0x00040000);	/* txq 0 */
 	}
 	u->tx_dcb[16] = cpu_to_le32(u->tx_buf_dma + 16);
-	u->tx_dcb[17] = cpu_to_le32((len - 12) | DCB_W1_STAT);
+	u->tx_dcb[17] = cpu_to_le32((len - 12) | DCB_W1_STAT | (tx_direct ? DCB_W1_HG : 0));
+	memcpy(&u->tx_dcb[18], &u->tx_dcb[2], 16);	/* OM _dcb_init: header on both DCBs */
 	u->tx_len = len;
 	netif_stop_queue(nd);
 	wmb();
@@ -387,9 +420,22 @@ static void us48_tx_timeout(struct net_device *nd, unsigned int txq)
 	netif_wake_queue(nd);
 }
 
+static int us48_set_mac(struct net_device *nd, void *p)
+{
+	struct us48_cmic *u = netdev_priv(nd);
+	int ret = eth_mac_addr(nd, p);
+
+	if (!ret && l2_add_cpu(u, nd->dev_addr))
+		netdev_warn(nd, "L2 insert for %pM failed\n", nd->dev_addr);
+	return ret;
+}
+
 static int us48_open(struct net_device *nd)
 {
 	struct us48_cmic *u = netdev_priv(nd);
+
+	if (l2_add_cpu(u, nd->dev_addr))
+		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
 
 	rx_arm(u);
 	napi_enable(&u->napi);
@@ -416,7 +462,7 @@ static const struct net_device_ops us48_netdev_ops = {
 	.ndo_stop		= us48_stop,
 	.ndo_start_xmit		= us48_xmit,
 	.ndo_tx_timeout		= us48_tx_timeout,
-	.ndo_set_mac_address	= eth_mac_addr,
+	.ndo_set_mac_address	= us48_set_mac,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
