@@ -148,11 +148,11 @@ static void smem_set_bits(struct us48_cmic *u, u32 blk, u32 addr, int words, int
 static void cpu_path_init(struct us48_cmic *u)
 {
 	static const int vlan[] = { 0, XE1_PORT };			/* PORT_BITMAP 0:30 */
-	static const int egr[] = { 30, 30 + XE1_PORT };			/* PORT_BITMAP 30:30 */
+	static const int egr[] = { 30, 30 + XE1_PORT, 0, XE1_PORT };	/* PORT_BITMAP 30:30, UT_BITMAP 0:30 */
 	static const int stg[] = { 0, 1, 2 * XE1_PORT, 2 * XE1_PORT + 1 };	/* SP_TREE 3 = forward */
 
 	smem_set_bits(u, BLK_IPIPE, VLAN_TAB(1), 4, 126, vlan, 2);
-	smem_set_bits(u, BLK_EPIPE, EGR_VLAN(1), 3, 76, egr, 2);
+	smem_set_bits(u, BLK_EPIPE, EGR_VLAN(1), 3, 76, egr, 4);
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(1), 2, 60, stg, 4);
 	/* Stock's port disable leaves EGR_ENABLE[27] = 0: every frame to xe1 dies before the MAC. */

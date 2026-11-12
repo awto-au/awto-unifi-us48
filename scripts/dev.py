@@ -331,15 +331,18 @@ def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
                 s.buf = b""
                 return st
             continue
+        # Ctrl-C first (harmless everywhere); a quiet Linux console that has not been activated ignores it,
+        # so then Enter. Enter is only sent second: a fresh boot has no U-Boot command to repeat.
+        for probe in (b"\x03", b"\r"):
+            s.write(probe)
+            acc = (acc + s.read_idle(0.7, 3.0))[-4000:]
+            st = _classify_tail(acc)
+            if st:
+                s.buf = b""
+                return st
+        ever = ever or bool(acc)
         if not ever and time.monotonic() - t0 > SILENT_S:
             return "silent"
-        s.write(b"\x03")
-        acc = (acc + s.read_idle(0.7, 3.0))[-4000:]
-        st = _classify_tail(acc)
-        if st:
-            s.buf = b""
-            return st
-        ever = ever or bool(acc)
     return "unknown"
 
 
