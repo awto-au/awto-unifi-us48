@@ -149,7 +149,7 @@ Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function 
   - Target: `0x7f` if chip `0x28` reg `0x43 == 0x60` (plus 1 ms between chunks), else broadcast `0x30`.
   - 512 block writes to reg `0x70`, 35 bytes each: `0x80`, offset (BE16), 32 data bytes. Then write `0x70 = 0x40` (start).
   - Status strings: `PoE deviceID(0x%x) found, start firmware load process`, `PoE firmware check failed, reset the module`.
-  - OpenWrt needs this blob at runtime; redistribution status unknown.
+  - OpenWrt needs this blob at runtime only after a cold boot: the chips keep firmware across a warm reboot into OpenWrt (#24). Shipping it in repo/image is allowed (owner, #8).
 - Interrupts (kernel, C):
 
   | Linux GPIO | CCA bit | IRQ | Name | Trigger | switchdrvr handler |
@@ -258,7 +258,7 @@ Write-only 8-bit frames to four chains selected by two CMIC GPIO pins. Fans, PoE
 - 2-bit field per port, MSB first: port index `i` → byte `base + (i>>2)`, bits `7-2*(i&3) : 6-2*(i&3)` (masks `fc f3 cf 3f`, `0x15a3818`).
 - PoE frames: `base = 0`. SDK path: byte = BCM59111 chip (0..5), field = channel 1..4 = PSE bits 4–7. Set `01` on power-good, clear on disconnect. HAL path `0x5f6a40` writes `01`/`10` by port state (`0x1d901c4`: 2 for states 4/7, 1 for 1/5/8). Colour per value not known.
 - Port LED frames: `base = 1` (class 1; classes `0xc,0xd,0xf,0x10..0x12` use 0 -> offset test `0x5f6c04`). Writer `0x60620c` maps 9 port states to value 0 (off) / 1 (states 4,7) / 2 (1,2,3,5,6,8); blink = off, 100 ms, on. Front ports 49–52 have no field here: I: separate path (not found).
-- Fan byte 0: bits 5:4 = preset level (0..3, `0x5f6ea8`; read `0x5f6e84`); bits 3:0 cleared by `0x5f6d78` at init (mask 1/2/4/8/0xf; meaning unknown, I: per-fan enable/tach select); bits 7:6 unused.
+- Fan byte 0: bits 5:4 = preset level (0..3, `0x5f6ea8`; read `0x5f6e84`); bits 3:0 cleared by `0x5f6d78` at init (mask 1/2/4/8/0xf); bits 7:6 unused. Live sweep on OpenWrt: bits 7:6 and 3:0 have no audible effect (#12).
 - Fan group = chip: unit 0 -> frame (1,0), unit 1 -> frame (1,1). `swctrl` native setter `0x26fb90` writes both when dual-chip. 4 fans -> I: 2 per group.
 
 **Shadows (BSS)**
@@ -322,16 +322,16 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 
 - `bcm5615x_config = 10`: OpenBCM Option 2 = 24 x 1G (octal PHY) + 2 uplinks (53344: 1G; 53346: 1G/10G) + 2 x 13G HiGig; `p2l_mapping_24_2_2`. C.
 - Physical -> logical (`p2l`): phys 2..9 -> logical 9..2 (reversed), 10..25 identity, 26/28/30/32 -> 26/27/28/29. I: table taken from OpenBCM source, selected by config id (not read from the binary).
-- `phy_port_primary_and_offset_<logical>` (table `0x15a3eac`): logical 2..9 -> `0x0207..0x0200`, 10..17 -> `0x0a00..0x0a07`, 18..25 -> `0x1200..0x1207`. Three octal PHYs per chip; primary/offset follow physical lane. C.
+- `phy_port_primary_and_offset_<logical>` (table `0x15a3eac`): logical 2..9 -> `0x0207..0x0200`, 10..17 -> `0x0a00..0x0a07`, 18..25 -> `0x1200..0x1207` (SDK properties; the live scan below shows only the last group is an external octal PHY). C.
 - `port_phy_addr_<logical>` set only for 18..25 -> `0x14..0x1b` (external MIIM bus 0). C.
-- **Live MIIM scan, unit 0** (2026-11-12, OpenWrt, `scripts/miim.py`): only **one external octal PHY**, at external bus 0 `0x14..0x1b` (ID `0x600d845b`, front 17..24). Front 1..16 use the **16 integrated copper PHYs** on internal bus 0, at `1..4, 6..9, 11..14, 16..19` (ID `0x600d85b0`). Internal bus 1 `2, 4, 6, 8` = SerDes cores (ID `0x600d8770`). The SDK-default 'external `0x02..0x09` / `0x0b..0x12`' map does not answer. C. Front-port → internal address not mapped yet. #4.
+- **Live MIIM scan, unit 0** (2026-11-12, OpenWrt, `scripts/miim.py`): only **one external octal PHY**, at external bus 0 `0x14..0x1b` (ID `0x600d845b`, front 17..24). Front 1..16 use the **16 integrated copper PHYs** on internal bus 0, at `1..4, 6..9, 11..14, 16..19` (ID `0x600d85b0`). Internal bus 1 `2, 4, 6, 8` = SerDes cores (ID `0x600d8770`). The SDK-default 'external `0x02..0x09` / `0x0b..0x12`' map does not answer. C. Front 1 = internal addr 9 (link up 1000 FD to sw1, #4); other front -> address follow the reversed p2l for phys 2..9 (I, unverified). The 16 GPHYs power up with BMCR power-down set: a PHY driver must clear it.
 - Other props: `phy_an_c73=0`, `phy_an_c37=3`, `trunk_extend=0x1`; unit 1 xe ports: `serdes_if_type_xe.1=9` (SFI), `serdes_preemphasis_xe.1=0x5a54`, `serdes_driver_current_xe.1=0x2020`. C.
 - SerDes: internal QSGMII block `(phys-2)/8` (3 blocks), lane `(phys-2)%8`; uplinks on TSC4 lanes phys 26, 28 (HiGig phys 30, 32). I: SDK table `_hurricane2_phy_addr_default`.
 - Front port (1..52) -> (unit, logical) from the FastPath table at `0x1d8ecb4` (52 x {slot 0, port-1, unit, logical}; lookup `0x5e35c4`). C.
 
 | Front | Unit (chip) | Logical | PHY (MDIO) |
 |---|---|---|---|
-| 1..8 | 0 (53344) | 2..9 | integrated GPHY, internal bus 0 (addr per port TBD) |
+| 1..8 | 0 (53344) | 2..9 | integrated GPHY, internal bus 0 (front 1 = addr 9; rest TBD) |
 | 9..16 | 0 | 10..17 | integrated GPHY, internal bus 0 (addr per port TBD) |
 | 17..24 | 0 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` |
 | 25..32 | 1 (53346) | 2..9 | I: as unit 0 (not scanned) |
@@ -345,10 +345,10 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 
 ## Open questions
 
-- I2C master = CMIC SMBus at AXI `0x48000000` ([I2C master](#i2c-master-issue-7)). Open: its IRQ (CMIC-internal, no known GIC SPI); whether upstream `i2c-bcm-iproc` works there in polled mode.
-- BCM59111 firmware: licence for redistribution; whether chips keep firmware across warm reboot (stock always reloads?).
+- I2C master = CMIC SMBus at AXI `0x48000000` ([I2C master](#i2c-master-issue-7)); upstream `i2c-bcm-iproc` works there polled (OpenWrt `i2c-2`). Open: its IRQ (CMIC-internal, no known GIC SPI).
+- BCM59111 firmware: cold boot straight into OpenWrt (chip state with no stock in between), GPIO 9 reset polarity (#24).
 - BCM59111 reg `0x2c`: formula decoded (`367 - 2·raw` °C); datasheet meaning of raw unchecked. Limit-table columns 0–2 purpose.
-- MSPI: power-on default of the board-IO chains; meaning of fan byte 0 bits 3:0; LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
+- MSPI: power-on default of the board-IO chains (byte 0 bits 3:0 and 7:6 do nothing audible, #12); LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
 - SFP: pin polarity of TX disable (I), physical cage wiring of unit 1 pins (I); output-enable of CMIC GP2/GP3.
-- Port map: PHY MDIO addresses are SDK defaults, unverified on hardware; front 49–52 LEDs; link LED value semantics.
+- Port map: front -> MDIO address for ports 2..24 (unit 0 scanned; unit 1 not scanned); front 49–52 LEDs; link LED value semantics.
 - EEPROM offsets of `manufid` / `mfgweek` / `qrid`; use of the `0x1ffe040` bytes.

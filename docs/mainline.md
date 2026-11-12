@@ -1,19 +1,19 @@
 # Mainline Linux port (issue #15)
 
 - Develop on latest mainline, then backport to OpenWrt 6.18 (`openwrt/`, patches-6.18/950+951).
-- Base: torvalds/linux tag `v7.3-rc7`; branch `awto/us48/mainline-v7.3-rc7` (local, not pushed).
+- Base: torvalds/linux tag `v7.4-rc1` (`BASE` in `scripts/build_mainline.py`); branch `awto/us48/mainline-v7.4-rc1` (local, not pushed). Rebased from v7.3-rc7, all 7 patches apply clean.
 - Tree: `tmp/linux-mainline` = `git worktree` of the machine-shared Linux store (#45), not a clone.
   - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
   - Never `--depth`, `git gc` or `git repack` in the store or its worktrees (machine timer does gc).
 - Series: `mainline/0001..0007-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
-- Config fragment: `mainline/us48.config`.
+- Config fragment: `mainline/us48.config` (xz kernel + initramfs so the debug set fits kernel0, 15 MiB; debug profile as OpenWrt `hr2/config-6.18`, #4).
 
 ## Build
 
 - `python3 scripts/build_mainline.py` — rebuilds the branch from `mainline/*.patch` (`git am`), configures, builds, packs.
 - Config: `multi_v7_defconfig` + `mainline/us48.config` + initramfs from `tmp/openwrt-build/.../root-bcm53xx`
   (staged copy + `/init -> sbin/init` + `/dev/console` node, root-owned).
-- Toolchain: OpenWrt gcc 14.4 musl (`tmp/openwrt-build/staging_dir`). mkimage from the OpenWrt host dir.
+- Toolchain: OpenWrt gcc 14.4 musl (`tmp/openwrt-build/staging_dir`). mkimage from the OpenWrt host dir. Own empty `STAGING_DIR` (7.4 `-Werror=missing-include-dirs` rejects the OpenWrt wrapper's missing include dir).
 - Output: `tmp/mainline/us48-mainline.bin` = legacy uImage, load/entry `0x00018000`, zImage + appended DTB.
   Same format as `tmp/tftp/us48-initramfs.bin`; boots via stock U-Boot `loady 0x01000000; bootm`.
 - `CONFIG_ARM_ATAG_DTB_COMPAT` off; DT has no bootargs, so `CONFIG_CMDLINE="console=ttyS0,115200 earlycon"` applies.
@@ -47,14 +47,12 @@ Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
   0 findings in board nodes. 9 remaining are pre-existing in `bcm-hr2.dtsi` and equally hit `bcm53340-ubnt-unifi-switch8`:
   mpcore bus nodename, `brcm,hr2-armpll` (#clock-cells, clock-output-names), `dma@` nodename, qspi `interrupt-names`,
   `arm,sp804` missing `arm,primecell`, `nor@` / `cfi-flash`.
-- Build (2026-10-14, 30 cores, ~2.5 min): `tmp/mainline/us48-mainline.bin` 15,499,356 B (zImage 15,491,584 incl. initramfs, DTB 7,708);
-  uImage header load/entry `0x00018000`, no compression. Fits kernel0 (0xf00000 = 15,728,640 B) by ~229 KB.
-  `iproc_hr2_abort_*` symbols present (built-in). Not booted.
+- `iproc_hr2_abort_*` symbols present (built-in). Image must stay < kernel0 (0xf00000 B). Not booted (#15).
 
 ## Before upstream submission
 
 - Real `Signed-off-by` (and `From:`), remove `TODO`.
-- Boot-test the image on the bench board (not done: board owned by another session): UART baud, SP805 restart, syscon-reboot, PCIe enumeration without oops, LM75 hwmon.
+- Boot-test the image on the bench board (not done; `US48_IMAGE=tmp/mainline/us48-mainline.bin python3 scripts/dev.py boot-ram` / `flash-net` + `boot-flash`, #15): UART baud, SP805 restart, syscon-reboot, PCIe enumeration without oops, LM75 hwmon.
 - Patch 4 on hardware: confirm the oops-free scan of 01:00.2 and that a PCIe error on pcie1 stays fatal elsewhere.
   Expect review pushback on the open-coded instruction decoder; alternative is a config-read path that avoids the abort (needs PAXB register that reports absent function).
 - Patch 5: boot-test on UniFi Switch 8 (Florian) or get a Tested-by; UART 50 MHz is from US-48 stock logs only.

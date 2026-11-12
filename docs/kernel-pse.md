@@ -175,7 +175,7 @@ Module: license Proprietary, depends `ubnthal` (uses `ubnthal_get_systemid`), ve
 - None of `ubnt_common`, `ubnthal`, `gpiodev`, `linux-kernel-bde`, `linux-user-bde` references an i2c adapter symbol (strings check). (C)
 - `/dev/i2c-0`, `/dev/i2c-1` are static cpio nodes (see `docs/board.md`); with no i2c-dev in the kernel they are non-functional nodes (I). All PoE/sensor/SFP I2C goes through the switch chip's CMIC SMBus master from userspace (`docs/board.md`).
 - Bus speeds, mux/PoE addresses, device table: `docs/board.md` (switchdrvr-derived); nothing kernel-side to add. (C)
-- OpenWrt consequence: a normal Linux I2C master is needed (iProc SMBus `i2c-bcm-iproc` at `0x18008000` if present on HR2, or a CMIC-SMBus adapter); stock gives no hint. (I)
+- OpenWrt consequence: a Linux I2C master is needed. Resolved (#7): `i2c-bcm-iproc` on the CMIC SMBus `0x48000000`, polled; ChipcommonB instances (`0x18038000`/`0x1803b000`) unused ([board.md](board.md#i2c-master-issue-7)).
 
 ## 5. Open questions
 

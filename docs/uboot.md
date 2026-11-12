@@ -1,6 +1,6 @@
 # U-Boot `usw-v1.1.6.122-gd2310f3e` (US-48-500W)
 
-Static RE for the first RAM boot (issue #1). Offline only; nothing here was run on the device.
+Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot flow now: `scripts/dev.py boot-ram` / `flash-kernel0` / `boot-flash` ([openwrt-port.md](openwrt-port.md)).
 
 - **C** = confirmed in disassembly (function@address / string / constant cited). **I** = inferred.
 - Image: PART `u-boot` of 7.5.15, 447118 B. Flash backup `mtd0` (taken after the 7.5.15 upgrade) is byte-identical over those 447118 B (C) — this is the U-Boot on the device.
@@ -76,7 +76,7 @@ Static RE for the first RAM boot (issue #1). Offline only; nothing here was run 
 | With appended DTB and `ARM_ATAG_DTB_COMPAT` off, the kernel ignores r2 ATAGs and uses the DTB (DT `bootargs`, `memory` node win) | kernel behaviour | I |
 | State at entry: IRQ+FIQ masked, I-cache off + invalidated, D-cache flushed and off, MMU off (`cleanup_before_linux`@0x1c00d0c8: `dcache_disable` clears M and C; `wdt_stop` just before), PL310 L2 disabled ("Disabling outer cache"@0x1c00d8c4). SVC mode | | C |
 | `bootm` option `verify`, `autostart`, `bootm_low/size/mapsize` are standard | | C |
-| Stock-image header: ih_os=5 Linux, arch ARM(2), type kernel(2), comp none. The built `us48-initramfs.bin` has these but load/entry `0x8000` | built image header | C |
+| Stock-image header: ih_os=5 Linux, arch ARM(2), type kernel(2), comp none. The built `us48-initramfs.bin` has these with load/entry `0x18000` | built image header | C |
 
 ## 5. Hardware state left by U-Boot
 
@@ -89,7 +89,7 @@ Static RE for the first RAM boot (issue #1). Offline only; nothing here was run 
 | L2/PL310 | disabled at handoff | | C |
 | CCA GPIO | only bits 6 and 7 driven (system LED; init to 0, OUTEN set); no other GPIO writes. Bit 9 (BCM59111 reset), bits 0/1/8 (PSE IRQs), bit 11 (reset button) untouched in U-Boot proper | GPIO setter@0x1c01f680 callers: pins 6, 7 only | C |
 | PoE | not initialised by U-Boot (no I2C master code, no BCM59111 strings) | | C |
-| Fans / MSPI board IO / CPLD | not touched: no CMIC GP-pin or MSPI board-IO writes. CMIC (`0x48010000`) is only read for the device ID. Fans stay at power-on default; OpenWrt has no fan control — watch temperature | movt `0x4801` scan | C |
+| Fans / MSPI board IO / CPLD | not touched: no CMIC GP-pin or MSPI board-IO writes. CMIC (`0x48010000`) is only read for the device ID. Fans stay at power-on default until `us48-fand` runs in OpenWrt — watch temperature | movt `0x4801` scan | C |
 | QSPI | MSPI/BSPI `0x18027000..` used for flash; `spi1.0` | `spi_setup_slave`@0x1c025020 | C |
 | PCIe | `Done PCI initialization` path exists (`pci` command, RC init @0x1c024084); not required for boot | | I (runs at boot) |
 | Ethernet | **none**. `Net:` line prints, then "Board Net Initialization Failed" / "No ethernet found." (@0x1c032690, @0x1c0326a4). `ethaddr`, `ipaddr`, `serverip` are unused. No AMAC/GMAC driver; `phy_read/phy_write`@0x1c023c64 are CCB-MDIO helpers for PCIe SerDes | | C |
@@ -160,8 +160,8 @@ Serial 115200 8N1 on UART1 (header location: see [hardware.md](hardware.md)). Do
 1. Power on; **press any key within 3 s** of "Hit any key to stop autoboot". Expect `u-boot> `.
 2. Read only: `version`, `printenv` (default env as in §3), `coninfo`, `help`. No `saveenv`.
 3. RAM alias check (scratch RAM, safe): `mw.l 0x01000000 0xa5a5a5a5` then `md.l 0x61000000 1`. Same value ⇒ alias confirmed. Different ⇒ stop and re-read §6.
-4. Build the uImage with **load = entry = `0x00018000`** (not `0x8000`): fix the image rule in `openwrt/0001-*.patch` first.
-5. Send the image over serial: `loady 0x01000000` then ymodem-send `us48-initramfs.bin` (5.4 MB ≈ 8–10 min at 115200). Optional faster rate `loady 0x01000000 <baud>` then switch the host terminal (divisor from the UART clock, I: 921600 unverified). `loadb` (kermit) is the alternative.
+4. The uImage is built with **load = entry = `0x00018000`** (not `0x8000`; image rule in `openwrt/0001-*.patch`).
+5. Send the image over serial: `loady 0x01000000` then ymodem-send `us48-initramfs.bin`; `dev.py` uses 460800 ([§8](#8-console-speed), 921600 fails). `loadb` (kermit) is the alternative.
    - Expected: "## Total Size = 0x... Bytes". Size must equal the file size.
 6. `bootm 0x01000000`. Watch for, in order:
    1. `## Booting kernel from Legacy Image at 01000000 ...`, image name `ARM OpenWrt Linux-6.18.55`
@@ -170,11 +170,11 @@ Serial 115200 8N1 on UART1 (header location: see [hardware.md](hardware.md)). Do
    4. `Starting kernel ...` (watchdog stopped here)
    5. kernel/earlycon output on UART1 (DT `bootargs` has `earlycon`)
 7. Silence after "Starting kernel ...": check load address first (ATAG overwrite), then DTB/`earlycon`/uart1 in the DTS, then that the zImage decompressor reaches `Uncompressing Linux`.
-8. Temperature: fans are not controlled by U-Boot or OpenWrt; power off if the box gets hot.
+8. Temperature: U-Boot does not control the fans; `us48-fand` does under OpenWrt. Power off if the box gets hot.
 9. Recovery: power-cycle. Nothing is written to flash by this procedure.
 
 ## Open items
 
 - Real PERIPHCLK (watchdog tick) and UART input clock: not measured.
-- Is a missing NIC the intended state? Stock 7.5.15 never uses U-Boot networking. A later flash-resident network boot needs a NIC driver (none in this image).
+- Is a missing NIC the intended state? Stock 7.5.15 never uses U-Boot networking. A network boot needs a second-stage U-Boot with a NIC driver (#46).
 - Reserve size `0x5ff8c` used for `relocaddr` (word @0x4c of the image) exceeds the relocated copy (`0x5814c`); purpose not traced (harmless).

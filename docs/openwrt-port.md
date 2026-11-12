@@ -13,7 +13,8 @@
   - flash partitions all `read-only` until restore is proven.
   - `pcie0` enabled: BCM53346 at `01:00.0`/`01:00.1`. Local BCM53344 CMIC is AXI `0x48000000`, not PCIe (stock `/proc/iomem`). `pcie1` left disabled: no evidence of use.
   - `i2c@48000000` = CMIC SMBus (`brcm,iproc-i2c`, polled, 100 kHz) → PCA9548 `0x70`. DT `i2c0`/`i2c1` stay disabled (unused by stock). [board.md](board.md#i2c-master-issue-7).
-- Busybox `i2cdetect`/`i2cget`/`i2cset`/`i2cdump`/`devmem` + `kmod-i2c-core` (i2c-dev) for milestone 2; no packages feed needed.
+- Debug profile (`DEBUG_APPLETS` / `DEBUG_PACKAGES` in `scripts/build_openwrt.py`): busybox i2c/devmem/etc. + strace, gdbserver, perf, tcpdump, ethtool, i2c-tools, `kmod-i2c-core`; kernel debug set in `hr2/config-6.18`. Initramfs must stay < kernel0 (15 MiB).
+- Overlay `openwrt/files/`: `us48-poe-off` (S13, BCM59111 op-mode reg `0x12` = 0 on all 12 chips, readback logged, #24) and `us48-fand` (S15, fans 50 % until LM75 max >= 80 C, full until <= 50 C; bench-only, #12 #19).
 - Image: `zImage + appended DTB` in a legacy uImage (`uImage none`), load/entry `0x00018000` (as stock;
   `0x8000` collides with U-Boot's ATAG list — [uboot.md](uboot.md)).
   - `ARM_ATAG_DTB_COMPAT` off → DT `bootargs` win over U-Boot's `mem=`/`mtdparts=`.
@@ -28,43 +29,31 @@
   - `DEVEL=y` is required: without it `make defconfig` drops both options.
   - Other buildroots share the dirs: only add files, never delete.
 
-## First boot results (2026-10-13, image in kernel0, `scripts/dev.py flash-kernel0`)
+## Bring-up results (kernel0 boots, 2026-10-13/14; evidence in #2, #11, #16)
 
-- Kernel 6.18.55 boots: earlycon on UART1 @ 0x18000400, DT model, 2×128 MiB memory, L2C-310, arm_global_timer 200 MHz. C.
-- `timer@34000` / `timer@35000` (SP804): "clock not found" → not registered (harmless; global timer used). C.
-- **PCIe panic**: `iproc_pcie_config_read32` reads APB_ERR_EN (`0xf40`) while scanning behind root port `14e4:8344` → external abort. HR2 PAXB lacks that register; `brcm,iproc-pcie` maps to the PAXB layout that has it. Workaround: `pcie0` disabled. Fix: kernel patch (HR2 compatible without APB_ERR_EN). C.
-- **No reset handler**: panic → "Reboot failed -- System halted"; needs power-cycle. Stock uses `northstar_restart` (kernel-pse.md). I.
-- Stock U-Boot → our uImage: load 0x18000, `bootm` CRC OK, ATAGs ignored (DT bootargs win). C.
-
-### 2026-10-14: OpenWrt shell (milestone 1 done)
-
-Image: `pcie0` disabled + SP805/SP804 50 MHz clocks; kernel0 crc `4659639a`. Console capture: `tmp/logs/console/us48-20261014-083748.log`.
-
-- Userspace (`root@OpenWrt:~#`, BusyBox 1.38.0) 59 s after `bootm`. C.
+- Kernel 6.18.55 boots: earlycon on UART1 @ 0x18000400, DT model, 2x128 MiB memory, L2C-310, arm_global_timer 200 MHz. C.
+- Userspace (BusyBox 1.38.0) 59 s after `bootm`. Console capture: `tmp/logs/console/us48-20261014-083748.log`. C.
+- Stock U-Boot -> our uImage: load 0x18000, `bootm` CRC OK, ATAGs ignored (DT bootargs win). C.
 - MTD: all 7 stock partitions, read-only. C.
-- I2C: `i2c-2` = CMIC SMBus `48000000`, poll mode ("no irq resource"); `i2cdetect -y -r 2` → **only `0x70`** (PCA9548). `i2c-0`/`-1` = ChipcommonB. C.
-- `sp805-wdt 18039000.watchdog: registration successful`; `reboot` → U-Boot banner 5.0 s later. Panic now auto-reboots. C.
-  - After an SP805 reset U-Boot reports PCIe `LINKSTA 0x1001`, "port 0 is not active" (cold boot: `0x9012`, active). Stock kernel then retrains and enumerates `01:00.0/.1` normally → harmless. C.
-- UART: 8250 reports `base_baud = 1562500` (25 MHz from dtsi `osc`); real UART clock 50 MHz → line ran at ~223 kbaud after the driver took over. Fix: `&uart1 { clocks = <&apb_clk>; }`. C (read the shell at 223214 baud).
-
-### 2026-10-14: PCIe + watchdog (milestone 2 done)
-
-- Patch 950 (skip APB_ERR_EN on `brcm,iproc-hr2-pcie`) + 951 (config-read abort → all-ones, as pci-imx6, HR2 window only): root port `00:00.0`, BCM53346 `01:00.0` + `01:00.1` (`14e4:8346`), BARs assigned, link 5.0 GT/s x1. C.
-- Without 951: absent `01:00.2` read → external abort → panic. C.
-- SP805 armed from U-Boot before `bootm` (`scripts/dev.py`): early panic/hang → reset ~20 s; Linux `sp805-wdt` (probe 1.15 s) + procd feed it (uptime 23 s, no reset). C.
-- Images now go in over the LAN: `scripts/dev.py flash-net` (scp 7.6 s, dd + sha256, 75 s total), boot with `boot-flash`.
+- I2C: `i2c-2` = CMIC SMBus `48000000`, poll mode ("no irq resource"); `i2cdetect -y -r 2` -> **only `0x70`** (PCA9548). `i2c-0`/`-1` = ChipcommonB. C.
+- UART: 8250 took `base_baud = 1562500` from the dtsi 25 MHz `osc`; real UART clock 50 MHz. Fixed by `&uart1 { clocks = <&apb_clk>; }`. C.
+- SP805/SP804 get the 50 MHz APB clock: `sp805-wdt` registers (probe 1.15 s), `reboot` -> U-Boot banner 5.0 s later. C.
+  - SP805 armed from U-Boot before `bootm` (`scripts/dev.py`): early panic/hang -> reset ~20 s; procd feeds it. C.
+  - Restart = stock DMU reset via `syscon-reboot` (DMU `0x1803f200` bit 1, as `northstar_restart`), outranks the SP805 handler (#11).
+- PCIe: patch 950 (skip APB_ERR_EN on `brcm,iproc-hr2-pcie`) + 951 (config-read abort -> all-ones, as pci-imx6, HR2 window only) + 952 (keep PERST# released at shutdown, so U-Boot sees an active link after our reboot): root port `00:00.0`, BCM53346 `01:00.0` + `01:00.1` (`14e4:8346`), BARs assigned, link 5.0 GT/s x1. Without 951 an absent `01:00.2` read aborts -> panic. C.
+- Images go in over the LAN: `scripts/dev.py flash-net` (scp, dd to kernel0, sha256; 75 s total), then `boot-flash`.
 
 ## Boot test (milestone 1) — procedure
 
 Full procedure + evidence: [uboot.md](uboot.md). Summary:
 
-1. Serial console attached and stock boot captured end-to-end. Don't hold the reset button at power-on
+1. Serial console attached (`scripts/dev.py console`, `US48_HOST=lizard` for the remote adapter) and stock boot captured end-to-end. Don't hold the reset button at power-on
    (bootcmd's `ureset_button` erases `cfg` + `u-boot-env` after ~3 s).
 2. Any key within 3 s stops autoboot. Read-only: `version`, `printenv`, `coninfo`. No `saveenv`, no `reset` (NULL handler), no `sf` writes.
-3. **No Ethernet in U-Boot** (`tftpboot` fails) → `loady 0x01000000`, ymodem-send `us48-initramfs.bin` (≈ 8–10 min at 115200).
+3. **No Ethernet in U-Boot** (`tftpboot` fails) → `scripts/dev.py boot-ram` / `flash-kernel0`: `loady 0x01000000` ymodem at 460800 ([uboot.md](uboot.md) §8). Over the LAN instead: `flash-net`.
 4. `bootm 0x01000000`: header + data CRC only, no RSA (RSA lives in the uncalled ubnt-app path). U-Boot arms the A9
    watchdog (30 s) and stops it inside `bootm`. Handoff: ATAGs, machine ID 0xBB8, caches/MMU off.
-5. Fans: U-Boot doesn't touch the board-IO chains — power-on default speed unknown; watch temperature.
+5. Fans: U-Boot doesn't touch the board-IO chains — power-on default speed unknown; `us48-fand` takes over in userspace; watch temperature.
 
 ## Milestones
 
@@ -72,9 +61,9 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 |---|---|---|
 | 1 | initramfs to shell on serial | **done 2026-10-14** (kernel0 boot) |
 | 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | **done 2026-10-14**: PCIe via patches 950+951 |
-| 3 | management Ethernet | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
-| 4 | switch fabric: 48 ports, VLAN, STP | no upstream Linux driver for XGS CMIC; OpenMDK/OpenBCM are Broadcom-licensed, not GPL |
-| 5 | fans / PoE / sensors | MSPI board IO protocol ([fan.md](fan.md)); PoE = BCM59111 + firmware blob, I2C controller mapping ([board.md](board.md)) |
+| 3 | management Ethernet (not started) | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
+| 4 | switch fabric: 48 ports, VLAN, STP | in progress (#4): MIIM scan + first PHY link from our code done; S-channel + MAC + CPU DMA next. No upstream Linux driver for XGS CMIC; SDK options: [prior-art.md](prior-art.md) |
+| 5 | fans / PoE / sensors | LM75 hwmon, fan presets (`us48-fand`) and PoE-off at boot **done**. Open: temperature-driven fan policy (#19), BCM59111 PSE driver + per-port control (#26, #24), fan-off (drive circuit unknown, #12) |
 | 6 | flash install + sysupgrade | proven backup restore path; layout using kernel0/kernel1 |
 
 ## Prior art

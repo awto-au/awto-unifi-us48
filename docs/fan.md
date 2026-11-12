@@ -67,13 +67,14 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
 
 - Fan frame = 7 bytes: byte 0 = `level << 4` (C), bytes 1–6 = `0xaa` = every 2-bit port field = 2 (I: PoE mode select 802.3, see PoE report — not LEDs).
 - 6-byte all-zero frame = PoE card chain with PoE off (I).
-- `0x48002000–0x200c` unchanged between levels → not the GP select pins; `CMIC_GP_DATA_OUT` location still open.
+- `0x48002000–0x200c` (CMIC GP block: DATA_OUT `+4`, OUT_EN `+8` as written by `us48-fand`) unchanged between levels: select pins don't depend on the level.
 - SPCR0 `0x1500` = `0x8d`, `0x1504` = `0x83` (mode/baud, decode vs OpenBCM `mspi.c`).
 
-## OpenWrt implication
+## OpenWrt: `us48-fand` (openwrt/files, #12, #19)
 
 - Fans are bits 5:4 of byte 0 of a 7-byte write-only MSPI frame; one frame per switch chip (2 fans each, I). Full protocol: [board.md](board.md) MSPI section.
-- Write sequence for group g (0/1): set GP0 of unit 0 = 1, GP0 of unit 1 = g (select pins A=1, B=g), MSPI mode 3 (CPOL 1, CPHA 1), send 7 bytes: byte 0 = `level<<4`, bytes 1–6 = port LED fields (must be re-sent from a shadow, not zeroed).
-- The frame also carries the front-port link LEDs, so a fan write needs the current LED bytes.
+- Write sequence for group g (0/1): GP0 of unit 0 = 1 (A), GP0 of unit 1 = g (B, via PCIe BAR `0x0a002000` of `01:00.0` after enabling it), both set as outputs; MSPI mode 3 (CPOL 1, CPHA 1); send 7 bytes: byte 0 = `level<<4`, bytes 1-6 = 0.
+- Policy (bench): 50 % (byte 0 `0x00`) until LM75 max >= 80 C, 100 % (`0x30`) until <= 50 C; full if no sensor reads. Replacement = hwmon cooling device + thermal-zone trips (#19).
+- Verified by ear on all 4 fans (#12): `0x30` louder than `0x00`; byte-0 bits 7:6 and 3:0 change nothing (sweep `scripts/fan_sweep.py`).
+- No tach (stock reports 0 RPM). No fan IC on any PCA9548 channel (no `0x2e` / ADT7475), so fan control is not I2C. Fan-off needs the drive circuit identified (board photos) or a power-side switch not yet found; candidate GPIOs probed with `scripts/fan_gpio_probe.py` (#12).
 - Stock default after switchdrvr start: level 1 (70 %). Power-on state before that, and whether hardware falls back to full speed without a driver: unknown.
-- Needs CMIC register access from Linux (GP pins `CMIC_GP_DATA_OUT`) plus the iProc MSPI; never guess writes on the live board — capture stock traffic first.

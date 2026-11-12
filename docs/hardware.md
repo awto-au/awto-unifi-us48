@@ -20,7 +20,7 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 | Cooling | firmware reports 4 fans, 16 temperature sensors |
 | Ports | 48× GbE copper, 2× SFP+ (49–50), 2× SFP (51–52) |
 
-- Two-chip split (24/24?) and inter-chip link are **not** established — OpenMDK descriptions say each chip has 24 GbE + 16 integrated copper PHYs.
+- Two-chip split: front 1-24 + 51-52 on the BCM53344, 25-50 on the BCM53346; 2x13G HiGig between them ([board.md](board.md#two-chip-layout)). Unit 0 (live scan): 16 integrated copper PHYs + one external octal PHY; unit 1 not scanned (board.md Port map).
 - Do not infer PHY or PoE-controller part numbers from the model name.
 
 ## Console and boot
@@ -31,10 +31,10 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
   Same order as D-Link HR2 GPL `mach-iproc/common.c` — D-Link used as a hint only.
 - Front-panel **RJ45 "Console" port**, RS-232 levels (MAX3321 transceiver), Cisco-style: rollover RJ45→DB9 cable
   (or USB↔RJ45 console cable), 115200 8N1, no flow control ([US-48-500W QSG](https://dl.ubnt.com/qsg/US-48-500W_US-48-750W/US-48-500W_US-48-750W_EN.html)).
-  No case opening or TTL adapter needed.
+  No case opening or TTL adapter needed. Current adapter: PL2303 USB-RS232 on `lizard` (`US48_HOST=lizard`).
 - U-Boot `usw-v1.1.6.122-gd2310f3e` (was `usw-v1.1.4.115-g14af1ee6`); `loadaddr=0x01000000`,
-  `ubntboot=bootm 0x01000000`; `tftpboot`, `bootm` present.
-- U-Boot contains `FATAL:Image is not RSA signed..Aborting` — unknown whether plain `bootm` enforces it (first boot test answers this).
+  `ubntboot=bootm 0x01000000`; `tftpboot`, `bootm` present (no NIC, so `tftpboot` fails).
+- U-Boot contains `FATAL:Image is not RSA signed..Aborting` in the ubnt app only; plain `bootm` does not enforce it (our unsigned uImage boots, [uboot.md](uboot.md) §1).
 - Stock cmdline also passes `mem=128M@0x0 mem=128M@0x68000000` and `mtdparts=spi1.0:...` (same map as below), `ubnt_active_slot=1`.
 
 ## Flash map
