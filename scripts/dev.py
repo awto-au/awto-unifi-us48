@@ -799,6 +799,50 @@ def cmd_stock_sh(extra: list[str]) -> int:
     return r[0]
 
 
+# (name, op, blk, addr, words): everything the ingress/egress decision for unicast-to-CPU depends on (unit 1).
+CHIPSTATE = [
+    ("PORT_TAB[26]", 0x07, 10, 0x0400001A, 8), ("PORT_TAB[27]", 0x07, 10, 0x0400001B, 8),
+    ("PORT_TAB[0]", 0x07, 10, 0x04000000, 8),
+    ("VLAN_TAB[1]", 0x07, 10, 0x14000001, 4), ("VLAN_TAB[48]", 0x07, 10, 0x14000030, 4),
+    ("VLAN_TAB[49]", 0x07, 10, 0x14000031, 4), ("VLAN_TAB[50]", 0x07, 10, 0x14000032, 4),
+    ("EGR_VLAN[1]", 0x07, 11, 0x100C0001, 3), ("EGR_VLAN[48]", 0x07, 11, 0x100C0030, 3),
+    ("EGR_VLAN[49]", 0x07, 11, 0x100C0031, 3), ("EGR_VLAN[50]", 0x07, 11, 0x100C0032, 3),
+    ("STG_TAB[1]", 0x07, 10, 0x14040001, 2), ("EGR_VLAN_STG[1]", 0x07, 11, 0x10100001, 2),
+    ("VLAN_PROFILE[0]", 0x07, 10, 0x14080000, 1), ("VLAN_PROFILE[1]", 0x07, 10, 0x14080001, 1),
+    ("EGR_ENABLE[0]", 0x07, 11, 0x345C0000, 1), ("EGR_ENABLE[26]", 0x07, 11, 0x345C001A, 1),
+    ("EGR_ENABLE[27]", 0x07, 11, 0x345C001B, 1),
+    ("EPC_LINK_BMAP", 0x0B, 10, 0x46002700, 2), ("ING_CONFIG_64", 0x0B, 16, 0x06000000, 2),
+    ("CPU_CONTROL_0", 0x0B, 10, 0x1E000600, 1), ("CPU_CONTROL_1", 0x0B, 10, 0x3A000300, 1),
+    ("UUC_BLOCK[27]", 0x0B, 10, 0x4400001B, 2), ("UMC_BLOCK[27]", 0x0B, 10, 0x4400021B, 2),
+    ("BC_BLOCK[27]", 0x0B, 10, 0x4400041B, 2), ("MMUPORTENABLE", 0x0B, 12, 0x02025E00, 1),
+    ("XLMAC_CTRL[0]", 0x0B, 5, 0x00060000, 2), ("XLMAC_CTRL[2]", 0x0B, 5, 0x00060002, 2),
+    ("XLMAC_TXCTRL[2]", 0x0B, 5, 0x00060402, 2), ("XLMAC_RXCTRL[2]", 0x0B, 5, 0x00060602, 2),
+]
+
+
+@command("dump the unit-1 tables that decide unicast-to-CPU (one line each), for diffing a working vs a failing state",
+         args="", kind="action")
+def cmd_chipstate(_extra: list[str]) -> int:
+    b = 0x0A000000 + 0x31000
+    fn = (f"sc(){{ devmem {b:#x} 32 0; devmem {b + 12:#x} 32 $1; devmem {b + 16:#x} 32 $2; devmem {b:#x} 32 1; n=0; "
+          f"while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
+          f"echo $3 c=$(devmem {b:#x} 32) $(for i in 1 2 3 4 5 6 7 8; do [ $i -le $4 ] && devmem $(({b + 12}+4*i)) 32; done); "
+          f"devmem {b:#x} 32 0; }}")
+    if not _ensure_console():
+        return 1
+    out = []
+    with console.Session() as s:
+        if _stock_cmd(s, fn, 10.0) is None:
+            return 1
+        for name, op, blk, addr, words in CHIPSTATE:
+            hdr = op << 26 | blk << 20 | (4 * words) << 7
+            r = _stock_cmd(s, f"sc {hdr:#x} {addr:#x} '{name}' {words}", 10.0)
+            line = [ln for ln in (r[1] if r else "").splitlines() if ln.startswith(name)]
+            out.append(line[0].replace("0x0000", "0x").strip() if line else f"{name} <no reply>")
+    sys.stdout.write("\n".join(out) + "\n")
+    return 0
+
+
 @command("S-channel op on the running board (needs a shell): unit 0|1, r=reg m=mem w=32-bit reg write, block, addr, [words|value]",
          args="<0|1> <r|m|w|x> <blk> <addr> [words|value|w0 w1 ...]",
          kind="action")
@@ -862,10 +906,10 @@ def cmd_cmic_load(extra: list[str]) -> int:
     mod = ko.stem
     # ping budget: 4 pings x 1 s + ARP; the tail of dmesg shows the driver's own verdict.
     cmd = (f"rmmod {mod} 2>/dev/null; insmod /tmp/{ko.name} {mod_args}; "
-           f"echo 1 > /proc/sys/net/ipv6/conf/xe0/disable_ipv6; ip addr flush dev xe0; "
-           f"ip addr add {ip}/24 dev xe0; ip link set xe0 up; "
-           f"dmesg | grep -E 'us48_cmic|xe0' | tail -6; ping -c 4 -W 1 {ping} | tail -2; "
-           f"ip -s link show xe0 | grep -A1 -E 'RX|TX'")
+           f"for i in xe49 xe50; do echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6; ip link set $i up; done; "
+           f"ip addr flush dev xe50; ip addr add {ip}/24 dev xe50; "
+           f"dmesg | grep -E 'us48_cmic|xe49|xe50' | tail -8; ping -c 4 -W 1 {ping} | tail -2; "
+           f"ip -br link show xe49; ip -br link show xe50; ip -s link show xe50 | grep -A1 -E 'RX|TX'")
     with console.Session() as s:
         res = _stock_cmd(s, cmd, 40.0)
     if res is None:

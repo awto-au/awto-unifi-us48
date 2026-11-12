@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Load the BCM53346 10G port driver as early as possible and bring xe49/xe50 up (xe50 = house LAN test address).
+# Early matters: stock leaves unit 1 RX DMA running into old RAM until the driver aborts it.
+
+START=04
+USE_PROCD=0
+
+IP=192.168.25.207/24	# ip-registry: us48-boot
+
+boot() {
+	start
+}
+
+start() {
+	insmod /lib/us48/us48_cmic.ko || return 1
+	for i in xe49 xe50; do
+		echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
+		ip link set $i up
+	done
+	ip addr add $IP dev xe50
+}

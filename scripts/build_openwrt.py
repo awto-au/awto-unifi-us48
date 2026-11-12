@@ -143,6 +143,15 @@ def overlay() -> None:
         shutil.rmtree(files)
     shutil.copytree(PATCHES / "files", files)
     log("overlay: openwrt/files -> files/")
+    # The 10G port driver module rides in the image (init script us48-net loads it first thing at boot).
+    ko = ROOT / "kernel/us48-cmic/us48_cmic.ko"
+    if ko.exists():
+        (files / "lib/us48").mkdir(parents=True)
+        shutil.copy2(ko, files / "lib/us48/us48_cmic.ko")
+        log(f"overlay: {ko.relative_to(ROOT)} -> /lib/us48/")
+    else:
+        log("WARNING: kernel/us48-cmic/us48_cmic.ko missing: image boots without the 10G driver "
+            "(run scripts/build_us48_cmic.py first)")
 
 
 def save_patch() -> None:
