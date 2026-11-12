@@ -297,6 +297,8 @@ def _classify_tail(raw: bytes) -> str | None:
     """State from the END of the output only (stale prompts earlier in the stream never match)."""
     t = ANSI.sub(b"", raw)[-400:]
     e = t.rstrip()
+    if e.endswith(b"us48-uboot>"):
+        return "ourboot"
     if e.endswith(b"u-boot>"):
         return "uboot"
     if e.endswith(b"login:"):
@@ -401,7 +403,10 @@ def _to_uboot(s: console.Session) -> bool:
         log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
         return False
     wait_s = REBOOT_TO_UBOOT_S
-    if st in ("stock-login", "stock-shell", "openwrt", "press-enter") and _serial_reboot(s):
+    if st == "ourboot":
+        log("in our second-stage U-Boot: reset back to stock U-Boot")
+        s.send_line("reset")
+    elif st in ("stock-login", "stock-shell", "openwrt", "press-enter") and _serial_reboot(s):
         pass
     elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
         log("rebooting stock firmware over SSH")
@@ -444,26 +449,39 @@ CAPTURE_HINT = "tmp/logs/console/ (newest us48-*.log)"
 # Backup slot only. kernel1 (stock, active) and the bootsel record at 0x1ee0000 are never written.
 KERNEL0_OFF = 0xE0000
 KERNEL0_LEN = 0xF00000
+# kernel0 holds two images: our U-Boot (< 1 MiB, uImage) at the slot start and OpenWrt (< 14 MiB) after it.
+# Stock U-Boot loads either with sf read + bootm; u-boot, bootsel (0x1ee0000), kernel1, EEPROM stay untouched.
+SLOTS = {"uboot": (0x0, 0x100000, REPO / "tmp/uboot/us48-uboot-chain.bin"),
+         "openwrt": (0x100000, 0xE00000, None)}
+
+
+def _slot(extra: list[str]) -> tuple[str, int, int, Path]:
+    name = extra[extra.index("--slot") + 1] if "--slot" in extra else "openwrt"
+    if name not in SLOTS:
+        raise SystemExit(f"--slot {name}: expected one of {', '.join(SLOTS)}")
+    off, length, image = SLOTS[name]
+    return name, off, length, (IMAGE if (image is None or os.environ.get("US48_IMAGE")) else image)
 # sf erase/write of ≤ 6 MiB on MX25L256: erase ~64 ms/64 KiB → ~6 s, write ~10 s (I).
 # 120 s backstop each; expiry = flash op hung, power-cycle (stock slot untouched).
 SF_BUDGET_S = 120
 
 
-def _load_image(s: console.Session, baud: int) -> tuple[console.Session, int | None]:
+def _load_image(s: console.Session, baud: int, image: Path | None = None) -> tuple[console.Session, int | None]:
     """loady IMAGE to LOAD_ADDR at baud, back at 115200 after. Returns (session, size) or (session, None)."""
-    size = IMAGE.stat().st_size
+    image = image or IMAGE
+    size = image.stat().st_size
     s, ok = _loady_open(s, baud)
     if not ok:
         log(f"loady at {baud} failed — power-cycle if the console is silent, retry slower", "FATAL")
         return s, None
-    log(f"ymodem: {IMAGE.name} {size} B at {baud} baud")
+    log(f"ymodem: {image.name} {size} B at {baud} baud")
 
     def progress(i: int, n: int, dt: float) -> None:
         rate = i * 1024 / dt if dt else 0
         log(f"ymodem: {i}/{n} blocks, {rate / 1024:.1f} KiB/s, ETA {(n - i) * 1024 / rate:.0f} s" if rate
             else f"ymodem: {i}/{n} blocks")
     try:
-        console.ymodem_send(s, IMAGE, progress)
+        console.ymodem_send(s, image, progress)
         s.expect([b"Total Size"], BAUD_REPLY_S, "loady 'Total Size'")
         out = s.read_idle(0.3, 2.0).decode(errors="replace")
     except (RuntimeError, ConnectionError, console.Timeout) as e:
@@ -502,7 +520,7 @@ def _arm_sp805(s: console.Session) -> bool:
     return True
 
 
-def _bootm_watch(s: console.Session) -> int:
+def _bootm_watch(s: console.Session, slot: str = "openwrt") -> int:
     if not _arm_sp805(s):
         log("could not arm SP805 — not booting without a hardware watchdog", "FATAL")
         return 1
@@ -515,6 +533,11 @@ def _bootm_watch(s: console.Session) -> int:
             return 1
         log("U-Boot handed over: Starting kernel", "ALERT")
         t0 = time.monotonic()
+        if slot == "uboot":
+            # Our second stage: DDR is up, banner + prompt in ~2 s; 20 s = 10x. It feeds the SP805 itself.
+            s.expect([b"us48-uboot>"], 20.0, "second-stage prompt")
+            log(f"second-stage U-Boot prompt {time.monotonic() - t0:.1f} s after handover", "ALERT")
+            return 0
         hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "OpenWrt userspace")
     except console.Timeout as e:
         log(str(e), "FATAL")
@@ -595,32 +618,34 @@ def cmd_boot_ram(extra: list[str]) -> int:
         s.close()
 
 
-@command("write the image to BACKUP slot kernel0 (loady + sf write + read-back CRC), then boot it",
-         args="[--baud N] [--no-boot]", kind="action")
+@command("write an image to a kernel0 slot over serial (loady + sf write + read-back CRC), then boot it",
+         args="[--slot uboot|openwrt] [--baud N] [--no-boot]", kind="action")
 def cmd_flash_kernel0(extra: list[str]) -> int:
-    if not IMAGE.exists():
-        log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
+    slot, slot_off, slot_len, image = _slot(extra)
+    if not image.exists():
+        log(f"{image.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
-    if IMAGE.stat().st_size > KERNEL0_LEN:
-        log(f"image {IMAGE.stat().st_size} B > kernel0 0x{KERNEL0_LEN:x}", "FATAL")
+    if image.stat().st_size > slot_len:
+        log(f"image {image.stat().st_size} B > slot {slot} 0x{slot_len:x}", "FATAL")
         return 1
+    flash_off = KERNEL0_OFF + slot_off
     s, baud = _session_at_uboot(extra)
     if s is None:
         return 1
     try:
-        s, size = _load_image(s, baud)
+        s, size = _load_image(s, baud, image)
         if size is None:
             return 1
         ram_crc = _crc32(s, int(LOAD_ADDR, 16), size, "crc32 of RAM image")
         if ram_crc is None:
             return 1
         erase_len = (size + 0xFFFF) & ~0xFFFF
-        log(f"writing kernel0 @0x{KERNEL0_OFF:x}: erase 0x{erase_len:x}, write 0x{size:x}, RAM crc {ram_crc}", "WARN")
+        log(f"writing kernel0 @0x{flash_off:x}: erase 0x{erase_len:x}, write 0x{size:x}, RAM crc {ram_crc}", "WARN")
         for cmd, what in ((f"sf probe 0", "sf probe"),
-                          (f"sf erase {KERNEL0_OFF:x} {erase_len:x}", "sf erase kernel0"),
-                          (f"sf write {LOAD_ADDR} {KERNEL0_OFF:x} {size:x}", "sf write kernel0"),
+                          (f"sf erase {flash_off:x} {erase_len:x}", "sf erase kernel0"),
+                          (f"sf write {LOAD_ADDR} {flash_off:x} {size:x}", "sf write kernel0"),
                           # Read back to a different RAM address so the check cannot pass on the loady copy.
-                          (f"sf read 0x02000000 {KERNEL0_OFF:x} {size:x}", "sf read-back")):
+                          (f"sf read 0x02000000 {flash_off:x} {size:x}", "sf read-back")):
             if _uboot_cmd(s, cmd, PROMPT, SF_BUDGET_S, what) is None:
                 return 1
         back = _crc32(s, 0x02000000, size, "crc32 of read-back")
@@ -630,25 +655,26 @@ def cmd_flash_kernel0(extra: list[str]) -> int:
         log(f"kernel0 written and verified (crc {ram_crc}); stock kernel1 + bootsel untouched", "ALERT")
         if "--no-boot" in extra:
             return 0
-        return _bootm_watch(s)
+        return _bootm_watch(s, slot)
     finally:
         s.close()
 
 
-@command("boot the image in kernel0: reboot -> U-Boot -> sf read -> bootm (seconds, no serial transfer)",
-         kind="action")
+@command("boot a kernel0 slot: reboot -> U-Boot -> sf read -> bootm (seconds, no serial transfer)",
+         args="[--slot uboot|openwrt]", kind="action")
 def cmd_boot_flash(extra: list[str]) -> int:
+    name, off, length, _img = _slot(extra)
     s, _baud = _session_at_uboot(extra)
     if s is None:
         return 1
     try:
         if _uboot_cmd(s, "sf probe 0", PROMPT, SF_BUDGET_S, "sf probe") is None:
             return 1
-        # Whole slot: the uImage header carries its own length + CRCs; bootm verifies both.
-        if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF:x} {KERNEL0_LEN:x}", PROMPT, SF_BUDGET_S,
-                      "sf read kernel0") is None:
+        # Slot read: the uImage header carries its own length + CRCs; bootm verifies both.
+        if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF + off:x} {length:x}", PROMPT, SF_BUDGET_S,
+                      f"sf read kernel0 slot {name}") is None:
             return 1
-        return _bootm_watch(s)
+        return _bootm_watch(s, name)
     finally:
         s.close()
 
@@ -688,6 +714,10 @@ def _stock_shell(s: console.Session) -> bool:
     if st == "reset-loop":
         log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
         return False
+    if st == "ourboot":
+        log("in our second-stage U-Boot: reset, then stock boots by itself")
+        s.send_line("reset")
+        st = "countdown"
     if st in ("uboot", "countdown"):
         if st == "uboot":
             log("at u-boot>: booting stock (kernel1)")
@@ -844,15 +874,19 @@ def cmd_cmic_load(extra: list[str]) -> int:
     return 0
 
 
-@command("write the image to kernel0 FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
-         args="[--no-boot]", kind="action")
+@command("write an image to a kernel0 slot FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
+         args="[--slot uboot|openwrt] [--no-boot]", kind="action")
 def cmd_flash_net(extra: list[str]) -> int:
     import hashlib
-    if not IMAGE.exists():
-        log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
+    slot, slot_off, slot_len, image = _slot(extra)
+    if not image.exists():
+        log(f"{image.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
-    size = IMAGE.stat().st_size
-    want = hashlib.sha256(IMAGE.read_bytes()).hexdigest()
+    size = image.stat().st_size
+    if size > slot_len:
+        log(f"{image.name} is {size} B, slot {slot} holds {slot_len} B", "FATAL")
+        return 1
+    want = hashlib.sha256(image.read_bytes()).hexdigest()
     if not console.restart(console.BAUD):
         return 1
     s = console.Session()
@@ -872,7 +906,7 @@ def cmd_flash_net(extra: list[str]) -> int:
         if not ip:
             log(f"stock eth0 has no IPv4 after {STOCK_NET_S} s", "FATAL")
             return 1
-        log(f"stock is at {ip}; scp {IMAGE.name} ({size} B)")
+        log(f"stock is at {ip}; scp {image.name} ({size} B) for slot {slot}")
         ssh_opts = ["-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "RequiredRSASize=1024",
                     "-o", "HostKeyAlgorithms=+ssh-rsa", "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null", "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=5"]
@@ -881,7 +915,7 @@ def cmd_flash_net(extra: list[str]) -> int:
         # 2 tries: stock restarts dropbear during startup and resets the first copy (seen 2026-11-12).
         for attempt in (1, 2):
             try:
-                r = subprocess.run(["sshpass", "-e", "scp", "-O"] + ssh_opts + [str(IMAGE), f"ubnt@{ip}:/tmp/us48.bin"],
+                r = subprocess.run(["sshpass", "-e", "scp", "-O"] + ssh_opts + [str(image), f"ubnt@{ip}:/tmp/us48.bin"],
                                    env=env, capture_output=True, text=True, timeout=NET_XFER_S)
             except subprocess.TimeoutExpired:
                 log(f"scp did not finish in {NET_XFER_S} s", "FATAL")
@@ -891,22 +925,22 @@ def cmd_flash_net(extra: list[str]) -> int:
             log(f"scp try {attempt} rc={r.returncode}: {r.stderr.strip()}", "WARN" if attempt == 1 else "FATAL")
         if r.returncode:
             return 1
-        log(f"scp done in {time.monotonic() - t1:.1f} s; writing kernel0 via /dev/mtdblock3", "WARN")
-        r = _stock_cmd(s, "dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 && sync", NET_XFER_S)
+        log(f"scp done in {time.monotonic() - t1:.1f} s; writing kernel0 slot {slot} (+{slot_off:#x}) via /dev/mtdblock3", "WARN")
+        r = _stock_cmd(s, f"dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 seek={slot_off // 65536} && sync", NET_XFER_S)
         if not r or r[0] != 0:
             log(f"dd to mtdblock3 failed: {r}", "FATAL")
             return 1
-        r = _stock_cmd(s, f"head -c {size} /dev/mtd3ro | sha256sum", 30.0)
+        r = _stock_cmd(s, f"dd if=/dev/mtd3ro bs=65536 skip={slot_off // 65536} 2>/dev/null | head -c {size} | sha256sum", 30.0)
         got = re.search(r"([0-9a-f]{64})", r[1] if r else "")
         if not got or got.group(1) != want:
             log(f"kernel0 sha256 {got.group(1) if got else '?'} != {want}", "FATAL")
             return 1
-        log(f"kernel0 written over LAN and verified (sha256 {want[:16]}…) in {time.monotonic() - t1:.0f} s", "ALERT")
+        log(f"kernel0 slot {slot} written over LAN and verified (sha256 {want[:16]}…) in {time.monotonic() - t1:.0f} s", "ALERT")
     finally:
         s.close()
     if "--no-boot" in extra:
         return 0
-    return cmd_boot_flash([])
+    return cmd_boot_flash(["--slot", slot])
 
 
 @command("watch serial + LAN continuously; state changes → tmp/logs/us48-watch.log + tmp/us48-status.json",
