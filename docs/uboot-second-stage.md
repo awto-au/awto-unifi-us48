@@ -60,7 +60,7 @@ First-port caveat: DI §12 is **open** for exactly this port (front 1: PHY link 
   - Feed from the mainline `sp805_wdt` driver (`drivers/watchdog/sp805_wdt.c` exists, C) with `WATCHDOG_AUTOSTART` (exists, C) and the U-Boot cyclic/`schedule()` service. Feed also at the top of every command. I
   - Never disarm before our own `bootm`; feed once immediately before it, Linux takes over. `wdt stop` exists for debugging only.
 - Where it saves us: an AXI read of a dead or held-in-reset CMIC block can stall the core instead of faulting (UNVR hit SError on PCIe config reads, `uboot-boot-chain-state.md` #140). The SP805 fires only if feeding stops. A pure livelock in a loop that keeps feeding is caught by the bounded waits in section 2 instead. I
-- Mainline U-Boot's `udelay()` calling `schedule()` (which would feed the watchdog inside waits) is unverified; check at M1 with a 25 s `sleep` that the unit does not reset. I
+- Verified at M1 (2026-11-12, commit 03e51a9 image): `sleep 25` with SP805 armed at a ~20 s reset returns, `sp805_wdt` started at 10 s timeout, fed every 1 s. C
 
 ### Where our image lives
 
@@ -346,7 +346,7 @@ Principle: write the core in the Linux kernel dialect and use only the subset U-
 | Bit/field helpers, asserts | `BIT`, `GENMASK`, `FIELD_PREP/GET`, `static_assert` | same (`bitops.h`, `bitfield.h`, `build_bug.h`) | native API | C |
 
 - `struct bcm_cmic_os` = `{ lock, unlock, dma_alloc, dma_free, dma_sync }` (5 entries), passed once in `bcm_cmic_unit_init()`. All other OS access is the native API above. I
-- Watchdog service in long waits is not a shim item: U-Boot feeds the SP805 from its own cyclic/`schedule()` (Watchdog section); whether `udelay()` reaches it is a check at M1. I
+- Watchdog service in long waits is not a shim item: U-Boot feeds the SP805 from its own cyclic/`schedule()` (Watchdog section); verified at M1 (25 s `sleep`, no reset). C
 
 ### Unit handle (unit 0 AXI, unit 1 PCIe)
 

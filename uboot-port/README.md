@@ -1,6 +1,6 @@
 # uboot-port: second-stage mainline U-Boot (issue #46, milestone M1)
 
-Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt, no network, no QSPI.
+Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt, no network, no QSPI. Verified on the board 2026-11-12: `us48-uboot>` prompt, `bdinfo` (2 banks, reloc 0x6ffbe000), `sleep 25` no reset, `reset` via DMU returns to stock U-Boot.
 
 ## Layout
 - `arch/arm/dts/us48-uboot.dts`: standalone DT (ns16550a UART1, A9 global timer, SP805, DMU syscon-reboot, 2 RAM banks).
