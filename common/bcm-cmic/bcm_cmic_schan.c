@@ -11,12 +11,13 @@
 #define SCHAN_DONE	BIT(1)
 #define SCHAN_ABORT	BIT(2)
 #define SCHAN_ERRS	(BIT(20) | BIT(21) | BIT(22))
-/* One SBUS round trip is a few us; the SBUS timeout reg is 2000 cycles. 1 ms cap = abort + log. */
-#define SCHAN_WAIT_US	1000
+/* One SBUS round trip is a few us; 10 ms backstop. Expiry = abort pulse + log + -ETIMEDOUT. */
+#define SCHAN_WAIT_US	10000
 
 int bcm_cmic_schan_op(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
 {
-	bool write = op == BCM_SCHAN_WRITE_REG || op == BCM_SCHAN_WRITE_MEM;
+	bool write = op == BCM_SCHAN_WRITE_REG || op == BCM_SCHAN_WRITE_MEM ||
+		     op == BCM_SCHAN_TABLE_INSERT || op == BCM_SCHAN_TABLE_DELETE;
 	void __iomem *ctrl_reg = u->base + BCM_CMIC_SCHAN_CTRL;
 	u32 ctrl = 0;
 	int i;
@@ -33,11 +34,11 @@ int bcm_cmic_schan_op(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *d
 
 	for (i = 0; i < SCHAN_WAIT_US; i++) {
 		ctrl = readl(ctrl_reg);
-		if (ctrl & (SCHAN_DONE | SCHAN_ERRS))
+		if (ctrl & SCHAN_DONE)	/* error bits alone can be stale mid-op: DONE only */
 			break;
 		udelay(1);
 	}
-	if (!(ctrl & (SCHAN_DONE | SCHAN_ERRS)) || (ctrl & SCHAN_ERRS)) {
+	if (!(ctrl & SCHAN_DONE) || (ctrl & SCHAN_ERRS)) {
 		pr_err("bcm-cmic: schan op %02x blk %u addr %08x: ctrl %08x after >= %d us\n",
 		       op, blk, addr, ctrl, i);
 		/* abort pulse recovers a stuck op (driver-internals 1) */

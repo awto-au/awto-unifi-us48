@@ -472,3 +472,23 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 - Whether the GPIO/SPI deny-list prefixes match regdb names at all (build-time check will say). I
 - U-Boot `pca954x` + `iproc_i2c` on HR2 DT: untested; `poe status` depends on them. I
 - Which of `drivers/net/bcm-cmic/` vs `lib/` U-Boot maintainers prefer for the upstream copy. I
+
+## M3 as built: Ethernet on unit 1 xe1 (front 50, logical port 27) (build only, not yet run on the board)
+- Unit 1, not the unit-0 front-1 plan above: the Linux driver (`kernel/us48-cmic/us48_cmic.c`) already pings on this port.
+- Chip programming = shared core `common/bcm-cmic/bcm_cmic_hr2.c` (xe1 TSC/XLMAC enable, `EGR_ENABLE`, `EPC_LINK_BMAP`, private VLAN 48, `PORT_VID`, `CML_FLAGS` 0, static L2X entry, DMA init/abort, RX ring, 2-DCB TX). Linux refactor onto it is later.
+- S-channel now waits for DONE only (error bits checked after); backstop 10 ms.
+- Driver `uboot-port/drivers/net/us48_cmic_eth.c` (UCLASS_ETH, polled), DT node `ethernet@8040000` (`ubnt,us48-cmic-eth`), wired by `patches/0005`.
+- Fixed addresses: CMIC `0x08040000` (PCIe BAR2, enumerated by stock; no PCI driver); DMA region `0x03000000`: RX DCBs `+0x0`, TX DCBs `+0x1000`, TX buf `+0x2000`, RX bufs (16 x 2 KiB) `+0x10000`. Below the chip's `0x08000000` window, outside relocated U-Boot (`0x6ffbe000`).
+- Chip is touched on the first `start()` only (not at boot/probe): `dma_init` aborts stock's CMC0 ch0/ch1, then xe1 bring-up (skipped if XLMAC already enabled), L2 add, RX arm.
+- `stop()` (also before `bootm`): abort both channels, L2 delete. VLAN 1 untouched (HiGig links to unit 0).
+- Env defaults (defconfig, `USE_IPADDR` etc.): `ipaddr=192.168.25.207`, `netmask=255.255.255.0`, `gatewayip=192.168.25.254`, `serverip=192.168.25.30`; `ethaddr=02:75:73:34:38:50` (`include/configs/us48.h`). Build-time override: `US48_IPADDR` / `US48_SERVERIP` / `US48_GATEWAYIP`; run time: `setenv`.
+- Link wait: none. sw1 STP can take 30+ s; `ping`/`dhcp`/`tftpboot` retries cover it.
+- Timeouts: S-channel 10 ms, TX completion 2 ms (abort + log), DMA abort 10 ms, MIIM 65 us.
+- `sf` stays read-only; the net driver never calls `sf probe`.
+
+### M3 hardware test (coordinator)
+1. `dev.py boot-flash --slot uboot` (or the `loady` + `bootm` chain), prompt `us48-uboot>`.
+2. `ping 192.168.25.11` (expect `is alive`, first tries may time out while STP converges).
+3. `tftpboot 0x01000000 us48-initramfs.bin` (host serves `192.168.25.30`; override with `setenv serverip`).
+4. `iminfo 0x01000000` (header + data CRC OK), then `bootm 0x01000000` as before.
+5. On failure: `cmic r 0x31140 4` (DMA_CTRL/STAT), `smem r 10 0x04000000+27 8` (PORT_TAB[27]), report the log lines `bcm-cmic:` / `us48-eth:`.

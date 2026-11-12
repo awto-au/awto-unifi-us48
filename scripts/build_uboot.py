@@ -70,6 +70,7 @@ FILES = {
     "board/ubiquiti/us48/board.c": "board/ubiquiti/us48/board.c",
     "include/configs/us48.h": "include/configs/us48.h",
     "cmd/bcm_cmic.c": "cmd/bcm_cmic.c",
+    "drivers/net/us48_cmic_eth.c": "drivers/net/us48_cmic_eth.c",
     "configs/us48_defconfig": "configs/us48_defconfig",
 }
 # tree path -> (marker, patch that supplies it)
@@ -79,6 +80,7 @@ PATCH_MARKERS = {
     "lib/Kconfig": ("lib/bcm-cmic/Kconfig", "0002-lib-wire-bcm-cmic.patch"),
     "cmd/Makefile": ("CONFIG_CMD_BCM_CMIC", "0003-cmd-wire-bcm-cmic.patch"),
     "cmd/sf.c": ("disabled in this build (read-only)", "0004-cmd-sf-read-only.patch"),
+    "drivers/net/Makefile": ("CONFIG_US48_CMIC_ETH", "0005-net-build-us48-cmic-eth.patch"),
 }
 # patch file -> (subject, tracked files it covers); --save-patches writes one patch per entry
 PATCH_SETS = {
@@ -86,9 +88,11 @@ PATCH_SETS = {
     "0002-lib-wire-bcm-cmic.patch": ("lib: hook lib/bcm-cmic (staged by sync_bcm_cmic.py)", ["lib/Kconfig", "lib/Makefile"]),
     "0003-cmd-wire-bcm-cmic.patch": ("cmd: build bcm_cmic.c", ["cmd/Makefile"]),
     "0004-cmd-sf-read-only.patch": ("cmd: sf accepts probe and read only (us48 never writes flash)", ["cmd/sf.c"]),
+    "0005-net-build-us48-cmic-eth.patch": ("net: build us48_cmic_eth.c", ["drivers/net/Makefile"]),
 }
 # Make a file in the tree dirty that is not meant to be: only these tracked files may differ from TAG
 EXPECTED_DIRTY = {f for _, fs in PATCH_SETS.values() for f in fs}
+NET_OVERRIDES: list = []
 SYNC = ROOT / "scripts/sync_bcm_cmic.py"
 CORE_DIR = "lib/bcm-cmic"  # staged shared core, untracked in the tree
 
@@ -235,14 +239,22 @@ def build(jobs: int) -> int:
         return 1
     # ident in the banner = repo revision; changes every commit, so not a defconfig line
     ident_str = ident()
+    # net defaults: override at build time with $US48_IPADDR / $US48_SERVERIP / $US48_GATEWAYIP
+    for var, key in (("US48_IPADDR", "IPADDR"), ("US48_SERVERIP", "SERVERIP"), ("US48_GATEWAYIP", "GATEWAYIP")):
+        if os.environ.get(var):
+            log(f"{key} = {os.environ[var]} (from ${var})")
+            NET_OVERRIDES.append((key, os.environ[var]))
     if run([str(TREE / "scripts/config"), "--file", str(BUILD / ".config"), "--set-str", "IDENT_STRING", ident_str]):
         return 1
+    for key, val in NET_OVERRIDES:
+        if run([str(TREE / "scripts/config"), "--file", str(BUILD / ".config"), "--set-str", key, val]):
+            return 1
     if run(NICE + ["make", o, "olddefconfig"]):
         return 1
     cfg = (BUILD / ".config").read_text().splitlines()
     for want in ("CONFIG_TARGET_US48=y", "CONFIG_SKIP_LOWLEVEL_INIT=y", "CONFIG_WDT_SP805=y", "CONFIG_WATCHDOG=y",
                  "CONFIG_ARM_GLOBAL_TIMER=y", "CONFIG_SYSRESET_SYSCON=y", "CONFIG_CMD_LOADB=y", "CONFIG_CMD_SF=y", "CONFIG_IPROC_QSPI=y",
-                 "CONFIG_SPI_FLASH_MACRONIX=y", "CONFIG_CMD_BCM_CMIC=y", "# CONFIG_SPI_FLASH_UNLOCK_ALL is not set",
+                 "CONFIG_SPI_FLASH_MACRONIX=y", "CONFIG_CMD_BCM_CMIC=y", "CONFIG_US48_CMIC_ETH=y", "CONFIG_CMD_TFTPBOOT=y", "CONFIG_CMD_PING=y", "# CONFIG_SPI_FLASH_UNLOCK_ALL is not set",
                  f"CONFIG_TEXT_BASE=0x{LOADADDR:08x}"):
         if want not in cfg:
             die(f"{want} missing from the final .config")

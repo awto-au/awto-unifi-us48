@@ -1,0 +1,14 @@
+Subject: net: build us48_cmic_eth.c
+
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/drivers/net/Makefile b/drivers/net/Makefile
+index 5e90183d090..ace064a85be 100644
+--- a/drivers/net/Makefile
++++ b/drivers/net/Makefile
+@@ -113,3 +113,5 @@ obj-y += mscc_eswitch/
+ obj-y += phy/
+ obj-y += qe/
+ obj-y += ti/
++obj-$(CONFIG_US48_CMIC_ETH) += us48_cmic_eth.o
++CFLAGS_us48_cmic_eth.o := -I$(srctree)/lib/bcm-cmic

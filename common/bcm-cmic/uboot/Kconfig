@@ -11,6 +11,16 @@ config BCM_CMIC_UNIT0_BASE
 	help
 	  BCM53344 CMIC on AXI (docs/driver-internals.md section 8).
 
+config BCM_CMIC_UNIT1_BASE
+	hex "Unit 1 CMIC base address (PCIe BAR2 as stock U-Boot enumerates it)"
+	depends on BCM_CMIC
+	default 0x08040000
+
+config US48_CMIC_ETH
+	bool "US-48 BCM53346 xe1 (front 50) Ethernet, polled"
+	depends on BCM_CMIC && DM_ETH
+	default y
+
 config CMD_BCM_CMIC
 	bool "cmic, schan, smem, miim: read-only CMIC examination commands"
 	depends on BCM_CMIC
