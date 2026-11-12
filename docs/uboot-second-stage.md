@@ -492,3 +492,9 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 3. `tftpboot 0x01000000 us48-initramfs.bin` (host serves `192.168.25.30`; override with `setenv serverip`).
 4. `iminfo 0x01000000` (header + data CRC OK), then `bootm 0x01000000` as before.
 5. On failure: `cmic r 0x31140 4` (DMA_CTRL/STAT), `smem r 10 0x04000000+27 8` (PORT_TAB[27]), report the log lines `bcm-cmic:` / `us48-eth:`.
+
+## M4 result (2026-11-12, #46)
+- `tftpboot 0x01000000 us48-initramfs.bin` over xe1 (front 50): 8,496,209 B, 5,788 blocks, ~85 s, server log "sent" (`scripts/tftp_serve.py`, `setenv tftpdstp 6969`). iminfo header OK ("ARM OpenWrt Linux-6.18.55").
+- Needed: fresh stock-initialised chip + a U-Boot built after the `CML_FLAGS = 0` change (a stale 17:29 build kept CML 1 and failed).
+- Open: `iminfo` checksum / `bootm` of the RAM image reset the board (SP805 armed by `dev.py` for 20 s); not yet diagnosed. Speed ~100 kB/s, lock-step TX.
+- U-Boot has no `ping` command in this build.
