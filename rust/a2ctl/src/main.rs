@@ -155,6 +155,53 @@ fn command(b: &mut Bar, cmd: u32, a: [u32; 3], wait: Duration) -> Result<u32, St
     Err(format!("a2 did not ack cmd {cmd} within {wait:?}: mailbox {m:?}"))
 }
 
+
+/// iProc CCB I2C controller at `base` (unit 1 AXI), SMBus "quick" probe of every 7-bit address (protocol from
+/// mainline i2c-bcm-iproc.c). One quick write at 100 kHz is ~0.2 ms; 5 ms backstop per address (25x).
+fn i2c_scan(b: &mut Bar, base: u32) -> String {
+    const CFG: u32 = 0x00;
+    const FIFO: u32 = 0x0c;
+    const CMD: u32 = 0x30;
+    const IE: u32 = 0x38;
+    const IS: u32 = 0x3c;
+    const TX: u32 = 0x40;
+    b.axi_wr(base + CFG, 1 << 31); // reset
+    let t = Instant::now();
+    while t.elapsed() < Duration::from_micros(200) {}
+    b.axi_wr(base + CFG, 1 << 30); // out of reset, enabled
+    b.axi_wr(base + IE, 0);
+    let mut acks = Vec::new();
+    let mut counts = [0u32; 8];
+    let mut timeouts = 0u32;
+    for a in 0x03u32..=0x77 {
+        b.axi_wr(base + FIFO, 3 << 30); // flush rx+tx
+        b.axi_wr(base + TX, a << 1);
+        b.axi_wr(base + CMD, 1 << 31); // start, protocol quick (0)
+        let t = Instant::now();
+        let mut cmd = b.axi_rd(base + CMD);
+        while cmd & (1 << 31) != 0 && t.elapsed() < Duration::from_millis(5) {
+            cmd = b.axi_rd(base + CMD);
+        }
+        if cmd & (1 << 31) != 0 {
+            timeouts += 1;
+            b.axi_wr(base + CFG, 1 << 31);
+            b.axi_wr(base + CFG, 1 << 30);
+            continue;
+        }
+        let st = ((cmd >> 25) & 7) as usize;
+        counts[st] += 1;
+        if st == 0 {
+            acks.push(a);
+        }
+        let is = b.axi_rd(base + IS);
+        b.axi_wr(base + IS, is);
+    }
+    format!(
+        "i2c {base:#x}: ACK at {:02x?}; status counts ok/arb/nack_addr/nack_data/timeout/under/full = {:?}, busy-timeouts {timeouts}",
+        acks, &counts[..7]
+    )
+}
+
 fn num(s: &str) -> Result<u32, String> {
     let r = if let Some(h) = s.strip_prefix("0x") { u32::from_str_radix(h, 16) } else { s.parse() };
     r.map_err(|e| format!("bad number {s}: {e}"))
@@ -162,7 +209,7 @@ fn num(s: &str) -> Result<u32, String> {
 
 const USAGE: &str = "usage: a2ctl [--bar0 PATH] [--wait-ms N] [--stub FILE] <cmd>\n\
   reset | start | status | read ADDR [N] | write ADDR VAL | load FILE [ADDR] | call ADDR [A B] | run FILE [A B]\n\
-  axi-read ADDR [N] | axi-write ADDR VAL     (host path to unit 1's AXI, a2 not involved)";
+  axi-read ADDR [N] | axi-write ADDR VAL | i2c-scan CTRL_BASE | bar-read OFF [N]   (host path to unit 1, a2 not involved)";
 
 fn run() -> Result<(), String> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -223,6 +270,13 @@ fn run() -> Result<(), String> {
                 }
             }
             "axi-write" => b.axi_wr(a(0)?.ok_or(USAGE)?, a(1)?.ok_or(USAGE)?),
+            "i2c-scan" => println!("{}", i2c_scan(&mut b, a(0)?.ok_or(USAGE)?)),
+            "bar-read" => {
+                let (off, n) = (a(0)?.ok_or(USAGE)? as usize, a(1)?.unwrap_or(1));
+                for i in 0..n as usize {
+                    println!("bar0+{:#x}: {:08x}", off + 4 * i, b.rd32(off + 4 * i));
+                }
+            }
             _ => return Err(USAGE.into()),
         }
         Ok(())
