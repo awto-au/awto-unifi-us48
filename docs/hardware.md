@@ -86,3 +86,9 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
 - Internal bus 1: `0x600d:0x8770` at 2, 4, 6, 8; `0x0143:0xbff0` at 17 and 31 (SerDes/other internal devices; not identified). C
 - Internal buses 2-3, external buses 1-2: no response. C
 - Same shape as unit 0 (16 integrated + one external octal PHY).
+
+## Unit 1 (BCM53346) I2C / SPI / GPIO probe (2026-11-13, `a2ctl i2c-scan`, #31)
+- CCB I2C controllers at AXI 0x18038000 and 0x1803b000: registers respond (CFG accepts enable, TIM_CFG 0x19003200), but a quick-write probe never completes for any of 117 addresses (start/busy stays set past 5 ms). Inconclusive, not "no devices": pins may be unmuxed or the bus held low. Board I2C is driven from unit 0's CMIC SMBus (docs/board.md), so unit 1's own I2C is probably unused. C
+- QSPI window 0x1c000000 reads all zero and BSPI register 0x18027000 = 0x401: no flash answering on unit 1. C
+- ChipcommonA GPIO input (0x18000060) = 0x00000fc3, output and enable registers (0x64, 0x68) = 0. C
+- Not done: unit 1 CMIC SMBus scan, MSPI JEDEC read, UART, pinmux decode.
