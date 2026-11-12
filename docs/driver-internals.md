@@ -351,8 +351,7 @@ OM `phy/PKG/chip/bcm54282/bcm54282_defs.h` (now in the vendor store), driver `bc
 ## 9. TSC SerDes init (unit 1 xe0/xe1, SFI)
 
 - Driver = **`bcmi_tsc_xgxs`** (OM `phy/PKG/chip/bcmi_tsc_xgxs/`), not `bcmi_tsce_xgxs` (Eagle-based): `phy/PKG/chip/bcm56150/phy_depend.def` includes `BCMI_TSC_XGXS` (+ QSGMII serdes), TSCE is not selected for BCM56150. C
-- Access: TSC regs are 16-bit clause 22 on the internal bus 1 address `1 + (phys-26)` (section 4); define `0x0010xxxx|IBLK` = block `addr>>8`, reg `addr&0x1f`: write MIIM reg 0x1f = block, then access reg. E.g. `SETUP` 0x00109000 = block 0x1090 reg 0. C (`xgsm_miim_iblk_write.c`)
-- Lane addressing for per-lane regs (`ANATX_DRIVER` 0xc017, ...): `READLN/WRITELN/WRITEALL` select lane in the block address (not decoded here). I
+- Access, address decode, lane select (AER) and the unit-1 MIIM recipe: section 13.1. The `0x0010xxxx` defs are `phy_tsc_iblk` addresses, not `xgsm_miim_iblk` ones. C
 - OM entry per port (`_bmd_init.c:808`): `bmd_phy_probe`; `bmd_phy_mode_set(port, "tsc", SERDES, 0|1)` (4-lane: 0; 1/2-lane: 1 + `2LANE` flag); `bmd_phy_fw_base_set(.., 0x0f00)` on subport 0; `bmd_phy_init`. Board reset callback for 10G config: Rx lane map 0x0123, Tx lane map 0x3210, polarity 0 (no inversion) (`board_bcm56150_10g.c`). C
 
 ### `_tsc_init_stage_0` (before firmware; primary lane only)
@@ -477,3 +476,130 @@ Order matters: PHY side first, then MAC. Skip steps whose read-only check alread
 - No QSGMII2X / TSC write is part of this sequence: none exists for GPORT0/1 in source or stock (12.1).
 - If check 1 shows LINK_STATUS=1 and checks 3/13 are already clean, steps 3-6 are no-ops and the remaining suspects are MAC reset/clock (step 7) and the S-channel port index / block pick for the MIB read (verify the same `P` hits `MAC_0`). I
 - Open: whether anything besides SUPER_ISOLATE / EXT_PWRDOWN gates the GPHY->MAC interface; stock's per-port enable (`phy_enable_set`, RDB reg 0 b11 + reg 0x1a bits) was seen but not fully traced (`0x10d0f54`, case 0x2b).
+
+## 13. Unit-1 10G (TSC) status + recovery recipe
+
+Scope: unit 1 (BCM53346, PCIe), xe0 = front 49 = phys 26 = TSC0 lane 0, xe1 = front 50 = phys 28 = TSC0 lane 2, XLPORT0 = SBUS block 5. Read-only checks first, then writes. Tags: C = read in OM / stock decompile / RDB, I = inferred, not run on HW. Added to the OM store 2026-11-12: `phy/util/phy_tsc_iblk_{read,write}.c`, `phy_aer_iblk_read.c`, `phy/include/phy/phy_{tsc_iblk,aer_iblk,reg}.h`, `bmd/shared/bmd_phy_probe_default.c`, `bmd_phy_ctrl.c`.
+- Unit-1 CMIC base `B` = 0x0a000000 (PCIe BAR); every CMC0 offset below is `B + off`. S-channel / MIIM layouts equal unit 0 (sections 1, 4). C (S-channel verified live), I (MIIM on unit 1)
+
+### 13.1 MIIM access to the TSC
+- **The OM TSC driver uses clause 45 on the internal bus, not the `xgsm_miim_iblk` clause-22 block path.** C (`bcmi_tsc_xgxs_probe` sets `PHY_F_CLAUSE45 | PHY_F_ADDR_SHARE`; `phy_tsc_iblk_mdio_read`, `xgsm_miim.c`)
+  - Section 9's earlier "block = addr>>8" decode was wrong (that is `xgsm_miim_iblk`, used by other cores).
+- **MIIM_PARAM** (`B+0x31080`): INTERNAL_SEL b25 = 1, BUS_ID [24:22] = 1, C45_SEL b21, PHY_ID [20:16] = A, PHY_DATA [15:0].
+  - C22: `0x02400000 | A<<16 | data`. C45: `0x02600000 | A<<16 | data`. C
+- **PHY_ID A (TSC0 lane 0 / lane 2)**: A = 2 (xe0) and A = 4 (xe1). I
+  - Source: live unit-0 scan, issue #4: bus 1 answers 0x600d/0x8770 at 2, 4, 6, 8 (phys 26, 28, 30, 32 = 2 + (p-26)).
+  - OM `_phy_addr` gives 1 + (p-26) = 1 / 3 (off by one, section 12.1). Unit 1 not scanned: verify first with the probe below.
+  - The TSC accepts the lane in AER as well (`PHY_F_ADDR_SHARE`), so A only has to hit the TSC0 core.
+- **Probe (read-only, C22)**: ADDRESS = 2 then 3, expect `0x600d` / `0x8770` (rev nibble masked) at A = 2 and A = 4. Then C45 SERDESID `0x0010900e` [5:0] = model (0x11 per section 12.1). C
+- **One MIIM transaction**, same polling as `scripts/miim.py`:
+  - read: CTRL(`B+0x3108c`) <- 0; PARAM <- `0x02600000 | A<<16`; ADDRESS(`B+0x31088`) <- `devad<<16 | reg16`; CTRL <- 0x2 (RD_START); poll STAT(`B+0x31090`) b0 OPN_DONE; DATA = READ_DATA(`B+0x31084`) & 0xffff; CTRL <- 0.
+  - write: PARAM <- `0x02600000 | A<<16 | data`; ADDRESS as above; CTRL <- 0x1 (WR_START); poll; CTRL <- 0. C
+- **One TSC register access** `acc(A, addr32)` (`phy_tsc_iblk_mdio_*`, C45 branch): C
+  1. `devad = (addr32 >> 16) & 0xf`, `reg16 = addr32 & 0xffff`, `copies = (addr32 >> 20) & 7`.
+  2. `aer` = lane for `copies` 0; 0 for `copies` 1; `lane & ~1` for `copies` 2. Lane = `(phys-2) & 3`: xe0 = 0, xe1 = 2.
+  3. MIIM write: ADDRESS = `devad<<16 | 0xffde`, data = `aer` (AER register).
+  4. MIIM read/write: ADDRESS = `devad<<16 | reg16`.
+  - AER is sticky per PHY address; OM rewrites it before every access, do the same.
+  - `0x0010xxxx` defs (`copies` 1) = core-level registers, always AER 0. `0x0000cxxx` (`copies` 0) = per-lane, AER = lane. Bit 20 is the copies field, not part of devad.
+- **Clause-22 fallback** (`phy_tsc_iblk_mdio_*`, non-C45 branch): `0x1f <- 0xffd0`, `0x1e <- aer`, `0x1f <- reg16 & 0xfff0`, then reg `(reg16 & 0xf) | (reg16 & 0x8000 ? 0x10 : 0)`. Bit 15 of the block value is kept. C
+- Resolved addresses (A = 2 or 4; `AER` = 0 core / 0 or 2 lane; C45 = ADDRESS value for devad 0):
+
+| Name | addr32 | C45 ADDRESS | C22 `0x1f` / reg | AER |
+|---|---|---|---|---|
+| SERDESID | 0x0010900e | 0x900e | 0x9000 / 0x1e | 0 |
+| SETUP | 0x00109000 | 0x9000 | 0x9000 / 0x10 | 0 |
+| RESET | 0x00109001 | 0x9001 | 0x9000 / 0x11 | 0 |
+| ANAPLL_STATUS | 0x00109010 | 0x9010 | 0x9010 / 0x10 | 0 |
+| VERSION | 0x0010f010 | 0xf010 | 0xf010 / 0x10 | 0 |
+| CRC | 0x0010f015 | 0xf015 | 0xf010 / 0x15 | 0 |
+| RAMWORD, ADDRESS, COMMAND, WRDATA | 0x0010ffc0..c3 | 0xffc0..c3 | 0xffc0 / 0x10..13 | 0 |
+| DOWNLOAD_STATUS | 0x0010ffc5 | 0xffc5 | 0xffc0 / 0x15 | 0 |
+| MDIO_UC_MAILBOX | 0x0010ffc8 | 0xffc8 | 0xffc0 / 0x18 | 0 |
+| ANATX_DRIVER | 0x0000c017 | 0xc017 | 0xc010 / 0x17 | lane |
+| ANATX_CONTROL6 | 0x0000c01a | 0xc01a | 0xc010 / 0x1a | lane |
+| ANARX_STATUS1 | 0x0000c02b | 0xc02b | 0xc020 / 0x1b | lane |
+| TX_X4_MISC | 0x0000c113 | 0xc113 | 0xc110 / 0x13 | lane |
+| TX_X4_PCS_STATUS | 0x0000c121 | 0xc121 | 0xc120 / 0x11 | lane |
+| RX_X4_PMA_CONTROL_0 | 0x0000c137 | 0xc137 | 0xc130 / 0x17 | lane |
+| RX_X4_RX_SIGDET | 0x0000c138 | 0xc138 | 0xc130 / 0x18 | lane |
+| RX_X4_CL49_LOCK_FSM_STATUS | 0x0000c145 | 0xc145 | 0xc140 / 0x15 | lane |
+| RX_X4_PMA_PMD_LIVE_STATUS | 0x0000c150 | 0xc150 | 0xc150 / 0x10 | lane |
+| RX_X4_PMA_PMD_LATCHED_STATUS | 0x0000c151 | 0xc151 | 0xc150 / 0x11 | lane |
+| RX_X4_PCS_LATCHED_STATUS_1 / _0 | 0x0000c152 / c153 | 0xc152 / c153 | 0xc150 / 0x12, 0x13 | lane |
+| RX_X4_PCS_LIVE_STATUS | 0x0000c154 | 0xc154 | 0xc150 / 0x14 | lane |
+| DSC_DIAG_CTRL0 | 0x0000c20d | 0xc20d | 0xc200 / 0x1d | lane |
+| UC_CTRL | 0x0000c20e | 0xc20e | 0xc200 / 0x1e | lane |
+| DSC_MISC_CTRL0 | 0x0000c21e | 0xc21e | 0xc210 / 0x1e | lane |
+
+### 13.2 Read-only status checks
+Order = dependency order; stop at the first failing level. All TSC reads via `acc(A, ...)` with lane 2 for xe1 (lane 0 for xe0). Latched (LL/LH) bits clear on read: read once, record.
+| # | Check | Register (addr16, AER) | Bit | Healthy / meaning |
+|---|---|---|---|---|
+| 1 | PLL lock | `ANAPLL_STATUS` 0x9010, 0 | PLLSEQPASS b11 (also PLLSEQDONE b15, FREQPASS b10, VCOPASS b9, LOSTPLLLOCK_SM b6) | b11 = 1 and b6 = 0: core PLL up. b11 = 0: core dead, go to 13.3(c). C |
+| 2 | uC alive | `CRC` 0xf015, 0 | all 16 | != 0 (OM `firmware_check` polls it nonzero after start). 0 = ucode never ran or CRC not enabled. C |
+| 2 | | `VERSION` 0xf010, 0 | all 16 | nonzero; value is informational. C |
+| 2 | | `DOWNLOAD_STATUS` 0xffc5, 0 | INIT_DONE b15, ERR1 b1, ERR0 b0 | b15 = 1, b1:b0 = 0. C |
+| 2 | | `COMMAND` 0xffc2, 0 | MDIO_UC_RESET_N b4 | 1 = 8051 out of reset. I (readback of a command reg) |
+| 2 | | `UC_CTRL` 0xc20e, lane | READY_FOR_CMD b7, ERROR_FOUND b6 | b7 = 1 idle and b6 = 0. C (field map), I (idle value) |
+| 3 | RX signal detect | `RX_X4_PMA_PMD_LIVE_STATUS` 0xc150, lane | AFE_SIGNAL_DETECT b1, SIGNAL_OK b0, EXTERNAL_SIGNAL_DETECT b2 | b1 = 1 = analog front end sees energy. Front 49 (no light): expect b1 = 0, b0 = 0; nothing below can pass. C |
+| 3 | | `ANARX_STATUS1` 0xc02b, lane | SIGDET b15 | raw AFE signal detect, cross-check of b1 above. C |
+| 3 | override | `RX_X4_RX_SIGDET` 0xc138, lane | OVERRIDE_SIGNAL_OK b2, OVERRIDE_VALUE_SIGNAL_OK b1 | b2 must be 0. OM PHY-disable sets b2 = 1, b1 = 0 (forces SIGNAL_OK low) and PHY-enable clears both; a port parked by a disable can keep it. C |
+| 4 | PMD / CDR lock | `RX_X4_PMA_PMD_LIVE_STATUS` 0xc150, lane | PMD_LOCK b3 (RX_ANA_RESET b4, RX_ANA_POWER_DOWN b5 must be 0) | b3 = 1 = CDR locked on the data. b1 = 1 with b3 = 0 = signal present but adaptation not locked: go to 13.3(b). C |
+| 4 | | `RX_X4_PMA_PMD_LATCHED_STATUS` 0xc151, lane | PMD_LOCK_LL b6, PMD_LOCK_LH b7 | LL = 1: lock dropped since last read. C |
+| 5 | PCS block lock (CL49) | `RX_X4_PCS_LIVE_STATUS` 0xc154, lane | SYNC_STATUS b0, LINK_STATUS b1, HI_BER b2, REMOTE_FAULT b7, LOCAL_FAULT b8 | b0 = 1 = 66b block lock. b1 = 1 = PCS link up (no HI_BER). b8 = 1 = local fault (matches `XLMAC_RX_LSS_STATUS` below). C |
+| 5 | | `RX_X4_CL49_LOCK_FSM_STATUS` 0xc145, lane | LSM_CURR_STATE [1:0], LSM_HIS_STATE [4:2] | lock-FSM state; stuck at the initial state = no sync headers seen. State names not in OM. C (fields), I (meaning) |
+| 5 | | `RX_X4_PCS_LATCHED_STATUS_0` 0xc153, lane | SYNC_STATUS_LL b6, LINK_STATUS_LL b8, HI_BER_LH b11 | LL set = was down since last read. C |
+| 6 | Link as OM sees it | `RX_X4_PCS_LIVE_STATUS` b1 and `RX_X4_PCS_LATCHED_STATUS_0` b8 | | OM `link_get`: up = live LINK_STATUS && !LINK_STATUS_LL. Read latched twice (first read clears). C |
+| 7 | TX side | `ANATX_DRIVER` 0xc017 b15 ELEC_IDLE; `ANATX_CONTROL6` 0xc01a b0 DISABLE_TX_R; `TX_X4_MISC` 0xc113 b1 RSTB_TX_LANE, b0 ENABLE_TX_LANE | | expect 0, 0, 1, 1. A dark TX keeps the far end down and the far end then sends fault. C |
+| 8 | PCS-level fault from TX | `TX_X4_PCS_STATUS` 0xc121 | TX_LOCAL_FAULT b8, TX_REMOTE_FAULT b7 | informational. C |
+- MAC-level (S-channel block 5, port index = lane, lane 2 = `|2`; 8-byte regs: read header `0x2c500400`, ack data words {lo, hi}):
+  - `XLMAC_CTRL` addr `0x00060002`: live 0x1041; fields TX_EN b0, RX_EN b1, SOFT_RESET b6, SW_LINK_STATUS b12. C
+  - `XLMAC_RX_LSS_STATUS` addr `0x00060b02`: LOCAL_FAULT b0, REMOTE_FAULT b1, LINK_INTERRUPTION b2. C
+  - `XLMAC_MODE` addr `0x00060102`: expect `0x40` (SPEED_MODE [6:4] = 4 = 10G, HDR_MODE [2:0] = 0 IEEE). C (RDB reset value), I (that stock leaves it)
+  - `XLMAC_TX_CTRL` addr `0x00060402`: DISCARD b2 (lo word) should be 0 (OM sets DISCARD / EP_DISCARD while link is down and clears on link up). C
+  - `XLPORT_LINKSTATUS_DOWN` addr `0x02022900` (block 5, 4-byte, header `0x2c500200`): PORT0..3 latched link-down bits. C (RDB), I (use)
+  - `XLPORT_MODE_REG` live 0 = `XPORT_MODE_QUAD` = four 1-lane ports, so TSC `SETUP.PORT_MODE_SEL` [6:4] = 0 and 1-lane SFI; resolves the section 9 step 1 question. C (OM `bcm56150_a0_internal.h:20`, `_bmd_init.c:368-378`)
+- Interpretation of the live state: LOCAL_FAULT on lane 2 with PCS RX unlocked = step 5 (or earlier) fails. The MAC soft reset hides nothing: the LSS fault is a PCS-side status. I
+
+### 13.3 Recovery, minimal steps in order
+Do 13.2 first; the failing level selects the step. xe0 (front 49) has no light: do not expect any step to lock it (13.2 check 3).
+
+**(a) XLMAC out of soft reset, RX on (lane 2).** C for the stock sequence, I that it clears the symptom
+- What stock does on link-up: `mac_xl_enable_set(1)` (`FUN_012abf7c`): read `XLMAC_CTRL`, set TX_EN=1, RX_EN=1; if the value changed: `FUN_01234964` (XLPORT_TXFIFO_CTRL MAC_CLR_COUNT/CORE_CLR_COUNT pulse), SOFT_RESET=0, write `XLMAC_CTRL`; then a port-bitmap update and `FUN_01235228(unit, port, 1)` (not decoded, I). Disable is the mirror: RX_EN=0, SOFT_RESET=1 = the live 0x1041. C
+1. TXFIFO pulse (stock order, I that it is needed for a MAC that was only parked): RMW `XLPORT_TXFIFO_CTRL` addr `0x00020302` (offset 0x20300 | lane; 4-byte, header read `0x2c500200`, write `0x34500200`): OR in `0x3` (b1 MAC_CLR_COUNT, b0 CORE_CLR_COUNT), write; clear both bits (keep DELAY_PKT [3:2]), write.
+2. `XLMAC_CTRL` 64-bit RMW (read first; live lo = 0x1041): new lo = `(lo & ~0x40) | 0x3` = **0x1003**, hi = 0. S-channel on unit 1:
+   - read: `0x0a03100c <- 0x2c500400`, `0x0a031010 <- 0x00060002`, `0x0a031000 <- 1`, poll bit1 (fail on b20/21/22), ack hdr at `0x0a03100c` (I: 0x30E00400), lo at `0x0a031010`, hi at `0x0a031014`, `0x0a031000 <- 0`.
+   - write: `0x0a03100c <- 0x34500400` (`0x0d<<26 | 5<<20 | 8<<7`), `0x0a031010 <- 0x00060002`, `0x0a031014 <- 0x00001003`, `0x0a031018 <- 0x00000000`, `0x0a031000 <- 1`, poll, check, `0x0a031000 <- 0`.
+   - OM init writes the same bits with SW_LINK_STATUS = 1 at init, without waiting for link (`bcm56150_a0_xlport_init`). C
+3. Clear latched LSS faults: `XLMAC_CLEAR_RX_LSS_STATUS` addr `0x00060c02`, 8-byte write lo `0x7` then lo `0x0`. I (pulse semantics not seen in OM). Re-read `XLMAC_RX_LSS_STATUS`: 0 only if the PCS is up (check 5).
+4. If `XLMAC_TX_CTRL` DISCARD (b2) / EP_DISCARD (hi b5) are set, clear them (RMW, addr `0x00060402`). C
+
+**(b) PCS still unlocked, firmware running: per-lane RX restart, no download.** I (sequence assembled from OM `_tsc_serdes_stop`/`_tsc_uc_rx_lane_control`; not run)
+0. If `RX_X4_RX_SIGDET` b2 = 1: RMW clear b2 and b1.
+1. uC lane stop: proxy write of uC RAM word `0x06d0` (lane 2; lane 0 = `0x04d0`) = `0x0d00`. Proxy write (`phy_tsc_iblk_proxy_write`, all with `acc`, AER 0 unless stated): `MDIO_UC_MAILBOX 0xffc8 <- 0`; `RAMWORD 0xffc0 <- 0x06d0`; `ADDRESS 0xffc1 <- lane` (2); `WRDATA 0xffc3 <- 0x0d00`; `MDIO_UC_MAILBOX 0xffc8 <- 0x0019` (REQ b0 | WR b4 | RAM b3); poll `0xffc8` b15 DONE; `0xffc8 <- 0`. C (OM)
+   - Poll bound: OM `TSC_UC_PROXY_WAIT_TIME` = 600000 reads, no time base. First-run bound 10 ms (uC services a mailbox request within its main loop; not measured), log elapsed, tighten to 1.25x of the measured worst case. I
+2. `RX_X4_PMA_CONTROL_0` (0xc137, AER lane) b0 RSTB_LANE: RMW to 0. C (OM stop path)
+3. `DSC_MISC_CTRL0` (0xc21e, AER lane) b15 RXSEQSTART: RMW to 1 (OM stop and start paths both write 1 when firmware runs). C
+4. uC lane start: same proxy write with data `0x0e00` to `0x06d0` (OM `_tsc_uc_rx_lane_control(1)`, used for forced, non-AN SFI). C
+   - AN or loopback path in OM instead keeps the uC off (`0x0d00`) and sets `RSTB_LANE` = 1 by host. Use that variant only if the port runs CL73 AN. C
+5. Poll `RX_X4_PMA_PMD_LIVE_STATUS` b3 PMD_LOCK, then `RX_X4_PCS_LIVE_STATUS` b1; if `RSTB_LANE` still reads 0 after the first poll interval, set it to 1 by host. I
+   - Bound: 1 s total as a first-run backstop (no OM value for RX adaptation; PLL lock bound in OM is 200 ms). Log elapsed time of the first lock, then tighten to 1.25x of it.
+- Alternative uC command (OM `_tsc_uc_cmd_seq`, only for revid < A2 there): per lane read `UC_CTRL` until READY_FOR_CMD b7; clear b7, b6, [5:4] (write); then write `UC_CTRL` = `cmd<<8 | 0x1` (cmd 0 graceful stop = `0x0001`, cmd 2 resume = `0x0201`). Skipped if `DSC_DIAG_CTRL0` (0xc20d) b0 = 1. `SERDESID` b13:11 = REV_NUMBER tells which applies. C (code), I (applicability)
+
+**(c) Full TSC0 re-init.** Needed when check 1 fails (PLLSEQPASS = 0), check 2 shows no uC (CRC = 0 / INIT_DONE = 0), or (b) does not lock with signal present.
+- Impact: TSC0 is one core: re-init drops xe0 and xe1 (front 49 and 50). TSC1 (HiGig, phys 30/32) unaffected. C
+- Order, all C (OM), registers as in section 9 (addr16 in 13.1, AER 0 for core regs, all-lane writes where section 9 says "all lanes"):
+  1. Stage 0 (section 9 steps 1-8): `SETUP` 0x9000 PORT_MODE_SEL = 0 (QUAD, 1-lane), REFCLK_SEL [15:13] = 3, FORCE_PLL_MODE_AFE_SEL b12 = 1, DEFAULT_PLL_MODE_AFE [11:8] = 0xa; `RESET` 0x9001, `POWER` 0x9002, timers, TX FIR defaults.
+  2. Microcode download (section 9 step 9): `COMMAND` 0xffc2 INIT_CMD b15 -> poll `DOWNLOAD_STATUS` 0xffc5 b15 (1 ms steps, 200 ms limit in OM) -> `COMMAND2` 0xffca <- 0xf -> `RAMWORD` 0xffc0 <- len-1 -> `ADDRESS` 0xffc1 <- 0 -> `COMMAND` <- 0x9 (WRITE b3 | RUN b0) -> all LE words to `WRDATA` 0xffc3 -> `COMMAND` <- 0x2 (STOP) -> check ERR0/ERR1 = 0 -> `CRC` 0xf015 <- 0 -> `COMMAND` <- 0x10 (MDIO_UC_RESET_N). Image: OM `bcmi_tsc_xgxs_ucode.c`, 32728 bytes.
+  3. `SETUP` START_SEQUENCER b7 = 1, poll `ANAPLL_STATUS` b11 (OM limit 200 ms); stage 1: `CRC` != 0 within 100 ms.
+  4. Stage 2 (section 9): release `RESET` RX/TX_RESET_ANALOG, uC lane control on (`0x0e00` per lane as in (b) step 4), then (a) and the port link logic.
+- If stock's warm state is intact (check 1 and 2 pass), (c) is not needed and a download over a running uC would wipe the stock state; prefer (b).
+
+### 13.4 Does stock's link-scan do (a) by itself?
+- **Yes, but only after the PHY reports link up; it will not unpark a MAC whose PCS has no lock.** C for the call chain, I for the exact PHY register
+  - Thread `_bcm_esw_linkscan_thread` (`FUN_00af71a8`) -> `_bcm_esw_linkscan_update_port` (`FUN_00af4804`, per port): reads link with `FUN_00b28b88` (`_bcm_port_link_get`, SW mode) -> `FUN_0125fa88` -> PHY driver slot +0xc (`link_get`). Hardware-linkscan mode goes through `FUN_00af45a0` with `hw=1`; which mode unit 1 uses depends on `bcm_linkscan_pbmp` (soc property, not read). C / I
+  - Link change -> `bcm_port_update` (`FUN_00b29258`) -> `FUN_00b1e768(link)`: link down: MAC slot +8 `enable_set(0)` then `soc_phyctrl_linkdn_evt`; link up: speed/duplex/pause MAC slots, then MAC slot +8 `enable_set(1)` = `mac_xl_enable_set` above. C
+- Register it polls on unit 1: the TSC PHY driver's `link_get`, i.e. MIIM reads of `RX_X4_PCS_LIVE_STATUS` (0xc154) LINK_STATUS b1 and the latched `RX_X4_PCS_LATCHED_STATUS_0` (0xc153) LINK_STATUS_LL b8, as in OM. C (OM), I (stock identical; stock TSC driver not decompiled)
+- What it writes on link-up: `XLPORT_TXFIFO_CTRL` pulse, then `XLMAC_CTRL` = TX_EN 1, RX_EN 1, SOFT_RESET 0 (0x1003 here), later `EPC_LINK_BMAP` and port forwarding state. C (MAC part), I (rest)
+- Consequence: the live 0x1041 is what `enable_set(0)` leaves; it is consistent with "stock saw link down" and does not indicate a stock bug. A fix has to make the PCS lock (b) first, or do (a) by hand.
