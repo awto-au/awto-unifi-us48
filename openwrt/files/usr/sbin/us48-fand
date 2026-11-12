@@ -50,7 +50,10 @@ state=full; fan $FULL
 logger -t us48-fand "start: full until temps read (high ${HIGH} low ${LOW})"
 while :; do
 	t=$(maxtemp)
-	if [ "$t" -lt 0 ]; then
+	if [ "$state" = full ] && [ -z "$seen" ] && [ "$t" -ge 0 ]; then
+		seen=1   # first reading: quiet unless already hot (LOW is only the post-alert return point)
+		[ "$t" -lt $HIGH ] && { fan $QUIET; state=quiet; logger -t us48-fand "first read ${t}: QUIET"; }
+	elif [ "$t" -lt 0 ]; then
 		[ $state = full ] || { fan $FULL; state=full; logger -t us48-fand "no sensors: FULL"; }
 	elif [ $state = full ] && [ "$t" -le $LOW ]; then
 		fan $QUIET; state=quiet; logger -t us48-fand "max ${t} <= ${LOW}: QUIET"
