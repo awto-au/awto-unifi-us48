@@ -1,6 +1,6 @@
 # sources/
 
-Downloaded third-party documents. PDFs are gitignored (`sources/**/*.pdf`); this manifest is the tracked part. Fetched with playwrong (real browser).
+Downloaded third-party documents. Vendor firmware/source copies are in `/vendors/` (see `docs/sources.md`). PDFs are gitignored (`sources/**/*.pdf`); this manifest is the tracked part. Fetched with playwrong (real browser).
 
 | File | URL | Revision | Good copy |
 |---|---|---|---|
