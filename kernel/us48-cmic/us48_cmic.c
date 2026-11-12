@@ -251,12 +251,18 @@ static void set_field(u32 *e, int lsb, int width, u64 v)
 			e[(lsb + i) / 32] |= BIT((lsb + i) % 32);
 }
 
+/* Insert the static L2X entry for our MAC (off: rely on l2_miss_cpu). Module id of the entry is unverified. */
+static bool l2_static = true;
+module_param(l2_static, bool, 0444);
+
 /* Static L2X entry: our MAC in VLAN 1 -> CPU (modid 1, port 0). TX bypasses learning (module header). */
 static int l2_add_cpu(struct us48_cmic *u, const u8 *mac)
 {
 	u32 e[4] = { };
 	int i, ones = 0;
 
+	if (!l2_static)
+		return 0;
 	set_field(e, 2, 12, 1);				/* VLAN_ID */
 	set_field(e, 14, 48, ether_addr_to_u64(mac));	/* MAC_ADDR */
 	set_field(e, 62, 6, 0);				/* PORT_NUM: CPU */
@@ -362,6 +368,7 @@ static int us48_poll(struct napi_struct *napi, int budget)
 			break;
 		dma_rmb();
 		rx_one(u, i);
+		wr(u, DMA_STAT_CLR, DMA_DESC_DONE(RX_CH));	/* ack the latched per-descriptor done bit */
 		u->rx_next++;
 		done++;
 	}
@@ -387,12 +394,12 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 	struct us48_cmic *u = netdev_priv(nd);
 	unsigned int len = max_t(unsigned int, skb->len, ETH_ZLEN);
 
-	if (u->tx_len || len + 4 > BUF_SZ) {
+	if (u->tx_len || len + ETH_FCS_LEN > BUF_SZ) {
 		nd->stats.tx_dropped++;
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
-	memset(u->tx_buf, 0, len + 4);
+	memset(u->tx_buf, 0, len + ETH_FCS_LEN);
 	skb_copy_bits(skb, 0, u->tx_buf, 12);
 	skb_copy_bits(skb, 12, u->tx_buf + 16, skb->len - 12);
 	memset(u->tx_dcb, 0, 128);
@@ -405,7 +412,8 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 		u->tx_dcb[4] = cpu_to_le32(0x00040000);	/* txq 0 */
 	}
 	u->tx_dcb[16] = cpu_to_le32(u->tx_buf_dma + 16);
-	u->tx_dcb[17] = cpu_to_le32((len - 12) | DCB_W1_STAT | (tx_direct ? DCB_W1_HG : 0));
+	/* +4: XLMAC_TX_CTRL CRC_MODE is 'replace' (stock): the last 4 bytes are overwritten with the FCS, not added. */
+	u->tx_dcb[17] = cpu_to_le32((len + ETH_FCS_LEN - 12) | DCB_W1_STAT | (tx_direct ? DCB_W1_HG : 0));
 	memcpy(&u->tx_dcb[18], &u->tx_dcb[2], 16);	/* OM _dcb_init: header on both DCBs */
 	u->tx_len = len;
 	netif_stop_queue(nd);
