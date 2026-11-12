@@ -766,6 +766,33 @@ def cmd_stock_sh(extra: list[str]) -> int:
     return r[0]
 
 
+@command("S-channel read on the running board (needs a shell): unit 0|1, r=reg m=mem, block, hex addr, [words]",
+         args="<0|1> <r|m> <blk> <addr> [words]  (several 'r blk addr' triples with --multi are not supported)",
+         kind="action")
+def cmd_schan(extra: list[str]) -> int:
+    if len(extra) < 4:
+        log("usage: schan <0|1> <r|m> <blk> <addr hex> [words]", "ERROR")
+        return 2
+    unit, kind, blk, addr = extra[0], extra[1], int(extra[2], 0), int(extra[3], 0)
+    words = int(extra[4]) if len(extra) > 4 else 1
+    base = {"0": 0x48000000, "1": 0x0A000000}[unit]
+    hdr = (0x0B if kind == "r" else 0x07) << 26 | blk << 20 | (4 * words) << 7
+    b = base + 0x31000
+    # Poll for DONE (b1) in the shell loop: an S-channel op answers in us, 50 polls = far above that.
+    cmd = (f"devmem {b:#x} 32 0; devmem {b + 12:#x} 32 {hdr:#x}; devmem {b + 16:#x} 32 {addr:#x}; "
+           f"devmem {b:#x} 32 1; n=0; while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
+           f"echo ctrl=$(devmem {b:#x} 32); for i in $(seq 0 {words}); do devmem $(({b + 12}+4*i)) 32; done; "
+           f"devmem {b:#x} 32 0")
+    if not _ensure_console():
+        return 1
+    with console.Session() as s:
+        res = _stock_cmd(s, cmd, 20.0)
+    if res is None:
+        return 1
+    sys.stdout.write(res[1] + "\n")
+    return 0
+
+
 @command("push a kernel module over serial (md5, 3 tries), rmmod/insmod it, give xe0 an IP, ping a host",
          args="[module.ko] [--ip A.B.C.D] [--ping A.B.C.D] [-- insmod args...]", kind="action")
 def cmd_cmic_load(extra: list[str]) -> int:

@@ -53,6 +53,7 @@
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
 #define VLAN_PROFILE_TAB(i)	(0x14080000 + (i))
+#define EGR_ENABLE(p)		(0x345c0000 + (p))
 #define L2X			0x1c000000	/* hashed: TABLE_INSERT, no index */
 #define UNIT1_MODID		1		/* PORT_TAB.MY_MODID, read live */
 #define XE1_PORT		27	/* front 50 */
@@ -154,6 +155,13 @@ static void cpu_path_init(struct us48_cmic *u)
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN(1), 3, 76, egr, 2);
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(1), 2, 60, stg, 4);
+	/* Stock's port disable leaves EGR_ENABLE[27] = 0: every frame to xe1 dies before the MAC. */
+	{
+		u32 en = 1;
+
+		if (sbus(u, 0x09, BLK_EPIPE, EGR_ENABLE(XE1_PORT), &en, 1) == 0)
+			dev_info(&u->pdev->dev, "EGR_ENABLE[%d] <- 1\n", XE1_PORT);
+	}
 }
 
 /* VLAN_PROFILE_TAB.L2_MISS_TOCPU: redirects (not copies) L2 misses to the CPU, own TX included. Test knob. */
