@@ -48,6 +48,8 @@
 #define BLK_IPIPE		10
 #define EPC_LINK_BMAP_64	0x46002700
 #define BLK_EPIPE		11
+#define PORT_TAB(p)		(0x04000000 + (p))
+#define OUR_VID			48
 #define VLAN_TAB(i)		(0x14000000 + (i))
 #define STG_TAB(i)		(0x14040000 + (i))
 #define EGR_VLAN(i)		(0x100c0000 + (i))
@@ -96,10 +98,11 @@ struct us48_cmic {
 static u32 rd(struct us48_cmic *u, u32 off) { return ioread32(u->cmic + off); }
 static void wr(struct us48_cmic *u, u32 off, u32 v) { iowrite32(v, u->cmic + off); }
 
-/* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09, table insert 0x24. Section 1. */
+/* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09, insert 0x24, delete 0x26, lookup 0x28. */
 static int sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words)
 {
-	bool write = op == 0x0d || op == 0x09 || op == 0x24;
+	bool write = op == 0x0d || op == 0x09 || op == 0x24 || op == 0x26 || op == 0x28;
+	ktime_t t0 = ktime_get();
 	u32 ctrl;
 	int i, ret;
 
@@ -109,11 +112,11 @@ static int sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int w
 	for (i = 0; write && i < words; i++)
 		wr(u, SCHAN_MSG(2 + i), data[i]);
 	wr(u, SCHAN_CTRL, SCHAN_START);
-	ret = readl_poll_timeout_atomic(u->cmic + SCHAN_CTRL, ctrl, ctrl & (SCHAN_DONE | SCHAN_ERRS),
-					1, SCHAN_TIMEOUT_US);
+	/* DONE only: an error bit alone can be stale while the op is still in flight (seen as ctrl 00200001). */
+	ret = readl_poll_timeout_atomic(u->cmic + SCHAN_CTRL, ctrl, ctrl & SCHAN_DONE, 1, SCHAN_TIMEOUT_US);
 	if (ret || (ctrl & SCHAN_ERRS)) {
-		dev_err(&u->pdev->dev, "sbus op %02x blk %u addr %08x: ctrl %08x after %u us\n",
-			op, blk, addr, ctrl, SCHAN_TIMEOUT_US);
+		dev_err(&u->pdev->dev, "sbus op %02x blk %u addr %08x: ctrl %08x after %lld us (limit %u)\n",
+			op, blk, addr, ctrl, ktime_us_delta(ktime_get(), t0), SCHAN_TIMEOUT_US);
 		wr(u, SCHAN_CTRL, 0);
 		return ret ?: -EIO;
 	}
@@ -144,24 +147,68 @@ static void smem_set_bits(struct us48_cmic *u, u32 blk, u32 addr, int words, int
 	dev_info(&u->pdev->dev, "mem %u/%08x: %d bit(s) set, w0 %08x w1 %08x\n", blk, addr, flips, e[0], e[1]);
 }
 
-/* VLAN 1 + STG 1 lack the CPU and xe1 (27) after stock: add both (driver-internals 14.4). */
-static void cpu_path_init(struct us48_cmic *u)
+static void set_even_parity(u32 *e, int par)
 {
-	static const int vlan[] = { 0, XE1_PORT };			/* PORT_BITMAP 0:30 */
-	static const int egr[] = { 30, 30 + XE1_PORT, 0, XE1_PORT };	/* PORT_BITMAP 30:30, UT_BITMAP 0:30 */
-	static const int stg[] = { 0, 1, 2 * XE1_PORT, 2 * XE1_PORT + 1 };	/* SP_TREE 3 = forward */
+	int i, ones = 0;
 
-	smem_set_bits(u, BLK_IPIPE, VLAN_TAB(1), 4, 126, vlan, 2);
-	smem_set_bits(u, BLK_EPIPE, EGR_VLAN(1), 3, 76, egr, 4);
+	e[par / 32] &= ~BIT(par % 32);
+	for (i = 0; i <= par / 32; i++)
+		ones += hweight32(e[i]);
+	if (ones & 1)
+		e[par / 32] |= BIT(par % 32);
+}
+
+/*
+ * Private VLAN OUR_VID with only the CPU and xe1: VLAN 1 also holds the HiGig links to unit 0, so
+ * sharing it would flood the house LAN into unit 0 (loop risk once a copper port is cabled).
+ * Fields cloned from VLAN 1 (STG, profile, flood pointers), bitmaps replaced.
+ */
+static void private_vlan_init(struct us48_cmic *u)
+{
+	static const int stg[] = { 0, 1, 2 * XE1_PORT, 2 * XE1_PORT + 1 };	/* SP_TREE 3 = forward */
+	u32 e[4], g[3], one = 1;
+
+	if (sbus(u, 0x07, BLK_IPIPE, VLAN_TAB(OUR_VID), e, 4) || (e[1] & BIT(6))) {	/* VALID b38 */
+		dev_warn(&u->pdev->dev, "VLAN %d not free (or unreadable): not touching\n", OUR_VID);
+		return;
+	}
+	if (sbus(u, 0x07, BLK_IPIPE, VLAN_TAB(1), e, 4) || sbus(u, 0x07, BLK_EPIPE, EGR_VLAN(1), g, 3))
+		return;
+	e[0] = BIT(0) | BIT(XE1_PORT);			/* PORT_BITMAP 0:30 */
+	set_even_parity(e, 126);
+	sbus(u, 0x09, BLK_IPIPE, VLAN_TAB(OUR_VID), e, 4);
+	g[0] = BIT(0) | BIT(XE1_PORT) | BIT(30);	/* UT_BITMAP 0:30, PORT_BITMAP 30:30 (low bits) */
+	g[1] = BIT(XE1_PORT - 2);			/* PORT_BITMAP bit 30 + 27 = 57 = w1 bit 25 */
+	set_even_parity(g, 76);
+	sbus(u, 0x09, BLK_EPIPE, EGR_VLAN(OUR_VID), g, 3);
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(1), 2, 60, stg, 4);
 	/* Stock's port disable leaves EGR_ENABLE[27] = 0: every frame to xe1 dies before the MAC. */
-	{
-		u32 en = 1;
+	sbus(u, 0x09, BLK_EPIPE, EGR_ENABLE(XE1_PORT), &one, 1);
+	dev_info(&u->pdev->dev, "private VLAN %d: CPU + port %d\n", OUR_VID, XE1_PORT);
+}
 
-		if (sbus(u, 0x09, BLK_EPIPE, EGR_ENABLE(XE1_PORT), &en, 1) == 0)
-			dev_info(&u->pdev->dev, "EGR_ENABLE[%d] <- 1\n", XE1_PORT);
+/*
+ * PORT_TAB[27].CML_FLAGS_NEW/MOVE (121:4, 125:4); bit0 drop, bit1 copy to CPU, bit3 do HW learn.
+ * Stock's 8 drops every unicast here (ING_EVENT_DEBUG CML+RDROP, SA never learnt): 0 = no action. -1 keeps stock.
+ */
+static int cml;
+module_param(cml, int, 0444);
+
+/* PORT_TAB[27].PORT_VID (bits 24:12): untagged frames from xe1 classify into our VLAN. */
+static void port_vid_set(struct us48_cmic *u, u32 vid)
+{
+	u32 e[8];
+
+	if (sbus(u, 0x07, BLK_IPIPE, PORT_TAB(XE1_PORT), e, 8))
+		return;
+	e[0] = (e[0] & 0x00ffffff) | (vid << 24);
+	e[1] = (e[1] & ~0xfu) | (vid >> 8);
+	if (cml >= 0 && vid == OUR_VID) {
+		e[3] = (e[3] & ~(0xfu << 25 | 0x7u << 29)) | (cml & 0xf) << 25 | (cml & 0x7) << 29;
+		e[4] = (e[4] & ~1u) | ((cml >> 3) & 1);
 	}
+	sbus(u, 0x09, BLK_IPIPE, PORT_TAB(XE1_PORT), e, 8);
 }
 
 /* VLAN_PROFILE_TAB.L2_MISS_TOCPU: redirects (not copies) L2 misses to the CPU, own TX included. Test knob. */
@@ -175,7 +222,7 @@ static void l2_miss_set(struct us48_cmic *u)
 {
 	u32 e[4], prof;
 
-	if (sbus(u, 0x07, BLK_IPIPE, VLAN_TAB(1), e, 4))
+	if (sbus(u, 0x07, BLK_IPIPE, VLAN_TAB(OUR_VID), e, 4))
 		return;
 	prof = VLAN_PROFILE_TAB((e[1] >> 28) & 0xf);	/* VLAN_PROFILE_PTR [63:60] */
 	if (sbus(u, 0x07, BLK_IPIPE, prof, e, 1))
@@ -265,14 +312,14 @@ static bool l2_static = true;
 module_param(l2_static, bool, 0444);
 
 /* Static L2X entry: our MAC in VLAN 1 -> CPU (modid 1, port 0). TX bypasses learning (module header). */
-static int l2_add_cpu(struct us48_cmic *u, const u8 *mac)
+static int l2_op_cpu(struct us48_cmic *u, const u8 *mac, u32 op)
 {
 	u32 e[4] = { };
 	int i, ones = 0;
 
 	if (!l2_static)
 		return 0;
-	set_field(e, 2, 12, 1);				/* VLAN_ID */
+	set_field(e, 2, 12, OUR_VID);			/* VLAN_ID */
 	set_field(e, 14, 48, ether_addr_to_u64(mac));	/* MAC_ADDR */
 	set_field(e, 62, 6, 0);				/* PORT_NUM: CPU */
 	set_field(e, 68, 7, UNIT1_MODID);		/* MODULE_ID */
@@ -282,8 +329,11 @@ static int l2_add_cpu(struct us48_cmic *u, const u8 *mac)
 	for (i = 0; i < 4; i++)
 		ones += hweight32(e[i]);
 	set_field(e, 100, 1, ones & 1);			/* EVEN_PARITY */
-	return sbus(u, 0x24, BLK_IPIPE, L2X, e, 4);
+	return sbus(u, op, BLK_IPIPE, L2X, e, 4);
 }
+
+static int l2_add_cpu(struct us48_cmic *u, const u8 *mac) { return l2_op_cpu(u, mac, 0x24); }
+static int l2_del_cpu(struct us48_cmic *u, const u8 *mac) { return l2_op_cpu(u, mac, 0x26); }
 
 static void dma_abort(struct us48_cmic *u, int ch)
 {
@@ -318,7 +368,7 @@ static void rx_arm(struct us48_cmic *u)
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) | DMA_EN);
 }
 
-/* One received DCB -> skb: drop the 4 CRC bytes and the VLAN 1 tag the CPU copy carries. */
+/* One received DCB -> skb: drop the 4 CRC bytes and our VLAN tag if the CPU copy carries one. */
 static void rx_one(struct us48_cmic *u, int i)
 {
 	struct net_device *nd = u->ndev;
@@ -347,7 +397,7 @@ static void rx_one(struct us48_cmic *u, int i)
 		nd->stats.rx_dropped++;
 		return;
 	}
-	if (get_unaligned_be16(p + 12) == ETH_P_8021Q && (get_unaligned_be16(p + 14) & VLAN_VID_MASK) == 1) {
+	if (get_unaligned_be16(p + 12) == ETH_P_8021Q && (get_unaligned_be16(p + 14) & VLAN_VID_MASK) == OUR_VID) {
 		skb_put_data(skb, p, 12);
 		skb_put_data(skb, p + 16, len - 16);
 	} else {
@@ -388,7 +438,6 @@ static int us48_poll(struct napi_struct *napi, int budget)
 			break;
 		dma_rmb();
 		rx_one(u, i);
-		wr(u, DMA_STAT_CLR, DMA_DESC_DONE(RX_CH));	/* ack the latched per-descriptor done bit */
 		u->rx_next++;
 		done++;
 	}
@@ -414,12 +463,12 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 	struct us48_cmic *u = netdev_priv(nd);
 	unsigned int len = max_t(unsigned int, skb->len, ETH_ZLEN);
 
-	if (u->tx_len || len + ETH_FCS_LEN > BUF_SZ) {
+	if (u->tx_len || len + 16 > BUF_SZ) {
 		nd->stats.tx_dropped++;
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
-	memset(u->tx_buf, 0, len + ETH_FCS_LEN);
+	memset(u->tx_buf, 0, len + 16);		/* DCB1 reads buf[16, len + 8) */
 	skb_copy_bits(skb, 0, u->tx_buf, 12);
 	skb_copy_bits(skb, 12, u->tx_buf + 16, skb->len - 12);
 	memset(u->tx_dcb, 0, 128);
@@ -459,8 +508,10 @@ static void us48_tx_timeout(struct net_device *nd, unsigned int txq)
 static int us48_set_mac(struct net_device *nd, void *p)
 {
 	struct us48_cmic *u = netdev_priv(nd);
-	int ret = eth_mac_addr(nd, p);
+	int ret;
 
+	l2_del_cpu(u, nd->dev_addr);
+	ret = eth_mac_addr(nd, p);
 	if (!ret && l2_add_cpu(u, nd->dev_addr))
 		netdev_warn(nd, "L2 insert for %pM failed\n", nd->dev_addr);
 	return ret;
@@ -490,6 +541,7 @@ static int us48_stop(struct net_device *nd)
 	dma_abort(u, RX_CH);
 	dma_abort(u, TX_CH);
 	u->tx_len = 0;
+	l2_del_cpu(u, nd->dev_addr);
 	return 0;
 }
 
@@ -560,7 +612,8 @@ static int us48_cmic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		link[0] |= BIT(0) | BIT(XE1_PORT);
 		sbus(u, 0x0d, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
 	}
-	cpu_path_init(u);
+	private_vlan_init(u);
+	port_vid_set(u, OUR_VID);
 	l2_miss_set(u);
 
 	SET_NETDEV_DEV(nd, &pdev->dev);
@@ -568,7 +621,8 @@ static int us48_cmic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	nd->watchdog_timeo = HZ;	/* one frame completes in us; 1 s = stuck, logged + aborted */
 	nd->min_mtu = ETH_MIN_MTU;
 	nd->max_mtu = BUF_SZ - ETH_HLEN - VLAN_HLEN - ETH_FCS_LEN - 4;
-	eth_hw_addr_random(nd);
+	/* Fixed locally administered MAC: one L2 entry, no growth across module loads. */
+	eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ 0x02, 0x75, 0x73, 0x34, 0x38, 0x50 });
 	netif_napi_add(nd, &u->napi, us48_poll);
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	strscpy(nd->name, "xe%d", IFNAMSIZ);
@@ -589,6 +643,7 @@ static void us48_cmic_shutdown(struct pci_dev *pdev)
 		return;
 	dma_abort(u, RX_CH);
 	dma_abort(u, TX_CH);
+	port_vid_set(u, 1);
 	pci_clear_master(pdev);
 }
 
