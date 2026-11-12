@@ -770,7 +770,7 @@ def cmd_stock_sh(extra: list[str]) -> int:
 
 
 @command("S-channel op on the running board (needs a shell): unit 0|1, r=reg m=mem w=32-bit reg write, block, addr, [words|value]",
-         args="<0|1> <r|m|w> <blk> <addr> [words|value]",
+         args="<0|1> <r|m|w|x> <blk> <addr> [words|value|w0 w1 ...]",
          kind="action")
 def cmd_schan(extra: list[str]) -> int:
     if len(extra) < 4:
@@ -779,12 +779,16 @@ def cmd_schan(extra: list[str]) -> int:
     unit, kind, blk, addr = extra[0], extra[1], int(extra[2], 0), int(extra[3], 0)
     words = int(extra[4]) if len(extra) > 4 and kind in "rm" else 1
     wval = int(extra[4], 0) if len(extra) > 4 and kind == "w" else 0
+    if kind == "x":  # table-entry write (op 0x09): schan <u> x <blk> <addr> <w0> [w1 ...]
+        vals = [int(x, 0) for x in extra[4:]]
+        words = len(vals)
     base = {"0": 0x48000000, "1": 0x0A000000}[unit]
-    hdr = {"r": 0x0B, "m": 0x07, "w": 0x0D}[kind] << 26 | blk << 20 | (4 * words) << 7
+    hdr = {"r": 0x0B, "m": 0x07, "w": 0x0D, "x": 0x09}[kind] << 26 | blk << 20 | (4 * words) << 7
     b = base + 0x31000
     # Poll for DONE (b1) in the shell loop: an S-channel op answers in us, 50 polls = far above that.
     cmd = (f"devmem {b:#x} 32 0; devmem {b + 12:#x} 32 {hdr:#x}; devmem {b + 16:#x} 32 {addr:#x}; "
-           + (f"devmem {b + 20:#x} 32 {wval:#x}; " if kind == "w" else "") +
+           + (f"devmem {b + 20:#x} 32 {wval:#x}; " if kind == "w" else "")
+           + ("".join(f"devmem {b + 20 + 4 * i:#x} 32 {v:#x}; " for i, v in enumerate(vals)) if kind == "x" else "") +
            f"devmem {b:#x} 32 1; n=0; while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
            f"echo ctrl=$(devmem {b:#x} 32); for i in $(seq 0 {words}); do devmem $(({b + 12}+4*i)) 32; done; "
            f"devmem {b:#x} 32 0")

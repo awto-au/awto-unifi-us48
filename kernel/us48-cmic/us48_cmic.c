@@ -379,12 +379,13 @@ static void rx_one(struct us48_cmic *u, int i)
 
 	if (rx_dump) {
 		rx_dump--;
-		netdev_info(nd, "RX dcb%d len %u: hdr %08x %08x %08x %08x st %08x %08x %08x %08x %08x w15 %08x da %pM\n",
+		netdev_info(nd, "RX dcb%d len %u: hdr %08x %08x %08x %08x st %08x %08x %08x %08x %08x w15 %08x da %pM et %04x %04x\n",
 			    i, len, le32_to_cpu(u->rx_dcb[16 * i + 2]), le32_to_cpu(u->rx_dcb[16 * i + 3]),
 			    le32_to_cpu(u->rx_dcb[16 * i + 4]), le32_to_cpu(u->rx_dcb[16 * i + 5]),
 			    le32_to_cpu(u->rx_dcb[16 * i + 6]), le32_to_cpu(u->rx_dcb[16 * i + 7]),
 			    le32_to_cpu(u->rx_dcb[16 * i + 8]), le32_to_cpu(u->rx_dcb[16 * i + 12]),
-			    le32_to_cpu(u->rx_dcb[16 * i + 13]), w15, p);
+			    le32_to_cpu(u->rx_dcb[16 * i + 13]), w15, p,
+			    get_unaligned_be16(p + 12), get_unaligned_be16(p + 14));
 	}
 
 	if ((w15 & DCB_W15_ERR) || len < ETH_ZLEN + ETH_FCS_LEN || len > BUF_SZ) {
