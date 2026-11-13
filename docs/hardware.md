@@ -18,7 +18,7 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 | I2C | `/dev/i2c-0`, `/dev/i2c-1` static nodes, no kernel adapter; switchdrvr drives the CMIC SMBus ([board.md](board.md#i2c-master-issue-7)) |
 | PoE | GPIO IRQs `pse_alarm_int`, `pse_slave_int`, `pse_master_int`; budget reported 436 W |
 | Cooling | firmware reports 4 fans, 16 temperature sensors |
-| Ports | 48× GbE copper, 2× SFP+ (49–50), 2× SFP (51–52) |
+| Ports | 48× GbE copper, 4 cages labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2 (stock 49–52); chip, logical port and PHY per port: [port-map.md](port-map.md); current cabling: `scripts/cabling.json` |
 
 - Two-chip split: front 1-24 + 51-52 on the BCM53344, 25-50 on the BCM53346; 2x13G HiGig between them ([board.md](board.md#two-chip-layout)). Unit 0 (live scan): 16 integrated copper PHYs + one external octal PHY; unit 1 not scanned (board.md Port map).
 - Do not infer PHY or PoE-controller part numbers from the model name.

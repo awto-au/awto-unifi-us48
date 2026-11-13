@@ -3,20 +3,23 @@
 Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-internals.md](driver-internals.md) 13. Generator: `scripts/us48_portmap.py`.
 
 ## Front -> chip
-- The panel has no numbers 49-52: it is labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2 (four cages; Dan says all four are 10G capable). 49-52 are the stock/SDK numbers in this doc.
-| Front | Panel label | Chip | Logical (SDK) | PHY / lane | Software names |
-|---|---|---|---|---|---|
-| 1-16 | RJ45 | unit 0 (BCM53344, host SoC, AXI CMIC 0x48000000) | 2-17 | integrated GPHY, int bus 0 | uboot-2 + Linux (stock) |
-| 17-24 | RJ45 | unit 0 | 18-25 | octal PHY, ext bus 0 `0x14-0x1b` | |
-| 25-40 | RJ45 | unit 1 (BCM53346, PCIe 01:00.0) | 2-17 | integrated GPHY | |
-| 41-48 | RJ45 | unit 1 | 18-25 | octal PHY, ext bus 0 `0x14-0x1b` | |
-| 49 | SFP+ 1 | unit 1 | 26 (`xe0`, phys 26, TSC0 lane 0) | SFP+, no PHY | OpenWrt `xe49` |
-| 50 | SFP+ 2 | unit 1 | 27 (`xe1`, phys 28, TSC0 lane 2) | SFP+, no PHY | OpenWrt `xe50` |
-| 51 | SFP 1 | unit 0 | 26 (`ge24`, phys 26, TSC lane 0) | SFP, no PHY | uboot-2 port 26 |
-| 52 | SFP 2 | unit 0 | 27 (`ge25`, phys 28, TSC lane 2) | SFP, no PHY | |
-| (internal) | | both | 28, 29 | 2 x 13G HiGig between the chips | |
+- Panel labels: RJ45 ports are numbered 1-48; the four 10G cages are labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2. 49-52 are the stock/SDK numbers.
 
-- Logical = physical except fronts 1-8 (logical 2-9 = phys 9-2) and phys 26/28/30/32 -> logical 26/27/28/29.
+| Front | Panel label | Chip | Logical | PHY / lane |
+|---|---|---|---|---|
+| 1-8 | RJ45 1-8 | unit 0 (BCM53344, host SoC) | 2-9 (phys 9-2) | integrated GPHY, int bus 0 |
+| 9-16 | RJ45 9-16 | unit 0 | 10-17 | integrated GPHY, int bus 0 |
+| 17-24 | RJ45 17-24 | unit 0 | 18-25 | octal PHY, ext bus 0 `0x14-0x1b` |
+| 25-32 | RJ45 25-32 | unit 1 (BCM53346, PCIe) | 2-9 (phys 9-2) | integrated GPHY |
+| 33-40 | RJ45 33-40 | unit 1 | 10-17 | integrated GPHY |
+| 41-48 | RJ45 41-48 | unit 1 | 18-25 | octal PHY, ext bus 0 `0x14-0x1b` |
+| 49 | SFP+ 1 | unit 1 | 26 (`xe0`, phys 26, TSC0 lane 0) | SFP+, no PHY |
+| 50 | SFP+ 2 | unit 1 | 27 (`xe1`, phys 28, TSC0 lane 2) | SFP+, no PHY |
+| 51 | SFP 1 | unit 0 | 26 (`ge24`, phys 26, TSC lane 0) | SFP, no PHY |
+| 52 | SFP 2 | unit 0 | 27 (`ge25`, phys 28, TSC lane 2) | SFP, no PHY |
+| - | internal | both | 28, 29 | 2 x 13G HiGig between the chips |
+
+- Per chip: logical 2-9 = phys 9-2 (reversed); logical 10-25 = phys 10-25; phys 26/28/30/32 -> logical 26/27/28/29.
 - The same logical number (26, 27) exists on both chips: always say which chip.
 
 ## Current cabling

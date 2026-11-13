@@ -1,6 +1,7 @@
 # awto-unifi-us48
 
 OpenWrt port + reverse engineering for the **Ubiquiti UniFi US-48-500W** (board `0xeb62`, platform `US48P500`):
+Ports: 48 RJ45 + 4 cages labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2; chip/port map in [docs/port-map.md](docs/port-map.md), current cabling in `scripts/cabling.json`.
 Broadcom Hurricane 2 BCM53344 (Cortex-A9 + switch) with a BCM53346 on PCIe, 48× GbE PoE, 2× SFP+, 2× SFP.
 
 ## Status
