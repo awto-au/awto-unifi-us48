@@ -19,9 +19,9 @@
     {
       "label": "SFP 1",
       "front": 51,
-      "module": "Cisco/Finisar GLC-SX-MM = 1000BASE-SX (Dan). Stock `swctrl sfp show` prints '10GBase-LR' for it: stock's compliance decode is wrong, ignore that column",
-      "far_end": "unidentified",
-      "link": "stock 1000F configured, link down"
+      "module": "Avago AFBR-57F5AMZ-E3 (replaced the Cisco GLC-SX-MM at both ends, Dan 2026-11-13)",
+      "far_end": "not on sw1 (no Avago module seen on lan1-8)",
+      "link": "stock: down, port set up + restart tried"
     },
     {
       "label": "SFP 2",
