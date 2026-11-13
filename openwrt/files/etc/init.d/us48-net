@@ -3,7 +3,7 @@
 # Early matters: stock leaves unit 1 RX DMA running into old RAM until the driver aborts it.
 
 START=04
-USE_PROCD=0
+# no USE_PROCD: rc.common tests it non-empty, "0" would select procd and skip start()
 
 IP=192.168.25.207/24	# ip-registry: us48-boot
 
@@ -13,10 +13,14 @@ boot() {
 
 start() {
 	# unit0=1: management port ge1 (front 1, first chip, 1G uplink to sw1) next to the second chip's ports.
-	insmod /lib/us48/us48_cmic.ko unit0=1 2>/dev/null || busybox insmod /lib/us48/us48_cmic.ko unit0=1 || return 1
+	# S04 runs before logd: errors go to /dev/kmsg so dmesg keeps them.
+	exec 2>/dev/kmsg
+	echo "us48-net: insmod" > /dev/kmsg
+	insmod /lib/us48/us48_cmic.ko unit0=1 || { echo "us48-net: insmod failed rc=$?" > /dev/kmsg; return 1; }
 	for i in ge1 xe49 xe50; do
 		echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
 		ip link set $i up
 	done
 	ip addr add $IP dev ge1
+	echo "us48-net: done" > /dev/kmsg
 }
