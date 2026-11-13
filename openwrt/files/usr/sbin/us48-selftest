@@ -1,0 +1,124 @@
+#!/bin/sh
+# us48-selftest: read-only boot self-test. One line per check: PASS|WARN|FAIL name detail. Exit code = FAIL count.
+# Facts + thresholds: docs/selftest.md (awto-unifi-us48#35). Never scans i2c-0/1 (hangs), never touches 0x28-0x30.
+
+LOG=/tmp/us48-selftest.log
+WARN_MC=70000; FAIL_MC=80000   # LM75 millidegrees; FAIL = fand full-fan alert point
+FAILS=0
+
+: > "$LOG"
+res() {  # status name detail
+	echo "$1 $2 $3" | tee -a "$LOG"
+	logger -t us48-selftest "$1 $2 $3"
+	[ "$1" = FAIL ] && FAILS=$((FAILS + 1))
+}
+
+# CPU: one Cortex-A9 (MIDR 0x414fc091 = implementer 0x41, part 0xc09), docs/hardware.md
+n=$(grep -c '^processor' /proc/cpuinfo)
+imp=$(sed -n 's/^CPU implementer[^:]*: *//p' /proc/cpuinfo | head -n 1)
+part=$(sed -n 's/^CPU part[^:]*: *//p' /proc/cpuinfo | head -n 1)
+if [ "$n" = 1 ] && [ "$imp" = 0x41 ] && [ "$part" = 0xc09 ]; then
+	res PASS cpu "1 core, implementer $imp part $part (Cortex-A9)"
+else
+	res FAIL cpu "cores=$n implementer=$imp part=$part, want 1 / 0x41 / 0xc09"
+fi
+
+# Memory: 2 x 128 MiB banks; one bank only = second bank not mapped
+kb=$(sed -n 's/^MemTotal: *\([0-9]*\) kB.*/\1/p' /proc/meminfo)
+if [ "${kb:-0}" -ge 200000 ]; then
+	res PASS mem "MemTotal ${kb} kB"
+elif [ "${kb:-0}" -ge 100000 ]; then
+	res WARN mem "MemTotal ${kb} kB: only one 128 MiB bank?"
+else
+	res FAIL mem "MemTotal ${kb:-0} kB"
+fi
+
+# Thermal: LM75 hwmon (i2c-9 0x48..0x4b); fail at fand's full-fan alert point
+seen=0; maxc=-1
+for h in /sys/class/hwmon/hwmon*; do
+	[ "$(cat "$h/name" 2>/dev/null)" = lm75 ] || continue
+	v=$(cat "$h/temp1_input" 2>/dev/null) || continue
+	seen=$((seen + 1))
+	[ "$v" -gt "$maxc" ] && maxc=$v
+done
+if [ $seen -eq 0 ]; then
+	res FAIL thermal "no lm75 hwmon (i2c-9 0x48..0x4b)"
+elif [ $maxc -ge $FAIL_MC ]; then
+	res FAIL thermal "max ${maxc} mC over $seen sensors >= $FAIL_MC"
+elif [ $maxc -ge $WARN_MC ]; then
+	res WARN thermal "max ${maxc} mC over $seen sensors >= $WARN_MC"
+elif [ $seen -lt 4 ]; then
+	res WARN thermal "only $seen of 4 sensors, max ${maxc} mC"
+else
+	res PASS thermal "max ${maxc} mC over $seen sensors"
+fi
+
+# Fan daemon (no tach, presets only: docs/fan.md)
+if pidof us48-fand >/dev/null 2>&1 || ps w | grep -q '[u]s48-fand'; then
+	res PASS fand "us48-fand running"
+else
+	res FAIL fand "us48-fand not running (fans stay at last preset)"
+fi
+
+# I2C tree: i2c-2 = CMIC master, i2c-3..10 = PCA9548 0x70 children (docs/board.md)
+miss=""
+for b in 2 3 4 5 6 7 8 9 10; do
+	[ -e /sys/bus/i2c/devices/i2c-$b ] || miss="$miss i2c-$b"
+done
+if [ -z "$miss" ]; then
+	res PASS i2c-tree "i2c-2..10 present"
+else
+	res FAIL i2c-tree "missing:$miss"
+fi
+
+# SFP EEPROM 0x50 on i2c-3..6 only; empty cage = WARN (scan is read-only, 2 addresses)
+for b in 3 4 5 6; do
+	if [ ! -e /sys/bus/i2c/devices/i2c-$b ]; then
+		res FAIL sfp-i2c-$b "bus missing"
+		continue
+	fi
+	row=$(i2cdetect -y -r $b 0x50 0x51 2>&1 | grep '^50:')
+	case "$row" in
+	*" 50"*|*UU*) res PASS sfp-i2c-$b "0x50 answers: $row" ;;
+	*)            res WARN sfp-i2c-$b "no 0x50 (cage empty?): $row" ;;
+	esac
+done
+
+# Switch ports from us48_cmic (ge1 mgmt, xe49/xe50 unit 1, ge40)
+if grep -q '^us48_cmic ' /proc/modules; then
+	res PASS module "us48_cmic loaded"
+else
+	res FAIL module "us48_cmic not loaded"
+fi
+for p in ge1 xe49 xe50 ge40; do
+	if [ -e /sys/class/net/$p ]; then
+		res PASS port-$p "present, operstate $(cat /sys/class/net/$p/operstate 2>/dev/null)"
+	else
+		res FAIL port-$p "netdev missing"
+	fi
+done
+
+# PoE off: only readable via BCM59111 0x12 on i2c-7/8 0x28..0x2d, which this test must not touch
+res WARN poe-off "not checked: no safe read-only path (docs/poe.md); see us48-poe-off log"
+
+# Flash layout, docs/hardware.md flash map
+nm=$(grep -c '^mtd[0-9]*:' /proc/mtd)
+bad=""
+for name in u-boot u-boot-env shmoo kernel0 kernel1 cfg EEPROM; do
+	grep -q "\"$name\"" /proc/mtd || bad="$bad $name"
+done
+if [ "$nm" -lt 7 ]; then
+	res FAIL mtd "$nm partitions, want >= 7"
+elif [ -n "$bad" ]; then
+	res WARN mtd "$nm partitions, names not found:$bad"
+else
+	res PASS mtd "$nm partitions, expected names present"
+fi
+
+if [ $FAILS -eq 0 ]; then
+	res PASS summary "0 FAIL"
+else
+	res FAIL summary "$FAILS FAIL"
+	FAILS=$((FAILS - 1))   # summary line not counted in exit code
+fi
+exit $FAILS

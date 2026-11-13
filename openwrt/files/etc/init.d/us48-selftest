@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+# Boot self-test in the background; never blocks boot. Output: /tmp/us48-selftest.log + syslog (awto-unifi-us48#35).
+
+START=90
+# no USE_PROCD: rc.common tests it non-empty, "0" would select procd and skip start()
+
+boot() {
+	start
+}
+
+start() {
+	/usr/sbin/us48-selftest >/dev/null 2>&1 &
+}
