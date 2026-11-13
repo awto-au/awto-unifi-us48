@@ -588,11 +588,12 @@ def _load_image(s: console.Session, baud: int, image: Path | None = None) -> tup
     return s, size
 
 
-# SP805 @0x18039000 (bcm-hr2.dtsi). Armed from U-Boot so a kernel that panics/hangs before sp805-wdt probes
-# still resets the chip (no power-cycle). 50 MHz wdog clock (DT apb_clk): 10 s to IRQ, reset at the 2nd expiry
-# (~20 s). Linux sp805-wdt sees it running and keeps feeding it. RAM-only register writes; chip reset clears it.
+# SP805 @0x18039000 (bcm-hr2.dtsi). Armed from U-Boot so a kernel that panics/hangs before sp805-wdt probes still
+# resets the chip (no power-cycle). 50 MHz wdog clock: LOAD s to IRQ, reset at the 2nd expiry (2 x LOAD).
+# 56 s = 1.25 x worst case ~45 s: arm -> handover 8 s + 14 MB zImage xz decompress ~12 s + boot to sp805 probe ~25 s
+# (initcall_debug on a polled UART). Linux sp805-wdt sees it running and keeps feeding it (#15).
 SP805 = 0x18039000
-SP805_LOAD = 50_000_000 * 10
+SP805_LOAD = 50_000_000 * 28
 
 
 def _arm_sp805(s: console.Session, prompt: bytes = PROMPT) -> bool:
