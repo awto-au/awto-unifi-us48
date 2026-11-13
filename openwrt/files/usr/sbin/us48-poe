@@ -1,0 +1,34 @@
+#!/bin/sh
+# Per-port PoE switch: us48-poe on|off PORT [PORT...]   (front ports 1-48). awto-unifi-us48#24
+# BCM59111 op-mode reg 0x12, 2 bits/port, port 0 of a chip in bits 7:6 (poed layout, docs/poe.md); 00 = shutdown, 11 = auto.
+# 12 chips: PCA9548 0x70 ch4 (ports 1-24) / ch5 (25-48), addr 0x28-0x2d, 4 ports each. Same map as us48-poe-off.
+# Read-modify-write: other ports on the chip keep their mode. A chip that NAKs has no FW running: reported, not written.
+
+log() { logger -s -t us48-poe "$*"; }
+
+bus_for() {
+	for n in /sys/bus/i2c/devices/i2c-*/name; do
+		grep -q "chan_id $1)" "$n" && { d=${n%/name}; echo "${d##*i2c-}"; return; }
+	done
+}
+
+[ "$1" = on ] || [ "$1" = off ] || { echo "usage: us48-poe on|off PORT [PORT...]" >&2; exit 2; }
+op=$1; shift
+rc=0
+for p in "$@"; do
+	case $p in ''|*[!0-9]*) echo "bad port $p" >&2; rc=1; continue;; esac
+	[ "$p" -ge 1 ] && [ "$p" -le 48 ] || { echo "port $p out of range 1-48" >&2; rc=1; continue; }
+	ch=$((4 + (p > 24)))
+	idx=$(((p - 1) % 24))
+	addr=$(printf '0x%x' $((0x28 + idx / 4)))
+	shift_=$((6 - 2 * (idx % 4)))
+	bus=$(bus_for $ch)
+	[ -n "$bus" ] || { log "port $p: mux ch$ch has no i2c bus"; rc=1; continue; }
+	cur=$(i2cget -y "$bus" "$addr" 0x12 2>/dev/null) || { log "port $p: chip $addr (ch$ch) no answer (no FW running)"; rc=1; continue; }
+	if [ "$op" = on ]; then new=$((cur | (3 << shift_))); else new=$((cur & ~(3 << shift_) & 0xff)); fi
+	i2cset -y "$bus" "$addr" 0x12 "$(printf '0x%02x' "$new")"
+	v=$(i2cget -y "$bus" "$addr" 0x12)
+	log "port $p $op: ch$ch $addr opmode 0x12 $cur -> $v"
+	[ "$v" = "$(printf '0x%02x' "$new")" ] || rc=1
+done
+exit $rc
