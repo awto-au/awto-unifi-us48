@@ -2,7 +2,7 @@
 
 - Rule: run at rated max unless a reason is recorded (global). Datasheet limits are challengeable; test them RAM-only.
 - Tags: **C** = confirmed (source/log cited), **I** = inferred. **UNTESTED** = never run on the board.
-- Offline research 2026-11-14; nothing here was run on the board.
+- Offline research 2026-11-14. E0, CPU 800/1000/1200/1400 and E3 run on the board 2026-11-14 (RAM-only, `scripts/clock_trial.py`, results in #17); everything else UNTESTED.
 - DDR (XGPLL, shmoo): see [ddr.md](ddr.md). Not repeated here.
 - Sources:
   - `[UB]` stock boot log `tmp/logs/console/us48-20261014-083748.log` (facts: [stock-bootlog-facts.md](stock-bootlog-facts.md)).
@@ -29,7 +29,7 @@
 
 | Domain | Rated max | Board allows | We run | Why the gap | How to change | Risk | Safe RAM-only test |
 |---|---|---|---|---|---|---|---|
-| **CPU (A9, 1 core)** | no BCM53344 datasheet in repo. `[DL]` table has 400/448/500/560/600/800/896/1000/1100/1120/1200; b15x SKUs of the same die boot at 1000 (C `[DL]` bcm95615x.c). Rated for this SKU: unknown (I) | core rail = resistor-set buck, no voltage control seen (I); heat: CPU share small next to 2 switch cores, 6 PHYs, 12 PSEs (I) | 400 MHz, fid 6 (C `[UB]`); OpenWrt reads the same (C `[LX]`) | SKU policy in Broadcom U-Boot: dev IDs 0x8342-47/0x8393/94 forced to 400 (C `[DL]` bcm95615x.c). Not a measured limit (I) | CCU `POLICY_FREQ` fid 6 -> 7 (800, no relock), or relock to 1000. Sequences: E1, E2 below | 800: low (power-cycle or SP805 reset restores 400). 1000: medium (relock, no voltage margin) | E0 then E1 at the U-Boot prompt before `bootm` |
+| **CPU (A9, 1 core)** | no BCM53344 datasheet in repo. `[DL]` table has 400/448/500/560/600/800/896/1000/1100/1120/1200; b15x SKUs of the same die boot at 1000 (C `[DL]` bcm95615x.c). Rated for this SKU: unknown (I) | core rail = resistor-set buck, no voltage control seen (I); heat: CPU share small next to 2 switch cores, 6 PHYs, 12 PSEs (I) | 400 MHz, fid 6 (C `[UB]`); RAM-only trials ran 800/1000/1200/1400 stable (E1/E2, #17) | SKU policy in Broadcom U-Boot: dev IDs 0x8342-47/0x8393/94 forced to 400 (C `[DL]` bcm95615x.c). Not a measured limit (I) | CCU `POLICY_FREQ` fid 6 -> 7 (800, no relock), or relock to 1000. Sequences: E1, E2 below | 800: low (power-cycle or SP805 reset restores 400). 1000: medium (relock, no voltage margin) | E0 then E1 at the U-Boot prompt before `bootm` |
 | **AXI / APB** | `[DL]` genpll.c: AXI 100/200/250/285/400 MHz; b15x comment AXI 400, APB 100 (C) | unknown (I) | AXI 200, APB 50 (C `[UB]`) | SKU policy (I) | GENPLL ch3 mdiv (CTRL2 [15:8]) + load strobe, sequence E5 | high: APB moves UART divisor (console garbage), SP805 timeout (halves at 100 MHz), SP804, I2C timing, MSPI SPBR; DT `apb_clk` fixed 50 MHz must follow | none cheap; only E5 with console loss accepted, uboot-2 RAM only |
 | **A9 PERIPHCLK** | = ARM/2 | | 200 MHz | follows ARM | none, derived. Consumers: global timer (uboot-2 `CFG_SYS_HZ_CLOCK 200000000` hardcoded, `uboot-port/include/configs/us48.h:9`, C), uboot-1 A9 private WDT (30 s = 0x0165A0BC at 781250 Hz, assumes 200 MHz, C uboot.md §2) | after ARM 800: uboot-2 `udelay` and timeouts run 2x short (I); uboot-1 private WDT expires in ~15 s but is petted by getc/putc and stopped at `bootm` (C uboot.md §2); Linux reads the rate from the PLL registers (C `[LX]`) | uboot-2 now derives the timer rate from the PLL regs and can switch early (`US48_CPU_MHZ`, [uboot-cpu-clock.md](uboot-cpu-clock.md), UNTESTED); the hardcoded constant is only a fallback |
 | **QSPI flash read (BSPI)** | MX25L25635E: READ 50, FAST_READ 80 (8 dummy), 2READ/DREAD 70, 4READ/QREAD 70, 4PP 20 MHz (C `[MX]` AC table) | `QSPI_CLK_SEL` options: 62.5 / 50 / 31.25 MHz (C `[DL]` iproc_qspi.c:229-238). Quad lines wired: unknown (#20) | stock: 50 MHz, 1 lane, 3-byte address (C `[UB]` `qspi_iproc`). uboot-2 reads ~1.8 MB/s (C, #20 comment 2026-11-14) | inherited default, no reason (#20) | `CRU_CONTROL` bits[2:1] = 3 (62.5 MHz); quad: BSPI `bits_per_cycle` + QE bit (#20) | medium: stock U-Boot executes XIP from the BSPI window `0x1c000000` (I: U-Boot text at `0x1c0025e4` = flash base + offset) so a bad clock hangs it. Do it from RAM-resident uboot-2 only. If 62.5 MHz uses opcode 03h it exceeds the 50 MHz READ rating (I) | E3 |
@@ -78,7 +78,9 @@ Ranked: lowest risk, highest value first.
 
 ### E0. Read-only dump (no risk)
 
-UNTESTED. At any U-Boot prompt (or `devmem` from OpenWrt):
+DONE 2026-11-14, uboot-1 prompt: `0x19000008` = `0x86060606`, `0x19000c00` = `0x11004083`, `0x19000c08` low byte 4, `0x19000c20` = 2, `0x19000ec0` = `0x6622` (fid 6), `0x1803fc04` = `0x14450` (NDIV 80), `0x1803e000` = `0x30` in uboot-1, `0x32` in uboot-2. Command list:
+
+ U-Boot prompt (or `devmem` from OpenWrt):
 
 ```
 md.l 19000000 4
@@ -97,9 +99,11 @@ Expected if the I rows hold: `0x19000008` = `0x86060606`; `0x19000c00` = `0x1100
 
 ### E1. CPU 400 -> 800 MHz (fid 6 -> 7, no relock)
 
+PASSED 2026-11-14 (5 min soak, `sched_clock` 400 MHz). Procedure:
+
 Gate: only run if `md.l 19000c20 1` low byte == 2 and `0x19000ec0` bits 14:12 == 6. Otherwise stop.
 
-UNTESTED, to paste at the **uboot-1 prompt right before the Linux `bootm`** (uboot-2 hardcodes a 200 MHz timer, see table):
+To paste at the **uboot-1 prompt right before the Linux `bootm`** (uboot-2 hardcodes a 200 MHz timer, see table):
 
 ```
 mw.l 18039c00 1acce551
@@ -132,7 +136,7 @@ mw.l 19000000 0
 
 ### E3. QSPI BSPI clock 50 -> 62.5 MHz (boot-time lever, #20 / #34)
 
-UNTESTED. From RAM-resident uboot-2 only (stock XIP U-Boot would execute from the BSPI window; I). Read current: `md.l 1803e000 1` (bits[2:1]). Let `V` = that value.
+PASSED 2026-11-14 in uboot-2: `CRU_CONTROL` `0x32` -> `0x36`, `QSPI_CLK_READY` = 1, 10/10 `crc32 1c0e0000 100000` = `93207a81` = the 50 MHz value. Throughput not measured; value written back afterwards. From RAM-resident uboot-2 only (stock XIP U-Boot would execute from the BSPI window; I). Read current: `md.l 1803e000 1` (bits[2:1]). Let `V` = that value.
 
 ```
 md.l 1803e010 1                     (bit 0 QSPI_CLK_READY)
@@ -150,9 +154,9 @@ crc32 1c0e0000 100000                (kernel0 first 1 MiB through BSPI window; c
 
 UNTESTED. Linux RAM boot: DT `clock-frequency = <400000>` on `i2c@48000000`, then only touch mux channels 4-6 (BCM59111 `0x28-0x2d`, LM75 `0x48-0x4b`), never 0-3 (SFP). Pass: `i2cdetect` of those channels stable over 1000 reads, no NACK. Gain: ~4x PoE/temperature poll rate; value only once the PoE driver polls heavily.
 
-### E2. CPU 1000 MHz (relock; only after E1 passes thermal and stress)
+### E2. CPU 1000 MHz and up (relock)
 
-UNTESTED. Same prompt/SP805 order as E1. Replicates `[DL]` armpll.c for the 1000 row (ndiv 80, pdiv 1, fid 7). Replace `<B>` = (`PLLARMB` read value & `0xfff00000`) | 1.
+PASSED 2026-11-14 at 1000, 1200 (ndiv 96) and 1400 MHz (ndiv 112, VCO 2800, extrapolated from the `[DL]` table; no datasheet limit known): 5 min soak each, md5 stable, hwmon max 52 C. Measured by `clock_trial.py cpu --mhz N`, numbers in #17. Not set permanently: uboot-1 reprograms 400 every boot. Same prompt/SP805 order as E1. Replicates `[DL]` armpll.c for the 1000 row (ndiv 80, pdiv 1, fid 7). Replace `<B>` = (`PLLARMB` read value & `0xfff00000`) | 1.
 
 ```
 mw.l 19000000 a5a501
