@@ -83,10 +83,14 @@
 struct port_cfg {
 	const char *name;
 	u8 front, lport, lane;
+	bool copper;
+	u8 blk, phy;			/* copper: GPORT block, integrated GPHY address on internal MIIM bus 0 */
 };
 static const struct port_cfg port_cfgs[] = {
-	{ "xe49", 49, 26, 0 },
-	{ "xe50", 50, 27, 2 },
+	{ .name = "xe49", .front = 49, .lport = 26, .lane = 0 },
+	{ .name = "xe50", .front = 50, .lport = 27, .lane = 2 },
+	/* Front 40 = logical 17, GPORT1 (block 3) lane 7, GPHY addr 19 (hardware.md, stock S-channel trace #31). */
+	{ .name = "ge40", .front = 40, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 19 },
 };
 #define NPORTS	ARRAY_SIZE(port_cfgs)
 
@@ -219,6 +223,112 @@ static int tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 	return ret;
 }
 
+static uint phy_dbg = 1;
+module_param(phy_dbg, uint, 0644);
+
+/* ---- integrated GPHY: clause 22 on internal bus 0 ---- */
+
+static int gphy_rd(struct us48_cmic *u, u8 phy, u8 reg, u16 *val)
+{
+	u32 st;
+	int ret;
+
+	wr(u, MIIM_CTRL, 0);
+	wr(u, MIIM_PARAM, BIT(25) | phy << 16);
+	wr(u, MIIM_ADDRESS, reg);
+	wr(u, MIIM_CTRL, BIT(1));
+	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
+	if (!ret)
+		*val = rd(u, MIIM_READ_DATA) & 0xffff;
+	wr(u, MIIM_CTRL, 0);
+	return ret;
+}
+
+static int gphy_wr(struct us48_cmic *u, u8 phy, u8 reg, u16 val)
+{
+	u32 st;
+	int ret;
+
+	wr(u, MIIM_CTRL, 0);
+	wr(u, MIIM_PARAM, BIT(25) | phy << 16 | val);
+	wr(u, MIIM_ADDRESS, reg);
+	wr(u, MIIM_CTRL, BIT(0));
+	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
+	wr(u, MIIM_CTRL, 0);
+	return ret;
+}
+
+#define GP_CC(l)	(0x10200 | (l))		/* GPORT UMAC COMMAND_CONFIG */
+#define GP_CC_BASE	0x01800058		/* reset released, RX/TX off, 1G code (stock's final init value) */
+#define GP_CC_SWRST	BIT(13)
+
+static void gp_wr(struct us48_cmic *u, u8 blk, u32 addr, u32 val)
+{
+	sbus(u, 0x0d, blk, addr, &val, 1);
+}
+
+/* Stock's per-lane copper MAC init (docs/driver-internals.md 12, #31 comment): once at probe, MAC left RX/TX off. */
+static void copper_enable(struct us48_port *p)
+{
+	struct us48_cmic *u = p->u;
+	u8 b = p->cfg->blk, l = p->cfg->lane;
+
+	gp_wr(u, b, 0x02020000, 2);			/* GPORT_CONFIG: CLR_CNT, then run with GPORT_EN */
+	gp_wr(u, b, 0x02020000, 3);
+	gp_wr(u, b, 0x02020000, 1);
+	gp_wr(u, b, 0x10500 | l, 0x5ee);		/* FRM_LENGTH */
+	gp_wr(u, b, GP_CC(l), 0x01802058);
+	gp_wr(u, b, 0x1cc00 | l, 0x2c000);		/* PAUSE_CONTROL */
+	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
+	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
+	gp_wr(u, b, 0x02020800, 0x5ee);			/* GPORT_CNTMAXSIZE */
+	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
+	/* Stock leaves the GPHY powered down (BMCR 0x1940, bit 11): AN enable + restart + FD + 1000, no power-down. */
+	mutex_lock(&u->mdio);
+	gphy_wr(u, p->cfg->phy, 0, 0x1340);
+	mutex_unlock(&u->mdio);
+	dev_info(&u->pdev->dev, "%s: copper MAC initialised (block %d lane %d)\n", p->cfg->name, b, l);
+}
+
+/* Link up at 100M/1G full duplex: stock's CC sequence (reset pulse, speed, RX|TX on). Speed from the PHY. */
+static void copper_mac_set(struct us48_port *p, int speed)
+{
+	struct us48_cmic *u = p->u;
+	u32 sp = speed == 1000 ? 8 : speed == 100 ? 4 : 0;	/* CC ETH_SPEED [3:2] shifted: 2 -> 1G, 1 -> 100M */
+	u32 cc = ((GP_CC_BASE | BIT(28)) & ~0xfu) | sp;
+	u8 b = p->cfg->blk, l = p->cfg->lane;
+
+	gp_wr(u, b, GP_CC(l), cc | GP_CC_SWRST);
+	gp_wr(u, b, GP_CC(l), cc);
+	gp_wr(u, b, GP_CC(l), cc | 3);			/* TX_ENA | RX_ENA */
+}
+
+/* BMSR link (latched low: read twice) and negotiated speed from the 1000BASE-T / LPA registers. */
+static bool copper_link(struct us48_port *p, int *speed)
+{
+	struct us48_cmic *u = p->u;
+	u16 bmsr = 0, lpa = 0, st1000 = 0;
+
+	mutex_lock(&u->mdio);
+	gphy_rd(u, p->cfg->phy, 1, &bmsr);
+	gphy_rd(u, p->cfg->phy, 1, &bmsr);
+	gphy_rd(u, p->cfg->phy, 5, &lpa);
+	gphy_rd(u, p->cfg->phy, 10, &st1000);
+	mutex_unlock(&u->mdio);
+	if (phy_dbg) {
+		u16 bmcr = 0, aux = 0;
+
+		mutex_lock(&u->mdio);
+		gphy_rd(u, p->cfg->phy, 0, &bmcr);
+		gphy_rd(u, p->cfg->phy, 0x19, &aux);
+		mutex_unlock(&u->mdio);
+		netdev_info(p->ndev, "phy %d: BMCR %04x BMSR %04x LPA %04x STAT1000 %04x AUX19 %04x\n", p->cfg->phy, bmcr,
+			    bmsr, lpa, st1000, aux);
+	}
+	*speed = (st1000 & BIT(11)) ? 1000 : (lpa & (BIT(8) | BIT(7))) ? 100 : 10;
+	return bmsr & BIT(2);
+}
+
 /* PCS live status (RX_X4_PCS_LIVE_STATUS 0xc154): bit0 sync, bit1 link. */
 static void link_work_fn(struct work_struct *w)
 {
@@ -229,16 +339,25 @@ static void link_work_fn(struct work_struct *w)
 		struct us48_port *p = u->port[i];
 		u16 v = 0;
 		bool up;
+		int speed = 0;
 
-		mutex_lock(&u->mdio);
-		up = !tsc_wr(u, 0xffde, p->cfg->lane) && !tsc_rd(u, 0xc154, &v) && (v & BIT(1));
-		mutex_unlock(&u->mdio);
+		if (p->cfg->copper) {
+			up = copper_link(p, &speed);
+			if (up && !netif_carrier_ok(p->ndev))
+				copper_mac_set(p, speed);
+			else if (!up && netif_carrier_ok(p->ndev))
+				gp_wr(u, p->cfg->blk, GP_CC(p->cfg->lane), GP_CC_BASE);
+		} else {
+			mutex_lock(&u->mdio);
+			up = !tsc_wr(u, 0xffde, p->cfg->lane) && !tsc_rd(u, 0xc154, &v) && (v & BIT(1));
+			mutex_unlock(&u->mdio);
+		}
 		if (up != netif_carrier_ok(p->ndev)) {
 			if (up)
 				netif_carrier_on(p->ndev);
 			else
 				netif_carrier_off(p->ndev);
-			netdev_info(p->ndev, "link %s\n", up ? "up" : "down");
+			netdev_info(p->ndev, "link %s%s\n", up ? "up" : "down", up && p->cfg->copper ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
 		}
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
@@ -259,6 +378,10 @@ static void port_enable(struct us48_port *p)
 	u32 a = p->cfg->lane, v[2];
 	int i, ret = 0;
 
+	if (p->cfg->copper) {
+		copper_enable(p);
+		return;
+	}
 	/* Only from stock's parked state: re-crediting a running port is not known safe. */
 	if (!sbus(u, 0x0b, BLK_XLPORT, 0x60000 | a, v, 2) && (v[0] & 0x43) == 0x03) {
 		dev_info(&u->pdev->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip enable\n", p->cfg->name, v[0]);
