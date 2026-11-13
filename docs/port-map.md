@@ -19,16 +19,11 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 - Logical = physical except fronts 1-8 (logical 2-9 = phys 9-2) and phys 26/28/30/32 -> logical 26/27/28/29.
 - The same logical number (26, 27) exists on both chips: always say which chip.
 
-## Bench cabling (2026-11-13)
-| US-48 | Module | Far end |
-|---|---|---|
-| front 49 (SFP+ 1) | Cisco DAC `P3410UD05000-1` SN `JPC223107Q1`, 5 m | sw1 `lan3` (same DAC model on the sw1 side) |
-| front 51 (SFP 1) | Cisco/Finisar `GLC-SX-MM` | not identified (sw1 `lan4`/`lan6` hold FS `SFP-10GSR-85` optics) |
-| fronts 17, 40, 41 | cameras (PoE), 100M | |
-- Stock link state: 49 `U/D` (link down, both ends no carrier), 17/40/41 `U/U`.
-- sw1 has three links to the US-48 (1G copper, SFP, SFP+): stock bridges them with STP off. Test with one link up, or set the others down on sw1 (runtime). Carrier is independent of forwarding: a link can be up while STP discards.
+## Current cabling
+- Lives in [scripts/cabling.json](../scripts/cabling.json) (module, far end, link state per port); this doc is the fixed map only.
+- sw1 has three links to the US-48 (1G copper, SFP, SFP+): stock bridges them with STP off. Test with one link up, or set the others down on sw1 (runtime). Carrier is independent of forwarding.
 
-## Known mismatch
-- uboot-2 drives unit 0 (AXI CMIC). `BCM_HR2_XE1_PORT 26` / `LANE 0` there is unit 0 logical 26 = **front 51**, not front 49. The retarget "front 49" in `common/bcm-cmic/bcm_cmic.h` (2026-11-13) used the unit 1 numbering; the DAC on front 49 is on unit 1, which uboot-2 does not drive.
-- Linux `us48_cmic` drives unit 1 (xe49 = front 49, xe50 = front 50).
-- To test uboot-2 networking: put a cable on SFP 1 or SFP 2 (fronts 51/52, unit 0), or drive unit 1 from uboot-2 over PCIe (M7 in [uboot-second-stage.md](uboot-second-stage.md)).
+## Which software drives which chip
+- uboot-2 drives unit 0 (AXI CMIC): `BCM_HR2_XE1_PORT 26` lane 0 = SFP 1 (front 51).
+- Linux `us48_cmic` drives unit 1 over PCIe: `xe49` = SFP+ 1, `xe50` = SFP+ 2.
+- uboot-2 on unit 1 (SFP+ 1/2) = M7 in [uboot-second-stage.md](uboot-second-stage.md).
