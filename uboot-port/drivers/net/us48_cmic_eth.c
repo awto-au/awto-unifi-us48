@@ -7,6 +7,9 @@
 #include <net.h>
 #include <malloc.h>
 #include <asm/io.h>
+#include <asm/system.h>
+#include <cpu_func.h>
+#include <linux/sizes.h>
 #include <linux/delay.h>
 #include "bcm_cmic.h"
 
@@ -112,6 +115,11 @@ static int us48_eth_probe(struct udevice *dev)
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct bcm_hr2_dma *d = &p->dma;
 
+	/*
+	 * DCBs, RX ring and TX buffers are written by the CMIC behind the CPU: they must not sit in the D-cache
+	 * (stale DONE bits, dirty lines evicted over DMA data lost most received frames). Linux uses coherent memory.
+	 */
+	mmu_set_region_dcache_behaviour(DMA_REGION, SZ_1M, DCACHE_OFF);
 	/* Registers are touched on the first start only: probe runs at boot on every net init. */
 	p->unit.base = (void __iomem *)(uintptr_t)pdata->iobase;
 	d->rx_dcb = (__le32 *)(DMA_REGION + RX_DCB_OFF);

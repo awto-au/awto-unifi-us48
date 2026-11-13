@@ -11,12 +11,16 @@ command here talks through its socket, so whatever dev.py does you see there.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -390,6 +394,33 @@ def _serial_reboot(s: console.Session) -> bool:
     return True
 
 
+# switchdrvr touches /var/run/fastpath/switchdrvr_ready when its chip init is done (measured 213 s after reset).
+# Resetting into uboot-2 earlier leaves the BCM5334x half-configured and uboot-2 then loses most received frames
+# (2026-11-13). Polled over ssh every 3 s (connect 3 s); 300 s = 1.4x the measured 213 s.
+STOCK_READY_S = 300
+
+
+def _wait_stock_ready() -> bool:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < STOCK_READY_S:
+        try:
+            r = subprocess.run(["sshpass", "-e", "ssh", "-T", "-o", "ControlMaster=no", "-o", "ControlPath=none",
+                                "-o", "RequiredRSASize=1024", "-o", "HostKeyAlgorithms=+ssh-rsa",
+                                "-o", f"UserKnownHostsFile={REPO / 'private/known_hosts'}",
+                                "-o", "PubkeyAuthentication=no", "-o", "ConnectTimeout=3",
+                                f"ubnt@{SWITCH_IP}", "test -e /var/run/fastpath/switchdrvr_ready"],
+                               env=dict(os.environ, SSHPASS=os.environ.get("SSHPASS", "ubnt")),
+                               capture_output=True, timeout=10)
+            if r.returncode == 0:
+                log(f"stock switchdrvr ready after {time.monotonic() - t0:.0f} s (chip initialised)", "ALERT")
+                return True
+        except subprocess.TimeoutExpired:
+            pass
+        threading.Event().wait(3.0)
+    log(f"stock switchdrvr not ready after {STOCK_READY_S} s: continuing, the chip may be half-configured", "WARN")
+    return False
+
+
 def _to_uboot(s: console.Session) -> bool:
     st = _board_state(s)
     log(f"board state: {st}")
@@ -403,6 +434,8 @@ def _to_uboot(s: console.Session) -> bool:
         log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
         return False
     wait_s = REBOOT_TO_UBOOT_S
+    if st in ("stock-login", "stock-shell", "press-enter"):
+        _wait_stock_ready()
     if st == "ourboot":
         log("in our second-stage U-Boot: reset back to stock U-Boot")
         s.send_line("reset")
@@ -587,36 +620,114 @@ def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
     return s, baud
 
 
-# uboot-2 prompt; the TFTP image must be served by scripts/tftp_serve.py (udp/6969, ip-registry us48-boot / selwyn).
+# uboot-2 prompt and the board's own address (ip-registry: us48-boot). The TFTP server is started per transfer.
 U2_PROMPT = b"uboot-2> "
-U2_TFTP_ENV = "setenv ipaddr 192.168.25.207; setenv serverip 192.168.25.30; setenv tftpdstp 6969"
+U2_IP = "192.168.25.207"
+TFTP_SERVE = REPO / "scripts/tftp_serve.py"
+TFTP_DIR = REPO / "tmp/tftp"
+# tftp_serve.py start (python + bind) ~0.2 s; polled every 0.1 s, 3 s = 15x. Expiry = RuntimeError, server killed.
+TFTP_START_S = 3.0
 # uboot-2 TFTP restarts a failed transfer by itself; sw1 holds a new port ~30 s (STP) and 5 ARP tries x 5 s are
-# silent for 25 s. Stall = 40 s without a console byte (1.6x that window); cap 540 s = 3x the slowest measured
-# 8.5 MB run (~180 s). Expiry = log the last output and give up, board stays at the prompt.
-U2_TFTP_STALL_S = 40.0
+# silent for 25 s per round. Stall = 70 s without a console byte (two rounds + margin); cap 540 s = 3x the
+# slowest measured 8.5 MB run (~180 s). Expiry = log the last output and give up, board stays at the prompt.
+U2_TFTP_STALL_S = 70.0
 U2_TFTP_CAP_S = 540.0
 U2_IMAGE = "us48-initramfs.bin"
 
 
-def _u2_tftp(s: console.Session, name: str) -> bool:
-    s.send_line(f"{U2_TFTP_ENV}; tftpboot {LOAD_ADDR} {name}")
-    t0 = last = time.monotonic()
-    seen = b""
-    while True:
-        d = s.read_idle(1.0, 5.0)
-        now = time.monotonic()
-        if d:
-            seen += d
-            last = now
-        if b"Bytes transferred" in seen:
-            log(f"tftp {name} done in {now - t0:.0f} s", "ALERT")
+def _host_ip_for(board_ip: str) -> str | None:
+    """The host address the kernel would use to reach the board (the 10G-facing interface)."""
+    r = subprocess.run(["ip", "-4", "-o", "route", "get", board_ip], capture_output=True, text=True)
+    m = re.search(r"\bsrc (\d+\.\d+\.\d+\.\d+)", r.stdout)
+    return m.group(1) if m else None
+
+
+def _udp_in_use(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as t:
+        try:
+            t.bind((host, port))
+        except OSError:
             return True
-        if now - last > U2_TFTP_STALL_S:
-            log(f"tftp stalled: no console output for {U2_TFTP_STALL_S:.0f} s, last: {seen[-120:]!r}", "FATAL")
-            return False
-        if now - t0 > U2_TFTP_CAP_S:
-            log(f"tftp backstop {U2_TFTP_CAP_S:.0f} s exceeded, last: {seen[-120:]!r}", "FATAL")
-            return False
+    return False
+
+
+@contextlib.contextmanager
+def _tftp_server(board_ip: str = U2_IP):
+    """Start scripts/tftp_serve.py on the host IP that reaches the board and a free UDP port; stop it on exit.
+
+    Yields (host_ip, port). Use for every TFTP transfer: no fixed port, no server left running.
+    """
+    host = _host_ip_for(board_ip)
+    if not host:
+        raise RuntimeError(f"no route to {board_ip}: cannot pick a host address for TFTP")
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as t:
+        t.bind((host, 0))
+        port = t.getsockname()[1]
+    p = subprocess.Popen([sys.executable, str(TFTP_SERVE), "--bind", host, "--port", str(port), "--dir", str(TFTP_DIR)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        t0 = time.monotonic()
+        while not _udp_in_use(host, port):
+            if time.monotonic() - t0 > TFTP_START_S:
+                raise RuntimeError(f"tftp_serve did not bind {host}:{port} within {TFTP_START_S:.0f} s")
+            try:
+                p.wait(0.1)
+                raise RuntimeError(f"tftp_serve exited early (rc {p.returncode})")
+            except subprocess.TimeoutExpired:
+                pass
+        log(f"tftp server up on {host}:{port} serving {TFTP_DIR.relative_to(REPO)}")
+        yield host, port
+    finally:
+        p.terminate()
+        try:
+            p.wait(2.0)  # exits on SIGTERM within ms
+        except subprocess.TimeoutExpired:
+            p.kill()
+        log("tftp server stopped")
+
+
+def _u2_tftp(s: console.Session, name: str) -> bool:
+    try:
+        with _tftp_server() as (host, port):
+            s.send_line(f"setenv ipaddr {U2_IP}; setenv serverip {host}; setenv tftpdstp {port}; "
+                        f"tftpboot {LOAD_ADDR} {name}")
+            t0 = last = time.monotonic()
+            seen = b""
+            while True:
+                d = s.read_idle(1.0, 5.0)
+                now = time.monotonic()
+                if d:
+                    seen += d
+                    last = now
+                if b"Bytes transferred" in seen:
+                    log(f"tftp {name} done in {now - t0:.0f} s", "ALERT")
+                    return True
+                if now - last > U2_TFTP_STALL_S:
+                    log(f"tftp stalled: no console output for {U2_TFTP_STALL_S:.0f} s, last: {seen[-120:]!r}", "FATAL")
+                    return False
+                if now - t0 > U2_TFTP_CAP_S:
+                    log(f"tftp backstop {U2_TFTP_CAP_S:.0f} s exceeded, last: {seen[-120:]!r}", "FATAL")
+                    return False
+    except RuntimeError as e:
+        log(str(e), "FATAL")
+        return False
+
+
+@command("start the TFTP server on the host IP that reaches the board and a free UDP port; prints the uboot-2 "
+         "setenv line; runs until killed", kind="action")
+def cmd_tftp_serve(_extra: list[str]) -> int:
+    signal.signal(signal.SIGTERM, lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
+    try:
+        with _tftp_server() as (host, port):
+            sys.stdout.write(f"setenv ipaddr {U2_IP}; setenv serverip {host}; setenv tftpdstp {port}\n")
+            sys.stdout.flush()
+            threading.Event().wait()
+    except KeyboardInterrupt:
+        return 0
+    except RuntimeError as e:
+        log(str(e), "FATAL")
+        return 1
+    return 0
 
 
 @command("uboot-2 (at its prompt): load the OpenWrt image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp]",
@@ -647,6 +758,24 @@ def cmd_u2_boot(extra: list[str]) -> int:
         return 1
     finally:
         s.close()
+
+
+@command("reboot to stock Linux and wait until switchdrvr has initialised the switch chip (run before a uboot-2 "
+         "session that needs a clean chip)", kind="action")
+def cmd_stock_fresh(_extra: list[str]) -> int:
+    if not _ensure_console():
+        return 1
+    with console.Session() as s:
+        st = _board_state(s)
+        log(f"board state: {st}")
+        if st == "ourboot":
+            s.send_line("reset")  # uboot-1 autoboots stock Linux (we do not abort its countdown)
+        elif st not in ("stock-login", "stock-shell", "press-enter", "openwrt"):
+            log(f"cannot start from state {st}", "FATAL")
+            return 1
+        elif st == "openwrt" and not _serial_reboot(s):
+            return 1
+    return 0 if _wait_stock_ready() else 1
 
 
 @command("reboot to the u-boot> prompt and stay there (nothing boots; for mw/md experiments)", kind="action")

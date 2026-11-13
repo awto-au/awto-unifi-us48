@@ -56,6 +56,7 @@ def transfer(addr, path: Path, opts: dict, log) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=6969)
+    ap.add_argument("--bind", default="0.0.0.0", help="host address to listen on (dev.py passes the one that reaches the board)")
     ap.add_argument("--dir", type=Path, default=ROOT / "tmp/tftp")
     a = ap.parse_args()
     (ROOT / "tmp/logs").mkdir(parents=True, exist_ok=True)
@@ -63,7 +64,7 @@ def main() -> int:
                         handlers=[logging.FileHandler(ROOT / "tmp/logs/tftp_serve.log"), logging.StreamHandler()])
     log = logging.getLogger("tftp")
     srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    srv.bind(("0.0.0.0", a.port))
+    srv.bind((a.bind, a.port))
     log.info("serving %s on udp/%d", a.dir, a.port)
     while True:
         pkt, addr = srv.recvfrom(1024)
