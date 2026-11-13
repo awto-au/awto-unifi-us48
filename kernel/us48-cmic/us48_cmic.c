@@ -276,6 +276,44 @@ static void gp_wr(struct us48_cmic *u, u8 blk, u32 addr, u32 val)
 	sbus(u, 0x0d, blk, addr, &val, 1);
 }
 
+static struct us48_cmic *dbg_u;
+static const struct port_cfg *dbg_cfg;
+
+/* echo 1 > /sys/module/us48_cmic/parameters/mib: log the GPORT RX counters of the first copper port (#56). */
+static int mib_set(const char *val, const struct kernel_param *kp)
+{
+	static const struct { const char *n; u32 a; } r[] = {
+		{ "GRPKT", 0x1b00 }, { "GRBYT", 0x1c00 }, { "GRFCS", 0x0 }, { "GRUND", 0xc00 },
+		{ "GROVR", 0x800 }, { "GRFRG", 0xd00 }, { "GRXPF", 0x200 }, { "GTPKT", 0x3800 },
+	};
+	u32 v[2];
+	int i;
+
+	if (!dbg_u || !dbg_cfg)
+		return -ENODEV;
+	for (i = 0; i < ARRAY_SIZE(r); i++) {
+		v[0] = v[1] = 0;
+		if (sbus(dbg_u, 0x0b, dbg_cfg->blk, r[i].a | dbg_cfg->lane, v, 2))
+			dev_info(dbg_u->dev, "mib %s: read failed\n", r[i].n);
+		else
+			dev_info(dbg_u->dev, "mib %s = %u (hi %u)\n", r[i].n, v[0], v[1]);
+	}
+	/* CPU port (MMU port 0) per-COS egress drops and limits */
+	for (i = 0; i < 8; i++) {
+		u32 d[2] = { 0, 0 }, h[2] = { 0, 0 }, c[2] = { 0, 0 };
+
+		sbus(dbg_u, 0x0b, 0xc, 0x101000 + i, d, 1);
+		sbus(dbg_u, 0x0b, 0xc, 0x800 + i, h, 1);
+		sbus(dbg_u, 0x0b, 0xc, 0xed00 + i, c, 1);
+		dev_info(dbg_u->dev, "mib cpu cos%d: EGRDROPPKT %u HOLPKTSETLIMIT %u CELLMAXLIMIT %08x\n", i, d[0],
+			 h[0] & 0x7ff, c[0]);
+	}
+	return 0;
+}
+
+static const struct kernel_param_ops mib_ops = { .set = mib_set };
+module_param_cb(mib, &mib_ops, NULL, 0200);
+
 /* Stock's per-lane copper MAC init (docs/driver-internals.md 12, #31 comment): once at probe, MAC left RX/TX off. */
 static void copper_enable(struct us48_port *p)
 {
@@ -296,6 +334,10 @@ static void copper_enable(struct us48_port *p)
 	mutex_lock(&u->mdio);
 	gphy_wr(u, p->cfg->phy, 0, 0x1340);
 	mutex_unlock(&u->mdio);
+	if (p->cfg->front == 1) {
+		dbg_u = u;
+		dbg_cfg = p->cfg;
+	}
 	dev_info(u->dev, "%s: copper MAC initialised (block %d lane %d)\n", p->cfg->name, b, l);
 }
 
