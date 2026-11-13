@@ -1011,9 +1011,9 @@ CHIPSTATE = [
 ]
 
 
-@command("dump the unit-1 tables that decide unicast-to-CPU (one line each), for diffing a working vs a failing state",
-         args="", kind="action")
-def cmd_chipstate(_extra: list[str]) -> int:
+@command("dump the unit-1 tables that decide unicast-to-CPU (one line each), for diffing a working vs a failing state; "
+         "--egr = EGR_ENABLE of all 30 logical ports instead (which ports stock left enabled)", args="[--egr]", kind="action")
+def cmd_chipstate(extra: list[str]) -> int:
     b = 0x0A000000 + 0x31000
     fn = (f"sc(){{ devmem {b:#x} 32 0; devmem {b + 12:#x} 32 $1; devmem {b + 16:#x} 32 $2; devmem {b:#x} 32 1; n=0; "
           f"while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
@@ -1025,7 +1025,9 @@ def cmd_chipstate(_extra: list[str]) -> int:
     with console.Session() as s:
         if _stock_cmd(s, fn, 10.0) is None:
             return 1
-        for name, op, blk, addr, words in CHIPSTATE:
+        entries = ([(f"EGR_ENABLE[{i}]", 0x07, 11, 0x345C0000 + i, 1) for i in range(30)]
+                   if "--egr" in extra else CHIPSTATE)
+        for name, op, blk, addr, words in entries:
             hdr = op << 26 | blk << 20 | (4 * words) << 7
             r = _stock_cmd(s, f"sc {hdr:#x} {addr:#x} '{name}' {words}", 10.0)
             line = [ln for ln in (r[1] if r else "").splitlines() if ln.startswith(name)]

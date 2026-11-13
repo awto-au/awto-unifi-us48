@@ -45,7 +45,7 @@
 #define L2X			0x1c000000	/* hashed: TABLE_INSERT, no index */
 #define UNIT1_MODID		1
 #define XE1_PORT		BCM_HR2_XE1_PORT
-#define XE1_LANE		2		/* TSC0 lane, XLPORT low address byte */
+#define XE1_LANE		BCM_HR2_XE1_LANE	/* TSC0 lane, XLPORT low address byte */
 #define OUR_VID			BCM_HR2_PRIVATE_VID
 #define BUF_SZ			BCM_HR2_BUF_SZ
 #define RX_RING			BCM_HR2_RX_RING
