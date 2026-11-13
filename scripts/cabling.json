@@ -27,7 +27,7 @@
       "label": "SFP 2",
       "front": 52,
       "module": "FS SFP-10GSR-85 SN F2140097683 (10G SR optic in a 1G-configured cage), read via swctrl sfp show",
-      "far_end": "inferred sw1 lan6 (FS SFP-10GSR-85 SN F2140097682, consecutive serial)",
+      "far_end": null,
       "link": "stock 1000F configured, link down"
     },
     {
