@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -394,6 +395,49 @@ def _serial_reboot(s: console.Session) -> bool:
     return True
 
 
+# Remote power for the US-48: an ESPHome relay in the mains feed, switch entity "relay" (ON = board powered), the
+# same REST API as awto-tl-st1008f/scripts/switch_power.py. Set US48_RELAY=<host[:port]> (house registry name
+# us48-relay once installed). No relay installed yet: without the variable the commands say so and callers fall
+# back to asking for a manual power-cycle.
+# Off -> on gap 5 s: the 500 W PSU bulk capacitors and the chip rails must fully discharge for the stuck states
+# this recovers (flash left in 4-byte mode, wedged PCIe); the ST1008F relay uses 1 s for a much smaller supply (I).
+# Relay POST/GET is a LAN call answered in ms: 5 s.
+RELAY_GAP_S = 5.0
+RELAY_HTTP_S = 5
+
+
+def _relay_post(host: str, action: str) -> str:
+    req = urllib.request.Request(f"http://{host}/switch/{os.environ.get('US48_RELAY_SWITCH', 'relay')}/{action}",
+                                 method="POST")
+    with urllib.request.urlopen(req, timeout=RELAY_HTTP_S) as r:
+        return f"{r.status}"
+
+
+def _relay_cycle() -> bool:
+    host = os.environ.get("US48_RELAY")
+    if not host:
+        return False
+    try:
+        log(f"relay {host}: off -> {_relay_post(host, 'turn_off')}", "WARN")
+        threading.Event().wait(RELAY_GAP_S)
+        log(f"relay {host}: on -> {_relay_post(host, 'turn_on')}", "ALERT")
+    except OSError as e:
+        log(f"relay {host} unreachable: {e}; power is NOT cycled", "FATAL")
+        return False
+    return True
+
+
+@command("power-cycle the board through its ESPHome relay (US48_RELAY=<host[:port]>); no relay: says what is needed",
+         kind="action")
+def cmd_power_cycle(_extra: list[str]) -> int:
+    if not os.environ.get("US48_RELAY"):
+        log("no relay configured: install an ESPHome relay (switch 'relay') in the US-48 mains feed and set "
+            "US48_RELAY=<host>; until then the board needs a manual power-cycle", "FATAL")
+        return 1
+    return 0 if _relay_cycle() else 1
+
+
+
 # switchdrvr touches /var/run/fastpath/switchdrvr_ready when its chip init is done (measured 213 s after reset).
 # Resetting into uboot-2 earlier leaves the BCM5334x half-configured and uboot-2 then loses most received frames
 # (2026-11-13). Polled over ssh every 3 s (connect 3 s); 300 s = 1.4x the measured 213 s.
@@ -431,8 +475,10 @@ def _to_uboot(s: console.Session) -> bool:
         log("already at u-boot> prompt")
         return True
     if st == "reset-loop":
-        log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
-        return False
+        if not _relay_cycle():
+            log("U-Boot banner repeating (reset loop): POWER-CYCLE the switch, then rerun", "FATAL")
+            return False
+        st = "relay-cycled"
     wait_s = REBOOT_TO_UBOOT_S
     if st in ("stock-login", "stock-shell", "press-enter"):
         _wait_stock_ready()
@@ -454,6 +500,10 @@ def _to_uboot(s: console.Session) -> bool:
             log(f"ssh reboot rc={r.returncode}")
         except subprocess.TimeoutExpired:
             log(f"ssh reboot did not return in {SSH_REBOOT_S} s — POWER-CYCLE the switch", "WARN")
+    elif st == "relay-cycled":
+        wait_s = REBOOT_TO_UBOOT_S
+    elif _relay_cycle():
+        wait_s = REBOOT_TO_UBOOT_S
     else:
         log(f"switch not answering ping and not at u-boot> — POWER-CYCLE IT NOW "
             f"(waiting {POWER_CYCLE_WAIT_S} s for U-Boot)", "WARN")
