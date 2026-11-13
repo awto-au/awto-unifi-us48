@@ -509,19 +509,19 @@ SP805 = 0x18039000
 SP805_LOAD = 50_000_000 * 10
 
 
-def _arm_sp805(s: console.Session) -> bool:
+def _arm_sp805(s: console.Session, prompt: bytes = PROMPT) -> bool:
     for cmd in (f"mw.l {SP805 + 0xC00:x} 1acce551",   # WDTLOCK unlock
                 f"mw.l {SP805:x} {SP805_LOAD:x}",       # WDTLOAD
                 f"mw.l {SP805 + 0x8:x} 3",              # WDTCONTROL = INTEN | RESEN
                 f"md.l {SP805 + 0x8:x} 1"):             # read back CONTROL
-        if _uboot_cmd(s, cmd, PROMPT, BAUD_REPLY_S, cmd) is None:
+        if _uboot_cmd(s, cmd, prompt, BAUD_REPLY_S, cmd) is None:
             return False
     log(f"SP805 armed from U-Boot: reset ~{2 * SP805_LOAD / 50e6:.0f} s unless Linux feeds it", "ALERT")
     return True
 
 
-def _bootm_watch(s: console.Session, slot: str = "openwrt") -> int:
-    if not _arm_sp805(s):
+def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes = PROMPT) -> int:
+    if not _arm_sp805(s, prompt):
         log("could not arm SP805 — not booting without a hardware watchdog", "FATAL")
         return 1
     s.send_line(f"bootm {LOAD_ADDR}")
@@ -585,6 +585,68 @@ def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
         s.close()
         return None, 0
     return s, baud
+
+
+# uboot-2 prompt; the TFTP image must be served by scripts/tftp_serve.py (udp/6969, ip-registry us48-boot / selwyn).
+U2_PROMPT = b"uboot-2> "
+U2_TFTP_ENV = "setenv ipaddr 192.168.25.207; setenv serverip 192.168.25.30; setenv tftpdstp 6969"
+# uboot-2 TFTP restarts a failed transfer by itself; sw1 holds a new port ~30 s (STP) and 5 ARP tries x 5 s are
+# silent for 25 s. Stall = 40 s without a console byte (1.6x that window); cap 540 s = 3x the slowest measured
+# 8.5 MB run (~180 s). Expiry = log the last output and give up, board stays at the prompt.
+U2_TFTP_STALL_S = 40.0
+U2_TFTP_CAP_S = 540.0
+U2_IMAGE = "us48-initramfs.bin"
+
+
+def _u2_tftp(s: console.Session, name: str) -> bool:
+    s.send_line(f"{U2_TFTP_ENV}; tftpboot {LOAD_ADDR} {name}")
+    t0 = last = time.monotonic()
+    seen = b""
+    while True:
+        d = s.read_idle(1.0, 5.0)
+        now = time.monotonic()
+        if d:
+            seen += d
+            last = now
+        if b"Bytes transferred" in seen:
+            log(f"tftp {name} done in {now - t0:.0f} s", "ALERT")
+            return True
+        if now - last > U2_TFTP_STALL_S:
+            log(f"tftp stalled: no console output for {U2_TFTP_STALL_S:.0f} s, last: {seen[-120:]!r}", "FATAL")
+            return False
+        if now - t0 > U2_TFTP_CAP_S:
+            log(f"tftp backstop {U2_TFTP_CAP_S:.0f} s exceeded, last: {seen[-120:]!r}", "FATAL")
+            return False
+
+
+@command("uboot-2 (at its prompt): load the OpenWrt image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp]",
+         kind="action")
+def cmd_u2_boot(extra: list[str]) -> int:
+    src = extra[extra.index("--from") + 1] if "--from" in extra else "flash"
+    if src not in ("flash", "tftp") or not _ensure_console():
+        log("usage: u2-boot [--from flash|tftp]", "ERROR")
+        return 2
+    name, off, length, _img = _slot(["--slot", "openwrt"])
+    s = console.Session()
+    try:
+        s.write(b"\x03\r\n")  # abort a running TFTP retry loop or a half-typed line
+        s.expect([U2_PROMPT], BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
+        if src == "tftp":
+            if not _u2_tftp(s, U2_IMAGE):
+                return 1
+            s.expect([U2_PROMPT], BAUD_REPLY_S, "prompt after tftp")
+        else:
+            if _uboot_cmd(s, "sf probe 0", U2_PROMPT, SF_BUDGET_S, "sf probe") is None:
+                return 1
+            if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF + off:x} {length:x}", U2_PROMPT, SF_BUDGET_S,
+                          f"sf read kernel0 slot {name}") is None:
+                return 1
+        return _bootm_watch(s, name, U2_PROMPT)
+    except console.Timeout as e:
+        log(str(e), "FATAL")
+        return 1
+    finally:
+        s.close()
 
 
 @command("reboot to the u-boot> prompt and stay there (nothing boots; for mw/md experiments)", kind="action")
