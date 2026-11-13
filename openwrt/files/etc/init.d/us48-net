@@ -16,7 +16,9 @@ start() {
 	# S04 runs before logd: errors go to /dev/kmsg so dmesg keeps them.
 	exec 2>/dev/kmsg
 	echo "us48-net: insmod" > /dev/kmsg
+	# Core + unit 0 (ge1, management) first; the unit 1 front-end is a separate module (rmmod us48_cmic_xe leaves ge1 up).
 	insmod /lib/us48/us48_cmic.ko unit0=1 || { echo "us48-net: insmod failed rc=$?" > /dev/kmsg; return 1; }
+	insmod /lib/us48/us48_cmic_xe.ko || echo "us48-net: insmod xe failed rc=$?" > /dev/kmsg
 	for i in ge1 xe49 xe50; do
 		echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
 		ip link set $i up

@@ -147,8 +147,9 @@ def overlay() -> None:
     ko = ROOT / "kernel/us48-cmic/us48_cmic.ko"
     if ko.exists():
         (files / "lib/us48").mkdir(parents=True)
-        shutil.copy2(ko, files / "lib/us48/us48_cmic.ko")
-        log(f"overlay: {ko.relative_to(ROOT)} -> /lib/us48/")
+        for k in ("us48_cmic.ko", "us48_cmic_xe.ko"):
+            shutil.copy2(ko.with_name(k), files / "lib/us48" / k)
+        log(f"overlay: {ko.relative_to(ROOT)} + us48_cmic_xe.ko -> /lib/us48/")
     else:
         log("WARNING: kernel/us48-cmic/us48_cmic.ko missing: image boots without the 10G driver "
             "(run scripts/build_us48_cmic.py first)")

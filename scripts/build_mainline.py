@@ -242,8 +242,9 @@ def build_us48_cmic(jobs: int) -> None:
     run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "modules"], out=MAKE_LOG, env=env)
     dst = OUTDIR / "rootfs/lib/us48"
     dst.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(mod / "us48_cmic.ko", dst / "us48_cmic.ko")
-    log(f"us48_cmic.ko ({(mod / 'us48_cmic.ko').stat().st_size} B) staged into the initramfs rootfs")
+    for ko in ("us48_cmic.ko", "us48_cmic_xe.ko"):
+        shutil.copy2(mod / ko, dst / ko)
+        log(f"{ko} ({(mod / ko).stat().st_size} B) staged into the initramfs rootfs ({dst})")
 
 
 def pack() -> Path:
@@ -268,11 +269,15 @@ def main() -> int:
     ap.add_argument("--checkpatch", action="store_true")
     ap.add_argument("--dtbs-check", action="store_true")
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--module-only", action="store_true", help="build + stage only kernel/us48-cmic (tree and .config must exist)")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),
                     help="machine Linux store (default $US48_LINUX_STORE, else tmp/linux-store)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    if a.module_only:
+        build_us48_cmic(a.jobs)
+        return 0
     ensure_tree(a.store)
     if a.save_patches:
         save_patches()

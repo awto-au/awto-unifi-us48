@@ -21,74 +21,9 @@
 #include <linux/unaligned.h>
 #include <linux/workqueue.h>
 
-#define CMIC_BAR		2
-#define SCHAN_CTRL		0x31000
-#define SCHAN_MSG(n)		(0x3100c + 4 * (n))
-#define  SCHAN_START		BIT(0)
-#define  SCHAN_DONE		BIT(1)
-#define  SCHAN_ERRS		(BIT(20) | BIT(21) | BIT(22))
-#define DMA_CTRL(ch)		(0x31140 + 4 * (ch))
-#define  DMA_DIR_TX		BIT(0)
-#define  DMA_EN			BIT(1)
-#define  DMA_ABORT		BIT(2)
-#define  DMA_ENDIAN		(BIT(4) | BIT(5))
-#define DMA_STAT		0x31150
-#define  DMA_ACTIVE(ch)		BIT(8 + (ch))
-#define DMA_DESC(ch)		(0x31158 + 4 * (ch))
-#define COS_CTRL_RX_0(ch)	(0x31168 + 8 * (ch))
-#define COS_CTRL_RX_1(ch)	(0x3116c + 8 * (ch))
-#define DMA_STAT_CLR		0x311a4
-#define MIIM_PARAM		0x31080
-#define MIIM_READ_DATA		0x31084
-#define MIIM_ADDRESS		0x31088
-#define MIIM_CTRL		0x3108c
-#define MIIM_STAT		0x31090
-/* Internal bus 1, clause 45 (INTERNAL_SEL b25, BUS_ID [24:22], C45 b21); TSC0 at address 2. */
-#define MIIM_TSC0		(BIT(25) | 1 << 22 | BIT(21) | 2 << 16)
-/* C45 op = address + data frame, 2 x 26 us at MDC 2.5 MHz (section 13); 1.25x. Expiry logged. */
-#define MIIM_TIMEOUT_US		65
-/* One SBUS op answers in a few us; 10 ms = 1000x backstop. Expiry = op abandoned, logged. */
-#define SCHAN_TIMEOUT_US	10000
-/* Abort completes after one in-flight descriptor (tens of us); 10 ms backstop, logged on expiry. */
-#define ABORT_TIMEOUT_US	10000
-/* No IRQ yet: poll every 1 ms; NAPI drains the ring. */
-#define POLL_NS			(1000 * 1000)
-/* Carrier from the TSC PCS once a second: a link change needs no faster reaction. */
-#define LINK_POLL_MS		1000
+#include "us48_cmic.h"
 
-#define TX_CH			0
-#define RX_CH			1
-#define BUF_SZ			2048
-#define RX_RING			256	/* 1 ms poll x 83 frames/ms at 1G line rate = 83 min */
-#define DCB_W1_CHAIN		BIT(16)
-#define DCB_W1_RELOAD		BIT(18)
-#define DCB_W1_SG		BIT(17)
-#define DCB_W1_HG		BIT(19)
-#define DCB_W1_STAT		BIT(20)
-#define DCB_W15_DONE		BIT(31)
-#define DCB_W15_ERR		BIT(18)
-
-#define BLK_XLPORT		5
-#define BLK_IPIPE		10
-#define BLK_EPIPE		11
-#define EPC_LINK_BMAP_64	0x46002700
-#define PORT_TAB(p)		(0x04000000 + (p))
-#define VLAN_TAB(i)		(0x14000000 + (i))
-#define STG_TAB(i)		(0x14040000 + (i))
-#define EGR_VLAN(i)		(0x100c0000 + (i))
-#define EGR_VLAN_STG(i)		(0x10100000 + (i))
-#define EGR_ENABLE(p)		(0x345c0000 + (p))
-#define L2X			0x1c000000	/* hashed: TABLE_INSERT/DELETE, no index */
-
-/* Logical port numbers are the chip's p2l view of the physical SerDes: board.md "Physical -> logical". */
-struct port_cfg {
-	const char *name;
-	u8 front, lport, lane;
-	bool copper;
-	u16 vid;			/* private VLAN id */
-	u8 blk, phy;			/* copper: GPORT block, integrated GPHY address on internal MIIM bus 0 */
-};
-static const struct port_cfg unit1_cfgs[] = {
+const struct port_cfg us48_unit1_cfgs[] = {
 	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 },
 	{ .name = "xe50", .vid = 50, .front = 50, .lport = 27, .lane = 2 },
 	/* Front 40 = logical 17, GPORT1 (block 3) lane 7, GPHY addr 19 (hardware.md, stock S-channel trace #31). */
@@ -98,43 +33,9 @@ static const struct port_cfg unit1_cfgs[] = {
 static const struct port_cfg unit0_cfgs[] = {
 	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 9 },
 };
-#define MAXPORTS	3
-
-struct us48_cmic;
-
-struct us48_port {
-	struct us48_cmic *u;
-	struct net_device *ndev;
-	const struct port_cfg *cfg;
-	u16 vid;			/* private VLAN id = front port number */
-	bool open;
-};
-
-struct us48_cmic {
-	struct device *dev;
-	const struct port_cfg *cfgs;
-	int nports;
-	u8 modid;			/* PORT_TAB.MY_MODID: unit 0 = 0, unit 1 = 1 */
-	void __iomem *cmic;
-	struct us48_port *port[MAXPORTS];
-	struct net_device *napi_dev;	/* NAPI needs a netdev; the rings serve all ports */
-	struct napi_struct napi;
-	struct hrtimer poll_timer;
-	struct delayed_work link_work;
-	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
-	spinlock_t tx_lock;
-	int nopen;
-	__le32 *rx_dcb;			/* RX_RING x 16 words */
-	dma_addr_t rx_dcb_dma;
-	void *rx_buf;			/* RX_RING x BUF_SZ */
-	dma_addr_t rx_buf_dma;
-	int rx_next;
-	__le32 *tx_dcb;			/* 2 x 16 words */
-	dma_addr_t tx_dcb_dma;
-	void *tx_buf;
-	dma_addr_t tx_buf_dma;
-	unsigned int tx_len;		/* 0 = idle */
-};
+const int us48_unit1_nports = ARRAY_SIZE(us48_unit1_cfgs);
+EXPORT_SYMBOL_GPL(us48_unit1_cfgs);
+EXPORT_SYMBOL_GPL(us48_unit1_nports);
 
 /* Log the module header + status words of the next N received frames (RX bring-up, #4). */
 static uint rx_dump;
@@ -234,6 +135,163 @@ static int tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 
 static uint phy_dbg;
 module_param(phy_dbg, uint, 0644);
+
+/* Log the read-only TSC / XLMAC status of every xe port at probe (cheap: ~30 MIIM + 8 SBUS reads per port). */
+static uint tsc_log = 1;
+module_param(tsc_log, uint, 0644);
+
+struct tsc_reg {
+	const char *n;
+	u16 reg;
+};
+/* Core registers, AER 0 (driver-internals 13.2 checks 1-2). */
+static const struct tsc_reg tsc_core[] = {
+	{ "SERDESID", 0x900e }, { "ANAPLL", 0x9010 }, { "VERSION", 0xf010 }, { "CRC", 0xf015 },
+	{ "DLSTAT", 0xffc5 }, { "UCCMD", 0xffc2 },
+};
+/* Per-lane registers, AER = lane (checks 3-8). PMD_LATCH / PCS_LATCH are latched: this read clears them. */
+static const struct tsc_reg tsc_lane[] = {
+	{ "UC_CTRL", 0xc20e }, { "PMD_LIVE", 0xc150 }, { "PMD_LATCH", 0xc151 }, { "ANARX1", 0xc02b },
+	{ "SIGDET", 0xc138 }, { "PMACTL0", 0xc137 }, { "PCS_LIVE", 0xc154 }, { "PCS_LATCH0", 0xc153 },
+	{ "CL49FSM", 0xc145 }, { "ANATX_DRV", 0xc017 }, { "ANATX6", 0xc01a }, { "TXMISC", 0xc113 },
+	{ "CRED0", 0xc100 }, { "CRED1", 0xc101 }, { "TXPCS", 0xc121 },
+};
+
+static void tsc_dump_one(struct us48_cmic *u, const struct port_cfg *c)
+{
+	char b[200];
+	u16 v;
+	u32 d[2];
+	int i, n = 0;
+
+	mutex_lock(&u->mdio);
+	if (tsc_wr(u, 0xffde, 0))
+		goto out;
+	for (i = 0; i < ARRAY_SIZE(tsc_core); i++)
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_core[i].n, tsc_rd(u, tsc_core[i].reg, &v) ? 0xffff : v);
+	dev_info(u->dev, "tsc %s core:%s\n", c->name, b);
+	if (tsc_wr(u, 0xffde, c->lane))
+		goto out;
+	n = 0;
+	for (i = 0; i < ARRAY_SIZE(tsc_lane); i++) {
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_lane[i].n, tsc_rd(u, tsc_lane[i].reg, &v) ? 0xffff : v);
+		if (i == 6 || i == 11) {
+			dev_info(u->dev, "tsc %s lane %d:%s\n", c->name, c->lane, b);
+			n = 0;
+		}
+	}
+	dev_info(u->dev, "tsc %s lane %d:%s\n", c->name, c->lane, b);
+out:
+	mutex_unlock(&u->mdio);
+	/* XLMAC / XLPORT, block 5, lane in the low address byte. */
+	n = 0;
+	for (i = 0; i < 4; i++) {
+		static const struct { const char *n; u32 a; int w; } m[] = {
+			{ "XLMAC_CTRL", 0x60000, 2 }, { "RX_LSS", 0x60b00, 2 }, { "MODE", 0x60100, 2 }, { "TX_CTRL", 0x60400, 2 },
+		};
+
+		d[0] = d[1] = 0;
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%08x", m[i].n,
+			       sbus(u, 0x0b, BLK_XLPORT, m[i].a | c->lane, d, m[i].w) ? 0xffffffff : d[0]);
+	}
+	d[0] = 0;
+	n += scnprintf(b + n, sizeof(b) - n, " ENABLE=%x", sbus(u, 0x0b, BLK_XLPORT, 0x2020b00, d, 1) ? 0xf : d[0]);
+	d[0] = 0;
+	n += scnprintf(b + n, sizeof(b) - n, " FAULT=%x", sbus(u, 0x0b, BLK_XLPORT, 0x20600 | c->lane, d, 1) ? 0xf : d[0]);
+	dev_info(u->dev, "tsc %s mac:%s\n", c->name, b);
+	n = 0;
+	for (i = 0; i < 3; i++) {
+		static const struct { const char *n; u32 a; } m[] = { { "RPKT", 0xb00 }, { "TPKT", 0x4c00 }, { "RFCS", 0xf00 } };
+
+		d[0] = d[1] = 0;
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%u", m[i].n,
+			       sbus(u, 0x0b, BLK_XLPORT, m[i].a | c->lane, d, 2) ? 0 : d[0]);
+	}
+	dev_info(u->dev, "tsc %s mib:%s\n", c->name, b);
+}
+
+void us48_tsc_dump(struct us48_cmic *u)
+{
+	int i;
+
+	for (i = 0; i < u->nports; i++)
+		if (!u->cfgs[i].copper)
+			tsc_dump_one(u, &u->cfgs[i]);
+}
+EXPORT_SYMBOL_GPL(us48_tsc_dump);
+
+/* RMW of a lane register: AER first (it is sticky per PHY address). Caller holds u->mdio. */
+static int tsc_rmw(struct us48_cmic *u, u8 lane, u16 reg, u16 clr, u16 set)
+{
+	u16 v;
+
+	if (tsc_wr(u, 0xffde, lane) || tsc_rd(u, reg, &v))
+		return -EIO;
+	return tsc_wr(u, reg, (v & ~clr) | set);
+}
+
+/* uC mailbox proxy write of one RAM word (OM phy_tsc_iblk_proxy_write, driver-internals 13.3b). Caller holds u->mdio. */
+static int tsc_uc_ram_wr(struct us48_cmic *u, u8 lane, u16 ram, u16 data)
+{
+	ktime_t t0 = ktime_get();
+	u16 v = 0;
+
+	if (tsc_wr(u, 0xffde, 0) || tsc_wr(u, 0xffc8, 0) || tsc_wr(u, 0xffc0, ram) || tsc_wr(u, 0xffc1, lane) ||
+	    tsc_wr(u, 0xffc3, data) || tsc_wr(u, 0xffc8, 0x0019))	/* REQ | WR | RAM */
+		return -EIO;
+	/* uC services a mailbox request in its main loop (not measured): 10 ms first-run bound, elapsed logged. */
+	while (ktime_us_delta(ktime_get(), t0) < 10000) {
+		if (tsc_rd(u, 0xffc8, &v))
+			return -EIO;
+		if (v & BIT(15))
+			break;
+		usleep_range(100, 200);
+	}
+	dev_info(u->dev, "tsc uC mailbox ram %04x <- %04x lane %d: %s after %lld us (mailbox %04x)\n", ram, data, lane,
+		 (v & BIT(15)) ? "done" : "TIMEOUT", ktime_us_delta(ktime_get(), t0), v);
+	tsc_wr(u, 0xffc8, 0);
+	return (v & BIT(15)) ? 0 : -ETIMEDOUT;
+}
+
+/*
+ * Per-lane RX restart without a firmware download (driver-internals 13.3b, from OM _tsc_serdes_stop /
+ * _tsc_uc_rx_lane_control; not verified on hardware): use when signal is present (PMD_LIVE b1) but the PCS never locks.
+ */
+int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c)
+{
+	u16 ram = 0x04d0 + 0x100 * c->lane, pmd = 0, pcs = 0;
+	ktime_t t0;
+	int ret;
+
+	mutex_lock(&u->mdio);
+	ret = tsc_rmw(u, c->lane, 0xc138, BIT(2) | BIT(1), 0);
+	ret = ret ?: tsc_uc_ram_wr(u, c->lane, ram, 0x0d00);		/* uC lane stop */
+	ret = ret ?: tsc_rmw(u, c->lane, 0xc137, BIT(0), 0);		/* RSTB_LANE = 0 */
+	ret = ret ?: tsc_rmw(u, c->lane, 0xc21e, 0, BIT(15));		/* RXSEQSTART */
+	ret = ret ?: tsc_uc_ram_wr(u, c->lane, ram, 0x0e00);		/* uC lane start (forced SFI, non-AN) */
+	if (ret) {
+		mutex_unlock(&u->mdio);
+		dev_err(u->dev, "%s: rx restart failed: %d\n", c->name, ret);
+		return ret;
+	}
+	/* RX adaptation has no OM bound: 1 s first-run backstop, first-lock time logged for tightening. */
+	t0 = ktime_get();
+	do {
+		tsc_wr(u, 0xffde, c->lane);
+		if (!tsc_rd(u, 0xc150, &pmd) && !tsc_rd(u, 0xc154, &pcs) && (pmd & BIT(3)) && (pcs & BIT(1)))
+			break;
+		mutex_unlock(&u->mdio);
+		msleep(10);
+		mutex_lock(&u->mdio);
+	} while (ktime_ms_delta(ktime_get(), t0) < 1000);
+	if (!(pmd & BIT(3)))
+		tsc_rmw(u, c->lane, 0xc137, 0, BIT(0));			/* RSTB_LANE by host if the uC did not */
+	mutex_unlock(&u->mdio);
+	dev_info(u->dev, "%s: rx restart: PMD_LIVE %04x PCS_LIVE %04x after %lld ms\n", c->name, pmd, pcs,
+		 ktime_ms_delta(ktime_get(), t0));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(us48_tsc_rx_restart);
 
 /* ---- integrated GPHY: clause 22 on internal bus 0 ---- */
 
@@ -859,7 +917,7 @@ static void us48_free_napi_dev(void *data)
 	free_netdev(u->napi_dev);
 }
 
-static int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_cfg *cfgs, int nports,
+int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_cfg *cfgs, int nports,
 			     u8 modid, struct us48_cmic **out)
 {
 	struct us48_cmic *u;
@@ -963,64 +1021,28 @@ static int us48_probe_common(struct device *dev, void __iomem *cmic, const struc
 			    u->port[i]->cfg->lport, u->port[i]->ndev->dev_addr, u->port[i]->vid);
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
+	if (tsc_log)
+		us48_tsc_dump(u);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(us48_probe_common);
 
-static int us48_cmic_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+void us48_quiesce(struct us48_cmic *u)
 {
-	struct us48_cmic *u = NULL;
-	void __iomem *cmic;
-	int ret;
-
-	if (PCI_FUNC(pdev->devfn) != 0)
-		return -ENODEV;
-	ret = pcim_enable_device(pdev);
-	if (ret)
-		return ret;
-	pci_set_master(pdev);
-	cmic = pcim_iomap(pdev, CMIC_BAR, 0);
-	if (!cmic)
-		return -ENOMEM;
-	ret = us48_probe_common(&pdev->dev, cmic, unit1_cfgs, ARRAY_SIZE(unit1_cfgs), 1, &u);
-	if (u)
-		pci_set_drvdata(pdev, u);
-	return ret;
-}
-
-/* Reboot keeps unit 1 out of reset (PERST# held released, patch 952): a live DMA hangs stock U-Boot's PCIe init. */
-static void us48_cmic_shutdown(struct pci_dev *pdev)
-{
-	struct us48_cmic *u = pci_get_drvdata(pdev);
 	int i;
 
-	if (!u)
-		return;
 	cancel_delayed_work_sync(&u->link_work);
 	dma_abort(u, RX_CH);
 	dma_abort(u, TX_CH);
 	for (i = 0; i < u->nports; i++)
 		port_tab_set(u, u->cfgs[i].lport, 1, false);
-	pci_clear_master(pdev);
 }
-
-static const struct pci_device_id us48_cmic_ids[] = {
-	/* Function 1 (01:00.1) shares the ID; probe rejects it, only function 0 carries the CMIC. */
-	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x8346) },
-	{ }
-};
-MODULE_DEVICE_TABLE(pci, us48_cmic_ids);
-
-static struct pci_driver us48_cmic_driver = {
-	.name		= "us48_cmic",
-	.id_table	= us48_cmic_ids,
-	.probe		= us48_cmic_pci_probe,
-	.shutdown	= us48_cmic_shutdown,
-};
+EXPORT_SYMBOL_GPL(us48_quiesce);
 
 /* Unit 0: the host SoC's own CMIC on the AXI bus (0x48000000), management port front 1. */
 static uint unit0 = 1;
 module_param(unit0, uint, 0444);
-MODULE_PARM_DESC(unit0, "1 (default) = also drive unit 0 front 1 (ge1) over AXI; 0 = second chip only");
+MODULE_PARM_DESC(unit0, "1 (default) = drive unit 0 front 1 (ge1) over AXI; 0 = core only (us48_cmic_xe.ko needs the core loaded)");
 
 #define UNIT0_CMIC_BASE	0x48000000
 #define UNIT0_CMIC_LEN	0x40000
@@ -1044,31 +1066,32 @@ static struct platform_driver us48_cmic_plat_driver = {
 
 static int __init us48_cmic_init(void)
 {
-	int ret = pci_register_driver(&us48_cmic_driver);
+	int ret;
 
-	if (ret || !unit0)
-		return ret;
+	if (!unit0)
+		return 0;
 	ret = platform_driver_register(&us48_cmic_plat_driver);
-	if (!ret) {
-		unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
-		if (IS_ERR(unit0_pdev))
-			ret = PTR_ERR(unit0_pdev);
+	if (ret)
+		return ret;
+	unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
+	if (IS_ERR(unit0_pdev)) {
+		ret = PTR_ERR(unit0_pdev);
+		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
 	return ret;
 }
 
 static void __exit us48_cmic_exit(void)
 {
+	dbg_u = NULL;
 	if (unit0_pdev && !IS_ERR(unit0_pdev)) {
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
-	pci_unregister_driver(&us48_cmic_driver);
 }
 
 module_init(us48_cmic_init);
 module_exit(us48_cmic_exit);
 
-
-MODULE_DESCRIPTION("UniFi US-48-500W BCM53346 10G uplinks xe49/xe50 (polled DMA)");
+MODULE_DESCRIPTION("UniFi US-48-500W BCM5334x switch port core + unit 0 front 1 (ge1, polled DMA)");
 MODULE_LICENSE("GPL");
