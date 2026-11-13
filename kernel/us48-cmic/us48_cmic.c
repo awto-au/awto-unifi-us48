@@ -223,7 +223,7 @@ static int tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 	return ret;
 }
 
-static uint phy_dbg = 1;
+static uint phy_dbg;
 module_param(phy_dbg, uint, 0644);
 
 /* ---- integrated GPHY: clause 22 on internal bus 0 ---- */

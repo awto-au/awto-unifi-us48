@@ -191,6 +191,9 @@ def stage_rootfs() -> Path:
     for pat in ("libbfd*", "libopcodes*", "libctf*", "libsframe*"):	# binutils libs of the debug set: ~800 kB xz
         for f in (stage / "usr/lib").glob(pat):
             f.unlink()
+    # Bench image: keep the PoE state stock left (cameras stay powered for link/RX tests); production keeps poe-off.
+    for f in (stage / "etc/rc.d").glob("S*us48-poe-off"):
+        f.unlink()
     if not (stage / "init").exists():
         (stage / "init").symlink_to("sbin/init")
     lst = OUTDIR / "initramfs.list"
