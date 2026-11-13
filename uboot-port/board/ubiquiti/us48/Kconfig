@@ -9,4 +9,12 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
 	default "us48"
 
+config US48_CPU_MHZ
+	int "A9 clock set by uboot-2 at early init (400, 800 or 1000)"
+	default 400
+	range 400 1000
+	help
+	  400 = no change. 800 = fid 7 (docs/clocks.md E1). 1000 = relock (E2).
+	  Refuses and stays at 400 if the E0 gate fails. Other values: build error.
+
 endif
