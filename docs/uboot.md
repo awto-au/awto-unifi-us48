@@ -78,6 +78,15 @@ Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot
 | `bootm` option `verify`, `autostart`, `bootm_low/size/mapsize` are standard | | C |
 | Stock-image header: ih_os=5 Linux, arch ARM(2), type kernel(2), comp none. The built `us48-initramfs.bin` has these with load/entry `0x18000` | built image header | C |
 
+### Stock kernel command line (vendor, Linux 3.6.5, seen in the stock boot log)
+```
+console=ttyS0,115200 mem=128M@0x0 mem=128M@0x68000000
+mtdparts=spi1.0:768k(u-boot),64k(u-boot-env),64k(shmoo),15360k(kernel0),15424k(kernel1),1024k(cfg),64k(EEPROM)
+ubntbootid=1 ubnt_active_slot=1 ubnt_current_slot=1 ubootver=usw-v1.1.6.122-gd2310f3e
+```
+- `ubootver=` is appended by uboot-1 itself (ATAG CMDLINE above); `ubnt_*_slot` come from the bootsel record (section 7).
+- `mem=` and `mtdparts=` are what the DT replaces on our kernels (`ARM_ATAG_DTB_COMPAT` off).
+
 ## 5. Hardware state left by U-Boot
 
 | Item | State | Evidence | Status |
