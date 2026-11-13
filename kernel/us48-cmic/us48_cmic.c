@@ -298,13 +298,13 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 		else
 			dev_info(dbg_u->dev, "mib %s = %u (hi %u)\n", r[i].n, v[0], v[1]);
 	}
-	/* CPU port (MMU port 0) per-COS egress drops and limits */
+	/* CPU port (MMU port 0): addr = base + (cos << 8) + port, validated vs stock trace by scripts/mmu_addr.py (#56) */
 	for (i = 0; i < 8; i++) {
 		u32 d[2] = { 0, 0 }, h[2] = { 0, 0 }, c[2] = { 0, 0 };
 
-		sbus(dbg_u, 0x0b, 0xc, 0x101000 + i, d, 1);
-		sbus(dbg_u, 0x0b, 0xc, 0x800 + i, h, 1);
-		sbus(dbg_u, 0x0b, 0xc, 0xed00 + i, c, 1);
+		sbus(dbg_u, 0x0b, 0xc, 0x101000 + (i << 8), d, 1);
+		sbus(dbg_u, 0x0b, 0xc, 0x800 + (i << 8), h, 1);
+		sbus(dbg_u, 0x0b, 0xc, 0xed00 + (i << 8), c, 1);
 		dev_info(dbg_u->dev, "mib cpu cos%d: EGRDROPPKT %u HOLPKTSETLIMIT %u CELLMAXLIMIT %08x\n", i, d[0],
 			 h[0] & 0x7ff, c[0]);
 	}
