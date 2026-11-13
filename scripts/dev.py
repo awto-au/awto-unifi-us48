@@ -404,23 +404,26 @@ def _serial_reboot(s: console.Session) -> bool:
 # Relay POST/GET is a LAN call answered in ms: 5 s.
 RELAY_GAP_S = 5.0
 RELAY_HTTP_S = 5
+RELAY_PY = "/mnt/2tb/git/awto-terminal/.venv/bin/python3"  # has aioesphomeapi
+RELAY_DEFAULT = "so-th-1.local"  # Sonoff TH outlet, US-48 mains (Dan 2026-11-13)
 
 
 def _relay_post(host: str, action: str) -> str:
-    req = urllib.request.Request(f"http://{host}/switch/{os.environ.get('US48_RELAY_SWITCH', 'relay')}/{action}",
-                                 method="POST")
-    with urllib.request.urlopen(req, timeout=RELAY_HTTP_S) as r:
-        return f"{r.status}"
+    r = subprocess.run([RELAY_PY, str(REPO / "scripts/relay_native.py"), host, action],
+                       capture_output=True, text=True, timeout=RELAY_HTTP_S + 8)
+    if r.returncode:
+        raise OSError(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "relay_native failed")
+    return r.stdout.strip()
 
 
 def _relay_cycle() -> bool:
-    host = os.environ.get("US48_RELAY")
+    host = os.environ.get("US48_RELAY", RELAY_DEFAULT)
     if not host:
         return False
     try:
-        log(f"relay {host}: off -> {_relay_post(host, 'turn_off')}", "WARN")
+        log(f"relay {host}: off -> {_relay_post(host, 'off')}", "WARN")
         threading.Event().wait(RELAY_GAP_S)
-        log(f"relay {host}: on -> {_relay_post(host, 'turn_on')}", "ALERT")
+        log(f"relay {host}: on -> {_relay_post(host, 'on')}", "ALERT")
     except OSError as e:
         log(f"relay {host} unreachable: {e}; power is NOT cycled", "FATAL")
         return False
@@ -430,7 +433,7 @@ def _relay_cycle() -> bool:
 @command("power-cycle the board through its ESPHome relay (US48_RELAY=<host[:port]>); no relay: says what is needed",
          kind="action")
 def cmd_power_cycle(_extra: list[str]) -> int:
-    if not os.environ.get("US48_RELAY"):
+    if not os.environ.get("US48_RELAY", RELAY_DEFAULT):
         log("no relay configured: install an ESPHome relay (switch 'relay') in the US-48 mains feed and set "
             "US48_RELAY=<host>; until then the board needs a manual power-cycle", "FATAL")
         return 1
