@@ -1,0 +1,136 @@
+Subject: spi: iproc_qspi no divide by zero on a plain READ; spi-nor keeps EN4B-only 32 MiB parts in 3-byte mode, 4-byte mode only inside one read
+
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/drivers/mtd/spi/spi-nor-core.c b/drivers/mtd/spi/spi-nor-core.c
+index 937d79af64e..84f8647ccfa 100644
+--- a/drivers/mtd/spi/spi-nor-core.c
++++ b/drivers/mtd/spi/spi-nor-core.c
+@@ -1583,6 +1583,32 @@ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
+ 	return ERR_PTR(-ENODEV);
+ }
+ 
++/* Macronix security register (RDSCUR 2Bh): bit 2 = 4BYTE, set by EN4B, cleared by EX4B (MX25L25635E v1.3) */
++#define US48_OP_RDSCUR		0x2b
++#define US48_SCUR_4BYTE		BIT(2)
++
++static int snor_4b_window(struct spi_nor *nor, bool enter)
++{
++	u8 scur = 0;
++	int ret = -EIO, i;
++
++	if (enter) {
++		ret = set_4byte(nor, nor->info, 1);
++		if (!ret)
++			nor->addr_width = 4;
++		return ret;
++	}
++	nor->addr_width = 3;
++	/* EX4B is one command; 3 tries, each verified through the security register */
++	for (i = 0; i < 3; i++) {
++		ret = set_4byte(nor, nor->info, 0);
++		if (!ret && !nor->read_reg(nor, US48_OP_RDSCUR, &scur, 1) && !(scur & US48_SCUR_4BYTE))
++			return 0;
++	}
++	printf("spi-nor: could not leave 4-byte mode (SCUR %02x): power-cycle before resetting the board\n", scur);
++	return -EIO;
++}
++
+ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 			size_t *retlen, u_char *buf)
+ {
+@@ -1594,6 +1620,7 @@ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 	u8 bank;
+ 	int ret;
+ 	bool is_ofst_odd = false;
++	bool window = (nor->flags & SNOR_F_4B_WINDOW) && (from + len) > SZ_16M;
+ 
+ 	dev_dbg(nor->dev, "from 0x%08x, len %zd\n", (u32)from, len);
+ 
+@@ -1604,6 +1631,12 @@ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 		is_ofst_odd = true;
+ 	}
+ 
++	if (window) {
++		ret = snor_4b_window(nor, true);
++		if (ret)
++			return ret;
++	}
++
+ 	while (len) {
+ 		read_len = len;
+ 		offset = from;
+@@ -1649,8 +1682,10 @@ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 			read_len = rem_bank_len;
+ #endif
+ 
+-		if (read_len == 0)
+-			return -EIO;
++		if (read_len == 0) {
++			ret = -EIO;
++			goto read_err;
++		}
+ 
+ 		ret = nor->read(nor, offset, read_len, buf);
+ 		if (ret == 0) {
+@@ -1679,6 +1714,12 @@ read_err:
+ #if CONFIG_IS_ENABLED(SPI_FLASH_BAR)
+ 	ret = clean_bar(nor);
+ #endif
++	if (window) {
++		int err = snor_4b_window(nor, false);
++
++		if (!ret)
++			ret = err;
++	}
+ 	return ret;
+ }
+ 
+@@ -4717,11 +4758,21 @@ int spi_nor_scan(struct spi_nor *nor)
+ 		shift = 1;
+ 	if (nor->addr_width == 3 && (mtd->size >> shift) > SZ_16M) {
+ #if !CONFIG_IS_ENABLED(SPI_FLASH_BAR)
++		if (JEDEC_MFR(info) == SNOR_MFR_MACRONIX && !(info->flags & SPI_NOR_4B_OPCODES)) {
++			/*
++			 * us48 (MX25L25635E: EN4B/EX4B only, no 4-byte opcodes, no extended-address register):
++			 * stay in 3-byte mode; spi_nor_read() enters 4-byte mode only for the duration of a
++			 * read that reaches above 16 MiB. A reset while the flash is in 4-byte mode leaves the
++			 * boot ROM reading wrong data until power-off (issue #20).
++			 */
++			nor->flags |= SNOR_F_4B_WINDOW;
++		} else {
+ 		/* enable 4-byte addressing if the device exceeds 16MiB */
+ 		nor->addr_width = 4;
+ 		if (JEDEC_MFR(info) == SNOR_MFR_SPANSION ||
+ 		    info->flags & SPI_NOR_4B_OPCODES)
+ 			spi_nor_set_4byte_opcodes(nor, info);
++		}
+ #else
+ 	/* Configure the BAR - discover bank cmds and read current bank */
+ 	nor->addr_width = 3;
+diff --git a/drivers/spi/iproc_qspi.c b/drivers/spi/iproc_qspi.c
+index 09f30c22702..c166c045acd 100644
+--- a/drivers/spi/iproc_qspi.c
++++ b/drivers/spi/iproc_qspi.c
+@@ -280,7 +280,8 @@ static int bspi_read(struct bcmspi_priv *priv, u8 *rx, uint bytes)
+ 
+ static void bspi_set_flex_mode(struct bcmspi_priv *priv, const struct spi_mem_op *op)
+ {
+-	int bpp = (op->dummy.nbytes * 8) / op->dummy.buswidth;
++	/* us48: a plain READ (0x03) has no dummy phase and buswidth 0: dividing hung the board (__div0 -> hang) */
++	int bpp = op->dummy.nbytes ? (op->dummy.nbytes * 8) / op->dummy.buswidth : 0;
+ 	int cmd = op->cmd.opcode;
+ 	int bpc = ilog2(op->data.buswidth) << BSPI_BPC_DATA_SHIFT |
+ 			  ilog2(op->addr.buswidth) << BSPI_BPC_ADDR_SHIFT |
+diff --git a/include/linux/mtd/spi-nor.h b/include/linux/mtd/spi-nor.h
+index 4eef4ab0488..808616a205b 100644
+--- a/include/linux/mtd/spi-nor.h
++++ b/include/linux/mtd/spi-nor.h
+@@ -308,6 +308,7 @@ enum spi_nor_option_flags {
+ 	SNOR_F_BROKEN_RESET	= BIT(6),
+ 	SNOR_F_SOFT_RESET	= BIT(7),
+ 	SNOR_F_IO_MODE_EN_VOLATILE = BIT(8),
++	SNOR_F_4B_WINDOW	= BIT(11),	/* us48: 3-byte default, EN4B only around one read */
+ #if defined(CONFIG_SPI_STACKED_PARALLEL)
+ 	SNOR_F_HAS_STACKED	= BIT(9),
+ 	SNOR_F_HAS_PARALLEL	= BIT(10),
