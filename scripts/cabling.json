@@ -19,7 +19,7 @@
     {
       "label": "SFP 1",
       "front": 51,
-      "module": "Cisco/Finisar GLC-SX-MM, 1G SFP (Cisco optics can be troublesome)",
+      "module": "Cisco/Finisar GLC-SX-MM = 1000BASE-SX (Dan). Stock `swctrl sfp show` prints '10GBase-LR' for it: stock's compliance decode is wrong, ignore that column",
       "far_end": "unidentified",
       "link": "stock 1000F configured, link down"
     },
