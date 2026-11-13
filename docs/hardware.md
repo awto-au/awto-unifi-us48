@@ -92,3 +92,8 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
 - QSPI window 0x1c000000 reads all zero and BSPI register 0x18027000 = 0x401: no flash answering on unit 1. C
 - ChipcommonA GPIO input (0x18000060) = 0x00000fc3, output and enable registers (0x64, 0x68) = 0. C
 - Not done: unit 1 CMIC SMBus scan, MSPI JEDEC read, UART, pinmux decode.
+
+## Second chip (BCM53346) copper PHY bring-up (2026-11-13, `scripts/phy_u1.py`, #31)
+- After the reset into uboot-2 every one of the 24 copper PHYs reads BMSR 0x79c9 (link down); the integrated GPHYs have BMCR 0x1940 = POWER_DOWN set. C
+- Minimal bring-up: BMCR = 0x1340 (clear power-down, AN enable, restart AN, FD) on internal bus 0 PHY 19 -> link up in ~5 s, partner ability 0x4de1 (100BASE-TX FD) = the camera on front 40. So front 40 = internal bus 0 address 19; the 16 integrated GPHYs (1-4, 6-9, 11-14, 16-19) are most likely fronts 25-40 in order, the octal PHY (external bus 0, 20-27) fronts 41-48 (I, only 19 verified). C (19), I (rest)
+- Stock (swctrl, same day): port 1 up 1G, port 40 up 100M, port 49 up 10G (DAC to sw1 lan3), 50-52 down.
