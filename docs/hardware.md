@@ -21,6 +21,13 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 | Ports | 48× GbE copper, 4 cages labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2 (stock 49–52); chip, logical port and PHY per port: [port-map.md](port-map.md); current cabling: `scripts/cabling.json` |
 
 - CPU: one Cortex-A9 (ARMv7, MIDR `0x414fc091`) on unit 0, no second core. SCU config `0x19020004` = `0x00000100` (CPU count field 0 = one core, fixed by the MPCore RTL), one processor in `/proc/cpuinfo`; the kernel's `NR_CPUS=2 -> nr_cpu_ids=1` RCU line is benign. CoreSight IDs answer at `0x19011000/2000/3000` only (probe 2026-11-13, #53). The other Cortex-A9 is a2 on unit 1 ([a2.md](a2.md), driver #54).
+## Interface rates: rated | board | run | gap (rule: run at rated max)
+| Interface | Rated max | Board allows | We run | Gap reason |
+|---|---|---|---|---|
+| QSPI flash MX25L25635E (read) | 1 I/O 80 MHz (fast read, 8 dummy), 2 I/O 70 MHz, 4 I/O 70 MHz (datasheet v1.3, `/vendors/macronix/mx25l25635e/`) | not checked (BSPI quad lines wired? #20) | stock: 50 MHz, 1 lane, 3-byte address (`qspi_iproc: 1-lane output, 3-byte address`); uboot-2 same | inherited default, no recorded reason (#20); 4 I/O at 70 MHz = 35 MB/s vs 6.25 MB/s now |
+| CPU | see #17 | | 400 MHz (`arm_clk=400MHz`) | #17 |
+| DDR3 | see #55 | | 667 MHz | #55 |
+
 - Two-chip split: front 1-24 + 51-52 on the BCM53344, 25-50 on the BCM53346; 2x13G HiGig between them ([board.md](board.md#two-chip-layout)). Unit 0 (live scan): 16 integrated copper PHYs + one external octal PHY; unit 1 not scanned (board.md Port map).
 - Do not infer PHY or PoE-controller part numbers from the model name.
 
