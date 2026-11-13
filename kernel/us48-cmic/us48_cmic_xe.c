@@ -83,6 +83,27 @@ static int rx_restart_set(const char *val, const struct kernel_param *kp)
 	return -EINVAL;
 }
 
+/* echo "49 c010 c01f" > .../tscreg: log those TSC registers of front 49/50 (AER = its lane). */
+static int tscreg_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int front, lo, hi;
+	int i;
+
+	if (sscanf(val, "%u %x %x", &front, &lo, &hi) != 3 || hi < lo || hi - lo > 63 || hi > 0xffff)
+		return -EINVAL;
+	if (!dump_u)
+		return -ENODEV;
+	for (i = 0; i < dump_u->nports; i++)
+		if (!dump_u->cfgs[i].copper && dump_u->cfgs[i].front == front) {
+			us48_tsc_range(dump_u, &dump_u->cfgs[i], lo, hi);
+			return 0;
+		}
+	return -EINVAL;
+}
+
+static const struct kernel_param_ops tscreg_ops = { .set = tscreg_set };
+module_param_cb(tscreg, &tscreg_ops, NULL, 0200);
+
 static const struct kernel_param_ops rx_restart_ops = { .set = rx_restart_set };
 module_param_cb(rx_restart, &rx_restart_ops, NULL, 0200);
 

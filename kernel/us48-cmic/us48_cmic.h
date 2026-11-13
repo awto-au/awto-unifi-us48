@@ -130,4 +130,6 @@ void us48_tsc_dump(struct us48_cmic *u);
 /* Per-lane RX restart without firmware download (13.3b): signal present but PCS unlocked. */
 int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c);
 
+void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u16 lo, u16 hi);
+
 #endif

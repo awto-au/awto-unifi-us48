@@ -220,6 +220,26 @@ void us48_tsc_dump(struct us48_cmic *u)
 }
 EXPORT_SYMBOL_GPL(us48_tsc_dump);
 
+/* Log TSC registers lo..hi (AER = lane) of one port: lane A/B comparison (#46). */
+void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u16 lo, u16 hi)
+{
+	char b[160];
+	u16 v, r;
+	int n = 0;
+
+	mutex_lock(&u->mdio);
+	tsc_wr(u, 0xffde, c->lane);
+	for (r = lo; r <= hi; r++) {
+		n += scnprintf(b + n, sizeof(b) - n, " %04x=%04x", r, tsc_rd(u, r, &v) ? 0xffff : v);
+		if (n > 100 || r == hi) {
+			dev_info(u->dev, "tsc %s range:%s\n", c->name, b);
+			n = 0;
+		}
+	}
+	mutex_unlock(&u->mdio);
+}
+EXPORT_SYMBOL_GPL(us48_tsc_range);
+
 /* RMW of a lane register: AER first (it is sticky per PHY address). Caller holds u->mdio. */
 static int tsc_rmw(struct us48_cmic *u, u8 lane, u16 reg, u16 clr, u16 set)
 {

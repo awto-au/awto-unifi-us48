@@ -24,8 +24,9 @@ def log(msg):
 
 
 def read_bytes(bus, addr, regs):
-    sh = f"for r in {' '.join(map(str, regs))}; do i2cget -y {bus} {addr} $r b 2>/dev/null || echo NAK; done"
-    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", HOST, sh],
+    sh = f"for r in {' '.join(map(str, regs))}; do n=0; while [ $n -lt 4 ]; do v=$(i2cget -y {bus} {addr} $(printf 0x%x $r) b 2>/dev/null) && break; n=$((n+1)); done; echo ${{v:-NAK}}; v=; done"
+    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", HOST, sh],
                        capture_output=True, text=True, timeout=20)
     out = r.stdout.split()
     if len(out) != len(regs):
