@@ -200,3 +200,28 @@ mw.l 19000000 0
 - Core voltage and heat headroom: unknown; measure temperature during E1.
 - MDC 5 vs 2.5 MHz conflict (see table).
 - Whether the BSPI clock select resets with SP805 reset (decides E3 recovery path).
+
+## Online sources (2026-11-14)
+
+- Public Broadcom product briefs (53346-PB102, BCM5344x page) state no clock, DDR or QSPI figure: only "Arm A9" / "high-performance Arm A9 CPU". Broadcom publishes no BCM53344/46 datasheet (NDA).
+- The BCM56150 data sheet leaked on a community mirror (marked BROADCOM CONFIDENTIAL; stored `/vendors/broadcom/bcm56150-datasheet-whycan/`, manifest in `/vendors/broadcom/README.md`). BCM56150 is the HR2 die; BCM5334x are cut-down SKUs (I: same die, per `[DL]` SKU table).
+- `[DS]` = `56150-DS06-R` (2014-12-11), line refs are `pdftotext -layout` lines.
+
+| Source | What it says | Tag |
+|---|---|---|
+| `[DS]` p1, p21 | "1 GHz ARM Cortex-A9 single-core"; "Maximum CPU speed 1 GHz"; 32 KB I$/D$ 4-way, 128 KB L2, 128-entry TLB; 40 nm | C (BCM56150 SKU only) |
+| `[DS]` p21 | DDR: 16-bit DDR2-800 MT/s (400 MHz clk, 1.8 V) or DDR3-1333 MT/s (667 MHz clk, 1.5 V); up to 2 GB, 8 Gb parts. Our 667 MHz = DDR3 max (see ddr.md) | C |
+| `[DS]` p21 | PCIe 2.0 (Gen2) x1; 100 MHz HCSL refclk (in and out), +-50 ppm | C |
+| `[DS]` Table 49/50, 3565 | QSPI BSPI max 62.5 MHz (reset default 25 MHz via `CRU_CONTROL.QSPI_CLK_SEL`, selectable 25 / 31.25 / 50 / 62.5); XIP yes; 4-byte addressing yes; MSPI max 15.625 MHz. Confirms `[DL]` 62.5 option as in-spec. Flash-side limit still MX25L25635E (50 MHz READ) | C |
+| `[DS]` 7534-7800 | Refclks: XTAL 25 MHz; XG PLL 25 MHz; WarpCore LC PLL1 25 or 156.25 MHz; QSGMII LC PLL0 25 MHz; EXT_QS2 125 MHz; TS/BroadSync 12.8/20/25/32 MHz. LED_CLK 5 MHz | C |
+| `[DS]` | No switch-core clock figure, no per-SKU table, no devID list, no AXI/APB figure (grep MHz/GHz: 120 lines read). Core 1.0 V +-5 %. | C (absence in this document) |
+| t1600g-28ts_gpl `hurricane2.h` + `bcm95615x.c` ([hodgesds](https://github.com/hodgesds/t1600g-28ts_gpl), `ldk/3.4.5_RC3/bootloader/uboot-2012.10/`) | `IPROC_ARM_CLK 1000000000`, AXI 400 MHz, APB 100 MHz for default (b15x) SKU. devIDs 0x8342/43/44/46/47/0x8393/0x8394 -> `iproc_config_armpll(400)` + `iproc_config_genpll(4)` (AXI 200). Same 400 policy as `[DL]` | C |
+| [clayface/U-boot-MX64](https://github.com/clayface/U-boot-MX64-20190430_MX64), [halmartin/u-boot-ms225](https://github.com/halmartin/u-boot-ms225), same file | Identical SKU split (ms225 also lists 0xb151 in the DRAM-size test). Same lineage as `[DL]`: not independent confirmation | C (code), I (as evidence) |
+| T1600G / MX64 / MS225 comment | "Wolfhound/Deerhound" = 0x834x / 0x839x parts forced to 400; "default SKU = b15x, ARM 1 GHz". 0xb151 = DeerHound SVK (BCM56151) | C |
+
+Conclusions
+
+- SKU policy (devIDs 0x8342-47/0x8393/94 -> 400 MHz) is confirmed in 4 U-Boot trees; all share one Broadcom code base, so it proves the SDK policy, not a silicon limit.
+- No source states a fuse or silicon limit for BCM5334x. Only datasheet statement is BCM56150 = 1 GHz max (C). BCM5334x rating: I, 1 GHz die, 400 MHz by software policy.
+- No third-party boot log or review found stating a BCM5334x CPU clock other than 400 (ours). Search by exact phrase returned nothing; relaxed queries only returned the briefs, the datasheet mirror and our own issues. OpenWrt forum post (BCM53346 POEPLUS) did not load.
+- Open: eCosCentric BCM56150 ref BSP (`doc.ecoscentric.com/ref/arm-bcm56150-ref-setup.html`) exists; its HAL source may hold clock settings (not read).
