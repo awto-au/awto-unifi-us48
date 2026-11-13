@@ -14,21 +14,34 @@ OPS = {0x0d: "REGW", 0x09: "MEMW", 0x24: "INS", 0x26: "DEL"}
 
 
 def load_names():
+    """regs: offset -> [(name, block set)]; mems: sorted (base, max index, name, block set). Blocks come from the schan column."""
+    def blks(col):
+        return {int(x, 16) for x in col.split(",") if x.startswith("0x")}
+
     mems = []
     for ln in (REPO / "tmp/regdb/hr2_mems.tsv").read_text().splitlines():
         f = ln.split("\t")
         try:
-            mems.append((int(f[10], 16), int(f[7]), f[1]))
+            mems.append((int(f[10], 16), int(f[7]), f[1], blks(f[14])))
         except (ValueError, IndexError):
             pass
     regs = {}
     for ln in (REPO / "tmp/regdb/hr2_regs.tsv").read_text().splitlines():
         f = ln.split("\t")
         try:
-            regs.setdefault(int(f[7], 16), f[1])
+            regs.setdefault(int(f[7], 16), []).append((f[1], blks(f[6])))
         except (ValueError, IndexError):
             pass
     return sorted(mems), regs
+
+
+def reg_name(regs, addr, blk):
+    """Exact offset first, then the offset with the low (port/lane) byte stripped; only registers that exist in `blk`."""
+    for key in (addr, addr & ~0xFF):
+        for name, bs in regs.get(key, []):
+            if blk in bs:
+                return name
+    return ""
 
 
 def main():
@@ -57,10 +70,10 @@ def main():
         seen[key] = c
     out = []
     for (u, op, blk, addr), (n, val, t0) in seen.items():
-        name = "" if op != "REGW" else (regs.get(addr, "") or regs.get(addr & ~0xff, ""))
+        name = reg_name(regs, addr, blk) if op == "REGW" else ""
         if not name and op in ("MEMW", "INS", "DEL"):
-            for base, mx, nm in reversed(mems):
-                if base <= addr <= base + mx:
+            for base, mx, nm, bs in reversed(mems):
+                if base <= addr <= base + mx and blk in bs:
                     name = f"{nm}[{addr - base}]"
                     break
         out.append(f"{t0:>7} {u} {op:4} blk{blk:<2} {addr:#010x} x{n:<5} {name:28} {val}")
