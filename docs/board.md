@@ -52,6 +52,20 @@ Mux selection (`0x5f5df0`, struct: mux name, select byte at `+0x20`, optional 2n
 | `0x40` | 6 | LM75 `0x48`..`0x4b` (TEMP-1..4), C: `0x5f65e4` |
 | `0x00` | — | deselect after every PoE access |
 
+Mainline scan, 2026-11-14 (7.4.0-rc1, unit 0 bus i2c-2, `i2cdetect -y -r`, read-only; log `tmp/logs/i2c_scan_mainline.log`; #31):
+
+| Channel (Linux bus) | Answers |
+|---|---|
+| 0 (i2c-3), SFP+ 1 (DAC) | `0x50` only (no `0x51`) |
+| 1..3 (i2c-4..6), SFP+ 2, SFP 1, SFP 2 | `0x50`, `0x51` |
+| 4, 5 (i2c-7/8), PoE cards | `0x0c` (SMBus alert address); `0x28`..`0x30` skipped (PoE state), rest of `0x03`..`0x77` empty |
+| 6 (i2c-9) | LM75 `0x48`..`0x4b`, bound (`UU`) |
+| 7 (i2c-10) | empty |
+| parent `0x71` (`mux1`) | absent |
+
+- `0x70` shows `UU` on every child bus: parent mux seen through itself, not a device.
+- ChipcommonB i2c-0/1 (`0x18038000`, `0x1803b000`): `i2cdetect` hangs (pads unrouted, per-address timeouts). Not scanned.
+
 ## I2C master (issue #7)
 
 Tool: `scripts/smbus_regdb.py` (dumps the SDK `soc_reg_info` entries). Function names string-derived.
