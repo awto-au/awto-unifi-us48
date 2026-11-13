@@ -13,22 +13,22 @@
       "label": "SFP+ 2",
       "front": 50,
       "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic), read via swctrl sfp show",
-      "far_end": null,
-      "link": "stock 10000F configured, link down"
+      "far_end": "sw1 lan6 (light seen at lan6 RX ~-2.4 dBm, no carrier either end)",
+      "link": "no link: stock port disabled; OpenWrt us48_cmic 'enable sequence done' still NO-CARRIER (2026-11-13)"
     },
     {
       "label": "SFP 1",
       "front": 51,
       "module": "Avago AFBR-57F5AMZ-E3 (replaced the Cisco GLC-SX-MM at both ends, Dan 2026-11-13)",
       "far_end": "not on sw1 (no Avago module seen on lan1-8)",
-      "link": "stock: down, port set up + restart tried"
+      "link": "1G SFP cages: not tested for now (Dan 2026-11-13); SFP 1 swapped through Cisco GLC-SX-MM and Avago AFBR-57F5AMZ-E3 (FC part), no link"
     },
     {
       "label": "SFP 2",
       "front": 52,
       "module": "FS SFP-10GSR-85 SN F2140097683 (10G SR optic in a 1G-configured cage), read via swctrl sfp show",
       "far_end": null,
-      "link": "stock 1000F configured, link down"
+      "link": "1G SFP cages: not tested for now (Dan 2026-11-13); SFP 1 swapped through Cisco GLC-SX-MM and Avago AFBR-57F5AMZ-E3 (FC part), no link"
     },
     {
       "label": "RJ45 17",
