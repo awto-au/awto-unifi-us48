@@ -3,10 +3,10 @@ Subject: cmd: sf accepts probe and read only (us48 never writes flash)
 Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
 
 diff --git a/cmd/sf.c b/cmd/sf.c
-index b5b7f671fb9..72ae177abff 100644
+index b5b7f671fb9..a704e83fa59 100644
 --- a/cmd/sf.c
 +++ b/cmd/sf.c
-@@ -601,6 +601,26 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
+@@ -601,6 +601,34 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
  	if (strcmp(cmd, "probe") == 0)
  		return do_spi_flash_probe(argc, argv);
  
@@ -27,6 +27,14 @@ index b5b7f671fb9..72ae177abff 100644
 +		}
 +		r = flash->read_reg(flash, 0x2b, &scur, 1);
 +		printf("RDSCUR %02x: 4BYTE (bit 2) = %d\n", scur, (scur >> 2) & 1);
++		/* #20: QE (RDSR bit 6) gates quad I/O; RDCR 15h = config */
++		{
++			u8 sr = 0, cr = 0;
++
++			r |= flash->read_reg(flash, 0x05, &sr, 1);
++			r |= flash->read_reg(flash, 0x15, &cr, 1);
++			printf("RDSR %02x: QE (bit 6) = %d; RDCR %02x\n", sr, (sr >> 6) & 1, cr);
++		}
 +		return r ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
 +	}
 +

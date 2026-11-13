@@ -109,6 +109,7 @@
 				compatible = "jedec,spi-nor";
 				reg = <0>;
 				spi-max-frequency = <12500000>;
+				spi-rx-bus-width = <4>;	/* #20: quad read (IO2/IO3 wiring + QE under test) */
 				spi-cpol;
 				spi-cpha;
 			};
