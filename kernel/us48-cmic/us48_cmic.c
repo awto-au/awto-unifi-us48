@@ -59,8 +59,9 @@
 #define TX_CH			0
 #define RX_CH			1
 #define BUF_SZ			2048
-#define RX_RING			16
+#define RX_RING			256	/* 1 ms poll x 83 frames/ms at 1G line rate = 83 min */
 #define DCB_W1_CHAIN		BIT(16)
+#define DCB_W1_RELOAD		BIT(18)
 #define DCB_W1_SG		BIT(17)
 #define DCB_W1_HG		BIT(19)
 #define DCB_W1_STAT		BIT(20)
@@ -518,16 +519,57 @@ static void dma_abort(struct us48_cmic *u, int ch)
 	wr(u, DMA_STAT_CLR, BIT(ch));
 }
 
+struct us48_buf {
+	struct device *dev;
+	size_t size;
+	void *cpu;
+	dma_addr_t dma;
+	enum dma_data_direction dir;
+};
+
+static void us48_free_buf(void *data)
+{
+	struct us48_buf *b = data;
+
+	dma_free_pages(b->dev, b->size, virt_to_page(b->cpu), b->dma, b->dir);
+}
+
+/* Cached DMA pages below 128 MiB (the CMIC inbound window); freed with the device. */
+static void *us48_alloc_buf(struct device *dev, size_t size, dma_addr_t *dma, enum dma_data_direction dir)
+{
+	struct us48_buf *b = devm_kzalloc(dev, sizeof(*b), GFP_KERNEL);
+	struct page *pg;
+
+	if (!b)
+		return NULL;
+	size = PAGE_ALIGN(size);
+	pg = dma_alloc_pages(dev, size, dma, dir, GFP_KERNEL);
+	if (!pg)
+		return NULL;
+	b->dev = dev;
+	b->size = size;
+	b->cpu = page_address(pg);
+	b->dma = *dma;
+	b->dir = dir;
+	if (devm_add_action_or_reset(dev, us48_free_buf, b))
+		return NULL;
+	return b->cpu;
+}
+
 static void rx_arm(struct us48_cmic *u)
 {
 	int i;
 
-	memset(u->rx_dcb, 0, RX_RING * 64);
+	/* RX_RING data DCBs + a RELOAD DCB back to DCB 0: the engine never stops (shared code: bcm_hr2_rx_arm). */
+	memset(u->rx_dcb, 0, (RX_RING + 1) * 64);
 	for (i = 0; i < RX_RING; i++) {
 		u->rx_dcb[16 * i] = cpu_to_le32(u->rx_buf_dma + i * BUF_SZ);
-		u->rx_dcb[16 * i + 1] = cpu_to_le32(BUF_SZ | (i < RX_RING - 1 ? DCB_W1_CHAIN : 0));
+		u->rx_dcb[16 * i + 1] = cpu_to_le32(BUF_SZ | DCB_W1_CHAIN);
 	}
+	u->rx_dcb[16 * RX_RING] = cpu_to_le32(u->rx_dcb_dma);
+	u->rx_dcb[16 * RX_RING + 1] = cpu_to_le32(DCB_W1_CHAIN | DCB_W1_RELOAD);
 	u->rx_next = 0;
+	dma_sync_single_for_device(u->dev, u->rx_buf_dma, RX_RING * BUF_SZ, DMA_FROM_DEVICE);
 	wmb();
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) & ~DMA_EN);
 	wr(u, DMA_STAT_CLR, BIT(RX_CH));
@@ -556,6 +598,7 @@ static void rx_one(struct us48_cmic *u, int i)
 	struct net_device *nd;
 	struct sk_buff *skb;
 
+	dma_sync_single_for_cpu(u->dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
 	if (rx_dump) {
 		rx_dump--;
 		dev_info(u->dev, "RX dcb%d len %u src %u w15 %08x da %pM et %04x\n", i, len, w12 & 0xff, w15, d,
@@ -616,17 +659,24 @@ static int us48_poll(struct napi_struct *napi, int budget)
 	int done = 0;
 
 	tx_reap(u);
-	while (done < budget && u->rx_next < RX_RING) {
+	while (done < budget) {
 		int i = u->rx_next;
 
 		if (!(le32_to_cpu(READ_ONCE(u->rx_dcb[16 * i + 15])) & DCB_W15_DONE))
 			break;
 		dma_rmb();
 		rx_one(u, i);
-		u->rx_next++;
+		dma_sync_single_for_device(u->dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
+		u->rx_dcb[16 * i + 15] = 0;	/* hand the slot back */
+		if (i == RX_RING - 1)		/* the RELOAD DCB also gets DONE; a stale DONE halts the engine (#46) */
+			u->rx_dcb[16 * RX_RING + 15] = 0;
+		wmb();
+		u->rx_next = (i + 1) % RX_RING;
 		done++;
 	}
-	if (u->rx_next == RX_RING)	/* chain ended: engine stopped, re-arm from DCB 0 */
+	/* Engine halted with every filled slot consumed: restart it from DCB 0. */
+	if (!done && !(le32_to_cpu(READ_ONCE(u->rx_dcb[16 * u->rx_next + 15])) & DCB_W15_DONE) &&
+	    !(rd(u, DMA_STAT) & DMA_ACTIVE(RX_CH)))
 		rx_arm(u);
 	if (done < budget)
 		napi_complete_done(napi, done);
@@ -675,6 +725,7 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 			u->tx_len = i << 16 | len;
 	for (i = 0; i < u->nports; i++)
 		netif_stop_queue(u->port[i]->ndev);
+	dma_sync_single_for_device(u->dev, u->tx_buf_dma, len + 16, DMA_TO_DEVICE);
 	wmb();
 	wr(u, DMA_DESC(TX_CH), u->tx_dcb_dma);
 	wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) | DMA_EN);
@@ -801,10 +852,11 @@ static int us48_probe_common(struct device *dev, void __iomem *cmic, const struc
 	wr(u, COS_CTRL_RX_0(RX_CH), 0xffffffff);
 	wr(u, COS_CTRL_RX_1(RX_CH), 0xffff);
 
-	u->rx_dcb = dmam_alloc_coherent(dev, RX_RING * 64, &u->rx_dcb_dma, GFP_KERNEL);
-	u->rx_buf = dmam_alloc_coherent(dev, RX_RING * BUF_SZ, &u->rx_buf_dma, GFP_KERNEL);
+	u->rx_dcb = dmam_alloc_coherent(dev, (RX_RING + 1) * 64, &u->rx_dcb_dma, GFP_KERNEL);
+	/* Data buffers are cached pages + streaming syncs: CPU copies out of uncached coherent memory cost ~1.4 us/byte (#46). */
+	u->rx_buf = us48_alloc_buf(dev, RX_RING * BUF_SZ, &u->rx_buf_dma, DMA_FROM_DEVICE);
 	u->tx_dcb = dmam_alloc_coherent(dev, 128, &u->tx_dcb_dma, GFP_KERNEL);
-	u->tx_buf = dmam_alloc_coherent(dev, BUF_SZ, &u->tx_buf_dma, GFP_KERNEL);
+	u->tx_buf = us48_alloc_buf(dev, BUF_SZ, &u->tx_buf_dma, DMA_TO_DEVICE);
 	if (!u->rx_dcb || !u->rx_buf || !u->tx_dcb || !u->tx_buf)
 		return -ENOMEM;
 	/* Endpoint inbound window covers bus < 0x08000000 only (section 14.3). */
