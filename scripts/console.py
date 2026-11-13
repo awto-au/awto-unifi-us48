@@ -384,3 +384,23 @@ def ymodem_send(sess: Session, path: Path, progress=None) -> None:
     if _await(sess, {CRC_REQ}, START_BUDGET_S) == CRC_REQ:
         _send_block(sess, _block(0, b"", 128), 0)  # end-of-batch
     log(f"ymodem: sent {path.name} {len(data)} B in {time.monotonic() - t0:.0f} s")
+
+
+def xmodem_send(sess: Session, path: Path, progress=None) -> None:
+    """XMODEM-CRC (1K blocks, no header block): receiver is busybox `rx FILE` on the OpenWrt shell."""
+    data = path.read_bytes()
+    i = sess.buf.rfind(bytes([CRC_REQ]))
+    sess.buf = sess.buf[i:] if i >= 0 else b""
+    if _await(sess, {CRC_REQ}, START_BUDGET_S) != CRC_REQ:
+        raise RuntimeError(f"xmodem: no 'C' from receiver in {START_BUDGET_S} s (is `rx` running?)")
+    nblk = (len(data) + 1023) // 1024
+    t0 = time.monotonic()
+    for i in range(nblk):
+        _send_block(sess, _block(i + 1, data[i * 1024:(i + 1) * 1024], 1024), i + 1)
+        if progress and (i % 32 == 0 or i == nblk - 1):
+            progress(i + 1, nblk, time.monotonic() - t0)
+    for _ in range(RETRIES):
+        sess.write(bytes([EOT]))
+        if _await(sess, {ACK, NAK}, ACK_BUDGET_S) == ACK:
+            return
+    raise RuntimeError("xmodem: EOT not acknowledged")

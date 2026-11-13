@@ -186,8 +186,18 @@ def stage_rootfs() -> Path:
     if stage.exists():
         shutil.rmtree(stage)
     shutil.copytree(ROOTFS, stage, symlinks=True)
+    ov = ROOT / "openwrt/files"	# our overlay (init scripts, tools): regular files only, stage keeps its rc.d links
+    for f in ov.rglob("*"):
+        if f.is_file() and not f.is_symlink():
+            dst = stage / f.relative_to(ov)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.unlink(missing_ok=True)
+            shutil.copy2(f, dst)
     # OpenWrt's 6.18 kmods cannot load into this kernel; dropping them keeps the image inside the 14 MiB slot.
     shutil.rmtree(stage / "lib/modules", ignore_errors=True)
+    rel = BUILD / "include/config/kernel.release"
+    if rel.exists():	# empty module dir: OpenWrt's insmod/kmodloader refuses to run without lib/modules/<release>
+        (stage / "lib/modules" / rel.read_text().strip()).mkdir(parents=True, exist_ok=True)
     for pat in ("libbfd*", "libopcodes*", "libctf*", "libsframe*"):	# binutils libs of the debug set: ~800 kB xz
         for f in (stage / "usr/lib").glob(pat):
             f.unlink()
