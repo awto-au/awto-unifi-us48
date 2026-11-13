@@ -3,6 +3,7 @@
 Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-internals.md](driver-internals.md) 13. Generator: `scripts/us48_portmap.py`.
 
 ## Front -> chip
+- The panel has no numbers 49-52: it is labelled SFP+ 1, SFP+ 2, SFP 1, SFP 2 (four cages; Dan says all four are 10G capable). 49-52 are the stock/SDK numbers in this doc.
 | Front | Panel label | Chip | Logical (SDK) | PHY / lane | Software names |
 |---|---|---|---|---|---|
 | 1-16 | RJ45 | unit 0 (BCM53344, host SoC, AXI CMIC 0x48000000) | 2-17 | integrated GPHY, int bus 0 | uboot-2 + Linux (stock) |
@@ -12,7 +13,7 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 | 49 | SFP+ 1 | unit 1 | 26 (`xe0`, phys 26, TSC0 lane 0) | SFP+, no PHY | OpenWrt `xe49` |
 | 50 | SFP+ 2 | unit 1 | 27 (`xe1`, phys 28, TSC0 lane 2) | SFP+, no PHY | OpenWrt `xe50` |
 | 51 | SFP 1 | unit 0 | 26 (`ge24`, phys 26, TSC lane 0) | SFP, no PHY | uboot-2 port 26 |
-| 52 | none: no cage on the front panel (Dan 2026-11-13) | unit 0 | 27 (`ge25`, phys 28, TSC lane 2) | exists in stock tables only | |
+| 52 | SFP 2 | unit 0 | 27 (`ge25`, phys 28, TSC lane 2) | SFP, no PHY | |
 | (internal) | | both | 28, 29 | 2 x 13G HiGig between the chips | |
 
 - Logical = physical except fronts 1-8 (logical 2-9 = phys 9-2) and phys 26/28/30/32 -> logical 26/27/28/29.
@@ -30,4 +31,4 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 ## Known mismatch
 - uboot-2 drives unit 0 (AXI CMIC). `BCM_HR2_XE1_PORT 26` / `LANE 0` there is unit 0 logical 26 = **front 51**, not front 49. The retarget "front 49" in `common/bcm-cmic/bcm_cmic.h` (2026-11-13) used the unit 1 numbering; the DAC on front 49 is on unit 1, which uboot-2 does not drive.
 - Linux `us48_cmic` drives unit 1 (xe49 = front 49, xe50 = front 50).
-- To test uboot-2 networking: put a cable on front 51 (unit 0, the only unit 0 cage), or drive unit 1 from uboot-2 over PCIe (M7 in [uboot-second-stage.md](uboot-second-stage.md)).
+- To test uboot-2 networking: put a cable on SFP 1 or SFP 2 (fronts 51/52, unit 0), or drive unit 1 from uboot-2 over PCIe (M7 in [uboot-second-stage.md](uboot-second-stage.md)).
