@@ -3,16 +3,25 @@ Subject: cmd: sf accepts probe and read only (us48 never writes flash)
 Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
 
 diff --git a/cmd/sf.c b/cmd/sf.c
-index b5b7f671fb9..d5119f7065e 100644
+index b5b7f671fb9..c4d2ef406fc 100644
 --- a/cmd/sf.c
 +++ b/cmd/sf.c
-@@ -601,6 +601,12 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
+@@ -601,6 +601,21 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
  	if (strcmp(cmd, "probe") == 0)
  		return do_spi_flash_probe(argc, argv);
  
 +	/* us48: read-only build, a write could hit u-boot, bootsel, kernel1 or EEPROM */
 +	if (strcmp(cmd, "read")) {
 +		printf("sf %s: disabled in this build (read-only)\n", cmd);
++		return CMD_RET_FAILURE;
++	}
++
++	/*
++	 * us48: stay below 16 MiB. The flash is kept in 3-byte mode (CONFIG_SPI_FLASH_BAR); a bank switch or
++	 * 4-byte mode left behind by a reset makes the boot ROM read the wrong data (issue #20).
++	 */
++	if (argc >= 5 && hextoul(argv[3], NULL) + hextoul(argv[4], NULL) > 0x1000000) {
++		printf("sf read: offset + length above 16 MiB refused (us48)\n");
 +		return CMD_RET_FAILURE;
 +	}
 +
