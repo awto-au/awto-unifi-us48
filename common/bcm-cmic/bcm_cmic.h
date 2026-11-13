@@ -66,7 +66,7 @@ int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy,
  * Same chip programming for Linux and U-Boot (bcm_cmic_hr2.c); reference history: us48_cmic.c.
  * DMA memory must be below the chip's 128 MiB inbound window (driver-internals 14.3).
  */
-/* 10G port used for network: logical port + TSC lane of the same front port. Front 49 = 26/0, front 50 = 27/2 (the bench DAC is on 49 since 2026-11-13). */
+/* uboot-2 port on unit 0 (this CMIC): logical 26 lane 0 = front 51, logical 27 lane 2 = front 52 (docs/port-map.md). */
 #define BCM_HR2_XE1_PORT	26
 #define BCM_HR2_XE1_LANE	0
 #define BCM_HR2_PRIVATE_VID	48
