@@ -2,12 +2,54 @@
   "_doc": "Current bench cabling of the US-48. Edit when a cable moves; docs/port-map.md describes the fixed port map only. Ports by panel label + stock front number.",
   "updated": "2026-11-13",
   "ports": [
-    {"label": "SFP+ 1", "front": 49, "module": "Cisco DAC P3410UD05000-1 SN JPC223107Q1, 5 m", "far_end": "sw1 lan3", "link": "down at both ends in stock (2026-11-13)"},
-    {"label": "SFP+ 2", "front": 50, "module": null, "far_end": null, "link": null},
-    {"label": "SFP 1", "front": 51, "module": "Cisco/Finisar GLC-SX-MM", "far_end": "unidentified", "link": "down in stock (2026-11-13)"},
-    {"label": "SFP 2", "front": 52, "module": null, "far_end": null, "link": null},
-    {"label": "RJ45 17", "front": 17, "module": "PoE camera", "far_end": "camera", "link": "100M up"},
-    {"label": "RJ45 40", "front": 40, "module": "PoE camera", "far_end": "camera", "link": "100M up"},
-    {"label": "RJ45 41", "front": 41, "module": "PoE camera", "far_end": "camera", "link": "100M up"}
+    {
+      "label": "SFP+ 1",
+      "front": 49,
+      "module": "Cisco DAC P3410UD05000-1 SN JPC223107Q1, 10G, 5 m",
+      "far_end": "sw1 lan3",
+      "link": "down at both ends in stock (2026-11-13)"
+    },
+    {
+      "label": "SFP+ 2",
+      "front": 50,
+      "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic), read via swctrl sfp show",
+      "far_end": null,
+      "link": "stock 10000F configured, link down"
+    },
+    {
+      "label": "SFP 1",
+      "front": 51,
+      "module": "Cisco/Finisar GLC-SX-MM, 1G SFP (Cisco optics can be troublesome)",
+      "far_end": "unidentified",
+      "link": "stock 1000F configured, link down"
+    },
+    {
+      "label": "SFP 2",
+      "front": 52,
+      "module": "FS SFP-10GSR-85 SN F2140097683 (10G SR optic in a 1G-configured cage), read via swctrl sfp show",
+      "far_end": "inferred sw1 lan6 (FS SFP-10GSR-85 SN F2140097682, consecutive serial)",
+      "link": "stock 1000F configured, link down"
+    },
+    {
+      "label": "RJ45 17",
+      "front": 17,
+      "module": "PoE camera",
+      "far_end": "camera",
+      "link": "100M up"
+    },
+    {
+      "label": "RJ45 40",
+      "front": 40,
+      "module": "PoE camera",
+      "far_end": "camera",
+      "link": "100M up"
+    },
+    {
+      "label": "RJ45 41",
+      "front": 41,
+      "module": "PoE camera",
+      "far_end": "camera",
+      "link": "100M up"
+    }
   ]
 }
