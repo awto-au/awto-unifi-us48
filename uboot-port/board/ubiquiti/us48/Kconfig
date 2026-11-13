@@ -17,4 +17,17 @@ config US48_CPU_MHZ
 	  400 = no change. 800 = fid 7 (docs/clocks.md E1). 1000 = relock (E2).
 	  Refuses and stays at 400 if the E0 gate fails. Other values: build error.
 
+config US48_SRAM_CLK
+	bool "Run the CPU clock switch from SRAM with rollback (docs/sram-clock-switch.md)"
+	default n
+	help
+	  UNTESTED. Replaces the DDR-resident E1/E2 code in board.c.
+
+config US48_SRAM_CLK_GENPLL
+	bool "Enable GENPLL ch3/ch4 (AXI) SRAM entry point - DISABLED by default, high risk"
+	depends on US48_SRAM_CLK
+	default n
+	help
+	  UNTESTED. docs/clocks.md E5. No caller in the tree; changes AXI clock.
+
 endif

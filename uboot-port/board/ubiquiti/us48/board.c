@@ -12,6 +12,7 @@
 #include <vsprintf.h>
 #include <asm/global_data.h>
 #include <asm/io.h>
+#include "us48_sram_clk.h"
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -33,14 +34,6 @@ phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
 }
 
 /* ARM PLL / CCU, layout and sequences: docs/clocks.md (register map, E1, E2); docs/uboot-cpu-clock.md */
-#define CCU_WR_ACCESS	0x19000000
-#define CCU_POLICY_FREQ	0x19000008
-#define CCU_POLICY_CTL	0x1900000c
-#define CCU_PLLARMA	0x19000c00
-#define CCU_PLLARMB	0x19000c04
-#define CCU_PLLARMC	0x19000c08
-#define CCU_PLLARMCTL5	0x19000c20
-#define CCU_POLICY_DBG	0x19000ec0
 #define SP805_BASE	0x18039000
 
 /* 0 = not yet run, 1 = at 400 (no switch asked), 2 = switched, <0 = refused/failed */
@@ -93,6 +86,9 @@ static int us48_cpu_switch(int mhz)
 		writel(3, SP805_BASE + 8);
 	}
 
+#ifdef CONFIG_US48_SRAM_CLK
+	return us48_sram_clk_cpu(mhz);
+#endif
 	writel(0xa5a501, CCU_WR_ACCESS);
 	if (mhz == 800) {
 		ret = ccu_go(0x87070707);	/* E1: fid 7, no relock */
