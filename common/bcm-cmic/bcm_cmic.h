@@ -70,7 +70,7 @@ int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy,
 #define BCM_HR2_XE1_PORT	26
 #define BCM_HR2_XE1_LANE	0
 #define BCM_HR2_PRIVATE_VID	48
-#define BCM_HR2_RX_RING		16
+#define BCM_HR2_RX_RING		4
 #define BCM_HR2_BUF_SZ		2048
 #define BCM_HR2_DCB_BYTES	64
 

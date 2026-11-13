@@ -27,6 +27,7 @@
 #define RX_CH			1
 #define DCB_W1_CHAIN		BIT(16)
 #define DCB_W1_SG		BIT(17)
+#define DCB_W1_RELOAD		BIT(18)
 #define DCB_W1_HG		BIT(19)
 #define DCB_W1_STAT		BIT(20)
 #define DCB_W15_DONE		BIT(31)
@@ -287,15 +288,18 @@ void bcm_hr2_dma_init(struct bcm_cmic_unit *u)
 	wr(u, COS_CTRL_RX_1(RX_CH), 0xffff);
 }
 
+/* Ring: RX_RING data DCBs (CHAIN) + one RELOAD DCB pointing back at DCB 0: the engine never stops (docs/driver-internals.md 4). */
 void bcm_hr2_rx_arm(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 {
 	int i;
 
-	memset(d->rx_dcb, 0, RX_RING * BCM_HR2_DCB_BYTES);
+	memset(d->rx_dcb, 0, (RX_RING + 1) * BCM_HR2_DCB_BYTES);
 	for (i = 0; i < RX_RING; i++) {
 		d->rx_dcb[16 * i] = cpu_to_le32(d->rx_buf_bus + i * BUF_SZ);
-		d->rx_dcb[16 * i + 1] = cpu_to_le32(BUF_SZ | (i < RX_RING - 1 ? DCB_W1_CHAIN : 0));
+		d->rx_dcb[16 * i + 1] = cpu_to_le32(BUF_SZ | DCB_W1_CHAIN);
 	}
+	d->rx_dcb[16 * RX_RING] = cpu_to_le32(d->rx_dcb_bus);
+	d->rx_dcb[16 * RX_RING + 1] = cpu_to_le32(DCB_W1_CHAIN | DCB_W1_RELOAD);
 	d->rx_next = 0;
 	wmb();
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) & ~DMA_EN);
@@ -306,14 +310,15 @@ void bcm_hr2_rx_arm(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 
 void bcm_hr2_rx_done(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 {
-	d->rx_next++;
-	if (d->rx_next == RX_RING)	/* chain ended: engine stopped, re-arm from DCB 0 */
-		bcm_hr2_rx_arm(u, d);
+	/* Hand the slot back: clear its status; the engine reaches it again after RX_RING-1 other frames. */
+	d->rx_dcb[16 * d->rx_next + 15] = 0;
+	wmb();
+	d->rx_next = (d->rx_next + 1) % RX_RING;
 }
 
 int bcm_hr2_rx_next(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, u8 **pkt)
 {
-	while (d->rx_next < RX_RING) {
+	{
 		int i = d->rx_next;
 		u32 w15 = le32_to_cpu(*(volatile __le32 *)&d->rx_dcb[16 * i + 15]);
 		u8 *p = d->rx_buf + i * BUF_SZ;
@@ -324,7 +329,7 @@ int bcm_hr2_rx_next(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, u8 **pkt)
 		rmb();
 		if ((w15 & DCB_W15_ERR) || len < ETH_ZLEN + ETH_FCS_LEN || len > BUF_SZ) {
 			bcm_hr2_rx_done(u, d);
-			continue;
+			return bcm_hr2_rx_next(u, d, pkt);
 		}
 		len -= ETH_FCS_LEN;
 		/* CPU copy may carry our VLAN tag: drop it, keeping DA+SA. */
