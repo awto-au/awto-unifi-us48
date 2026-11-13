@@ -1164,6 +1164,10 @@ def cmd_cmic_load(extra: list[str]) -> int:
     return 0
 
 
+# dd of a 14.4 MB image to mtdblock3 (NOR, erase+write) did not finish in 120 s; 300 s = backstop until the rate is measured.
+FLASH_DD_S = 300
+
+
 @command("write an image to a kernel0 slot FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
          args="[--slot uboot|openwrt] [--no-boot]", kind="action")
 def cmd_flash_net(extra: list[str]) -> int:
@@ -1216,7 +1220,7 @@ def cmd_flash_net(extra: list[str]) -> int:
         if r.returncode:
             return 1
         log(f"scp done in {time.monotonic() - t1:.1f} s; writing kernel0 slot {slot} (+{slot_off:#x}) via /dev/mtdblock3", "WARN")
-        r = _stock_cmd(s, f"dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 seek={slot_off // 65536} && sync", NET_XFER_S)
+        r = _stock_cmd(s, f"dd if=/tmp/us48.bin of=/dev/mtdblock3 bs=65536 seek={slot_off // 65536} && sync", FLASH_DD_S)
         if not r or r[0] != 0:
             log(f"dd to mtdblock3 failed: {r}", "FATAL")
             return 1

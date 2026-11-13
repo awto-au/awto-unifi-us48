@@ -186,6 +186,11 @@ def stage_rootfs() -> Path:
     if stage.exists():
         shutil.rmtree(stage)
     shutil.copytree(ROOTFS, stage, symlinks=True)
+    # OpenWrt's 6.18 kmods cannot load into this kernel; dropping them keeps the image inside the 14 MiB slot.
+    shutil.rmtree(stage / "lib/modules", ignore_errors=True)
+    for pat in ("libbfd*", "libopcodes*", "libctf*", "libsframe*"):	# binutils libs of the debug set: ~800 kB xz
+        for f in (stage / "usr/lib").glob(pat):
+            f.unlink()
     if not (stage / "init").exists():
         (stage / "init").symlink_to("sbin/init")
     lst = OUTDIR / "initramfs.list"
@@ -209,6 +214,23 @@ def configure(jobs: int) -> None:
         if want not in cfg.splitlines():
             log(f"abort: {want} missing from final .config")
             sys.exit(3)
+
+
+def build_us48_cmic(jobs: int) -> None:
+    """Out-of-tree us48_cmic against this tree (modules_prepare only), staged into the initramfs rootfs.
+
+    KBUILD_MODPOST_WARN: no Module.symvers before the kernel itself is built (exported-symbol check is warn-only here).
+    """
+    mod = ROOT / "kernel/us48-cmic"
+    env = make_env()
+    env["KBUILD_MODPOST_WARN"] = "1"
+    kmake("modules_prepare", jobs=jobs)
+    run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "clean"], out=MAKE_LOG, env=env, check=False)
+    run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "modules"], out=MAKE_LOG, env=env)
+    dst = OUTDIR / "rootfs/lib/us48"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(mod / "us48_cmic.ko", dst / "us48_cmic.ko")
+    log(f"us48_cmic.ko ({(mod / 'us48_cmic.ko').stat().st_size} B) staged into the initramfs rootfs")
 
 
 def pack() -> Path:
@@ -252,6 +274,7 @@ def main() -> int:
     if a.prepare_only:
         log("prepared")
         return 0
+    build_us48_cmic(a.jobs)
     t0 = time.monotonic()
     kmake("zImage", DTB, jobs=a.jobs)
     log(f"make done in {time.monotonic() - t0:.0f} s")
