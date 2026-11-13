@@ -81,10 +81,10 @@ Tags: C = confirmed in binary or source, I = inferred. Sources:
 
 ### Worked example: read UMAC_REV_ID, unit 0, logical port 2 (front 1)
 - Register: `UMAC_REV_ID` (RDB idx 51657, type port, block GPORT, offset 0x12200, reset 0x00030601; fields PATCH 7:0, MINOR 15:8, MAJOR 23:16).
-- Logical port 2 = first port of GPORT0 (block 2), block-port index 0. Physical port is 9 (see section 4) but SBUS uses the logical number.
+- Logical port 2 = GPORT0 (block 2) lane 7 (lane = phys - 2; per-lane MAC registers use the lane, PORT_TAB/EGR_PORT/EPC use the logical port; see #31 comment 6842848670). Physical port is 9 (see section 4) but SBUS uses the logical number.
 - DST_BLK = 2, OPCODE = 0x0b, DATA_LEN = 4, ACC_TYPE = 0:
   - header = `0x0b << 26 | 2 << 20 | 4 << 7` = **0x2c200200**
-  - address = **0x00012200** (offset only; port index 0)
+  - address = **0x00012200** (offset only; the example reads lane 0 = logical 9, not front 1; front 1 = 0x00012207)
 - Steps (AXI base 0x48000000, CMC0), verified on HW 2026-11-12:
   1. write `0x2c200200` -> 0x4803100c
   2. write `0x00012200` -> 0x48031010
@@ -421,7 +421,7 @@ Question: front 1 (logical 2, phys 9, GPORT0 MAC 0, GPHY internal bus 0 addr 9) 
   - QSGMII 65nm core ID is `0x0143`/`0xbff0` (reg 2/3), SERDES_ID0 model 0x07 (`bcmi_qsgmii_serdes_drv.c`). Not seen in the live scan (bus 1 addr 17 silent).
   - OM maps TSC lanes to bus 1 addr `1+(p-26)` (odd addrs for p26/28/30/32); live answers are at 2/4/6/8, i.e. +1. Offset unexplained (I).
 - Lane mapping for phys 9 (logical 2): C
-  - GPORT0 MAC 0 (live: S-channel port index 0 is logical 2).
+  - GPORT0 MAC lane 7 (static analysis of the stock trace, #31; the earlier lane-0 reading was wrong and probably explains the zero MIBs; untested on HW).
   - GPHY: bus 0 addr 9, octal instance `9-p` = 0 (OM; lane 0 of the octal phys 2-9; the one OM writes `MII_BUFFER_CONTROL_0` on).
   - TOP bit for this lane in `QGPHY_CTRL_0.EXT_PWRDOWN[15:0]`: not documented, likely bit 0 (I).
 
