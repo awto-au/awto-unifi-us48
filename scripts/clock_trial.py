@@ -2,7 +2,7 @@
 """clock_trial — RAM-only clock experiments from docs/clocks.md (#17). No flash writes, no saveenv.
 
   clock_trial.py dump            E0: read-only CCU/GENPLL/CRU dump at the uboot-1 prompt
-  clock_trial.py cpu --mhz N     N = 400 control | 800 fid 7 | 1000/1200/1400 relock; E0 + gate, sf read, SP805, bootm
+  clock_trial.py cpu --mhz N     N = 400 control | 800 fid 7 | 1000..2000 relock; sf read, SP805, E0 + gate, bootm
   clock_trial.py linux [--soak S] over ssh: cpuinfo, dd|md5sum benchmark, temps, soak (default 300 s)
   clock_trial.py e3              at the uboot-2 prompt: BSPI clock 50 -> 62.5 MHz, crc32 compare, revert
 Log: tmp/logs/clock_trial.log. Recovery: US48_HOST=lizard python3 scripts/dev.py power-cycle, then boot-flash.
@@ -85,64 +85,83 @@ def cmd_dump(_a: list[str]) -> int:
     return 0
 
 
-NDIV = {1000: 80, 1200: 96, 1400: 112}  # [DL] armpll.c rows (1400 is extrapolated: VCO 2800, UNTESTED)
+VCO_MAX_MHZ = 4000  # generic iProc PLL VCO_MAX (clk-iproc-pll.c); [DL] armpll.c rows stop at VCO 2400 (1200 MHz)
+LOCKED = 1 << 28 | 1 << 7  # PLLARMA LOCK (we write it as 1, [DL] does too) + LOCK_RAW (regdb)
+
+
+def relock_ndiv(mhz: int) -> int:
+    """fid 7, pdiv 1, ch1 mdiv 2: CPU = 25 x ndiv / 2, VCO = 2 x CPU. 50 MHz steps = ndiv steps of 4."""
+    if mhz < 1000 or mhz * 2 % 25 or 2 * mhz >= VCO_MAX_MHZ:
+        raise SystemExit(f"--mhz {mhz}: relock needs 1000 <= MHz < {VCO_MAX_MHZ // 2} with MHz x 2 a multiple of 25")
+    return mhz * 2 // 25
 
 
 def ccu(s, c: str) -> None:
     cmd(s, c)
 
 
+def switch_cpu(s, mhz: int) -> bool:
+    """At the uboot-1 prompt, SP805 already armed. 400 = no-op, 800 = fid 7, else relock. True = fid 7 confirmed."""
+    d = e0(s)
+    mdiv1 = (d["19000c20"] or [0])[0] & 0xFF
+    active = ((d["19000ec0"] or [0])[0] >> 12) & 7
+    log(f"gate: ch1 mdiv={mdiv1} (need 2), active fid={active} (need 6)")
+    if mhz == 400:
+        log(f"control run: CCU untouched (fid {active})")
+        return True
+    if mdiv1 != 2 or active != 6:
+        log("GATE FAILED: not switching")
+        return False
+    ndiv = relock_ndiv(mhz) if mhz != 800 else 0
+    ccu(s, "mw.l 19000000 a5a501")
+    if ndiv:
+        ccu(s, "mw.l 19000008 82020202")  # CPU on sys clk while the PLL relocks
+        ccu(s, "mw.l 1900000c 3")
+        if rd(s, "1900000c")[0] & 1:
+            log("GO stuck during fid 2 switch")
+            return False
+        b = rd(s, "19000c04")[0]
+        ccu(s, f"mw.l 19000c04 {(b & 0xFFF00000) | 1:x}")  # [DL]: masked write of ndiv_frac = 1
+        ccu(s, f"mw.l 19000c00 {0x10000000 | ndiv << 8 | 1 << 24 | 1:x}")
+        # each console read takes ms; lock is expected in tens of us (I): 3 reads, expiry = SP805 reset
+        a = 0
+        for _ in range(3):
+            a = rd(s, "19000c00")[0]
+            if a & LOCKED == LOCKED:
+                break
+        if a & LOCKED != LOCKED:
+            log(f"PLL LOCK NOT SEEN (PLLARMA={a:#x}): aborting, SP805 resets in ~46 s")
+            return False
+        ccu(s, f"mw.l 19000c00 {0x10000000 | ndiv << 8 | 1 << 24 | 3:x}")
+    ccu(s, "mw.l 19000008 87070707")
+    ccu(s, "mw.l 1900000c 3")
+    go = rd(s, "1900000c")
+    if go and go[0] & 1:
+        go = rd(s, "1900000c")
+    dbg = rd(s, "19000ec0")
+    ccu(s, "mw.l 19000000 0")
+    if (go or [1])[0] & 1 or (((dbg or [0])[0] >> 12) & 7) != 7:
+        log(f"SWITCH NOT CONFIRMED go={go} dbg={dbg}: not booting; SP805 resets in ~46 s")
+        return False
+    log(f"CPU on fid 7, {mhz} MHz expected (VCO {2 * mhz}); PLLARMA={rd(s, '19000c00')} "
+        f"PLL_DEBUG={rd(s, '19000e10')} (bit 1 = LOCK_LOST)")
+    return True
+
+
 def cmd_cpu(a: list[str]) -> int:
-    """--mhz 400 (control) | 800 (fid 7) | 1000/1200/1400 (relock, ndiv from NDIV, pdiv 1, ch1 mdiv 2)."""
+    """--mhz 400 (control) | 800 (fid 7) | 1000..2000 (relock, ndiv = MHz x 2 / 25, pdiv 1, ch1 mdiv 2)."""
     mhz = int(a[a.index("--mhz") + 1]) if "--mhz" in a else 800
+    if mhz not in (400, 800):
+        relock_ndiv(mhz)
     s, _ = dev._session_at_uboot([])
     if s is None:
         return 1
     with s:
-        d = e0(s)
-        mdiv1 = (d["19000c20"] or [0])[0] & 0xFF
-        active = ((d["19000ec0"] or [0])[0] >> 12) & 7
-        log(f"gate: ch1 mdiv={mdiv1} (need 2), active fid={active} (need 6)")
-        if mhz != 400 and (mdiv1 != 2 or active != 6):
-            log("GATE FAILED: not switching")
-            return 1
         _, off, length, _img = dev._slot([])
         cmd(s, "sf probe 0")
         cmd(s, f"sf read {dev.LOAD_ADDR} {dev.KERNEL0_OFF + off:x} {length:x}")
-        if not dev._arm_sp805(s):
+        if not dev._arm_sp805(s) or not switch_cpu(s, mhz):
             return 1
-        if mhz != 400:
-            ccu(s, "mw.l 19000000 a5a501")
-            if mhz in NDIV:
-                ccu(s, "mw.l 19000008 82020202")  # CPU on sys clk while the PLL relocks
-                ccu(s, "mw.l 1900000c 3")
-                if rd(s, "1900000c")[0] & 1:
-                    log("GO stuck during fid 2 switch")
-                    return 1
-                ccu(s, "mw.l 19000c04 00000001")
-                ccu(s, f"mw.l 19000c00 {0x10000000 | NDIV[mhz] << 8 | 1 << 24 | 1:x}")
-                locked = 0
-                for _ in range(3):
-                    if rd(s, "19000c00")[0] & (1 << 28) and True:
-                        locked = 1
-                        break
-                if not locked:
-                    log("PLL LOCK NOT SEEN: aborting, SP805 resets in ~46 s")
-                    return 1
-                ccu(s, f"mw.l 19000c00 {0x10000000 | NDIV[mhz] << 8 | 1 << 24 | 3:x}")
-            ccu(s, "mw.l 19000008 87070707")
-            ccu(s, "mw.l 1900000c 3")
-            go = rd(s, "1900000c")
-            if go and go[0] & 1:
-                go = rd(s, "1900000c")
-            dbg = rd(s, "19000ec0")
-            ccu(s, "mw.l 19000000 0")
-            if (go or [1])[0] & 1 or (((dbg or [0])[0] >> 12) & 7) != 7:
-                log(f"SWITCH NOT CONFIRMED go={go} dbg={dbg}: not booting; SP805 resets in ~46 s")
-                return 1
-            log(f"CPU on fid 7, {mhz} MHz expected; PLLARMA={rd(s, '19000c00')}")
-        else:
-            log(f"control run: CCU untouched (fid {active})")
         s.send_line(f"bootm {dev.LOAD_ADDR}")
         try:
             s.expect([b"Starting kernel"], dev.BOOTM_BUDGET_S, "bootm 'Starting kernel'")

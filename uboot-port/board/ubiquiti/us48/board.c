@@ -36,24 +36,28 @@ phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
 /* ARM PLL / CCU, layout and sequences: docs/clocks.md (register map, E1, E2); docs/uboot-cpu-clock.md */
 #define SP805_BASE	0x18039000
 
-/* 0 = not yet run, 1 = at 400 (no switch asked), 2 = switched, <0 = refused/failed */
-static int cpu_status = 0;
+/*
+ * 0 = not yet run, 1 = at 400 (no switch asked), 2 = switched, <0 = refused/failed.
+ * .data: set in board_early_init_f before relocation, where .bss overlays .rel.dyn (u-boot.lds).
+ */
+static int cpu_status __section(".data") = 0;
 
-/* fid: 0 = 25 MHz xtal, 6 = ch0 mdiv, 7 = ch1 mdiv; fid 2 (sys clk) is unknown -> 0 */
+/* Mainline clk-iproc-armpll.c recalc: bypass, lock, offset mode, 0 = max divider. fid 2 (sys clk) -> 0 */
 static ulong us48_arm_hz(void)
 {
 	u32 a = readl(CCU_PLLARMA);
 	u32 fid = (readl(CCU_POLICY_DBG) >> 12) & 7;
-	u32 ndiv = (a >> 8) & 0x3ff, pdiv = (a >> 24) & 0xf, mdiv;
+	u64 ndiv = (a >> 8) & 0x3ff;
+	u32 pdiv = (a >> 24) & 7, mdiv;
 
 	if (fid == 0)
 		return 25000000;
-	if (fid != 6 && fid != 7)
+	if ((fid != 6 && fid != 7) || (readl(CCU_PLLARMC) & BIT(8)) || !(a & BIT(28)) ||
+	    (readl(CCU_PLLARM_OFFSET) & BIT(29)))
 		return 0;
 	mdiv = readl(fid == 6 ? CCU_PLLARMC : CCU_PLLARMCTL5) & 0xff;
-	if (!pdiv || !mdiv)
-		return 0;
-	return (ulong)(25000000ULL * ndiv / pdiv / mdiv);
+	ndiv = ((ndiv ? ndiv : 1024) << 20) | (readl(CCU_PLLARMB) & 0xfffff);
+	return (ulong)(((25000000ULL * ndiv) >> 20) / (pdiv ? pdiv : 8) / (mdiv ? mdiv : 256));
 }
 
 /* Wait for GO to self-clear. Expected ~10 us (few hundred 25 MHz cycles, I); 4096 reads >> that, expiry = fail */
@@ -76,7 +80,7 @@ static int us48_cpu_switch(int mhz)
 
 	/* E0 gate: ch1 mdiv 2 (else fid 7 = 1600), fid 6, and we really are at 400 */
 	if ((readl(CCU_PLLARMCTL5) & 0xff) != 2 || ((readl(CCU_POLICY_DBG) >> 12) & 7) != 6 ||
-	    us48_arm_hz() != 400000000)
+	    us48_arm_hz() / 1000000 != 400)	/* ndiv_frac 1 (stock) adds ~0.4 ppm */
 		return -EINVAL;
 
 	/* SP805 normally armed by dev.py before bootm; arm 10 s if not (APB clock, unchanged by this) */
@@ -89,6 +93,8 @@ static int us48_cpu_switch(int mhz)
 #ifdef CONFIG_US48_SRAM_CLK
 	return us48_sram_clk_cpu(mhz);
 #endif
+	if (mhz != 800 && !US48_RELOCK_OK(mhz))
+		return -EINVAL;
 	writel(0xa5a501, CCU_WR_ACCESS);
 	if (mhz == 800) {
 		ret = ccu_go(0x87070707);	/* E1: fid 7, no relock */
@@ -100,9 +106,9 @@ static int us48_cpu_switch(int mhz)
 			goto out;
 		}
 		writel(b, CCU_PLLARMB);
-		writel(0x11005001, CCU_PLLARMA);	/* ndiv 80, pdiv 1, soft_resetb */
-		/* lock bit 28; expected tens of us (I), 2000 reads at ~100 MHz CPU >> that */
-		for (n = 0; n < 2000 && !(readl(CCU_PLLARMA) & BIT(28)); n++)
+		writel(US48_PLLARMA(mhz, 0), CCU_PLLARMA);	/* ndiv, pdiv 1, soft_resetb */
+		/* lock: expected tens of us (I, unmeasured), 2000 reads at ~100 MHz sys clk; expiry = back to 400 */
+		for (n = 0; n < 2000 && (readl(CCU_PLLARMA) & CCU_PLLARMA_LOCKED) != CCU_PLLARMA_LOCKED; n++)
 			;
 		if (n == 2000) {
 			writel(0x11004003, CCU_PLLARMA);	/* VCO back to 1600 */
@@ -110,7 +116,7 @@ static int us48_cpu_switch(int mhz)
 			ret = -ETIMEDOUT;
 			goto out;
 		}
-		writel(0x11005003, CCU_PLLARMA);	/* soft_post_resetb */
+		writel(US48_PLLARMA(mhz, 1), CCU_PLLARMA);	/* soft_post_resetb */
 		ret = ccu_go(0x87070707);
 		if (ret) {
 			writel(0x11004003, CCU_PLLARMA);

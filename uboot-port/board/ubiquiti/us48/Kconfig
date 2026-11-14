@@ -10,11 +10,13 @@ config SYS_CONFIG_NAME
 	default "us48"
 
 config US48_CPU_MHZ
-	int "A9 clock set by uboot-2 at early init (400, 800 or 1000)"
+	int "A9 clock set by uboot-2 at early init (400, 800, or 1000..1999)"
 	default 400
-	range 400 1000
+	range 400 1999
 	help
-	  400 = no change. 800 = fid 7 (docs/clocks.md E1). 1000 = relock (E2).
+	  400 = no change. 800 = fid 7 (docs/clocks.md E1). 1000..1999 = relock (E2),
+	  ndiv = MHz x 2 / 25, so MHz x 2 must be a multiple of 25 (50 MHz steps are).
+	  Above 1200 (VCO 2400) no Broadcom table row exists: docs/clock-audit.md.
 	  Refuses and stays at 400 if the E0 gate fails. Other values: build error.
 
 config US48_SRAM_CLK

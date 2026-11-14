@@ -3,6 +3,7 @@
 #ifndef US48_SRAM_CLK_H
 #define US48_SRAM_CLK_H
 
+#include <linux/bitops.h>
 #include <linux/types.h>
 
 /* ARM PLL / CCU registers, docs/clocks.md */
@@ -14,6 +15,13 @@
 #define CCU_PLLARMC	0x19000c08
 #define CCU_PLLARMCTL5	0x19000c20
 #define CCU_POLICY_DBG	0x19000ec0
+#define CCU_PLLARM_OFFSET	0x19000c24
+
+/* PLLARMA (regdb IHOST_PROC_CLK_PLLARMA): we write bit 28 ourselves ([DL] armpll.c), so also require LOCK_RAW */
+#define CCU_PLLARMA_LOCKED	(BIT(28) | BIT(7))
+/* ch1 (fid 7) mdiv 2: CPU = 25 MHz x ndiv / 2. VCO 25 x ndiv < 4000 MHz (clk-iproc-pll.c VCO_MAX) */
+#define US48_RELOCK_OK(mhz)	((mhz) >= 1000 && (mhz) < 2000 && (mhz) * 2 % 25 == 0)
+#define US48_PLLARMA(mhz, post)	(BIT(28) | 1 << 24 | ((mhz) * 2 / 25) << 8 | ((post) ? 3 : 1))
 
 /* GENPLL, docs/clocks.md E5 */
 #define GENPLL_CTRL0	0x1803fc00
@@ -78,7 +86,7 @@ void us48_sram_end(void);
 int us48_sram_clk_run(const struct us48_clk_cmd *cmd);
 void us48_sram_clk_fail_info(u32 *idx, u32 *val);
 
-/* CPU 800 (E1) or 1000 (E2). Caller does the E0 gate and arms SP805. */
+/* CPU 800 (E1) or US48_RELOCK_OK (E2 relock). Caller does the E0 gate and arms SP805. */
 int us48_sram_clk_cpu(int mhz);
 /* GENPLL ch3 (AXI) mdiv, ch4 mdiv (0 = leave). Needs CONFIG_US48_SRAM_CLK_GENPLL, else -EPERM. */
 int us48_sram_clk_axi(u32 ch3_mdiv, u32 ch4_mdiv);

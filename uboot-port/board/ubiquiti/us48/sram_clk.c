@@ -159,7 +159,7 @@ int us48_sram_clk_cpu(int mhz)
 	u32 n = 0, b = (readl(CCU_PLLARMB) & 0xfff00000) | 1;
 	u32 savb = readl(CCU_PLLARMB);
 
-	if (mhz != 800 && mhz != 1000)
+	if (mhz != 800 && !US48_RELOCK_OK(mhz))
 		return -EINVAL;
 	op(&c, &n, US48_OP_WR, CCU_WR_ACCESS, 0xa5a501, 0);
 	if (mhz == 800) {
@@ -167,10 +167,10 @@ int us48_sram_clk_cpu(int mhz)
 	} else {
 		go(&c, &n, 0x82020202);			/* E2: sys clk while relocking */
 		op(&c, &n, US48_OP_WR, CCU_PLLARMB, b, 0);
-		op(&c, &n, US48_OP_WR, CCU_PLLARMA, 0x11005001, 0);	/* ndiv 80, pdiv 1, soft_resetb */
-		/* lock bit 28: expected tens of us (I), 2000 reads ~ >10x; expiry = rollback */
-		op(&c, &n, US48_OP_POLL_SET, CCU_PLLARMA, BIT(28), 2000);
-		op(&c, &n, US48_OP_WR, CCU_PLLARMA, 0x11005003, 0);	/* soft_post_resetb */
+		op(&c, &n, US48_OP_WR, CCU_PLLARMA, US48_PLLARMA(mhz, 0), 0);	/* ndiv, pdiv 1, soft_resetb */
+		/* lock: expected tens of us (I, unmeasured), 2000 reads; expiry = rollback */
+		op(&c, &n, US48_OP_POLL_SET, CCU_PLLARMA, CCU_PLLARMA_LOCKED, 2000);
+		op(&c, &n, US48_OP_WR, CCU_PLLARMA, US48_PLLARMA(mhz, 1), 0);	/* soft_post_resetb */
 		go(&c, &n, 0x87070707);
 	}
 	op(&c, &n, US48_OP_CHECK, CCU_POLICY_DBG, 7 << 12, 7 << 12);	/* fid 7 active */
@@ -180,10 +180,10 @@ int us48_sram_clk_cpu(int mhz)
 	/* rollback: unlock, sys clk, VCO + PLLARMB back, wait lock, fid 6, verify, lock */
 	op(&c, &n, US48_OP_WR, CCU_WR_ACCESS, 0xa5a501, 0);
 	go(&c, &n, 0x82020202);
-	if (mhz == 1000) {
+	if (mhz != 800) {
 		op(&c, &n, US48_OP_WR, CCU_PLLARMB, savb, 0);
 		op(&c, &n, US48_OP_WR, CCU_PLLARMA, 0x11004003, 0);	/* 400 row: ndiv 64, VCO 1600 */
-		op(&c, &n, US48_OP_POLL_SET, CCU_PLLARMA, BIT(28), 2000);
+		op(&c, &n, US48_OP_POLL_SET, CCU_PLLARMA, CCU_PLLARMA_LOCKED, 2000);
 	}
 	go(&c, &n, 0x86060606);
 	op(&c, &n, US48_OP_CHECK, CCU_POLICY_DBG, 7 << 12, 6 << 12);
