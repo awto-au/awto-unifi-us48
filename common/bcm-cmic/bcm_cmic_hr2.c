@@ -276,8 +276,11 @@ void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch)
 	wr(u, DMA_STAT_CLR, BIT(ch));
 }
 
+#define CMIC_RXBUF_EP_RLS_CRED	0x1a000		/* CMIC cpureg, bit 0 RELEASE_ALL_CREDITS (OM bmd_xgsm_dma_init) */
+
 void bcm_hr2_dma_init(struct bcm_cmic_unit *u)
 {
+	wr(u, CMIC_RXBUF_EP_RLS_CRED, 1);		/* release all credits to the EPIPE: without it no frame reaches the CPU on a cold chip */
 	/* Stock's DCBs live in RAM that may be reused: stop both channels before anything else. */
 	bcm_hr2_dma_abort(u, RX_CH);
 	bcm_hr2_dma_abort(u, TX_CH);

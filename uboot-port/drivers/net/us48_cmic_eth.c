@@ -6,6 +6,7 @@
  * Select with `setenv ethact <node name>`; ge1 is probed first and is the default. M3 in docs/uboot-second-stage.md.
  */
 #include <dm.h>
+#include <env.h>
 #include <net.h>
 #include <malloc.h>
 #include <asm/io.h>
@@ -66,6 +67,16 @@ static int us48_eth_start(struct udevice *dev)
 	int ret;
 
 	bcm_hr2_dma_init(&p->unit);
+	if (!p->up && p->ge) {
+		int ops, errs;
+		u32 v[2] = { 0, 0 };
+
+		bcm_hr2_u0_cold_init(&p->unit, env_get_hex("us48_init_mask", BCM_HR2_INIT_ALL), &ops, &errs);
+		if (ops) {
+			bcm_cmic_reg_read(&p->unit, 2, 0x12207, v, 1, NULL);
+			printf("us48-ge: cold init %d ops, %d failed; UMAC_REV_ID %08x\n", ops, errs, v[0]);
+		}
+	}
 	if (!p->up) {
 		ret = p->ge ? bcm_hr2_ge_bringup(&p->unit, p->ge) : bcm_hr2_xe1_bringup(&p->unit, CML_FLAGS);
 		if (ret)

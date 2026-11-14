@@ -67,8 +67,26 @@ static int sbus_read(bool mem, int argc, char *const argv[])
 	return CMD_RET_SUCCESS;
 }
 
+/* schan w <blk> <addr> <w0> [w1]: bring-up experiments on the CHIP (never flash); one WRITE_REG */
+static int sbus_write(int argc, char *const argv[])
+{
+	ulong blk, addr, w0, w1 = 0;
+	u32 data[2];
+
+	if (argc < 5 || argc > 6 || !num(argv[2], &blk) || !num(argv[3], &addr) || !num(argv[4], &w0) ||
+	    (argc == 6 && !num(argv[5], &w1)))
+		return CMD_RET_USAGE;
+	data[0] = w0;
+	data[1] = w1;
+	if (blk > SCHAN_MAX_BLK || bcm_cmic_schan_op(&unit0, BCM_SCHAN_WRITE_REG, blk, addr, data, argc == 6 ? 2 : 1, NULL))
+		return CMD_RET_FAILURE;
+	return CMD_RET_SUCCESS;
+}
+
 static int do_schan(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
+	if (argc > 1 && !strcmp(argv[1], "w"))
+		return sbus_write(argc, argv);
 	return sbus_read(false, argc, argv);
 }
 
@@ -77,8 +95,9 @@ static int do_smem(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 	return sbus_read(true, argc, argv);
 }
 
-U_BOOT_CMD(schan, 5, 0, do_schan, "S-channel register read (read-only)",
-	   "r <blk> <addr> [words]  - READ_REG (1-2 words); addr = offset | port index (driver-internals 1)");
+U_BOOT_CMD(schan, 6, 0, do_schan, "S-channel register read; w = WRITE_REG (chip bring-up experiments)",
+	   "r <blk> <addr> [words]  - READ_REG (1-2 words); addr = offset | port index (driver-internals 1)\n"
+	   "w <blk> <addr> <w0> [w1] - WRITE_REG (chip only, never flash)");
 U_BOOT_CMD(smem, 5, 0, do_smem, "S-channel memory read (read-only)",
 	   "r <blk> <addr> <words>  - READ_MEM, entry of 1-16 words");
 

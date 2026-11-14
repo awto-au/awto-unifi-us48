@@ -4,6 +4,8 @@
 Usage: scripts/u2_cold.py [--no-cycle] [--dump] [--ping]
 - --no-cycle: skip the relay cycle (board already at the uboot-1 countdown/prompt).
 - --dump: read-only chip state at the awto-uboot prompt (log tmp/logs/u2_cold.log).
+- --mask=0xNN: set env us48_init_mask before the ping (init categories, gen_bcm_hr2_init.py)
+- --diag: DIAG register list after the ping
 - --ping: one `ping` of the TFTP host over ge1 (runs the ge1 bring-up).
 """
 import sys
@@ -26,6 +28,16 @@ DUMPS = [
     "smem r 11 0x100c0001 3",            # EGR_VLAN[1]
     "schan r 12 0x0 1",                  # MMU reg 0 (sanity)
     "miim r int 0 9 0", "miim r int 0 9 2", "miim r int 0 9 3", "miim r int 0 9 1",
+]
+
+
+DIAG = [
+    "cmic r 0x31140 4", "cmic r 0x31150 1", "cmic r 0x31480 4",             # DMA ctrl/stat, per-channel packet counts
+    "schan r 2 0x1b07 2", "schan r 2 0x3807 2", "schan r 2 0x10207 1",      # GRPKT, GTPKT, COMMAND_CONFIG (lane 7)
+    "smem r 10 0x04000002 8", "smem r 10 0x04000000 8",                     # PORT_TAB[2], [0]
+    "smem r 10 0x14000065 4", "smem r 10 0x14000001 4",                     # VLAN_TAB[101], [1]
+    "schan r 10 0x46002700 2", "smem r 11 0x345c0002 1", "smem r 11 0x345c0000 1",   # EPC_LINK, EGR_ENABLE[2], [0]
+    "miim r int 0 9 0", "miim r int 0 9 1", "miim r int 0 9 2",
 ]
 
 
@@ -72,6 +84,12 @@ def cycle_to_prompt(s: console.Session) -> bool:
 
 
 def dump_ping(s: console.Session, a: list[str]) -> int:
+    for x in a:
+        if x.startswith("--mask="):
+            log(f"setenv us48_init_mask {x[7:]} -> {' | '.join(run(s, 'setenv us48_init_mask ' + x[7:]).split()[3:])}", "ALERT")
+    if "--diag" in a:
+        for c in DIAG:
+            log(f"{c} -> {' | '.join(run(s, c).split()[2:])}", "ALERT")
     if "--dump" in a:
         for c in DUMPS:
             log(f"{c} -> {' | '.join(run(s, c).split()[2:])}", "ALERT")
@@ -88,7 +106,7 @@ def main() -> int:
     s = console.Session()
     try:
         if "--here" in a:  # board already at the awto-uboot prompt: only dump / ping
-            s.send_line("")
+            s.write(b"\x03\r\n")  # abort a running TFTP/ping retry loop
             s.expect(dev.U2_PROMPTS, 5.0, "awto-uboot prompt")
             return dump_ping(s, a)
         if "--no-cycle" not in a:
