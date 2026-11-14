@@ -333,7 +333,7 @@ int bcm_hr2_rx_next(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, u8 **pkt)
 		}
 		len -= ETH_FCS_LEN;
 		/* CPU copy may carry our VLAN tag: drop it, keeping DA+SA. */
-		if (p[12] == 0x81 && p[13] == 0x00 && (((p[14] << 8) | p[15]) & 0xfff) == OUR_VID) {
+		if (p[12] == 0x81 && p[13] == 0x00 && (((p[14] << 8) | p[15]) & 0xfff) == (d->vid ?: OUR_VID)) {
 			memmove(p + 4, p, 12);
 			p += 4;
 			len -= 4;
@@ -360,7 +360,7 @@ int bcm_hr2_tx_start(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, const u8 *f
 	d->tx_dcb[0] = cpu_to_le32(d->tx_buf_bus);
 	d->tx_dcb[1] = cpu_to_le32(12 | DCB_W1_CHAIN | DCB_W1_SG | DCB_W1_STAT | DCB_W1_HG);
 	d->tx_dcb[2] = cpu_to_le32(0x81000000);
-	d->tx_dcb[3] = cpu_to_le32(XE1_PORT);
+	d->tx_dcb[3] = cpu_to_le32(d->tx_port ?: XE1_PORT);
 	d->tx_dcb[4] = cpu_to_le32(0x00040000);	/* txq 0 */
 	d->tx_dcb[16] = cpu_to_le32(d->tx_buf_bus + 16);
 	/* +4: XLMAC CRC mode is 'replace': the last 4 bytes are overwritten with the FCS, not added. */
@@ -383,4 +383,147 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 	wr(u, DMA_STAT_CLR, BIT(TX_CH));
 	d->tx_len = 0;
 	return true;
+}
+
+/* ---- integrated-GPHY copper ports (unit 0 front 1 = ge1); generic over block/lane/lport, from us48_cmic.c ---- */
+
+#define GP_CC(l)		(0x10200 | (l))		/* GPORT UMAC COMMAND_CONFIG */
+#define GP_CC_BASE		0x01800058		/* reset released, RX/TX off, 1G code (stock's final init value) */
+#define GP_CC_SWRST		BIT(13)
+
+static void gp_wr(struct bcm_cmic_unit *u, u8 blk, u32 addr, u32 val)
+{
+	bcm_cmic_reg_write(u, blk, addr, &val, 1);
+}
+
+static void ge_vlan_init(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
+{
+	const int cpu_stg[] = { 0, 1 }, stg_bits[] = { 2 * ge->lport, 2 * ge->lport + 1 };
+	u32 e[4], g[3], one = 1, stg;
+	int lp = ge->lport;
+
+	if (bcm_cmic_mem_read(u, BLK_IPIPE, VLAN_TAB(ge->vid), e, 4, NULL) || (e[1] & BIT(6))) {	/* VALID b38 */
+		pr_warn("bcm-cmic: VLAN %d not free (or unreadable): not touching\n", ge->vid);
+		return;
+	}
+	if (bcm_cmic_mem_read(u, BLK_IPIPE, VLAN_TAB(1), e, 4, NULL) ||
+	    bcm_cmic_mem_read(u, BLK_EPIPE, EGR_VLAN(1), g, 3, NULL))
+		return;
+	stg = (e[1] >> 7) & 0x1ff;			/* STG b39..47 */
+	e[0] &= ~0x3fffffffu;				/* PORT_BITMAP 0:30 */
+	e[0] |= BIT(0) | BIT(lp);
+	set_even_parity(e, 126);
+	bcm_cmic_mem_write(u, BLK_IPIPE, VLAN_TAB(ge->vid), e, 4);
+	g[0] = 0;					/* UT_BITMAP 0:30 + PORT_BITMAP 30:30 */
+	g[1] &= ~0x0fffffffu;
+	g[0] |= BIT(0) | BIT(lp);
+	g[0] |= BIT(30);
+	g[1] |= BIT(lp - 2);				/* PORT_BITMAP bit 30 + lp = w1 bit lp - 2 */
+	set_even_parity(g, 76);
+	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_VLAN(ge->vid), g, 3);
+	/* SP_TREE state 3 = forwarding, for the CPU and this port, in the cloned STG. */
+	smem_set_bits(u, BLK_IPIPE, STG_TAB(stg), 2, 60, cpu_stg, 2);
+	smem_set_bits(u, BLK_IPIPE, STG_TAB(stg), 2, 60, stg_bits, 2);
+	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, cpu_stg, 2);
+	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, stg_bits, 2);
+	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to the port dies before the MAC. */
+	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_ENABLE(lp), &one, 1);
+}
+
+/* CML_FLAGS_NEW/MOVE (121:4, 125:4) 0: stock's 8 ('do HW learn') drops every unicast frame here (docs 14.4). */
+static void ge_port_tab(struct bcm_cmic_unit *u, int lport, u32 vid, bool cml_off)
+{
+	u32 e[8];
+
+	if (bcm_cmic_mem_read(u, BLK_IPIPE, PORT_TAB(lport), e, 8, NULL))
+		return;
+	e[0] = (e[0] & 0x00ffffff) | (vid << 24);
+	e[1] = (e[1] & ~0xfu) | (vid >> 8);
+	if (cml_off) {
+		e[3] &= ~(0xfu << 25 | 0x7u << 29);
+		e[4] &= ~1u;
+	}
+	bcm_cmic_mem_write(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
+}
+
+int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
+{
+	u8 b = ge->blk, l = ge->lane;
+	u32 link[2];
+
+	/* Stock's per-lane copper MAC init (docs/driver-internals.md 12): MAC left RX/TX off. */
+	gp_wr(u, b, 0x02020000, 2);			/* GPORT_CONFIG: CLR_CNT, then run with GPORT_EN */
+	gp_wr(u, b, 0x02020000, 3);
+	gp_wr(u, b, 0x02020000, 1);
+	gp_wr(u, b, 0x10500 | l, 0x5ee);		/* FRM_LENGTH */
+	gp_wr(u, b, GP_CC(l), 0x01802058);
+	gp_wr(u, b, 0x1cc00 | l, 0x2c000);		/* PAUSE_CONTROL */
+	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
+	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
+	gp_wr(u, b, 0x02020800, 0x5ee);			/* GPORT_CNTMAXSIZE */
+	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
+	/* Stock leaves the GPHY powered down (BMCR 0x1940): AN enable + restart + FD + 1000, no power-down. */
+	if (bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340))
+		return -EIO;
+	ge_vlan_init(u, ge);
+	ge_port_tab(u, ge->lport, ge->vid, true);
+	if (!bcm_cmic_reg_read(u, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2, NULL)) {
+		link[0] |= BIT(0) | BIT(ge->lport);
+		bcm_cmic_reg_write(u, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
+	}
+	return 0;
+}
+
+int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add)
+{
+	u32 e[4] = { };
+	u64 m = 0;
+	int i, ones = 0;
+
+	for (i = 0; i < 6; i++)
+		m = m << 8 | mac[i];
+	set_field(e, 2, 12, ge->vid);			/* VLAN_ID */
+	set_field(e, 14, 48, m);			/* MAC_ADDR */
+	set_field(e, 68, 7, ge->modid);			/* MODULE_ID, PORT_NUM 0 = CPU */
+	set_field(e, 91, 1, 1);				/* CPU: copy to CPU */
+	set_field(e, 97, 1, 1);				/* STATIC_BIT */
+	set_field(e, 99, 1, 1);				/* VALID */
+	for (i = 0; i < 4; i++)
+		ones += hweight32(e[i]);
+	set_field(e, 100, 1, ones & 1);			/* EVEN_PARITY */
+	return sbus(u, add ? BCM_SCHAN_TABLE_INSERT : BCM_SCHAN_TABLE_DELETE, BLK_IPIPE, L2X, e, 4);
+}
+
+bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed)
+{
+	u16 bmsr = 0, lpa = 0, st1000 = 0;
+
+	bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr);
+	bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr);
+	bcm_cmic_miim_read(u, true, 0, ge->phy, 5, &lpa);
+	bcm_cmic_miim_read(u, true, 0, ge->phy, 10, &st1000);
+	*speed = (st1000 & BIT(11)) ? 1000 : (lpa & (BIT(8) | BIT(7))) ? 100 : 10;
+	return bmsr & BIT(2);
+}
+
+/* Stock's CC sequence: reset pulse, speed (ETH_SPEED [3:2]: 2 -> 1G, 1 -> 100M), then TX_ENA | RX_ENA. */
+void bcm_hr2_ge_mac_up(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int speed)
+{
+	u32 sp = speed == 1000 ? 8 : speed == 100 ? 4 : 0;
+	u32 cc = ((GP_CC_BASE | BIT(28)) & ~0xfu) | sp;
+
+	gp_wr(u, ge->blk, GP_CC(ge->lane), cc | GP_CC_SWRST);
+	gp_wr(u, ge->blk, GP_CC(ge->lane), cc);
+	gp_wr(u, ge->blk, GP_CC(ge->lane), cc | 3);
+}
+
+void bcm_hr2_ge_mac_down(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
+{
+	gp_wr(u, ge->blk, GP_CC(ge->lane), GP_CC_BASE);
+}
+
+void bcm_hr2_ge_park(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
+{
+	bcm_hr2_ge_mac_down(u, ge);
+	ge_port_tab(u, ge->lport, 1, false);
 }

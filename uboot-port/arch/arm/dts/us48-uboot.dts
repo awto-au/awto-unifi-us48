@@ -131,6 +131,12 @@
 		};
 	};
 
+	/* Unit 0 CMIC on AXI: ge1 = front 1 copper. First eth node = default ethact. */
+	ethernet@48000000 {
+		compatible = "ubnt,us48-cmic-ge";
+		reg = <0x48000000 0x40000>;
+	};
+
 	/* BCM53346 CMIC = PCIe BAR2, already enumerated by stock U-Boot (docs/uboot-second-stage.md M3) */
 	ethernet@8040000 {
 		compatible = "ubnt,us48-cmic-eth";

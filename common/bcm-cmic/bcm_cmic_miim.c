@@ -37,3 +37,29 @@ int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy,
 	writel(0, u->base + BCM_CMIC_MIIM_CTRL);
 	return 0;
 }
+
+#define MIIM_WR_START	BIT(0)
+
+int bcm_cmic_miim_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val)
+{
+	u32 stat = 0;
+	int i;
+
+	writel(0, u->base + BCM_CMIC_MIIM_CTRL);
+	writel((u32)internal << 25 | bus << 22 | phy << 16 | val, u->base + BCM_CMIC_MIIM_PARAM);
+	writel(reg & 0x1f, u->base + BCM_CMIC_MIIM_ADDR);
+	writel(MIIM_WR_START, u->base + BCM_CMIC_MIIM_CTRL);
+	for (i = 0; i < MIIM_WAIT_US; i++) {
+		stat = readl(u->base + BCM_CMIC_MIIM_STAT);
+		if (stat & MIIM_OPN_DONE)
+			break;
+		udelay(1);
+	}
+	writel(0, u->base + BCM_CMIC_MIIM_CTRL);
+	if (!(stat & MIIM_OPN_DONE)) {
+		pr_err("bcm-cmic: miim %s bus %u phy %u reg %u write: no OPN_DONE after >= %d us\n",
+		       internal ? "int" : "ext", bus, phy, reg, i);
+		return -ETIMEDOUT;
+	}
+	return 0;
+}

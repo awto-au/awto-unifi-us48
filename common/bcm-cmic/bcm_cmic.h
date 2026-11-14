@@ -61,6 +61,9 @@ static inline int bcm_cmic_reg_write(struct bcm_cmic_unit *u, u32 blk, u32 addr,
 /* One clause-22 MIIM read. internal: INTERNAL_SEL (bus 0 = GPHYs, bus 1 = TSC). */
 int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *val);
 
+/* One clause-22 MIIM write. */
+int bcm_cmic_miim_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val);
+
 /*
  * HR2 unit-1 (BCM53346) front-panel port 50 (xe1, logical port 27) bring-up and CPU packet I/O.
  * Same chip programming for Linux and U-Boot (bcm_cmic_hr2.c); reference history: us48_cmic.c.
@@ -86,6 +89,8 @@ struct bcm_hr2_dma {
 	u32 tx_buf_bus;
 	int rx_next;
 	unsigned int tx_len;		/* 0 = idle */
+	u8 tx_port;			/* logical port the TX module header targets */
+	u16 vid;			/* private VLAN whose tag RX strips */
 };
 
 /* Abort both channels, then ch0 = TX, ch1 = RX, all CPU COS to ch1. */
@@ -108,5 +113,29 @@ void bcm_hr2_rx_done(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
 int bcm_hr2_tx_start(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, const u8 *frame, unsigned int len);
 /* true once the frame in flight is finished (channel stopped, d->tx_len cleared). */
 bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
+
+/*
+ * Integrated-GPHY copper port (GPORT block + lane, GPHY on internal MIIM bus 0), e.g. unit 0 front 1:
+ * blk 2, lane 7, logical 2, phy 9. Private VLAN `vid` holds the CPU and this port only (VLAN 1 is
+ * stock's and may bridge ports); MAC left RX/TX off until bcm_hr2_ge_mac_set().
+ * Frames reach the CPU via the static L2 entry (modid = unit's MY_MODID, port 0).
+ */
+struct bcm_hr2_ge {
+	u8 blk, lane, phy, lport, modid;
+	u16 vid;
+};
+
+/* GPORT MAC init, GPHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
+int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
+/* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
+int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);
+/* GPHY link (BMSR latched, read twice); *speed = 10/100/1000 from the partner abilities. */
+bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed);
+/* MAC speed + RX/TX on (link up). */
+void bcm_hr2_ge_mac_up(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int speed);
+/* MAC RX/TX off (link down). */
+void bcm_hr2_ge_mac_down(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
+/* PORT_TAB[lport].PORT_VID back to VLAN 1, MAC off (shutdown). */
+void bcm_hr2_ge_park(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
 
 #endif /* BCM_CMIC_H */

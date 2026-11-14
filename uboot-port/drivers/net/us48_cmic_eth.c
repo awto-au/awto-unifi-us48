@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * US-48 second stage: Ethernet on the BCM53346 (unit 1) xe1 = front 50 = logical port 27, polled.
- * Chip programming is the shared core (lib/bcm-cmic/bcm_cmic_hr2.c); M3 in docs/uboot-second-stage.md.
+ * US-48 second stage, polled. Two DM_ETH drivers over the shared core (lib/bcm-cmic/bcm_cmic_hr2.c):
+ * - us48_cmic_eth: BCM53346 (unit 1, PCIe) xe1 = front 50 = logical port 27 (needs stock's TSC state).
+ * - us48_cmic_ge: BCM53344 (unit 0, AXI) ge1 = front 1 = logical port 2, GPORT0 lane 7, GPHY 9.
+ * Select with `setenv ethact <node name>`; ge1 is probed first and is the default. M3 in docs/uboot-second-stage.md.
  */
 #include <dm.h>
 #include <net.h>
@@ -25,11 +27,37 @@
 /* PORT_TAB CML_FLAGS: 0 = no action (stock 8 drops all unicast), docs/driver-internals.md 14.4 */
 #define CML_FLAGS	0
 
+/* AN of 1000BASE-T takes 1.5-3 s (#46 plan, x1.25 = 4 s); expiry = log "no link", start fails and the net retry loop calls again. */
+#define GE_LINK_WAIT_MS	4000
+#define GE_LINK_POLL_MS	20
+
 struct us48_eth_priv {
 	struct bcm_cmic_unit unit;
 	struct bcm_hr2_dma dma;
-	bool up;		/* xe1 bring-up done (once, first start) */
+	bool up;		/* bring-up done (once, first start) */
+	const struct bcm_hr2_ge *ge;	/* copper port, NULL for xe1 */
+	bool linkup;
 };
+
+/* Unit 0 (host SoC, AXI CMIC): front 1 = logical 2, GPORT0 (block 2) lane 7, GPHY 9; VLAN 101 as the Linux driver. */
+static const struct bcm_hr2_ge ge1 = { .blk = 2, .lane = 7, .phy = 9, .lport = 2, .modid = 0, .vid = 101 };
+
+static int us48_ge_wait_link(struct us48_eth_priv *p)
+{
+	int speed = 0, ms;
+
+	for (ms = 0; ms < GE_LINK_WAIT_MS; ms += GE_LINK_POLL_MS) {
+		if (bcm_hr2_ge_link(&p->unit, p->ge, &speed)) {
+			bcm_hr2_ge_mac_up(&p->unit, p->ge, speed);
+			p->linkup = true;
+			printf("us48-ge: link up %d M after %d ms\n", speed, ms);
+			return 0;
+		}
+		mdelay(GE_LINK_POLL_MS);
+	}
+	printf("us48-ge: no link after %d ms\n", GE_LINK_WAIT_MS);
+	return -ENETDOWN;
+}
 
 static int us48_eth_start(struct udevice *dev)
 {
@@ -39,12 +67,18 @@ static int us48_eth_start(struct udevice *dev)
 
 	bcm_hr2_dma_init(&p->unit);
 	if (!p->up) {
-		ret = bcm_hr2_xe1_bringup(&p->unit, CML_FLAGS);
+		ret = p->ge ? bcm_hr2_ge_bringup(&p->unit, p->ge) : bcm_hr2_xe1_bringup(&p->unit, CML_FLAGS);
 		if (ret)
 			return ret;
 		p->up = true;
 	}
-	ret = bcm_hr2_l2_cpu(&p->unit, pdata->enetaddr, true);
+	if (p->ge) {
+		ret = bcm_hr2_ge_l2_cpu(&p->unit, p->ge, pdata->enetaddr, true);
+		if (!ret && !p->linkup)
+			ret = us48_ge_wait_link(p);
+	} else {
+		ret = bcm_hr2_l2_cpu(&p->unit, pdata->enetaddr, true);
+	}
 	if (ret)
 		return ret;
 	p->dma.tx_len = 0;
@@ -98,7 +132,10 @@ static void us48_eth_stop(struct udevice *dev)
 	bcm_hr2_dma_abort(&p->unit, 1);
 	bcm_hr2_dma_abort(&p->unit, 0);
 	p->dma.tx_len = 0;
-	bcm_hr2_l2_cpu(&p->unit, pdata->enetaddr, false);
+	if (p->ge)
+		bcm_hr2_ge_l2_cpu(&p->unit, p->ge, pdata->enetaddr, false);
+	else
+		bcm_hr2_l2_cpu(&p->unit, pdata->enetaddr, false);
 }
 
 static int us48_eth_of_to_plat(struct udevice *dev)
@@ -130,6 +167,33 @@ static int us48_eth_probe(struct udevice *dev)
 	d->tx_buf_bus = DMA_REGION + TX_BUF_OFF;
 	d->rx_buf = (u8 *)(DMA_REGION + RX_BUF_OFF);
 	d->rx_buf_bus = DMA_REGION + RX_BUF_OFF;
+	d->tx_port = BCM_HR2_XE1_PORT;
+	d->vid = BCM_HR2_PRIVATE_VID;
+	return 0;
+}
+
+/* Own 1 MiB DMA region (uncached) so xe1 and ge1 never share DCBs. */
+#define GE_DMA_REGION	0x03100000
+
+static int us48_ge_probe(struct udevice *dev)
+{
+	struct us48_eth_priv *p = dev_get_priv(dev);
+	struct eth_pdata *pdata = dev_get_plat(dev);
+	struct bcm_hr2_dma *d = &p->dma;
+
+	mmu_set_region_dcache_behaviour(GE_DMA_REGION, SZ_1M, DCACHE_OFF);
+	p->unit.base = (void __iomem *)(uintptr_t)pdata->iobase;
+	p->ge = &ge1;
+	d->rx_dcb = (__le32 *)(GE_DMA_REGION + RX_DCB_OFF);
+	d->rx_dcb_bus = GE_DMA_REGION + RX_DCB_OFF;
+	d->tx_dcb = (__le32 *)(GE_DMA_REGION + TX_DCB_OFF);
+	d->tx_dcb_bus = GE_DMA_REGION + TX_DCB_OFF;
+	d->tx_buf = (u8 *)(GE_DMA_REGION + TX_BUF_OFF);
+	d->tx_buf_bus = GE_DMA_REGION + TX_BUF_OFF;
+	d->rx_buf = (u8 *)(GE_DMA_REGION + RX_BUF_OFF);
+	d->rx_buf_bus = GE_DMA_REGION + RX_BUF_OFF;
+	d->tx_port = ge1.lport;
+	d->vid = ge1.vid;
 	return 0;
 }
 
@@ -152,6 +216,23 @@ U_BOOT_DRIVER(us48_cmic_eth) = {
 	.of_match	= us48_eth_ids,
 	.of_to_plat	= us48_eth_of_to_plat,
 	.probe		= us48_eth_probe,
+	.ops		= &us48_eth_ops,
+	.priv_auto	= sizeof(struct us48_eth_priv),
+	.plat_auto	= sizeof(struct eth_pdata),
+	.flags		= DM_FLAG_ALLOC_PRIV_DMA,
+};
+
+static const struct udevice_id us48_ge_ids[] = {
+	{ .compatible = "ubnt,us48-cmic-ge" },
+	{ }
+};
+
+U_BOOT_DRIVER(us48_cmic_ge) = {
+	.name		= "us48_cmic_ge",
+	.id		= UCLASS_ETH,
+	.of_match	= us48_ge_ids,
+	.of_to_plat	= us48_eth_of_to_plat,
+	.probe		= us48_ge_probe,
 	.ops		= &us48_eth_ops,
 	.priv_auto	= sizeof(struct us48_eth_priv),
 	.plat_auto	= sizeof(struct eth_pdata),

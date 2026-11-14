@@ -3,17 +3,34 @@ Subject: cmd: sf accepts probe and read only (us48 never writes flash)
 Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
 
 diff --git a/cmd/sf.c b/cmd/sf.c
-index b5b7f671fb9..a704e83fa59 100644
+index b5b7f671fb9..82e77f92690 100644
 --- a/cmd/sf.c
 +++ b/cmd/sf.c
-@@ -601,6 +601,34 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
+@@ -601,6 +601,51 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
  	if (strcmp(cmd, "probe") == 0)
  		return do_spi_flash_probe(argc, argv);
  
-+	/* us48: read-only build, a write could hit u-boot, bootsel, kernel1 or EEPROM */
++	/*
++	 * us48: read-only build except erase/write inside kernel0's uboot slot (flash 0xe0000..0x1e0000):
++	 * a write elsewhere could hit u-boot, bootsel, kernel1 or EEPROM.
++	 */
 +	if (strcmp(cmd, "read") && strcmp(cmd, "scur")) {
-+		printf("sf %s: disabled in this build (read-only)\n", cmd);
-+		return CMD_RET_FAILURE;
++		ulong off = 0, len = 0;
++		bool ok = false;
++
++		if (!strcmp(cmd, "erase") && argc == 3) {
++			off = hextoul(argv[1], NULL);
++			len = hextoul(argv[2], NULL);
++			ok = true;
++		} else if (!strcmp(cmd, "write") && argc == 4) {
++			off = hextoul(argv[2], NULL);
++			len = hextoul(argv[3], NULL);
++			ok = true;
++		}
++		if (!ok || off < 0xe0000 || len > 0x100000 || off + len > 0x1e0000) {
++			printf("sf %s: disabled in this build (read-only), erase/write only inside 0xe0000..0x1e0000\n", cmd);
++			return CMD_RET_FAILURE;
++		}
 +	}
 +
 +	/* us48: print the Macronix security register; bit 2 = flash is in 4-byte address mode (should be 0) */

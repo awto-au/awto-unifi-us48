@@ -22,6 +22,7 @@
 #include <linux/workqueue.h>
 
 #include "us48_cmic.h"
+#include "bcm_cmic.h"
 
 const struct port_cfg us48_unit1_cfgs[] = {
 	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 },
@@ -331,29 +332,6 @@ static int gphy_rd(struct us48_cmic *u, u8 phy, u8 reg, u16 *val)
 	return ret;
 }
 
-static int gphy_wr(struct us48_cmic *u, u8 phy, u8 reg, u16 val)
-{
-	u32 st;
-	int ret;
-
-	wr(u, MIIM_CTRL, 0);
-	wr(u, MIIM_PARAM, BIT(25) | phy << 16 | val);
-	wr(u, MIIM_ADDRESS, reg);
-	wr(u, MIIM_CTRL, BIT(0));
-	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
-	wr(u, MIIM_CTRL, 0);
-	return ret;
-}
-
-#define GP_CC(l)	(0x10200 | (l))		/* GPORT UMAC COMMAND_CONFIG */
-#define GP_CC_BASE	0x01800058		/* reset released, RX/TX off, 1G code (stock's final init value) */
-#define GP_CC_SWRST	BIT(13)
-
-static void gp_wr(struct us48_cmic *u, u8 blk, u32 addr, u32 val)
-{
-	sbus(u, 0x0d, blk, addr, &val, 1);
-}
-
 static struct us48_cmic *dbg_u;
 static const struct port_cfg *dbg_cfg;
 
@@ -392,70 +370,59 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops mib_ops = { .set = mib_set };
 module_param_cb(mib, &mib_ops, NULL, 0200);
 
-/* Stock's per-lane copper MAC init (docs/driver-internals.md 12, #31 comment): once at probe, MAC left RX/TX off. */
+static struct bcm_hr2_ge ge_of(const struct us48_port *p)
+{
+	return (struct bcm_hr2_ge){ .blk = p->cfg->blk, .lane = p->cfg->lane, .phy = p->cfg->phy, .lport = p->cfg->lport,
+				    .modid = p->u->modid, .vid = p->vid };
+}
+
+/* Shared core (common/bcm-cmic): stock's per-lane copper MAC init (docs/driver-internals.md 12), GPHY AN, private VLAN, PORT_TAB, link bitmap. */
 static void copper_enable(struct us48_port *p)
 {
 	struct us48_cmic *u = p->u;
-	u8 b = p->cfg->blk, l = p->cfg->lane;
+	struct bcm_cmic_unit cu = { .base = u->cmic };
+	struct bcm_hr2_ge ge = ge_of(p);
+	int ret;
 
-	gp_wr(u, b, 0x02020000, 2);			/* GPORT_CONFIG: CLR_CNT, then run with GPORT_EN */
-	gp_wr(u, b, 0x02020000, 3);
-	gp_wr(u, b, 0x02020000, 1);
-	gp_wr(u, b, 0x10500 | l, 0x5ee);		/* FRM_LENGTH */
-	gp_wr(u, b, GP_CC(l), 0x01802058);
-	gp_wr(u, b, 0x1cc00 | l, 0x2c000);		/* PAUSE_CONTROL */
-	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
-	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
-	gp_wr(u, b, 0x02020800, 0x5ee);			/* GPORT_CNTMAXSIZE */
-	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
-	/* Stock leaves the GPHY powered down (BMCR 0x1940, bit 11): AN enable + restart + FD + 1000, no power-down. */
 	mutex_lock(&u->mdio);
-	gphy_wr(u, p->cfg->phy, 0, 0x1340);
+	ret = bcm_hr2_ge_bringup(&cu, &ge);
 	mutex_unlock(&u->mdio);
 	if (p->cfg->front == 1) {
 		dbg_u = u;
 		dbg_cfg = p->cfg;
 	}
-	dev_info(u->dev, "%s: copper MAC initialised (block %d lane %d)\n", p->cfg->name, b, l);
+	dev_info(u->dev, "%s: copper bring-up %s (block %d lane %d)\n", p->cfg->name, ret ? "FAILED" : "done",
+		 p->cfg->blk, p->cfg->lane);
 }
 
 /* Link up at 100M/1G full duplex: stock's CC sequence (reset pulse, speed, RX|TX on). Speed from the PHY. */
 static void copper_mac_set(struct us48_port *p, int speed)
 {
-	struct us48_cmic *u = p->u;
-	u32 sp = speed == 1000 ? 8 : speed == 100 ? 4 : 0;	/* CC ETH_SPEED [3:2] shifted: 2 -> 1G, 1 -> 100M */
-	u32 cc = ((GP_CC_BASE | BIT(28)) & ~0xfu) | sp;
-	u8 b = p->cfg->blk, l = p->cfg->lane;
+	struct bcm_cmic_unit cu = { .base = p->u->cmic };
+	struct bcm_hr2_ge ge = ge_of(p);
 
-	gp_wr(u, b, GP_CC(l), cc | GP_CC_SWRST);
-	gp_wr(u, b, GP_CC(l), cc);
-	gp_wr(u, b, GP_CC(l), cc | 3);			/* TX_ENA | RX_ENA */
+	bcm_hr2_ge_mac_up(&cu, &ge, speed);
 }
 
 /* BMSR link (latched low: read twice) and negotiated speed from the 1000BASE-T / LPA registers. */
 static bool copper_link(struct us48_port *p, int *speed)
 {
 	struct us48_cmic *u = p->u;
-	u16 bmsr = 0, lpa = 0, st1000 = 0;
+	struct bcm_cmic_unit cu = { .base = u->cmic };
+	struct bcm_hr2_ge ge = ge_of(p);
+	bool up;
 
 	mutex_lock(&u->mdio);
-	gphy_rd(u, p->cfg->phy, 1, &bmsr);
-	gphy_rd(u, p->cfg->phy, 1, &bmsr);
-	gphy_rd(u, p->cfg->phy, 5, &lpa);
-	gphy_rd(u, p->cfg->phy, 10, &st1000);
-	mutex_unlock(&u->mdio);
+	up = bcm_hr2_ge_link(&cu, &ge, speed);
 	if (phy_dbg) {
 		u16 bmcr = 0, aux = 0;
 
-		mutex_lock(&u->mdio);
 		gphy_rd(u, p->cfg->phy, 0, &bmcr);
 		gphy_rd(u, p->cfg->phy, 0x19, &aux);
-		mutex_unlock(&u->mdio);
-		netdev_info(p->ndev, "phy %d: BMCR %04x BMSR %04x LPA %04x STAT1000 %04x AUX19 %04x\n", p->cfg->phy, bmcr,
-			    bmsr, lpa, st1000, aux);
+		netdev_info(p->ndev, "phy %d: BMCR %04x AUX19 %04x speed %d\n", p->cfg->phy, bmcr, aux, *speed);
 	}
-	*speed = (st1000 & BIT(11)) ? 1000 : (lpa & (BIT(8) | BIT(7))) ? 100 : 10;
-	return bmsr & BIT(2);
+	mutex_unlock(&u->mdio);
+	return up;
 }
 
 /* PCS live status (RX_X4_PCS_LIVE_STATUS 0xc154): bit0 sync, bit1 link. */
@@ -474,8 +441,12 @@ static void link_work_fn(struct work_struct *w)
 			up = copper_link(p, &speed);
 			if (up && !netif_carrier_ok(p->ndev))
 				copper_mac_set(p, speed);
-			else if (!up && netif_carrier_ok(p->ndev))
-				gp_wr(u, p->cfg->blk, GP_CC(p->cfg->lane), GP_CC_BASE);
+			else if (!up && netif_carrier_ok(p->ndev)) {
+				struct bcm_cmic_unit cu = { .base = u->cmic };
+				struct bcm_hr2_ge ge = ge_of(p);
+
+				bcm_hr2_ge_mac_down(&cu, &ge);
+			}
 		} else {
 			mutex_lock(&u->mdio);
 			up = !tsc_wr(u, 0xffde, p->cfg->lane) && !tsc_rd(u, 0xc154, &v) && (v & BIT(1));
@@ -611,6 +582,13 @@ static int l2_op_cpu(struct us48_port *p, u32 op)
 {
 	u32 e[4] = { };
 	int i, ones = 0;
+
+	if (p->cfg->copper) {
+		struct bcm_cmic_unit cu = { .base = p->u->cmic };
+		struct bcm_hr2_ge ge = ge_of(p);
+
+		return bcm_hr2_ge_l2_cpu(&cu, &ge, p->ndev->dev_addr, op == 0x24);
+	}
 
 	set_field(e, 2, 12, p->vid);			/* VLAN_ID */
 	set_field(e, 14, 48, ether_addr_to_u64(p->ndev->dev_addr));	/* MAC_ADDR */
@@ -1022,6 +1000,8 @@ int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
+		if (p->cfg->copper)		/* the core did VLAN + PORT_TAB */
+			continue;
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);
 	}

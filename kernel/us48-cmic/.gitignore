@@ -5,3 +5,5 @@
 .*.cmd
 Module.symvers
 modules.order
+bcm_cmic*.c
+bcm_cmic.h
