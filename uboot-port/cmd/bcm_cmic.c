@@ -30,6 +30,13 @@ static int do_cmic(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 {
 	ulong off, n = 1, i;
 
+	if (argc == 4 && !strcmp(argv[1], "w")) {	/* cmic w <off> <val>: one CMIC write (bring-up experiments, chip only) */
+		if (!num(argv[2], &off) || !num(argv[3], &n) || (off & 3) || off + 4 > CMIC_WINDOW)
+			return CMD_RET_USAGE;
+		writel(n, unit0.base + off);
+		return CMD_RET_SUCCESS;
+	}
+
 	if (argc < 3 || argc > 4 || strcmp(argv[1], "r") || !num(argv[2], &off) || (argc == 4 && !num(argv[3], &n)))
 		return CMD_RET_USAGE;
 	if ((off & 3) || n < 1 || n > CMIC_MAX_WORDS || off + 4 * n > CMIC_WINDOW) {
@@ -42,7 +49,7 @@ static int do_cmic(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 }
 
 U_BOOT_CMD(cmic, 4, 0, do_cmic, "CMIC register read (read-only)",
-	   "r <off> [words]  - unit 0 CMIC register(s), offset from base");
+	   "r <off> [words]  - unit 0 CMIC register(s), offset from base\nw <off> <val>    - one CMIC register write (chip only)");
 
 static int sbus_read(bool mem, int argc, char *const argv[])
 {

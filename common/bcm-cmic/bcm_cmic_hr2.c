@@ -280,7 +280,9 @@ void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch)
 
 void bcm_hr2_dma_init(struct bcm_cmic_unit *u)
 {
-	wr(u, CMIC_RXBUF_EP_RLS_CRED, 1);		/* release all credits to the EPIPE: without it no frame reaches the CPU on a cold chip */
+	/* Release all credits to the EPIPE; edge-acting, so pulse it (#46: a held 1 does nothing after the EP pipe reset). */
+	wr(u, CMIC_RXBUF_EP_RLS_CRED, 0);
+	wr(u, CMIC_RXBUF_EP_RLS_CRED, 1);
 	/* Stock's DCBs live in RAM that may be reused: stop both channels before anything else. */
 	bcm_hr2_dma_abort(u, RX_CH);
 	bcm_hr2_dma_abort(u, TX_CH);

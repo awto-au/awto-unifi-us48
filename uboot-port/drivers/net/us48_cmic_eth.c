@@ -75,6 +75,7 @@ static int us48_eth_start(struct udevice *dev)
 		if (ops) {
 			bcm_cmic_reg_read(&p->unit, 2, 0x12207, v, 1, NULL);
 			printf("us48-ge: cold init %d ops, %d failed; UMAC_REV_ID %08x\n", ops, errs, v[0]);
+			bcm_hr2_dma_init(&p->unit);	/* credits released before the EP pipe reset are lost */
 		}
 	}
 	if (!p->up) {

@@ -32,7 +32,15 @@ HOST = ms.HOST
 
 
 def probe(s, tag: str, budget: float = u2_bisect.PING_S) -> bool:
-    return u2_bisect.probe(s, tag, budget)
+    """Ping alive only: RXPKT is cumulative on a warm chip, so a nonzero count proves nothing."""
+    out = u2_cold.run(s, f"ping {HOST}", budget)
+    alive = "is alive" in out
+    if not any(p in s.buf for p in dev.U2_PROMPTS):
+        s.write(b"\x03\r\n")
+        s.expect(dev.U2_PROMPTS, 5.0, "prompt after Ctrl-C")
+    rx = u2_cold.run(s, "cmic r 0x31488 1").split("=")[-1].split()[0]
+    log(f"[{tag}] ping alive={alive} RXPKT={rx}", "ALERT")
+    return alive
 
 
 def warm(s) -> int:
