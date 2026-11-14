@@ -448,6 +448,20 @@ static void ge_port_tab(struct bcm_cmic_unit *u, int lport, u32 vid, bool cml_of
 	bcm_cmic_mem_write(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
 }
 
+/*
+ * Stock meters the CPU port (MMU blk 12, MAXBUCKETCONFIG addr 0x19c00 + cos << 8, port 0): cos0 0x0004808d,
+ * cos1-3 0x0001802f. That caps frames to the CPU at ~130/s (TFTP 185 KiB/s, #34). 0 = no limit, as stock writes for
+ * every front port.
+ */
+static void cpu_meter_off(struct bcm_cmic_unit *u)
+{
+	u32 z[2] = { 0, 0 };
+	int cos;
+
+	for (cos = 0; cos < 4; cos++)
+		bcm_cmic_reg_write(u, 12, 0x19c00 + (cos << 8), z, 2);
+}
+
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 {
 	u8 b = ge->blk, l = ge->lane;
@@ -467,6 +481,7 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	/* Stock leaves the GPHY powered down (BMCR 0x1940): AN enable + restart + FD + 1000, no power-down. */
 	if (bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340))
 		return -EIO;
+	cpu_meter_off(u);
 	ge_vlan_init(u, ge);
 	ge_port_tab(u, ge->lport, ge->vid, true);
 	if (!bcm_cmic_reg_read(u, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2, NULL)) {

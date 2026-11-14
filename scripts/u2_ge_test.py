@@ -34,7 +34,11 @@ def main() -> int:
             s.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
             for attempt in (1, 2):  # the first ping after boot can die in the sw1 STP forwarding delay
                 s.send_line(f"ping {host}")
-                hit = s.expect([b"is alive", b"not alive", b"ping failed"], PING_S, "ping")
+                try:
+                    hit = s.expect([b"is alive", b"not alive", b"ping failed"], PING_S, "ping")
+                except console.Timeout:
+                    hit = b"no answer"
+                    s.write(b"\x03\r\n")
                 log(f"ping {host} try {attempt}: {hit.decode(errors='replace')}", "ALERT")
                 s.send_line("")
                 s.expect(dev.U2_PROMPTS, 15.0, "prompt after ping")
