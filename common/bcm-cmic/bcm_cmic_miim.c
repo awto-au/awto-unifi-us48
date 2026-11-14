@@ -9,8 +9,9 @@
 
 #define MIIM_RD_START	BIT(1)
 #define MIIM_OPN_DONE	BIT(0)
-/* C22 frame = 64 bits at ~2.5 MHz MDC = 26 us (miim.py); x1.25 = 32 us. Expiry = log + -ETIMEDOUT. */
-#define MIIM_WAIT_US	32
+/* C22 frame = 64 bits at ~2.5 MHz MDC = 26 us (miim.py); the Linux driver needed 65 us in practice (32 us timed out
+ * on ge1 under Linux, 2026-11-14), so use its bound. Expiry = log + -ETIMEDOUT. */
+#define MIIM_WAIT_US	65
 
 int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *val)
 {

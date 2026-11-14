@@ -515,10 +515,10 @@ bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *
 {
 	u16 bmsr = 0, lpa = 0, st1000 = 0;
 
-	bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr);
-	bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr);
-	bcm_cmic_miim_read(u, true, 0, ge->phy, 5, &lpa);
-	bcm_cmic_miim_read(u, true, 0, ge->phy, 10, &st1000);
+	/* Any failed read = link unknown = down: decoding a stale 0 would report "up 10M" (#46 flap). */
+	if (bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr) || bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr) ||
+	    bcm_cmic_miim_read(u, true, 0, ge->phy, 5, &lpa) || bcm_cmic_miim_read(u, true, 0, ge->phy, 10, &st1000))
+		return false;
 	*speed = (st1000 & BIT(11)) ? 1000 : (lpa & (BIT(8) | BIT(7))) ? 100 : 10;
 	return bmsr & BIT(2);
 }
