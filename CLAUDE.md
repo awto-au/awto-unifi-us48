@@ -2,7 +2,7 @@
 
 OpenWrt port + RE for the UniFi US-48-500W. **Public repo** — no secret values (filesystem paths + device IDs are fine), no backups/firmware images. SDK source + derived register tables ARE fine to commit (Dan 2026-10-14).
 
-- Entry point `scripts/dev.py` (`describe` lists every command; `doctor`, `console`, `send`, `boot-ram`, `flash-net`, `boot-flash`). Console = one visible tio window; scripts use its socket, never the tty. Adapter is on `lizard`: `US48_HOST=lizard`.
+- Entry point `scripts/dev.py` (`describe` lists every command; `doctor`, `console`, `send`, `boot-ram`, `flash-net`, `boot-flash`). Console = one visible tio window; scripts use its socket, never the tty. Adapter is local on Selwyn since 2026-11-14 (leave `US48_HOST` unset; set `US48_HOST=lizard` only if it moves back).
 - Build: `python3 scripts/build_openwrt.py` (OpenWrt tree in `tmp/openwrt-build`, overlay = `openwrt/*.patch` + `openwrt/files/`). Edit the tree, then `--save-patch` to write the diff back.
 - Source trees from machine-shared stores, never fresh clones (#45): `tmp/linux-mainline` = worktree of the Linux store (`tmp/linux-store`); OpenWrt downloads + ccache shared (`tmp/openwrt-dl`, `tmp/ccache-openwrt`). All gitignored symlinks into `/mnt/1tnvme/git-mirrors`; never `git gc` in a store.
 - Facts in `docs/`; findings + open questions in GitHub issues.
