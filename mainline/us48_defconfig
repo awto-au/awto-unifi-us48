@@ -13,7 +13,6 @@ CONFIG_DMA_CMA=y
 CONFIG_HZ_100=y
 CONFIG_KUSER_HELPERS=y
 # No Spectre mitigations: no untrusted code on this box; BPIALL on every kernel entry costs CPU
-# CONFIG_CPU_MITIGATIONS is not set
 # CONFIG_HARDEN_BRANCH_PREDICTOR is not set
 # CONFIG_HARDEN_BRANCH_HISTORY is not set
 CONFIG_CACHE_L2X0=y

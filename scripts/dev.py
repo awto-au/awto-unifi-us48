@@ -338,9 +338,15 @@ def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
                 s.buf = b""
                 return st
             continue
-        # Ctrl-C first (harmless everywhere); a quiet Linux console that has not been activated ignores it,
-        # so then Enter. Enter is only sent second: a fresh boot has no U-Boot command to repeat.
-        for probe in (b"\x03", b"\r"):
+        # uboot-1 is mid-boot (banner seen, no countdown/prompt yet): no key at all. Its "Press Ctrl-C to run Shmoo"
+        # window sits between the banner and the countdown; a Ctrl-C there starts the DDR tune.
+        tail = acc[-2500:]
+        i = tail.rfind(b"U-Boot usw")
+        if i >= 0 and b"Hit any key" not in tail[i:] and not tail.rstrip().endswith((b"u-boot>", b"uboot>")):
+            continue
+        # Probe with a space (harmless at a prompt, a login and a shell; aborts a countdown); never Ctrl-C.
+        # A quiet Linux console that has not been activated ignores it, so then Enter.
+        for probe in (b" ", b"\r"):
             s.write(probe)
             acc = (acc + s.read_idle(0.7, 3.0))[-4000:]
             st = _classify_tail(acc)

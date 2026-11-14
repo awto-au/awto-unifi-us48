@@ -301,9 +301,17 @@ def main() -> int:
         log("prepared")
         return 0
     build_us48_cmic(a.jobs)
+    # modules_prepare has just written the final kernel.release: kmodloader (insmod) needs lib/modules/<that release>
+    rel = (BUILD / "include/config/kernel.release").read_text().strip()
+    shutil.rmtree(OUTDIR / "rootfs/lib/modules", ignore_errors=True)
+    (OUTDIR / "rootfs/lib/modules" / rel).mkdir(parents=True)
     t0 = time.monotonic()
     kmake("zImage", DTB, jobs=a.jobs)
     log(f"make done in {time.monotonic() - t0:.0f} s")
+    rel = (BUILD / "include/config/kernel.release").read_text().strip()
+    if not (OUTDIR / "rootfs/lib/modules" / rel).is_dir():  # kmodloader (insmod) needs /lib/modules/<running release>
+        log(f"abort: staged module dir lib/modules/{rel} missing: release changed after staging")
+        sys.exit(4)
     pack()
     return 0
 
