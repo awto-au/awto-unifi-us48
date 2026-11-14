@@ -162,6 +162,62 @@ U_BOOT_CMD(hr2mem, 5, 0, do_hr2mem, "chip memory image dump / diff / sync (chip 
 	   "hr2mem diff <addr> [first [last]] - per-table count of live entries that differ from the image\n"
 	   "hr2mem sync <addr> [first [last]] - diff, writing the image values into the differing entries");
 
+/* hr2init <mask> [first last]: replay the generated stock write list on the live chip (no init guard; warm-chip bisect, #46) */
+static int do_hr2init(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	ulong m, first = 0, last = ~0UL;
+	int ops, errs;
+	unsigned long t0 = get_timer(0);
+
+	if (argc == 2 && !strcmp(argv[1], "count")) {
+		printf("hr2init: %lu entries\n", (ulong)bcm_hr2_u0_replay_entries());
+		return CMD_RET_SUCCESS;
+	}
+	if (argc < 2 || argc == 3 || argc > 4 || !num(argv[1], &m) || (argc == 4 && (!num(argv[2], &first) || !num(argv[3], &last))))
+		return CMD_RET_USAGE;
+	bcm_hr2_u0_replay(&unit0, m, first, last, &ops, &errs);
+	printf("hr2init mask 0x%lx entries %lu..%lu: %d ops, %d failed, %lu ms\n", m, first, last, ops, errs, get_timer(t0));
+	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(hr2init, 4, 0, do_hr2init, "replay stock init write list on the live chip (chip only)",
+	   "count | <mask> [first last]  - mask = category bits (1 TOP 2 global 4 port 8 tables 16 other ports 64 ecc); first/last = entry ordinals");
+
+/* hr2reg dump|diff|sync <addr> [first [last]]: register image (instances = regtab rows x elements x ports 0,2) */
+static int do_hr2reg(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	ulong addr, first = 0, last = bcm_hr2_reg_ninst() - 1;
+	int errs, total, ret;
+	unsigned long t0 = get_timer(0);
+	u32 *img;
+
+	if (argc < 3 || argc > 5 || !num(argv[2], &addr) || (argc > 3 && !num(argv[3], &first)) ||
+	    (argc > 4 && !num(argv[4], &last)) || last >= bcm_hr2_reg_ninst() || first > last)
+		return CMD_RET_USAGE;
+	img = (u32 *)addr;
+	if (!strcmp(argv[1], "dump")) {
+		u32 n = bcm_hr2_reg_dump(&unit0, img, &errs);
+
+		printf("hr2reg dump: %u bytes at 0x%lx crc32 0x%08x, %d read errors, %lu ms\n", n, addr, crc32(0, (u8 *)img, n), errs,
+		       get_timer(t0));
+		return CMD_RET_SUCCESS;
+	}
+	if (strcmp(argv[1], "diff") && strcmp(argv[1], "sync"))
+		return CMD_RET_USAGE;
+	ret = bcm_hr2_reg_cmp(&unit0, img, first, last, argv[1][0] == 's', &total, &errs);
+	if (ret) {
+		printf("hr2reg: bad image (%d)\n", ret);
+		return CMD_RET_FAILURE;
+	}
+	printf("hr2reg %s instances %lu..%lu: %d differ, %d errors, %lu ms\n", argv[1], first, last, total, errs, get_timer(t0));
+	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(hr2reg, 5, 0, do_hr2reg, "chip register image dump / diff / sync (chip only)",
+	   "dump <addr>              - read all registers into a RAM image\n"
+	   "hr2reg diff <addr> [first [last]] - print live registers that differ from the image\n"
+	   "hr2reg sync <addr> [first [last]] - diff, writing the image values into the differing registers");
+
 static int do_miim(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	bool internal = true, scan;

@@ -49,6 +49,48 @@ int bcm_hr2_u0_extra(struct bcm_cmic_unit *u, unsigned int xmask, int *ops, int 
 	return 0;
 }
 
+size_t bcm_hr2_u0_replay_entries(void)
+{
+	size_t i = 0, n = 0;
+
+	while (i < ARRAY_SIZE(hr2_init)) {
+		i += (hr2_init[i] >> 24) == 0xff ? 1 : 2 + (hr2_init[i] & 0xff);
+		n++;
+	}
+	return n;
+}
+
+/* Replay entries [first, last] (ordinal over all entries incl. delays) of the categories in mask; no init guard, no CMIC setup. */
+int bcm_hr2_u0_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int first, unsigned int last, int *ops, int *errs)
+{
+	size_t i = 0, ord = 0;
+	int n = 0, bad = 0, k;
+
+	while (i < ARRAY_SIZE(hr2_init) && ord <= last) {
+		u32 h = hr2_init[i];
+		u32 cat = h >> 24, words = h & 0xff, data[BCM_CMIC_SCHAN_MSG_WORDS];
+		size_t cur = ord++;
+
+		if (cat == 0xff) {
+			if (cur >= first)
+				mdelay(h & 0xffff);
+			i++;
+			continue;
+		}
+		if (cur >= first && (cat & mask)) {
+			for (k = 0; k < words && k < BCM_CMIC_SCHAN_MSG_WORDS - 2; k++)
+				data[k] = hr2_init[i + 2 + k];
+			if (bcm_cmic_schan_op(u, (h >> 16) & 0xff, (h >> 8) & 0xff, hr2_init[i + 1], data, words, NULL))
+				bad++;
+			n++;
+		}
+		i += 2 + words;
+	}
+	*ops = n;
+	*errs = bad;
+	return 0;
+}
+
 int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs)
 {
 	static const u32 ring[4] = { 0x11122200, 0x00430000, 0x00005004, 0 };	/* driver-internals 1: rings per SBUS block */
