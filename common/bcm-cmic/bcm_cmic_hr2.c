@@ -312,6 +312,8 @@ void bcm_hr2_rx_done(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 {
 	/* Hand the slot back: clear its status; the engine reaches it again after RX_RING-1 other frames. */
 	d->rx_dcb[16 * d->rx_next + 15] = 0;
+	if (d->rx_next == RX_RING - 1)		/* the RELOAD DCB also gets DONE; a stale DONE halts the engine (#46) */
+		d->rx_dcb[16 * RX_RING + 15] = 0;
 	wmb();
 	d->rx_next = (d->rx_next + 1) % RX_RING;
 }

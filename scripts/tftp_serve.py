@@ -2,7 +2,7 @@
 """tftp_serve — read-only TFTP server for U-Boot `tftpboot`, no root (high port), serves tmp/tftp.
 
 Usage: scripts/tftp_serve.py [--port 6969] [--dir tmp/tftp]   (U-Boot: setenv tftpdstp 6969)
-- RFC 1350 RRQ + blksize/tsize options; every transfer on its own socket. Log: tmp/logs/tftp_serve.log
+- RFC 1350 RRQ + blksize/tsize/windowsize (RFC 7440) options; every transfer on its own socket. Log: tmp/logs/tftp_serve.log
 - Retransmit after 1 s (LAN RTT is ~1 ms), give up after 8 tries.
 """
 import argparse
@@ -12,45 +12,74 @@ import socket
 import struct
 import sys
 import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RETRY_S, TRIES = 1.0, 8
+MAX_WINDOW = 16  # RFC 7440; must not exceed the board RX ring
 
 
 def transfer(addr, path: Path, opts: dict, log) -> None:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(RETRY_S)
     blk = min(int(opts.get("blksize", 512)), 1468)
+    win = max(1, min(int(opts.get("windowsize", 1)), MAX_WINDOW))
     data = path.read_bytes()
     oack = b""
     if "blksize" in opts:
         oack += b"blksize\0" + str(blk).encode() + b"\0"
     if "tsize" in opts:
         oack += b"tsize\0" + str(len(data)).encode() + b"\0"
+    if "windowsize" in opts:
+        oack += b"windowsize\0" + str(win).encode() + b"\0"
+    retx = 0
+    t_start = time.monotonic()
+    waited = 0.0
 
-    def send_wait(pkt: bytes, want_block: int) -> bool:
+    def ack_for(want: set) -> int | None:
+        """Wait for an ACK whose block is in `want`; None on timeout."""
+        try:
+            while True:
+                r, a = s.recvfrom(64)
+                if a == addr and r[:2] == b"\x00\x04":
+                    k = struct.unpack("!H", r[2:4])[0]
+                    if k in want:
+                        return k
+        except socket.timeout:
+            return None
+
+    if oack:
         for _ in range(TRIES):
-            s.sendto(pkt, addr)
-            try:
-                while True:
-                    r, a = s.recvfrom(64)
-                    if a == addr and struct.unpack("!HH", r[:4]) == (4, want_block):
-                        return True
-            except socket.timeout:
-                continue
-        return False
-
-    if oack and not send_wait(struct.pack("!H", 6) + oack, 0):
-        log.warning("%s: no ACK for OACK", addr)
-        return
-    n = 0
-    for off in range(0, len(data) + 1, blk):
-        n += 1
-        if not send_wait(struct.pack("!HH", 3, n & 0xFFFF) + data[off:off + blk], n & 0xFFFF):
-            log.warning("%s: block %d lost after %d tries", addr, n, TRIES)
+            s.sendto(struct.pack("!H", 6) + oack, addr)
+            if ack_for({0}) is not None:
+                break
+        else:
+            log.warning("%s: no ACK for OACK", addr)
             return
-    log.info("%s: sent %s (%d B, %d blocks)", addr, path.name, len(data), n)
+    nblocks = len(data) // blk + 1
+    acked = 0
+    tries = 0
+    while acked < nblocks:
+        last = min(acked + win, nblocks)
+        for n in range(acked + 1, last + 1):
+            off = (n - 1) * blk
+            s.sendto(struct.pack("!HH", 3, n & 0xFFFF) + data[off:off + blk], addr)
+        t_w = time.monotonic()
+        k = ack_for({n & 0xFFFF for n in range(acked + 1, last + 1)})
+        waited += time.monotonic() - t_w
+        if k is None:
+            retx += 1
+            tries += 1
+            if tries >= TRIES:
+                log.warning("%s: block %d lost after %d tries", addr, acked + 1, TRIES)
+                return
+            continue
+        tries = 0
+        acked += ((k - acked - 1) & 0xFFFF) + 1
+    dt = time.monotonic() - t_start
+    log.info("%s: sent %s (%d B, %d blocks, window %d, %d window resends) in %.2f s = %.0f KiB/s, %.2f s waiting for ACKs",
+             addr, path.name, len(data), nblocks, win, retx, dt, len(data) / dt / 1024, waited)
 
 
 def main() -> int:

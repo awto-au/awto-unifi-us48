@@ -15,7 +15,7 @@ import console  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 LOGF = REPO / "tmp/logs/u2_sfbench.log"
-PROMPT = b"uboot-2> "
+PROMPT = b"awto-uboot> "
 # 14 MiB at the measured ~1.8 MB/s = 8 s; 20 s = 2.5x covers the slot read, expiry = hung read, power-cycle.
 BUDGET_S = 30.0
 

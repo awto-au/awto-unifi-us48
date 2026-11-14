@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """u2_ge_test — one pass at the uboot-2 prompt: ping the host, TFTP an image, crc32 vs host, rate.
 
-Usage: scripts/u2_ge_test.py [--image FILE]   (default tmp/tftp/us48-initramfs.bin; board at uboot-2>)
+Usage: scripts/u2_ge_test.py [--image FILE]   (default tmp/tftp/us48-initramfs.bin; board at the awto-uboot> prompt)
 - Active port = uboot-2 `ethact` (ge1 default); set it by hand first to test xe1.
 - Single transfer, no repeats (Dan: no soaks). Log: tmp/logs/u2_ge_test.log
 """
@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 from dev import console, log  # noqa: E402
 
-PING_S = 12.0  # ARP + ICMP; GPHY AN up to 4 s in start(), sw1 STP may add more; expiry = no answer, logged
+PING_S = 15.0  # ARP + ICMP; GPHY AN up to 4 s in start(), sw1 STP may add more; expiry = no answer, logged
 
 
 def main() -> int:
@@ -28,17 +28,24 @@ def main() -> int:
     s = console.Session()
     try:
         s.write(b"\x03\r\n")
-        s.expect([dev.U2_PROMPT], dev.BAUD_REPLY_S, "uboot-2 prompt")
+        s.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "uboot-2 prompt")
         with dev._tftp_server() as (host, port):
-            s.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip {host}; ping {host}")
-            hit = s.expect([b"is alive", b"ping failed", b"host " + host.encode() + b" is not alive"], PING_S, "ping")
-            log(f"ping {host}: {hit.decode(errors='replace')}", "ALERT")
-        s.expect([dev.U2_PROMPT], dev.BAUD_REPLY_S, "prompt after ping")
+            s.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip {host}")
+            s.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
+            for attempt in (1, 2):  # the first ping after boot can die in the sw1 STP forwarding delay
+                s.send_line(f"ping {host}")
+                hit = s.expect([b"is alive", b"not alive", b"ping failed"], PING_S, "ping")
+                log(f"ping {host} try {attempt}: {hit.decode(errors='replace')}", "ALERT")
+                s.send_line("")
+                s.expect(dev.U2_PROMPTS, 15.0, "prompt after ping")
+                if hit == b"is alive":
+                    break
         t0 = time.monotonic()
         if not dev._u2_tftp(s, name):
             return 1
         dt = time.monotonic() - t0
-        s.expect([dev.U2_PROMPT], 10.0, "prompt after tftp")
+        s.send_line("")  # the prompt may already have been consumed by the tftp reader
+        s.expect(dev.U2_PROMPTS, 10.0, "prompt after tftp")
         crc = dev._crc32(s, int(dev.LOAD_ADDR, 16), size, "crc32 of RAM image")
         ok = crc is not None and int(crc, 16) == host_crc
         log(f"tftp {size} B in {dt:.1f} s = {size / dt / 1024:.0f} KiB/s; crc board {crc} host {host_crc:08x}: "

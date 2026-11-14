@@ -23,7 +23,7 @@
 - Expect on the console: `cpu: US48_CPU_MHZ=1000 status=2 ARM=1000 MHz PERIPHCLK=500 MHz`.
 
 ## Test later (dev.py)
-- At `uboot-2>`: `md.l 19000ec0 1` bits 14:12 = 7; `md.l 19000c00 1`; `sleep 5` and compare with wall clock (udelay check); `crc32` of a RAM block twice.
+- At `awto-uboot>`: `md.l 19000ec0 1` bits 14:12 = 7; `md.l 19000c00 1`; `sleep 5` and compare with wall clock (udelay check); `crc32` of a RAM block twice.
 - Then the clocks.md E1 Linux pass criteria (`sched_clock: 64 bits at 500MHz` at 1000), thermal log, 5 then 20 power cycles.
 - Order: 800 first, then 1000.
 

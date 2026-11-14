@@ -82,6 +82,7 @@ PATCH_MARKERS = {
     "lib/Kconfig": ("lib/bcm-cmic/Kconfig", "0002-lib-wire-bcm-cmic.patch"),
     "cmd/Makefile": ("CONFIG_CMD_BCM_CMIC", "0003-cmd-wire-bcm-cmic.patch"),
     "cmd/sf.c": ("disabled in this build (read-only)", "0004-cmd-sf-read-only.patch"),
+    "Makefile": ('\\"awto-uboot \\" PLAIN_VERSION', "0007-version-awto-uboot.patch"),
     "drivers/net/Makefile": ("CONFIG_US48_CMIC_ETH", "0005-net-build-us48-cmic-eth.patch"),
     "drivers/spi/iproc_qspi.c": ("a plain READ (0x03) has no dummy phase", "0006-spi-nor-3byte-window.patch"),
     "drivers/mtd/spi/spi-nor-core.c": ("SNOR_F_4B_WINDOW", "0006-spi-nor-3byte-window.patch"),
@@ -94,6 +95,7 @@ PATCH_SETS = {
     "0003-cmd-wire-bcm-cmic.patch": ("cmd: build bcm_cmic.c", ["cmd/Makefile"]),
     "0004-cmd-sf-read-only.patch": ("cmd: sf accepts probe and read only (us48 never writes flash)", ["cmd/sf.c"]),
     "0005-net-build-us48-cmic-eth.patch": ("net: build us48_cmic_eth.c", ["drivers/net/Makefile"]),
+    "0007-version-awto-uboot.patch": ("version: banner says awto-uboot instead of U-Boot", ["Makefile"]),
     "0006-spi-nor-3byte-window.patch": (
         "spi: iproc_qspi no divide by zero on a plain READ; spi-nor keeps EN4B-only 32 MiB parts in 3-byte mode, 4-byte mode only inside one read",
         ["drivers/spi/iproc_qspi.c", "drivers/mtd/spi/spi-nor-core.c", "include/linux/mtd/spi-nor.h"]),

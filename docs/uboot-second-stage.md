@@ -182,7 +182,7 @@ New commands in `scripts/dev.py` (`@command`, `describe`), helper in `scripts/`:
 | Command | Does | Notes |
 |---|---|---|
 | `dev.py build-uboot` | stage `uboot-port/` into the pinned worktree, build, write `tmp/tftp/us48-uboot.bin` + `us48-uboot.img` (uImage, load=entry `0x04000000`) | log `tmp/logs/build_uboot_mainline.log`; fails if `.bin` > slot budget |
-| `dev.py uboot-chain [--from-flash]` | reboot → stock prompt (`_session_at_uboot`) → `loady 0x01000000` at 460800 (or `sf read` the kernel0 slot) → `bootm 0x01000000` → wait for our banner + `uboot-2>` prompt | no flash write by default; refuses to run if the console shows stock Linux up (coordinator sessions) |
+| `dev.py uboot-chain [--from-flash]` | reboot → stock prompt (`_session_at_uboot`) → `loady 0x01000000` at 460800 (or `sf read` the kernel0 slot) → `bootm 0x01000000` → wait for our banner + `awto-uboot>` prompt | no flash write by default; refuses to run if the console shows stock Linux up (coordinator sessions) |
 | `dev.py ramload <image> [--bootargs ...]` | needs the second stage up (calls `uboot-chain` first if at stock): `setenv ipaddr/serverip`, `tftpboot 0x01000000 <image>`, `bootm`, then the existing boot watch (`_bootm_watch`) | image from `tmp/tftp/` served by a host tftpd; replaces `boot-ram` (`loady`) for kernels |
 | `dev.py uboot-chain-install` (later) | `sf write` the chain image to the head of `kernel0` + read-back CRC | same guards as `flash-kernel0`; never `kernel1`/bootsel/u-boot/EEPROM |
 | `dev.py uboot-test net` | ping, `dhcp`, `tftpboot` + CRC32 vs host, 8 repeats | after M4 |
@@ -197,7 +197,7 @@ New commands in `scripts/dev.py` (`@command`, `describe`), helper in `scripts/`:
 | M | Goal | Exit criterion | Needs |
 |---|---|---|---|
 | M0 | Pre-checks at the **stock** prompt (read-only, by the coordinator, not run) | `pci` output (is the RC/link up, BCM53346 `14e4:8346` seen); `mw.l 0x01000000 ...` + `md.l 0x61000000 1` alias test (uboot.md first-boot step 3); `md.l 0x19020200` (global timer present) | existing console |
-| M1 | **Serial prompt**: scaffold, `ARCH_BCMHR2`, ns16550, global timer, RAM env, `loady`/`md`/`mw`/`bootm` | `dev.py uboot-chain` reaches `uboot-2>`, `md` works, `bootm` of the OpenWrt initramfs (via `loady`) boots as today | build script, uImage wrapper |
+| M1 | **Serial prompt**: scaffold, `ARCH_BCMHR2`, ns16550, global timer, RAM env, `loady`/`md`/`mw`/`bootm` | `dev.py uboot-chain` reaches `awto-uboot>`, `md` works, `bootm` of the OpenWrt initramfs (via `loady`) boots as today | build script, uImage wrapper |
 | M2 | **SPI flash** (built 2026-11-12, not yet run on the board): `iproc_qspi` + `sf probe/read`, EEPROM MAC read (read-only guard on) | `sf read` of `0x1ff0000` 6 B == stock `ubnthal` MAC; `crc32` of a kernel0 range == stock `mtd` CRC | M1 |
 | M3 | **Net link**: S-channel read of `UMAC_REV_ID` (DI §1 worked example, `0x00030601`/`..0501`), chip init, GPHY, DMA; first RX frame (ARP broadcast from the LAN) in the RX DCB, first TX frame seen by `tcpdump` on the host | RX count > 0 and a host `tcpdump` shows our ARP reply; `ethstat` clean. **Resolves DI §12** (or triggers the unit-1 fallback) | M1, M2 |
 | M4 | **DHCP / TFTP**: `ping`, `dhcp` (or static), `tftpboot` a 5.6 MB image, `crc32` == host | 8/8 repeat passes, no `T` timeouts, rate logged (target ≥ 5 MiB/s) | M3 |
@@ -487,7 +487,7 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 - `sf` stays read-only; the net driver never calls `sf probe`.
 
 ### M3 hardware test (coordinator)
-1. `dev.py boot-flash --slot uboot` (or the `loady` + `bootm` chain), prompt `uboot-2>`.
+1. `dev.py boot-flash --slot uboot` (or the `loady` + `bootm` chain), prompt `awto-uboot>`.
 2. `ping 192.168.25.11` (expect `is alive`, first tries may time out while STP converges).
 3. `tftpboot 0x01000000 us48-initramfs.bin` (host serves `192.168.25.30`; override with `setenv serverip`).
 4. `iminfo 0x01000000` (header + data CRC OK), then `bootm 0x01000000` as before.

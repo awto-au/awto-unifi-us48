@@ -1,0 +1,17 @@
+Subject: version: banner says awto-uboot instead of U-Boot
+
+Base: U-Boot v2026.07. Other files are staged from uboot-port/ by scripts/build_uboot.py.
+
+diff --git a/Makefile b/Makefile
+index 7f5d83658d7..8f981a595e6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2306,7 +2306,7 @@ endif
+ # Use sed to remove leading zeros from PATCHLEVEL to avoid using octal numbers
+ define filechk_version.h
+ 	(echo \#define PLAIN_VERSION \"$(UBOOTRELEASE)\"; \
+-	echo \#define U_BOOT_VERSION \"U-Boot \" PLAIN_VERSION; \
++	echo \#define U_BOOT_VERSION \"awto-uboot \" PLAIN_VERSION; \
+ 	echo \#define U_BOOT_VERSION_NUM $(VERSION); \
+ 	echo \#define U_BOOT_VERSION_NUM_PATCH $$(echo $(PATCHLEVEL) | \
+ 		sed -e "s/^0*//"); \

@@ -302,7 +302,7 @@ def _classify_tail(raw: bytes) -> str | None:
     """State from the END of the output only (stale prompts earlier in the stream never match)."""
     t = ANSI.sub(b"", raw)[-400:]
     e = t.rstrip()
-    if e.endswith((b"uboot-2>", b"us48-uboot>")):
+    if e.endswith((b"awto-uboot>", b"uboot-2>", b"us48-uboot>")):
         return "ourboot"
     if e.endswith(b"u-boot>"):
         return "uboot"
@@ -596,7 +596,7 @@ SP805 = 0x18039000
 SP805_LOAD = 50_000_000 * 23
 
 
-def _arm_sp805(s: console.Session, prompt: bytes = PROMPT) -> bool:
+def _arm_sp805(s: console.Session, prompt: bytes | list[bytes] = PROMPT) -> bool:
     for cmd in (f"mw.l {SP805 + 0xC00:x} 1acce551",   # WDTLOCK unlock
                 f"mw.l {SP805:x} {SP805_LOAD:x}",       # WDTLOAD
                 f"mw.l {SP805 + 0x8:x} 3",              # WDTCONTROL = INTEN | RESEN
@@ -607,7 +607,7 @@ def _arm_sp805(s: console.Session, prompt: bytes = PROMPT) -> bool:
     return True
 
 
-def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes = PROMPT) -> int:
+def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes | list[bytes] = PROMPT) -> int:
     if not _arm_sp805(s, prompt):
         log("could not arm SP805 — not booting without a hardware watchdog", "FATAL")
         return 1
@@ -622,7 +622,7 @@ def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes = PROM
         t0 = time.monotonic()
         if slot == "uboot":
             # Our second stage: DDR is up, banner + prompt in ~2 s; 20 s = 10x. It feeds the SP805 itself.
-            s.expect([b"uboot-2>", b"us48-uboot>"], 20.0, "second-stage prompt")
+            s.expect([b"awto-uboot>", b"uboot-2>", b"us48-uboot>"], 20.0, "second-stage prompt")
             log(f"second-stage U-Boot prompt {time.monotonic() - t0:.1f} s after handover", "ALERT")
             return 0
         hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "OpenWrt userspace")
@@ -640,10 +640,10 @@ def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes = PROM
     return 0
 
 
-def _uboot_cmd(s: console.Session, cmd: str, ok_pat: bytes, budget_s: float, what: str) -> str | None:
+def _uboot_cmd(s: console.Session, cmd: str, ok_pat: bytes | list[bytes], budget_s: float, what: str) -> str | None:
     s.send_line(cmd)
     try:
-        s.expect([ok_pat], budget_s, what)
+        s.expect(ok_pat if isinstance(ok_pat, list) else [ok_pat], budget_s, what)
         return s.read_idle(0.3, 2.0).decode(errors="replace")
     except console.Timeout as e:
         log(str(e), "FATAL")
@@ -675,7 +675,11 @@ def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
 
 
 # uboot-2 prompt and the board's own address (ip-registry: us48-boot). The TFTP server is started per transfer.
-U2_PROMPT = b"uboot-2> "
+# awto-uboot (uboot-2). The old prompt is still accepted by the expect lists until the flash slot holds the new image.
+U2_PROMPT = b"awto-uboot> "
+U2_PROMPTS = [b"awto-uboot> ", b"uboot-2> "]
+# ge1: GPHY AN <= 4 s in start() + sw1 STP forwarding ~2 s + ARP; 12 s = 1.4x that, expiry = warn and try the transfer anyway.
+U2_PING_S = 12.0
 U2_IP = "192.168.25.207"
 TFTP_SERVE = REPO / "scripts/tftp_serve.py"
 TFTP_DIR = REPO / "tmp/tftp"
@@ -743,8 +747,16 @@ def _tftp_server(board_ip: str = U2_IP):
 def _u2_tftp(s: console.Session, name: str) -> bool:
     try:
         with _tftp_server() as (host, port):
-            s.send_line(f"setenv ipaddr {U2_IP}; setenv serverip {host}; setenv tftpdstp {port}; "
-                        f"tftpboot {LOAD_ADDR} {name}")
+            # Warm the path first: link wait + sw1 STP forwarding delay + ARP make the first RRQ get lost, and the
+            # restarted RRQ then races the server's first transfer thread ("First block is not block 1").
+            s.send_line(f"setenv ipaddr {U2_IP}; setenv serverip {host}; ping {host}")
+            try:
+                s.expect([b"is alive"], U2_PING_S, "uboot-2 ping before tftp")
+            except console.Timeout as e:
+                log(str(e), "WARN")
+            s.send_line("")
+            s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after ping")
+            s.send_line(f"setenv tftpdstp {port}; tftpboot {LOAD_ADDR} {name}")
             t0 = last = time.monotonic()
             seen = b""
             while True:
@@ -806,18 +818,18 @@ def cmd_u2_boot(extra: list[str]) -> int:
     s = console.Session()
     try:
         s.write(b"\x03\r\n")  # abort a running TFTP retry loop or a half-typed line
-        s.expect([U2_PROMPT], BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
+        s.expect(U2_PROMPTS, BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
         if src == "tftp":
             if not _u2_tftp(s, img):
                 return 1
-            s.expect([U2_PROMPT], BAUD_REPLY_S, "prompt after tftp")
+            s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after tftp")
         else:
-            if _uboot_cmd(s, "sf probe 0", U2_PROMPT, SF_BUDGET_S, "sf probe") is None:
+            if _uboot_cmd(s, "sf probe 0", U2_PROMPTS, SF_BUDGET_S, "sf probe") is None:
                 return 1
-            if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF + off:x} {length:x}", U2_PROMPT, SF_BUDGET_S,
+            if _uboot_cmd(s, f"sf read {LOAD_ADDR} {KERNEL0_OFF + off:x} {length:x}", U2_PROMPTS, SF_BUDGET_S,
                           f"sf read kernel0 slot {name}") is None:
                 return 1
-        return _bootm_watch(s, name, U2_PROMPT)
+        return _bootm_watch(s, name, U2_PROMPTS)
     except console.Timeout as e:
         log(str(e), "FATAL")
         return 1
@@ -904,10 +916,10 @@ def _flash_kernel0_u2(extra: list[str]) -> int:
     s = console.Session()
     try:
         s.write(b"\x03\r\n")
-        s.expect([U2_PROMPT], BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
+        s.expect(U2_PROMPTS, BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
         if not _u2_tftp(s, name):
             return 1
-        s.expect([U2_PROMPT], BAUD_REPLY_S, "prompt after tftp")
+        s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after tftp")
         ram_crc = _crc32(s, int(LOAD_ADDR, 16), size, "crc32 of RAM image")
         if ram_crc is None:
             return 1
@@ -916,7 +928,7 @@ def _flash_kernel0_u2(extra: list[str]) -> int:
                           (f"sf erase {flash_off:x} {erase_len:x}", "sf erase kernel0"),
                           (f"sf write {LOAD_ADDR} {flash_off:x} {size:x}", "sf write kernel0"),
                           (f"sf read 0x02000000 {flash_off:x} {size:x}", "sf read-back")):
-            if _uboot_cmd(s, cmd, U2_PROMPT, SF_BUDGET_S, what) is None:
+            if _uboot_cmd(s, cmd, U2_PROMPTS, SF_BUDGET_S, what) is None:
                 return 1
         back = _crc32(s, 0x02000000, size, "crc32 of read-back")
         if back != ram_crc:
@@ -925,7 +937,7 @@ def _flash_kernel0_u2(extra: list[str]) -> int:
         log(f"kernel0 written and verified (crc {ram_crc}); stock kernel1 + bootsel untouched", "ALERT")
         if "--no-boot" in extra:
             return 0
-        return _bootm_watch(s, slot, U2_PROMPT)
+        return _bootm_watch(s, slot, U2_PROMPTS)
     except console.Timeout as e:
         log(str(e), "FATAL")
         return 1
