@@ -784,20 +784,31 @@ def cmd_tftp_serve(_extra: list[str]) -> int:
     return 0
 
 
-@command("uboot-2 (at its prompt): load the OpenWrt image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp]",
+def _u2_image(extra: list[str]) -> str:
+    """Name of the image in TFTP_DIR: --image FILE (copied there if elsewhere), else U2_IMAGE."""
+    if "--image" not in extra:
+        return U2_IMAGE
+    f = Path(extra[extra.index("--image") + 1]).resolve()
+    if f.parent != TFTP_DIR.resolve():
+        shutil.copy2(f, TFTP_DIR / f.name)
+    return f.name
+
+
+@command("uboot-2 (at its prompt): load the OpenWrt image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp] [--image FILE]",
          kind="action")
 def cmd_u2_boot(extra: list[str]) -> int:
     src = extra[extra.index("--from") + 1] if "--from" in extra else "flash"
     if src not in ("flash", "tftp") or not _ensure_console():
-        log("usage: u2-boot [--from flash|tftp]", "ERROR")
+        log("usage: u2-boot [--from flash|tftp] [--image FILE]", "ERROR")
         return 2
+    img = _u2_image(extra)
     name, off, length, _img = _slot(["--slot", "openwrt"])
     s = console.Session()
     try:
         s.write(b"\x03\r\n")  # abort a running TFTP retry loop or a half-typed line
         s.expect([U2_PROMPT], BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
         if src == "tftp":
-            if not _u2_tftp(s, U2_IMAGE):
+            if not _u2_tftp(s, img):
                 return 1
             s.expect([U2_PROMPT], BAUD_REPLY_S, "prompt after tftp")
         else:
@@ -843,8 +854,11 @@ def cmd_uboot(extra: list[str]) -> int:
 
 
 @command("RAM-boot the OpenWrt initramfs: reboot -> U-Boot -> loady -> bootm (no flash writes)",
-         args="[--baud N] [--no-boot]", kind="action")
+         args="--serial [--baud N] [--no-boot]", kind="action")
 def cmd_boot_ram(extra: list[str]) -> int:
+    if "--serial" not in extra:
+        log("serial image loading is off (Dan): use `u2-boot --from tftp` at uboot-2; --serial overrides", "FATAL")
+        return 1
     if not IMAGE.exists():
         log(f"{IMAGE.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
@@ -863,9 +877,63 @@ def cmd_boot_ram(extra: list[str]) -> int:
         s.close()
 
 
-@command("write an image to a kernel0 slot over serial (loady + sf write + read-back CRC), then boot it",
-         args="[--slot uboot|openwrt] [--baud N] [--no-boot]", kind="action")
+@command("write an image to a kernel0 slot: uboot-2 TFTP -> RAM -> sf erase/write + read-back CRC, then boot it "
+         "(--serial: old loady path, off by default)",
+         args="[--slot openwrt] [--image FILE] [--no-boot] [--serial [--baud N]]", kind="action")
 def cmd_flash_kernel0(extra: list[str]) -> int:
+    if "--serial" not in extra:
+        return _flash_kernel0_u2(extra)
+    return _flash_kernel0_serial(extra)
+
+
+def _flash_kernel0_u2(extra: list[str]) -> int:
+    """Board must be at the uboot-2 prompt (boot-flash --slot uboot). Only the openwrt slot is written."""
+    slot, slot_off, slot_len, _img = _slot(extra)
+    if slot != "openwrt":
+        log("flash-kernel0 over TFTP writes the openwrt slot only", "FATAL")
+        return 1
+    if not _ensure_console():
+        return 1
+    name = _u2_image(extra if "--image" in extra else ["--image", str(IMAGE)])
+    size = (TFTP_DIR / name).stat().st_size
+    if size > slot_len:
+        log(f"image {size} B > slot {slot} 0x{slot_len:x}", "FATAL")
+        return 1
+    flash_off = KERNEL0_OFF + slot_off
+    erase_len = (size + 0xFFFF) & ~0xFFFF
+    s = console.Session()
+    try:
+        s.write(b"\x03\r\n")
+        s.expect([U2_PROMPT], BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
+        if not _u2_tftp(s, name):
+            return 1
+        s.expect([U2_PROMPT], BAUD_REPLY_S, "prompt after tftp")
+        ram_crc = _crc32(s, int(LOAD_ADDR, 16), size, "crc32 of RAM image")
+        if ram_crc is None:
+            return 1
+        log(f"writing kernel0 @0x{flash_off:x}: erase 0x{erase_len:x}, write 0x{size:x}, RAM crc {ram_crc}", "WARN")
+        for cmd, what in (("sf probe 0", "sf probe"),
+                          (f"sf erase {flash_off:x} {erase_len:x}", "sf erase kernel0"),
+                          (f"sf write {LOAD_ADDR} {flash_off:x} {size:x}", "sf write kernel0"),
+                          (f"sf read 0x02000000 {flash_off:x} {size:x}", "sf read-back")):
+            if _uboot_cmd(s, cmd, U2_PROMPT, SF_BUDGET_S, what) is None:
+                return 1
+        back = _crc32(s, 0x02000000, size, "crc32 of read-back")
+        if back != ram_crc:
+            log(f"read-back crc {back} != {ram_crc} - kernel0 NOT good (stock kernel1 untouched)", "FATAL")
+            return 1
+        log(f"kernel0 written and verified (crc {ram_crc}); stock kernel1 + bootsel untouched", "ALERT")
+        if "--no-boot" in extra:
+            return 0
+        return _bootm_watch(s, slot, U2_PROMPT)
+    except console.Timeout as e:
+        log(str(e), "FATAL")
+        return 1
+    finally:
+        s.close()
+
+
+def _flash_kernel0_serial(extra: list[str]) -> int:
     slot, slot_off, slot_len, image = _slot(extra)
     if not image.exists():
         log(f"{image.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")

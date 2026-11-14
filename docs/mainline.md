@@ -5,13 +5,15 @@
 - Tree: `tmp/linux-mainline` = `git worktree` of the machine-shared Linux store (#45), not a clone.
   - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
   - Never `--depth`, `git gc` or `git repack` in the store or its worktrees (machine timer does gc).
-- Series: `mainline/0001..0007-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
-- Config fragment: `mainline/us48.config` (xz kernel + initramfs so the debug set fits kernel0, 15 MiB; debug profile as OpenWrt `hr2/config-6.18`, #4).
+- Series: `mainline/0001..0009-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
+- Config: `mainline/us48_defconfig` on `allnoconfig` (explicit list, ~520 `=y`; debug profile as OpenWrt `hr2/config-6.18`, #4, #64). gzip kernel + initramfs.
+  - `build_mainline.py` aborts if any listed symbol is missing from the final `.config` (unmet dependency).
+  - Slot limit: `kernel0` openwrt slot = 0xE00000 B (14 MiB, `SLOTS` in `dev.py`).
 
 ## Build
 
 - `python3 scripts/build_mainline.py` — rebuilds the branch from `mainline/*.patch` (`git am`), configures, builds, packs.
-- Config: `multi_v7_defconfig` + `mainline/us48.config` + initramfs from `tmp/openwrt-build/.../root-bcm53xx`
+- Config: `allnoconfig` + `mainline/us48_defconfig` + initramfs from `tmp/openwrt-build/.../root-bcm53xx`
   (staged copy + `/init -> sbin/init` + `/dev/console` node, root-owned).
 - Toolchain: OpenWrt gcc 14.4 musl (`tmp/openwrt-build/staging_dir`). mkimage from the OpenWrt host dir. Own empty `STAGING_DIR` (7.4 `-Werror=missing-include-dirs` rejects the OpenWrt wrapper's missing include dir).
 - Output: `tmp/mainline/us48-mainline.bin` = legacy uImage, load/entry `0x00018000`, zImage + appended DTB.
@@ -32,6 +34,8 @@
 | 5 | ARM: dts: broadcom: bcm-hr2: Add 50 MHz APB clock for UART/SP804/SP805 | UART divisor was computed from 25 MHz osc; SP804/SP805 had no clocks, never probed, no restart handler. Also affects UniFi Switch 8 (untested there) |
 | 6 | dt-bindings: mfd: syscon: Add brcm,hr2-dmu | `syscon` alone fails dtbs_check ("too short"); needed by patch 7 |
 | 7 | ARM: dts: broadcom: Add Ubiquiti UniFi US-48-500W | board DTS: 2x128 MiB RAM, SPI-NOR map, CMIC SMBus (0x48000000) + PCA9548 + 4x LM75 on ch6, pcie0, DMU syscon + syscon-reboot (0x200, mask 0x2, value 0), UART1 console; no bootargs |
+| 8 | ARM: dts: broadcom: bcm-hr2: Fix PMU interrupts for the single CPU | two PMU IRQs + one `interrupt-affinity` entry made `armv7-pmu` fail with -EINVAL; one IRQ |
+| 9 | hwrng: bcm2835: Allow building on Hurricane 2 (ARCH_BCM_IPROC) | HR2 `brcm,bcm-nsp-rng` is handled by this driver; Kconfig did not list ARCH_BCM_IPROC |
 
 Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.

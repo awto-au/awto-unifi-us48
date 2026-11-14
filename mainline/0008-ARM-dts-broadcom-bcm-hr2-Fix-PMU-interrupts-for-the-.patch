@@ -1,0 +1,29 @@
+From bee2951342686dcb4afe706da241abe40dc44754 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Sat, 14 Nov 2026 20:31:46 +1100
+Subject: [PATCH 8/9] ARM: dts: broadcom: bcm-hr2: Fix PMU interrupts for the
+ single CPU
+
+The PMU node lists two interrupts but interrupt-affinity names one CPU
+and only cpu0 exists, so armv7-pmu fails to parse interrupt-affinity[1]
+and probe returns -EINVAL. Keep the single interrupt.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/bcm-hr2.dtsi | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+index a2e3f3898528..73f591055c86 100644
+--- a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
++++ b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+@@ -54,8 +54,7 @@ cpu0: cpu@0 {
+ 
+ 	pmu {
+ 		compatible = "arm,cortex-a9-pmu";
+-		interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_HIGH>,
+-			     <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>;
++		interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_HIGH>;
+ 		interrupt-affinity = <&cpu0>;
+ 	};
+ 

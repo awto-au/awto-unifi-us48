@@ -5,7 +5,7 @@
   symlink tmp/linux-store (or $US48_LINUX_STORE / --store). Created on first run; tag BASE fetched from
   the store's `origin` (mainline) if missing. Never --depth, never gc in the store.
 - Branch BRANCH (awto/us48/mainline-BASE) = BASE + mainline/*.patch; local to the store, not pushed.
-- Config: multi_v7_defconfig + mainline/us48.config; initramfs from the OpenWrt bcm53xx rootfs (+ /init, /dev/console).
+- Config: allnoconfig + mainline/us48_defconfig (explicit, every symbol checked); initramfs from the OpenWrt bcm53xx rootfs (+ /init, /dev/console).
 - Output: tmp/mainline/us48-mainline.bin = legacy uImage, load/entry 0x00018000, zImage + appended DTB
   (same format as tmp/tftp/us48-initramfs.bin: stock U-Boot `loady 0x01000000; bootm`).
 - Logs: tmp/logs/build_mainline.log; make output tmp/logs/build_mainline-make.log.
@@ -43,7 +43,7 @@ TREE = ROOT / "tmp/linux-mainline"
 OUTDIR = ROOT / "tmp/mainline"
 BUILD = OUTDIR / "build"
 PATCHES = ROOT / "mainline"
-FRAGMENT = PATCHES / "us48.config"
+FRAGMENT = PATCHES / "us48_defconfig"
 LOG = ROOT / "tmp/logs/build_mainline.log"
 MAKE_LOG = ROOT / "tmp/logs/build_mainline-make.log"
 STORE_LINK = ROOT / "tmp/linux-store"  # symlink -> machine Linux store; no host path in this repo
@@ -212,21 +212,29 @@ def stage_rootfs() -> Path:
 
 
 def configure(jobs: int) -> None:
+    """allnoconfig + mainline/us48_defconfig (+ initramfs); aborts if any requested symbol is missing from the result."""
     BUILD.mkdir(parents=True, exist_ok=True)
-    kmake("multi_v7_defconfig", jobs=jobs)
     frag = OUTDIR / "us48-full.config"
     src = stage_rootfs()
-    frag.write_text(FRAGMENT.read_text() + f'CONFIG_BLK_DEV_INITRD=y\nCONFIG_INITRAMFS_SOURCE="{src}"\n'
+    frag.write_text(FRAGMENT.read_text() + f'CONFIG_INITRAMFS_SOURCE="{src}"\n'
                     "CONFIG_INITRAMFS_ROOT_UID=0\nCONFIG_INITRAMFS_ROOT_GID=0\n")
-    run(["scripts/kconfig/merge_config.sh", "-m", "-O", str(BUILD), str(BUILD / ".config"), str(frag)],
-        out=MAKE_LOG, env=make_env())
-    kmake("olddefconfig", jobs=jobs)
-    cfg = (BUILD / ".config").read_text()
-    for want in ("CONFIG_ARCH_BCM_HR2=y", "CONFIG_PCIE_IPROC_PLATFORM=y", "CONFIG_ARM_APPENDED_DTB=y",
-                 "CONFIG_I2C_MUX_PCA954x=y", "CONFIG_SENSORS_LM75=y", "CONFIG_POWER_RESET_SYSCON=y"):
-        if want not in cfg.splitlines():
-            log(f"abort: {want} missing from final .config")
-            sys.exit(3)
+    env = make_env()
+    env["KCONFIG_ALLCONFIG"] = str(frag)
+    (BUILD / ".config").unlink(missing_ok=True)
+    run(NICE + ["make", f"O={BUILD}", "allnoconfig"], out=MAKE_LOG, env=env)
+    cfg = set((BUILD / ".config").read_text().splitlines())
+    on = {l.split("=")[0] for l in cfg if "=" in l and not l.startswith("#")}
+    missing = []
+    for x in frag.read_text().splitlines():
+        if x.startswith("# CONFIG_") and x.endswith(" is not set"):
+            if x.split()[1] in on:
+                missing.append(x)
+        elif x.startswith("CONFIG_") and x not in cfg:
+            missing.append(x)
+    if missing:
+        log("abort: requested symbols not in the final .config (unmet dependency?): " + ", ".join(missing))
+        sys.exit(3)
+    log(f"config: {sum(1 for l in cfg if l.endswith('=y'))} =y, {sum(1 for l in cfg if l.endswith('=m'))} =m")
 
 
 def build_us48_cmic(jobs: int) -> None:

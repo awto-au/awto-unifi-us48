@@ -1,0 +1,28 @@
+From 80fdf48d81cd67d818200d5262ab9d2bad4aeca6 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Sat, 14 Nov 2026 20:34:55 +1100
+Subject: [PATCH 9/9] hwrng: bcm2835: Allow building on Hurricane 2
+ (ARCH_BCM_IPROC)
+
+The HR2 DT node uses brcm,bcm-nsp-rng, handled by this driver, but the
+Kconfig dependency lists NSP and 5301X and not the other iProc SoCs, so
+an HR2-only config cannot enable it.
+
+Signed-off-by: TODO
+---
+ drivers/char/hw_random/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/char/hw_random/Kconfig b/drivers/char/hw_random/Kconfig
+index d3108991c251..f992ff13a4a9 100644
+--- a/drivers/char/hw_random/Kconfig
++++ b/drivers/char/hw_random/Kconfig
+@@ -100,7 +100,7 @@ config HW_RANDOM_BA431
+ 
+ config HW_RANDOM_BCM2835
+ 	tristate "Broadcom BCM2835/BCM63xx Random Number Generator support"
+-	depends on ARCH_BCM2835 || ARCH_BCM_NSP || ARCH_BCM_5301X || \
++	depends on ARCH_BCM2835 || ARCH_BCM_IPROC || ARCH_BCM_NSP || ARCH_BCM_5301X || \
+ 		   ARCH_BCMBCA || BCM63XX || BMIPS_GENERIC || COMPILE_TEST
+ 	default HW_RANDOM
+ 	help
