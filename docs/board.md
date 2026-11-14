@@ -368,6 +368,6 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 - BCM59111 firmware: cold boot straight into OpenWrt (chip state with no stock in between), GPIO 9 reset polarity (#24).
 - BCM59111 reg `0x2c`: formula decoded (`367 - 2·raw` °C); datasheet meaning of raw unchecked. Limit-table columns 0–2 purpose.
 - MSPI: power-on default of the board-IO chains (byte 0 bits 3:0 and 7:6 do nothing audible, #12); LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
-- SFP: pin polarity of TX disable (I), physical cage wiring of unit 1 pins (I); output-enable of CMIC GP2/GP3. Module EEPROMs of all four cages read by stock (`swctrl sfp show`), no 10G link on any cage yet (#31).
+- SFP: pin polarity of TX disable (I), physical cage wiring of unit 1 pins (I); output-enable of CMIC GP2/GP3. Module EEPROMs of all four cages read by stock (`swctrl sfp show`; inventory in [hardware.md](hardware.md)), no 10G link on any cage yet (#31).
 - Port map: front -> MDIO address for ports 2..24 (unit 0 scanned; unit 1: front 40 = int bus 0 addr 19 verified, fronts 41-48 octal unverified); front 49–52 LEDs (#14); link LED value semantics. Panel labels and chip/lane map: [port-map.md](port-map.md).
 - EEPROM offsets of `manufid` / `mfgweek` / `qrid`; use of the `0x1ffe040` bytes.

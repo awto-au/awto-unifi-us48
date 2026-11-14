@@ -80,7 +80,7 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
 
 - Management `eth0` = `tun` device (`/sys/class/net/eth0 → devices/virtual/net`), no MAC driver, no AMAC IRQ in `/proc/interrupts`. switchdrvr moves CPU frames between the fabric (CMIC packet DMA, IRQs 194/218 `linux-kernel-bde`) and the tun. Live, stock 7.5.15, 2026-10-13. C.
   - → No management network without the switch SDK; a Linux mgmt port needs switch init + CMIC DMA driver.
-- Internal CLI: `telnet 127.0.0.1 2222` (paced input needed; `enable`, `show environment`).
+- Internal CLI (FastPath, `(UBNT) >`, `enable`, `show environment`): `127.0.0.1:23`, paced input needed (`tmp/logs/stock_cli.log`, tool `scripts/stock_cli.py`). A second loopback listener `127.0.0.1:2222` exists, purpose unidentified (us48-20261112-155058.log:44185; `:23` at :44188).
 - `swctrl stp show` unsupported on 7.5.15.
 
 ## Backups
@@ -105,3 +105,4 @@ swctrl / UniFi agent → libubnt → FastPath RPC (Unix datagram, /var/run/fastp
 - After the reset into uboot-2 every one of the 24 copper PHYs reads BMSR 0x79c9 (link down); the integrated GPHYs have BMCR 0x1940 = POWER_DOWN set. C
 - Minimal bring-up: BMCR = 0x1340 (clear power-down, AN enable, restart AN, FD) on internal bus 0 PHY 19 -> link up in ~5 s, partner ability 0x4de1 (100BASE-TX FD) = the camera on front 40. So front 40 = internal bus 0 address 19; the 16 integrated GPHYs (1-4, 6-9, 11-14, 16-19) are most likely fronts 25-40 in order, the octal PHY (external bus 0, 20-27) fronts 41-48 (I, only 19 verified). C (19), I (rest)
 - Stock (swctrl, same day): port 1 up 1G, port 40 up 100M, port 49 up 10G (DAC to sw1 lan3), 50-52 down.
+- SFP cage inventory (`swctrl sfp show`; modules hot-swapped between captures): 49 CISCO-JPC `P3410UD05000-1` DAC; 50 FS `SFP-10GSR-85` 10GBase-SR; 51 CISCO-FINISAR `GLC-SX-MM` (swctrl prints 10GBase-LR, wrong for an SX part), later AVAGO `AFBR-57F5AMZ-E3` (compliance Unknown); 52 FS `SFP-10GSR-85`. us48-20261113-132714.log:6977-6979 (49, 51 only), us48-20261113-212632.log:9-12, us48-20261113-213759.log:8-11.
