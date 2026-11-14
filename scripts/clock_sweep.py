@@ -38,15 +38,16 @@ CC = dev.REPO / ("tmp/openwrt-build/staging_dir/toolchain-arm_cortex-a9_gcc-14.4
                  "arm-openwrt-linux-muslgnueabi-gcc")
 BACKUP = dev.REPO / "private/backups/20261012T055324Z/full-flash.bin"  # verified full-flash backup (ddr.md)
 
-# BCM56150 DS: TJ max 125 C, steady state 110 C (DS lines 5957-5959, 8471). 99 = 110 - 10 %, PVTMON
-# accuracy unknown. Board hwmon (LM75) abort stays at clock_trial.TEMP_ABORT_C (70 C).
-DIE_ABORT_C = 99
+# BCM56150 DS: TJ max 125 C, steady state 110 C (DS lines 5957-5959, 8471). Abort 90 C (Dan, 2026-11-14):
+# PVTMON accuracy unknown, idle die reads ~76 C. Board hwmon (LM75) abort = clock_trial.TEMP_ABORT_C (70 C).
+DIE_ABORT_C = 90
 VCO_HIGH_HIGH_MHZ = 3100  # generic iProc PLL loop-filter band edge (clk-iproc-pll.c); logged, not a stop
 
 # PVTMON (TOP block 16) via S-channel on CMC1: the Linux drivers own CMC0 (us48_cmic.h SCHAN_CTRL 0x31000).
 CMC1 = 0x32000
 UNIT_BASE = {0: 0x48000000, 1: 0x0A000000}  # unit 0 AXI CMIC; unit 1 PCIe BAR2 (boot logs)
 TOP_BLK = 16
+PEAK: dict[int, float] = {}  # unit -> hottest PEAK_TEMP_DATA reading (since PVTMON init) as C
 PVT_CTRL0, PVT_CTRL1, PVT_RESULT = 0x02050000, 0x02050400, 0x02050800
 PVT_CTRL0_STOCK = 0x001D2003  # stock switchdrvr write (tmp/schan_stock_writes.txt), = OpenMDK fields
 RING_MAP_16_23 = 0x100A0      # nibble 0 = ring of block 16 (TOP); stock/OpenMDK value 0x00005004
@@ -152,6 +153,8 @@ def die_temps_linux() -> dict[int, float | None]:
             linux_schan(unit, "w", PVT_CTRL1, 1 << 31)
         r = linux_schan(unit, "r", PVT_RESULT)
         out[unit] = temp_c(r) if r is not None else None
+        if r is not None:
+            PEAK[unit] = temp_c(r >> 22)
         log(f"u{unit} PVTMON RESULT={r if r is None else hex(r)} -> {out[unit]} C (peak code {r and (r >> 22) & 0x3ff})")
     return out
 
@@ -159,9 +162,16 @@ def die_temps_linux() -> dict[int, float | None]:
 # ---------------------------------------------------------------- U-Boot side
 
 def ub(s, line: str, budget: float) -> str:
-    out = dev._uboot_cmd(s, line, dev.PROMPT, budget, line)
-    if out is None:
-        raise RuntimeError(f"no prompt within {budget:.1f} s after {line!r}")
+    """Send one command, return everything printed before the next prompt (dev._uboot_cmd drops it)."""
+    s.buf = b""
+    s.send_line(line)
+    t0 = time.monotonic()
+    while dev.PROMPT not in s.buf:
+        if time.monotonic() - t0 > budget:
+            raise RuntimeError(f"no prompt within {budget:.1f} s after {line!r}: tail {s.buf[-120:]!r}")
+        s._pump(0.2)
+    i = s.buf.index(dev.PROMPT)
+    out, s.buf = s.buf[:i].decode(errors="replace"), s.buf[i + len(dev.PROMPT):]
     log(f"> {line}\n{out.strip()}")
     return out
 
@@ -268,6 +278,35 @@ def mtd_md5_ref() -> dict[str, str]:
             "shmoo": hashlib.md5(img[0xD0000:0xE0000]).hexdigest()} if img else {}
 
 
+CPU_PASSES = 20000  # ~5 s at 400 MHz, ~1.3 s at 1550; host-timed (board timers derive from the same PLL)
+BASE400 = [None]    # cpu_bench_s at 400 MHz, set by the 400 step; else the recorded reference below
+BASE400_REF = Path(__file__).resolve().parent.parent / "tmp/logs/cpu_bench_400.txt"
+
+
+def cpu_bench(mhz: int) -> dict[str, str]:
+    """Host-timed run of memtest_arm --cpu minus an empty-ssh baseline; speedup vs the 400 MHz time."""
+    def timed(cmdline: str) -> float:
+        t = time.monotonic()
+        out = ct.ssh(cmdline, 120)
+        return time.monotonic() - t, out
+    base = min(timed("true")[0] for _ in range(3))
+    runs = []
+    for _ in range(3):
+        dt, out = timed(f"/tmp/memtest_arm --cpu {CPU_PASSES}")
+        runs.append((dt - base, out.strip()))
+    best, out = min(runs)
+    log(f"cpu_bench {mhz} MHz: runs {[round(r[0], 3) for r in runs]} s (ssh baseline {base:.3f} s) {out}")
+    res = {"cpu_bench_s": f"{best:.3f}", "want_x": f"{mhz / 400:.3f}"}
+    if mhz == 400:
+        BASE400_REF.write_text(f"{best:.6f} {out}\n")
+    try:
+        ref = float(BASE400_REF.read_text().split()[0])
+        res["speedup"] = f"{ref / best:.3f}"
+    except (OSError, ValueError):
+        res["speedup"] = "?"
+    return res
+
+
 def linux_checks(mhz: int, mib: int, cap: list[float]) -> dict[str, str]:
     res: dict[str, str] = {}
     dm = ct.ssh("dmesg | grep -E 'sched_clock|Calibrating'")
@@ -287,6 +326,7 @@ def linux_checks(mhz: int, mib: int, cap: list[float]) -> dict[str, str]:
     rc, out = ssh_stream(f"/tmp/memtest_arm --mib {mib}", MEMTEST_STALL_S, cap[0])
     if rc is not None and cap[0] == MEMTEST_FIRST_CAP_S:
         cap[0] = 3 * (time.monotonic() - t0)  # backstop 3x measured (awto-dan#53)
+    res.update(cpu_bench(mhz))
     res["memtest"] = "ok" if rc == 0 and "DONE fails 0" in out else f"FAIL rc={rc}"
     for key in ("ddr_read32_MBps", "ddr_write32_MBps", "ddr_memcpy_MBps", "sram_read32_MBps", "sram_write32_MBps"):
         mm = re.search(rf"BW {key} ([\d.]+)", out)
@@ -306,19 +346,26 @@ def linux_checks(mhz: int, mib: int, cap: list[float]) -> dict[str, str]:
     return res
 
 
+SOAK_MAX = [0.0]
+
+
 def soak(seconds: int, mib: int) -> str:
-    ct.ssh("(while :; do /tmp/memtest_arm --mib 16 --no-sram >/tmp/soak.log 2>&1 || echo FAIL >>/tmp/soak.fail; done)"
+    ref = hashlib.md5(bytes(8 << 20)).hexdigest()  # md5 of 8 MiB of zeros, checked every pass next to memtest
+    ct.ssh("rm -f /tmp/soak.fail; (while :; do /tmp/memtest_arm --mib 16 --no-sram >/tmp/soak.log 2>&1 || echo FAIL memtest >>/tmp/soak.fail; "
+           f"[ \"$(dd if=/dev/zero bs=1M count=8 2>/dev/null | md5sum | cut -d' ' -f1)\" = {ref} ] || echo FAIL md5 >>/tmp/soak.fail; done)"
            " >/dev/null 2>&1 & echo $! >/tmp/soak.pid")
     t0 = time.monotonic()
     verdict = "ok"
+    SOAK_MAX[0] = 0.0
     while time.monotonic() - t0 < seconds:
         ct.wait(ct.SOAK_POLL_S)
         d = die_temps_linux()
         hw = ct.temps()
         fail = ct.ssh("cat /tmp/soak.fail 2>/dev/null").strip()
+        SOAK_MAX[0] = max([SOAK_MAX[0]] + [t for t in d.values() if t is not None])
         log(f"soak {time.monotonic() - t0:.0f}s die={d} hwmon={hw} fail={fail!r}")
         if fail:
-            verdict = "FAIL memtest during soak"
+            verdict = f"FAIL during soak: {fail}"
             break
         if any(t is not None and t >= DIE_ABORT_C for t in d.values()) or (hw and max(hw) >= ct.TEMP_ABORT_C):
             verdict = f"ABORT temp die={d} hwmon={hw}"
@@ -329,10 +376,10 @@ def soak(seconds: int, mib: int) -> str:
 
 # ---------------------------------------------------------------- sweep
 
-COLS = ["mhz", "ndiv", "vco", "switch", "ub_ddr_const", "ub_ddr_walk1", "ub_ddr_cmp", "ub_sram", "ub_spi_sf",
-        "ub_spi_bspi", "boot", "sched_clock", "sched_ok", "timer_ratio", "timer_ok", "memtest", "ddr_read32_MBps",
+COLS = ["time", "mhz", "cpu_bench_s", "speedup", "want_x", "ndiv", "vco", "switch", "ub_ddr_const", "ub_ddr_walk1", "ub_ddr_cmp", "ub_sram", "ub_spi_sf",
+        "ub_spi_bspi", "boot", "bogomips", "sched_clock", "sched_ok", "timer_ratio", "timer_ok", "memtest", "ddr_read32_MBps",
         "ddr_write32_MBps", "ddr_memcpy_MBps", "lat_ddr_ns", "sram_read32_MBps", "sram_write32_MBps",
-        "spi_u-boot", "spi_shmoo", "pci", "chip_ids", "ping", "die_u0", "die_u1", "hwmon_max", "soak", "verdict"]
+        "spi_u-boot", "spi_shmoo", "pci", "chip_ids", "ping", "die_idle_u0", "die_idle_u1", "die_u0", "die_u1", "die_peak_u0", "die_peak_u1", "hwmon_max", "soak_die_max", "soak", "verdict"]
 
 
 def write_row(row: dict[str, str]) -> None:
@@ -344,7 +391,8 @@ def write_row(row: dict[str, str]) -> None:
 
 
 def one_step(mhz: int, args, cap: list[float]) -> dict[str, str]:
-    row = {"mhz": str(mhz), "ndiv": str(ct.relock_ndiv(mhz)), "vco": str(2 * mhz)}
+    row = {"time": time.strftime("%H:%M:%S"), "mhz": str(mhz),
+           "ndiv": str(ct.relock_ndiv(mhz)) if mhz >= 1000 else "-", "vco": str(2 * mhz)}
     if 2 * mhz >= VCO_HIGH_HIGH_MHZ:
         log(f"{mhz} MHz: VCO {2 * mhz} in the generic iProc HIGH_HIGH band; ARM PLL loop params unchanged (I)")
     s, _ = dev._session_at_uboot([])
@@ -388,9 +436,14 @@ def one_step(mhz: int, args, cap: list[float]) -> dict[str, str]:
     if not wait_ssh():
         row["verdict"] = "FAIL ssh"
         return row
+    bm = re.search(r"BogoMIPS\s*:\s*([\d.]+)", ct.ssh("grep BogoMIPS /proc/cpuinfo"))
+    row["bogomips"] = bm.group(1) if bm else "?"
+    d = die_temps_linux()
+    row["die_idle_u0"], row["die_idle_u1"] = (f"{d[u]:.1f}" if d.get(u) is not None else "?" for u in (0, 1))
     row.update(linux_checks(mhz, args.mib, cap))
     d = die_temps_linux()
     row["die_u0"], row["die_u1"] = (f"{d[u]:.1f}" if d.get(u) is not None else "?" for u in (0, 1))
+    row["die_peak_u0"], row["die_peak_u1"] = (f"{PEAK.get(u, float('nan')):.1f}" for u in (0, 1))
     hw = ct.temps()
     row["hwmon_max"] = str(max(hw)) if hw else "?"
     if any(t is not None and t >= DIE_ABORT_C for t in d.values()) or (hw and max(hw) >= ct.TEMP_ABORT_C):
@@ -401,6 +454,7 @@ def one_step(mhz: int, args, cap: list[float]) -> dict[str, str]:
         row["verdict"] = "FAIL " + ",".join(fails)
         return row
     row["soak"] = soak(args.soak, args.mib)
+    row["soak_die_max"] = f"{SOAK_MAX[0]:.1f}"
     row["verdict"] = "PASS" if row["soak"] == "ok" else row["soak"]
     return row
 
@@ -412,10 +466,12 @@ def main() -> int:
     ap.add_argument("--step", type=int, default=50)
     ap.add_argument("--soak", type=int, default=300, help="seconds per step (#17 used 300)")
     ap.add_argument("--mib", type=int, default=64)
+    ap.add_argument("--no-cycle", action="store_true", help="leave the board as is at the end (no power-cycle)")
+    ap.add_argument("--steps", help="comma list of MHz overriding start/stop/step (400 allowed)")
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--build", action="store_true")
     args = ap.parse_args()
-    steps = plan(args.start, args.stop, args.step)
+    steps = [int(x) for x in args.steps.split(",")] if args.steps else plan(args.start, args.stop, args.step)
     if args.plan:
         show_plan(steps)
         return 0
@@ -428,12 +484,18 @@ def main() -> int:
     rc = 0
     for mhz in steps:
         log(f"===== {mhz} MHz =====")
-        row = one_step(mhz, args, cap)
+        try:
+            row = one_step(mhz, args, cap)
+        except (RuntimeError, subprocess.TimeoutExpired, console.Timeout) as e:
+            log(f"step {mhz} aborted: {e!r}")
+            row = {"mhz": str(mhz), "verdict": f"FAIL exception {type(e).__name__}"}
         write_row(row)
         log(f"{mhz} MHz verdict: {row.get('verdict')}")
         if row.get("verdict") != "PASS":
             rc = 1
             break
+    if args.no_cycle:
+        return rc
     log("sweep done: power-cycle back to stock 400 MHz (uboot-1 reprograms the ARM PLL)")
     dev.cmd_power_cycle([])
     return rc
