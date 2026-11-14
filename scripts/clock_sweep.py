@@ -464,7 +464,7 @@ def main() -> int:
     ap.add_argument("--start", type=int, default=1400)
     ap.add_argument("--stop", type=int, default=ct.VCO_MAX_MHZ // 2)
     ap.add_argument("--step", type=int, default=50)
-    ap.add_argument("--soak", type=int, default=300, help="seconds per step (#17 used 300)")
+    ap.add_argument("--soak", type=int, default=0, help="seconds per step; 0 = none (soaks only when Dan asks)")
     ap.add_argument("--mib", type=int, default=64)
     ap.add_argument("--no-cycle", action="store_true", help="leave the board as is at the end (no power-cycle)")
     ap.add_argument("--steps", help="comma list of MHz overriding start/stop/step (400 allowed)")
