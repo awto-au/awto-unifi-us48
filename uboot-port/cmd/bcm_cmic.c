@@ -5,6 +5,9 @@
 #include <string.h>
 #include <vsprintf.h>
 #include <asm/io.h>
+#include <asm/global_data.h>
+#include <time.h>
+#include <u-boot/crc.h>
 #include "bcm_cmic.h"
 
 /* Unit 0 window: CMC0..2 regs end below +0x34000 (driver-internals 1) */
@@ -116,6 +119,48 @@ static int do_hr2x(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 
 U_BOOT_CMD(hr2x, 2, 0, do_hr2x, "apply dropped stock S-channel write groups (chip only)",
 	   "<xmask>  - bit per group: 0 cpu_cos_map 1 egr_pri_cng_map 2 source_trunk_map 3 ipipe_mem 4 epipe_mem 5 ser 6 gport12 7 xlport 8 other");
+
+
+/* hr2mem dump|diff|sync <addr> [first [last]]: memory image of the chip (#46 option A; sync writes the chip only, never flash) */
+static int do_hr2mem(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	ulong addr, first = 0, last = bcm_hr2_mem_ntab() - 1;
+	int errs, total, ret;
+	unsigned long t0 = get_timer(0);
+	u32 *img;
+
+	if (argc >= 2 && !strcmp(argv[1], "list")) {
+		for (ret = 0; ret < bcm_hr2_mem_ntab(); ret++)
+			printf("%3d %s\n", ret, bcm_hr2_mem_name(ret));
+		return CMD_RET_SUCCESS;
+	}
+	if (argc < 3 || argc > 5 || !num(argv[2], &addr) || (argc > 3 && !num(argv[3], &first)) ||
+	    (argc > 4 && !num(argv[4], &last)) || last >= bcm_hr2_mem_ntab() || first > last)
+		return CMD_RET_USAGE;
+	img = (u32 *)addr;
+	if (!strcmp(argv[1], "dump")) {
+		u32 n = bcm_hr2_mem_dump(&unit0, img, first, last, &errs);
+
+		printf("hr2mem dump: %u bytes at 0x%lx crc32 0x%08x, %d read errors, %lu ms\n", n, addr, crc32(0, (u8 *)img, n), errs,
+		       get_timer(t0));
+		return CMD_RET_SUCCESS;
+	}
+	if (strcmp(argv[1], "diff") && strcmp(argv[1], "sync"))
+		return CMD_RET_USAGE;
+	ret = bcm_hr2_mem_cmp(&unit0, img, first, last, argv[1][0] == 's', &total, &errs);
+	if (ret) {
+		printf("hr2mem: bad image (%d)\n", ret);
+		return CMD_RET_FAILURE;
+	}
+	printf("hr2mem %s tables %lu..%lu: %d entries differ, %d errors, %lu ms\n", argv[1], first, last, total, errs, get_timer(t0));
+	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(hr2mem, 5, 0, do_hr2mem, "chip memory image dump / diff / sync (chip only)",
+	   "list                          - table indexes\n"
+	   "hr2mem dump <addr> [first [last]] - read all memories by S-channel into a sparse RAM image\n"
+	   "hr2mem diff <addr> [first [last]] - per-table count of live entries that differ from the image\n"
+	   "hr2mem sync <addr> [first [last]] - diff, writing the image values into the differing entries");
 
 static int do_miim(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {

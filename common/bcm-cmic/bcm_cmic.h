@@ -136,6 +136,11 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
 int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs);
 /* Dropped stock writes (bcm_cmic_hr2_init_x.h), groups = bits of xmask (see gen_bcm_hr2_init.py XGROUPS). */
 int bcm_hr2_u0_extra(struct bcm_cmic_unit *u, unsigned int xmask, int *ops, int *errs);
+/* Memory image dump/diff/sync (bcm_cmic_hr2_mem.c, `hr2mem` command): sparse RAM image of all IPIPE/EPIPE/MMU memories. */
+int bcm_hr2_mem_ntab(void);
+const char *bcm_hr2_mem_name(int t);
+u32 bcm_hr2_mem_dump(struct bcm_cmic_unit *u, u32 *img, int first, int last, int *errs);
+int bcm_hr2_mem_cmp(struct bcm_cmic_unit *u, const u32 *img, int first, int last, bool write, int *total, int *errs);
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
 int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);
