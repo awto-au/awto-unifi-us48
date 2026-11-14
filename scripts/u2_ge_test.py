@@ -38,7 +38,7 @@ def main() -> int:
         if not dev._u2_tftp(s, name):
             return 1
         dt = time.monotonic() - t0
-        s.expect([dev.U2_PROMPT], dev.BAUD_REPLY_S, "prompt after tftp")
+        s.expect([dev.U2_PROMPT], 10.0, "prompt after tftp")
         crc = dev._crc32(s, int(dev.LOAD_ADDR, 16), size, "crc32 of RAM image")
         ok = crc is not None and int(crc, 16) == host_crc
         log(f"tftp {size} B in {dt:.1f} s = {size / dt / 1024:.0f} KiB/s; crc board {crc} host {host_crc:08x}: "
