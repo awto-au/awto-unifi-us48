@@ -101,6 +101,22 @@ U_BOOT_CMD(schan, 6, 0, do_schan, "S-channel register read; w = WRITE_REG (chip 
 U_BOOT_CMD(smem, 5, 0, do_smem, "S-channel memory read (read-only)",
 	   "r <blk> <addr> <words>  - READ_MEM, entry of 1-16 words");
 
+/* hr2x <xmask>: apply the dropped stock write groups to the live chip (bring-up bisect, never flash) */
+static int do_hr2x(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	ulong m;
+	int ops, errs;
+
+	if (argc != 2 || !num(argv[1], &m))
+		return CMD_RET_USAGE;
+	bcm_hr2_u0_extra(&unit0, m, &ops, &errs);
+	printf("hr2x mask 0x%lx: %d ops, %d failed\n", m, ops, errs);
+	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(hr2x, 2, 0, do_hr2x, "apply dropped stock S-channel write groups (chip only)",
+	   "<xmask>  - bit per group: 0 cpu_cos_map 1 egr_pri_cng_map 2 source_trunk_map 3 ipipe_mem 4 epipe_mem 5 ser 6 gport12 7 xlport 8 other");
+
 static int do_miim(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	bool internal = true, scan;
