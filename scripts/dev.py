@@ -822,6 +822,7 @@ def cmd_u2_boot(extra: list[str]) -> int:
         if src == "tftp":
             if not _u2_tftp(s, img):
                 return 1
+            s.send_line("")  # the tftp reader may already have consumed the prompt
             s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after tftp")
         else:
             if _uboot_cmd(s, "sf probe 0", U2_PROMPTS, SF_BUDGET_S, "sf probe") is None:
@@ -919,6 +920,7 @@ def _flash_kernel0_u2(extra: list[str]) -> int:
         s.expect(U2_PROMPTS, BAUD_REPLY_S, "uboot-2 prompt (is the board at uboot-2?)")
         if not _u2_tftp(s, name):
             return 1
+        s.send_line("")
         s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after tftp")
         ram_crc = _crc32(s, int(LOAD_ADDR, 16), size, "crc32 of RAM image")
         if ram_crc is None:
