@@ -411,7 +411,7 @@ def _serial_reboot(s: console.Session) -> bool:
 RELAY_GAP_S = 5.0
 RELAY_HTTP_S = 5
 RELAY_PY = "/mnt/2tb/git/awto-terminal/.venv/bin/python3"  # has aioesphomeapi
-RELAY_DEFAULT = "so-th-1.local"  # Sonoff TH outlet, US-48 mains (Dan 2026-11-13)
+RELAY_DEFAULT = "192.168.25.208"  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
 
 
 def _relay_post(host: str, action: str) -> str:
