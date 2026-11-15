@@ -1,6 +1,6 @@
 # CLAUDE.md — awto-unifi-us48
 
-OpenWrt port + RE for the UniFi US-48-500W. **Public repo** — no secret values (filesystem paths + device IDs are fine), no backups/firmware images. SDK source + derived register tables ARE fine to commit (Dan 2026-10-14).
+Mainline Linux port + RE for the UniFi US-48-500W. OpenWrt is parked (Dan 2026-11-15): target native mainline (`scripts/build_mainline.py`, `mainline/`); OpenWrt resumes later (parking issue lists what to reopen). **Public repo** — no secret values (filesystem paths + device IDs are fine), no backups/firmware images. SDK source + derived register tables ARE fine to commit (Dan 2026-10-14).
 
 - Entry point `scripts/dev.py` (`describe` lists every command; `doctor`, `console`, `send`, `boot-ram`, `flash-net`, `boot-flash`). Console = one visible tio window; scripts use its socket, never the tty. Adapter is local on Selwyn since 2026-11-14 (leave `US48_HOST` unset; set `US48_HOST=lizard` only if it moves back).
 - Build: `python3 scripts/build_openwrt.py` (OpenWrt tree in `tmp/openwrt-build`, overlay = `openwrt/*.patch` + `openwrt/files/`). Edit the tree, then `--save-patch` to write the diff back.
