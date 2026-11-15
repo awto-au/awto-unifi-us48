@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * us48_a2: remoteproc driver for the unit 1 Cortex-A9 (a2), aux device us48_pci.a2.
- * Firmware us48-a2.elf runs from a DT reserved-memory carveout in host DDR (design: docs/a2-design.md).
+ * Firmware us48-a2.elf runs from a reusable CMA pool in host DDR, allocated whole while a2 is on (docs/a2-design.md).
  */
 #include <linux/auxiliary_bus.h>
 #include <linux/debugfs.h>
+#include <linux/dma-mapping.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -14,6 +15,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/regmap.h>
 #include <linux/remoteproc.h>
 #include <linux/seq_file.h>
@@ -98,7 +100,7 @@ MODULE_PARM_DESC(stub_dcc, "boot stub writes DCC marker characters (proves the c
 module_param(kernel_fw, charp, 0644);
 module_param(dtb_fw, charp, 0644);
 module_param(initrd_fw, charp, 0644);
-/* Offsets in the carveout: DT properties of the reserved-memory node, a module parameter overrides. */
+/* Offsets in the carveout: DT properties of the ubnt,us48-a2-rproc node, a module parameter overrides. */
 static uint kernel_off = U32_MAX, dtb_off = U32_MAX, initrd_off = U32_MAX;
 module_param(kernel_off, uint, 0644);
 module_param(dtb_off, uint, 0644);
@@ -121,7 +123,8 @@ struct us48_a2 {
 	struct us48_a2_dcc *dcc;	/* console reader: runs from before the release until stop */
 	phys_addr_t phys;
 	size_t size;
-	void *va;	/* WC mapping of the carveout */
+	void *va;	/* WC buffer of the carveout, valid between prepare and unprepare */
+	dma_addr_t dma;
 	u32 da;		/* a2 AXI address of the carveout start */
 	u32 dt_off[3];	/* kernel, dtb, initrd offsets from the DT, U32_MAX if absent */
 };
@@ -471,9 +474,18 @@ static int us48_a2_prepare(struct rproc *rproc)
 	u32 axi;
 	int ret;
 
+	/* The whole pool: cma_alloc fails (logged, no fallback) while movable pages in it are pinned. */
+	a->va = dma_alloc_wc(a->dev, a->size, &a->dma, GFP_KERNEL);
+	if (!a->va)
+		return dev_err_probe(a->dev, -ENOMEM, "dma_alloc_wc %zu B from the a2 pool failed (pinned pages?)\n", a->size);
+	if (a->dma != a->phys) {
+		dev_err(a->dev, "pool allocation at %pad, want %pa\n", &a->dma, &a->phys);
+		ret = -EINVAL;
+		goto free;
+	}
 	ret = us48_pci_outbound_map(a->p, a->phys, a->size, &axi);
 	if (ret)
-		return ret;
+		goto free;
 	if (axi != a->da) {
 		ret = -EINVAL;
 		goto unmap;
@@ -481,7 +493,7 @@ static int us48_a2_prepare(struct rproc *rproc)
 	ret = a2_reset(a);
 	if (ret)
 		goto unmap;
-	mem = rproc_mem_entry_init(a->dev, a->va, a->phys, a->size, a->da, NULL, NULL, A2_CARVEOUT);
+	mem = rproc_mem_entry_init(a->dev, a->va, a->dma, a->size, a->da, NULL, NULL, A2_CARVEOUT);
 	if (!mem) {
 		ret = -ENOMEM;
 		goto unmap;
@@ -490,6 +502,9 @@ static int us48_a2_prepare(struct rproc *rproc)
 	return 0;
 unmap:
 	us48_pci_outbound_unmap(a->p);
+free:
+	dma_free_wc(a->dev, a->size, a->va, a->dma);
+	a->va = NULL;
 	return ret;
 }
 
@@ -498,6 +513,8 @@ static int us48_a2_unprepare(struct rproc *rproc)
 	struct us48_a2 *a = rproc->priv;
 
 	us48_pci_outbound_unmap(a->p);
+	dma_free_wc(a->dev, a->size, a->va, a->dma);
+	a->va = NULL;
 	return 0;
 }
 
@@ -859,27 +876,48 @@ static const struct rproc_ops us48_a2_ops = {
 	.sanity_check		= a2_sanity_check,
 };
 
+static void a2_rmem_release(void *dev)
+{
+	of_reserved_mem_device_release(dev);
+}
+
 static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_device_id *id)
 {
 	struct device *dev = &adev->dev;
-	struct device_node *np;
+	struct device_node *np, *pool;
 	struct resource res;
 	u32 dt_off[3];
 	struct us48_a2 *a;
 	struct rproc *rproc;
 	int ret;
 
-	np = of_find_compatible_node(NULL, NULL, "ubnt,us48-a2-carveout");
+	np = of_find_compatible_node(NULL, NULL, "ubnt,us48-a2-rproc");
 	if (!np)
-		return dev_err_probe(dev, -ENODEV, "no reserved-memory node ubnt,us48-a2-carveout\n");
-	ret = of_address_to_resource(np, 0, &res);
+		return dev_err_probe(dev, -ENODEV, "no node ubnt,us48-a2-rproc\n");
+	pool = of_parse_phandle(np, "memory-region", 0);
+	if (!pool) {
+		of_node_put(np);
+		return dev_err_probe(dev, -ENODEV, "ubnt,us48-a2-rproc: no memory-region\n");
+	}
+	ret = of_address_to_resource(pool, 0, &res);
+	of_node_put(pool);
 	dt_off[0] = dt_off[1] = dt_off[2] = U32_MAX;
 	of_property_read_u32(np, "ubnt,kernel-offset", &dt_off[0]);
 	of_property_read_u32(np, "ubnt,dtb-offset", &dt_off[1]);
 	of_property_read_u32(np, "ubnt,initrd-offset", &dt_off[2]);
+	if (ret) {
+		of_node_put(np);
+		return dev_err_probe(dev, ret, "memory-region reg\n");
+	}
+	ret = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
+	if (!ret)
+		ret = of_reserved_mem_device_init_by_idx(dev, np, 0);
 	of_node_put(np);
 	if (ret)
-		return dev_err_probe(dev, ret, "carveout reg\n");
+		return dev_err_probe(dev, ret, "a2 memory pool\n");
+	ret = devm_add_action_or_reset(dev, a2_rmem_release, dev);
+	if (ret)
+		return ret;
 
 	rproc = devm_rproc_alloc(dev, "us48-a2", &us48_a2_ops, A2_FW, sizeof(*a));
 	if (!rproc)
@@ -901,9 +939,6 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if ((a->phys & (SZ_64M - 1)) + a->size > SZ_64M)
 		return dev_err_probe(dev, -EINVAL, "carveout %pa+%zx crosses a 64 MiB boundary\n", &a->phys, a->size);
 	a->da = HW_A2_HOST_WIN_BASE + (a->phys & (SZ_64M - 1));
-	a->va = devm_memremap(dev, a->phys, a->size, MEMREMAP_WC);
-	if (IS_ERR(a->va))
-		return PTR_ERR(a->va);
 	dev_info(dev, "carveout %pa+%zx, a2 AXI %#x\n", &a->phys, a->size, a->da);
 	/* created before rproc_add: devres releases it after rproc_del, which may still call stop() */
 	a->dcc = us48_a2_dcc_create(dev, a->map);
