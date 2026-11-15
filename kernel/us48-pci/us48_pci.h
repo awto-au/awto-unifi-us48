@@ -71,5 +71,9 @@ void us48_pci_outbound_unmap(struct us48_pci *p);
  */
 void *us48_a2_region_get(size_t *size);
 void us48_a2_region_put(void);
+/* us48_vnet (symbol_get): the a2 rproc, and the pool mapping, valid only inside an rproc subdev's prepare..unprepare (#85) */
+struct rproc;
+struct rproc *us48_a2_rproc(void);
+void *us48_a2_pool_va(size_t *size);
 
 #endif /* US48_PCI_H */

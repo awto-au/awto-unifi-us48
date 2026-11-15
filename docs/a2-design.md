@@ -11,6 +11,7 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 | `us48-a2` | **remoteproc** driver (aux device `us48_pci.a2`) | reset (CRU `ARM_RST_N`), halt/start via CoreSight (DSCR/ITR), ELF firmware load from `/lib/firmware/us48-a2.elf`, resource table, carveouts, crash recovery, coredump | done: `kernel/us48-a2` (ELF + payload mode), logic moved from `us48_pci_a2_*`; unit-tested only by build, not run on the board |
 | a2 memory | DT `reserved-memory` `reusable` `shared-dma-pool` (CMA) at a fixed address in a1 DDR | a2 code/data in host DDR, cached on a2 (#53: same speed as SRAM) | DT done (`mainline/0018`, #84 item 11); driver change pending (`dma_alloc_wc` at prepare, below). OARR_0/OMAP_0 set per boot by `us48_pci_outbound_map()`; the 64 MiB granule cannot be narrowed (below) |
 | messaging | **rpmsg** over virtio vrings in the carveout + **mailbox** doorbell | a1 ↔ a2 commands and streams; userspace through `rpmsg_char` | stub mailbox (cmd 1 call, 2 read32, 3 write32): replaced |
+| a1 ↔ a2 network | `us48-vnet` netdev on both sides (a1: rproc subdevice of `us48-a2`; a2: platform device) over a ring block in the carveout | routed IP between the CPUs (#85), module/rootfs update path for a2 | phase 1 done (below): hrtimer poll doorbell, `10.48.0.1/30` a1, `10.48.0.2/30` a2 |
 | doorbell a2 → a1 | mailbox controller: PCIe MSI raised by a2 if PAXB allows it (I, to check), else hrtimer poll of a doorbell word | wake a1 | new |
 | a2 log | remoteproc **trace** resource (ring in carveout) → debugfs `trace0` | out-of-band log, including the uboot-1 replay (#69 2b) | done: `trace0` resource in `us48-a2.elf` (text, heartbeat rewritten in place) |
 | a2 console (DCC) | `us48-a2` remoteproc: **tty** (`ttyA2DCC0`, tty_port + hrtimer poll) over regmap | a2 Linux console `hvc0`/`earlycon=dcc`: poll `cs_debug0.DSCR` (TXfull, bit 29), read `DTRTX` (+0x8c), push to the tty; write `DTRRX` (+0x80) when RXfull (bit 30) is clear; also fed into debugfs `console` ring | `scripts/a2_dcc_console.py` (RE tool, via uboot-2) |
@@ -75,6 +76,26 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 - Started in `start()` after set-PC and before the release; stopped in `stop()` before the halt (DSCR is shared with the debug sequences). 5 ms = 1/20 of a2's 100 ms `hvc_dcc_check` window.
 - Open `/dev/ttyA2` (or `cat`) before `echo start` to catch the boot text on the tty; `dcc_log` keeps the last 8 KiB either way.
 - Poll error (link down, -EIO) stops the poller and logs once; a2 stays blocked in DCC until the next start.
+
+## us48-vnet: a1 <-> a2 virtual Ethernet (#85, phase 1)
+
+- Module `kernel/us48-vnet/us48_vnet.c`, one source for both sides, one kernel image. Side at init: DT root compatible `ubnt,us48-a2` = a2.
+  - a2: platform device `ubnt,us48-vnet`, `memory-region` = reserved block `a2-vnet` (hwdb `a2_vnet`, last-but-one MiB of the a2 RAM, inside the `memory` node so it is linear-mapped write-back, kept from the allocator by `reserved-memory` without `no-map`).
+  - a1: no DT node. The module takes `us48_a2_rproc()` / `us48_a2_pool_va()` by `symbol_get` (no link dependency: the a2 build has no `us48_a2`) and registers an `rproc_subdev`. `prepare` (a2 not released yet) maps the pool block and zeroes + initialises the rings, `start`/`stop` arm/disarm the poll, `unprepare` drops the mapping. Loaded while a2 runs: attaches under `rproc->lock` and adopts a valid block (a1 reload does not disturb a2). Needs `us48_pci` + `us48_a2` loaded first.
+- Choice against upstream (#85 comment): virtio over a remoteproc vdev is host-side only (`rproc_virtio` is the driver half; no Linux device half exists for the other CPU); NTB/PCI-EPF vNTB needs an endpoint-mode controller driver for unit 1 PAXB. Custom symmetric pair, descriptor-ring shaped (virtio-like head/tail counters), instead.
+- Block (`a2_vnet`, 1 MiB at a2 `0x0be00000` = pool offset `0x3e00000`, offsets `VN_*` in the source): ctl line (magic `VNET`, version, 32 slots, slot size 9088), one 64 B line per side `{state, head, tail}`, rings at `+0x1000`: ring 0 written by a1, ring 1 by a2, 32 slots x 9088 B (64 B slot header with the length, frame up to 9014 B). 585 728 B used.
+  - Every cache line has one writer. a1 line = a1 `state`, a1 tx `head`, a1 rx `tail`; a2 line likewise. Counters are free running.
+  - Publish: slot data, barrier/cache clean, then `head`. Consume: read `head`, then the slot, then write `tail`.
+- Ordering and caches:
+  - a1: pool is `dma_alloc_wc` (write-combined, a1 never caches it). Writer: `wmb()` before head and after it; reader: `dma_rmb()` after head.
+  - a2: block is cached. Reader: `dma_sync_single_for_cpu` (invalidate, ends in a dsb) on the peer line, then slot header, then the data length actually used. Writer: `dma_sync_single_for_device` (clean + invalidate) on the slot, then a read-back of the slot header, then head + clean. One `dma_map_single` of the whole block, `DMA_BIDIRECTIONAL`, synced in slices.
+  - Read-back before head (#79): a2 writes are PCIe posted writes; with `paxb_order=1` (`EP_TX_WR_RD_ORDER`, default in `us48_a2`) a read completes behind them, so a1 cannot see `head` before the data. `rx_arid=0` (default) keeps a2's reads of a1 data from passing a1 writes.
+- Doorbell: hrtimer poll on both sides (`poll_us`, default 200) scheduling NAPI. Link = peer line `state`; carrier follows it.
+- Net: MTU 9000 (68..9000), MAC `02:48:00:00:00:01` a1 / `:02` a2, `features = 0` (no checksum, TSO, SG offload; rx `CHECKSUM_NONE`), tx copies into the slot, 64-entry qlen, queue stops on a full ring and wakes from the poll.
+- Addressing: private `10.48.0.0/30`: a1 `10.48.0.1`, a2 `10.48.0.2`. No house LAN, no NAT yet. a2 `/init` loads the module and configures `vnet0`; a1 is by hand (`insmod us48_vnet.ko; ip addr add 10.48.0.1/30 dev vnet0; ip link set vnet0 up`).
+- a2 payload offsets: external initramfs must end below `a2_vnet` (check in `us48_a2`).
+- Phase 2: PAXB MSI a2 -> a1 as the doorbell (#84 item 4), CMIC arbitration, routing.
+- Test: `scripts/vnet_test.py` (ping, 10 MiB TCP, stop/start cycles, a1 reload). Results: #85.
 
 ## Order
 

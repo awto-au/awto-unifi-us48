@@ -322,6 +322,7 @@ def configure(jobs: int) -> None:
 
 # Build order = dependency order: us48_pci (aux parent) first, its Module.symvers feeds the others.
 MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko"]),
+           ("kernel/us48-vnet", ["us48_vnet.ko"]),
            ("kernel/us48-bustest", ["us48_bustest.ko"]),
            ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"]),
            ("kernel/us48-cmic-gpio", ["us48_cmic_gpio.ko"]), ("kernel/us48-cmic-mspi", ["us48_cmic_mspi.ko"]),

@@ -6,6 +6,12 @@ mount -t sysfs sysfs /sys	# /proc/device-tree is a symlink into /sys
 if grep -q "ubnt,us48-a2" /proc/device-tree/compatible 2>/dev/null; then
 	mount -t devtmpfs devtmpfs /dev
 	echo "us48-a2: Linux $(uname -r) on unit 1 Cortex-A9 (hvc0, DCC)"
+	# vnet to a1 (#85): private /30, a1 = 10.48.0.1
+	if insmod /lib/modules/$(uname -r)/us48_vnet.ko; then
+		ifconfig vnet0 10.48.0.2 netmask 255.255.255.252 up && echo "us48-a2: vnet0 10.48.0.2/30 up"
+	else
+		echo "us48-a2: insmod us48_vnet failed rc=$?"
+	fi
 	exec setsid sh -c 'exec sh </dev/console >/dev/console 2>&1'
 fi
 umount /sys

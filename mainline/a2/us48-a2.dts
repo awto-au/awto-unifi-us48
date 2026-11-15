@@ -13,7 +13,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 
-#if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || !defined(A2_SRAM_BASE) || !defined(A2_SRAM_SIZE) || \
+#if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || !defined(A2_VNET_BASE) || !defined(A2_VNET_SIZE) || !defined(A2_SRAM_BASE) || !defined(A2_SRAM_SIZE) || \
 	!defined(A2_GIC_DIST_BASE_H) || !defined(A2_GIC_DIST_BASE) || !defined(A2_GIC_CPU_BASE) || !defined(A2_GTIMER_BASE) || !defined(A2_TWD_BASE) || !defined(A2_PERIPH_HZ) || !defined(A2_BOOTARGS)
 #error "A2_* macros (value and _H unit-address digits) come from hwdb via scripts/build_a2_linux.py"
 #endif
@@ -65,6 +65,16 @@
 			reg = <A2_SHARED_BASE A2_SHARED_SIZE>;
 			no-map;
 		};
+
+		/* us48-vnet rings (#85): kept out of the allocator but mapped write-back; cache maintenance by the DMA API */
+		a2_vnet: a2-vnet@A2_VNET_BASE_H {
+			reg = <A2_VNET_BASE A2_VNET_SIZE>;
+		};
+	};
+
+	vnet {
+		compatible = "ubnt,us48-vnet";
+		memory-region = <&a2_vnet>;
 	};
 
 	/*

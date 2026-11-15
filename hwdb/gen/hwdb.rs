@@ -61,7 +61,10 @@ pub const HW_A2_DTB_BASE: u32 = 0x09f00000;
 pub const HW_A2_DTB_SIZE: u32 = 0x100000;
 // region a2_initrd (axi1) [I]
 pub const HW_A2_INITRD_BASE: u32 = 0x0a000000;
-pub const HW_A2_INITRD_SIZE: u32 = 0x1f00000;
+pub const HW_A2_INITRD_SIZE: u32 = 0x1e00000;
+// region a2_vnet (axi1) [I]
+pub const HW_A2_VNET_BASE: u32 = 0x0be00000;
+pub const HW_A2_VNET_SIZE: u32 = 0x100000;
 // region a2_shared (axi1) [I]
 pub const HW_A2_SHARED_BASE: u32 = 0x0bf00000;
 pub const HW_A2_SHARED_SIZE: u32 = 0x100000;

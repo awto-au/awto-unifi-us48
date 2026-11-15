@@ -204,10 +204,10 @@ conf = "I"
 [region.a2_initrd]
 space = "axi1"
 base = 0x0a000000
-size = 0x1f00000
+size = 0x1e00000
 kind = "ram"
 unit = 1
-desc = "a2 Linux: external initramfs (offset 0x02000000, up to 31 MiB, ends at a2_shared); optional, the built-in one is used today"
+desc = "a2 Linux: external initramfs (offset 0x02000000, up to 30 MiB, ends at a2_vnet); optional, the built-in one is used today"
 src = "docs/a2-design.md"
 conf = "I"
 

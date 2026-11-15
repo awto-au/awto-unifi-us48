@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import hwdb  # noqa: E402
 
-BUILD = ROOT / "tmp/mainline/build-debug"
+BUILD = ROOT / "tmp/mainline/build-debug"  # --profile normal switches it
 TREE = ROOT / "tmp/linux-mainline"
 OUT = ROOT / "tmp/a2"
 DTS = ROOT / "mainline/a2/us48-a2.dts"
@@ -97,9 +97,11 @@ def check_config() -> None:
 
 
 def macros(db, cpu_mhz: int, bootargs: str, l2: bool = False) -> dict:
-    ram, shared = db.region("a2_carveout"), db.region("a2_shared")
+    ram, shared, vnet = db.region("a2_carveout"), db.region("a2_shared"), db.region("a2_vnet")
     if shared.base + shared.size != ram.base + ram.size:
         die("hwdb a2_shared is not the last bytes of a2_carveout")
+    if vnet.base + vnet.size != shared.base:
+        die("hwdb a2_vnet is not the block right below a2_shared")
 
     def pair(name, base, size=None):
         d = {f"A2_{name}_BASE": f"0x{base:x}", f"A2_{name}_BASE_H": f"{base:x}"}
@@ -108,8 +110,9 @@ def macros(db, cpu_mhz: int, bootargs: str, l2: bool = False) -> dict:
         return d
 
     m = {}
-    m.update(pair("RAM", ram.base, ram.size - shared.size))  # Linux RAM = carveout minus the shared MiB
+    m.update(pair("RAM", ram.base, ram.size - shared.size))  # Linux RAM = carveout minus the shared MiB; a2_vnet is reserved inside it
     m.update(pair("SHARED", shared.base, shared.size))
+    m.update(pair("VNET", vnet.base, vnet.size))
     sram = db.region("a2_sram")
     m.update(pair("SRAM", sram.base, sram.size))
     for name, blk in (("GIC_DIST", "gic_dist"), ("GIC_CPU", "gic_cpu"), ("GTIMER", "gtimer"), ("TWD", "twd")):
@@ -182,12 +185,14 @@ def main() -> int:
     ap.add_argument("--bootargs", default="console=hvc0 earlycon=dcc", help="a2 kernel command line (DT chosen/bootargs)")
     ap.add_argument("--l2", action="store_true", help="add the PL310 node (kernel enables L2)")
     ap.add_argument("--dtb-name", default="us48-a2.dtb", help="output name in tmp/a2")
+    ap.add_argument("--profile", choices=("normal", "debug"), default="debug", help="kernel build dir the zImage comes from (default debug)")
     ap.add_argument("--build", action="store_true", help="run scripts/build_mainline.py first")
     ap.add_argument("--periph", action="store_true", help="DTB with the unit 1 rng/sp805/sp804 nodes enabled (#84, conf I)")
     ap.add_argument("--dmac", action="store_true", help="DTB with the unit 1 PL330 enabled; only after a1 released dmac_idm.RESET_CONTROL (#84)")
     a = ap.parse_args()
-    global PERIPH, DMAC
+    global PERIPH, DMAC, BUILD
     PERIPH, DMAC = a.periph, a.dmac
+    BUILD = ROOT / f"tmp/mainline/build-{a.profile}"
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUT.mkdir(parents=True, exist_ok=True)
     if a.build:

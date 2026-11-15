@@ -60,9 +60,12 @@
 /* region a2_dtb (axi1): a2 Linux: DTB (offset 0x01f00000 in the a2 RAM, above the decompressed kernel which reaches ~+0x0f30000) [I] */
 #define HW_A2_DTB_BASE	0x09f00000U
 #define HW_A2_DTB_SIZE	0x100000U
-/* region a2_initrd (axi1): a2 Linux: external initramfs (offset 0x02000000, up to 31 MiB, ends at a2_shared); optional, the built-in one is used today [I] */
+/* region a2_initrd (axi1): a2 Linux: external initramfs (offset 0x02000000, up to 30 MiB, ends at a2_vnet); optional, the built-in one is used today [I] */
 #define HW_A2_INITRD_BASE	0x0a000000U
-#define HW_A2_INITRD_SIZE	0x1f00000U
+#define HW_A2_INITRD_SIZE	0x1e00000U
+/* region a2_vnet (axi1): us48-vnet rings (#85): the MiB below a2_shared, reserved (not no-map) in the a2 DTB so the a2 kernel maps it write-back and does cache maintenance by the DMA API. a1 reaches it at carveout offset 0x3e00000 through the us48_a2 pool (WC) [I] */
+#define HW_A2_VNET_BASE	0x0be00000U
+#define HW_A2_VNET_SIZE	0x100000U
 /* region a2_shared (axi1): Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there [I] */
 #define HW_A2_SHARED_BASE	0x0bf00000U
 #define HW_A2_SHARED_SIZE	0x100000U

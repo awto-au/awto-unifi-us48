@@ -9,3 +9,13 @@ unit = 1
 desc = "Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there"
 src = "docs/a2-linux.md; mainline/a2/us48-a2.dts"
 conf = "I"
+
+[region.a2_vnet]
+space = "axi1"
+base = 0x0be00000
+size = 0x100000
+kind = "ram"
+unit = 1
+desc = "us48-vnet rings (#85): the MiB below a2_shared, reserved (not no-map) in the a2 DTB so the a2 kernel maps it write-back and does cache maintenance by the DMA API. a1 reaches it at carveout offset 0x3e00000 through the us48_a2 pool (WC)"
+src = "docs/a2-design.md (vnet); mainline/a2/us48-a2.dts"
+conf = "I"

@@ -167,6 +167,24 @@ void us48_a2_region_put(void)
 }
 EXPORT_SYMBOL_GPL(us48_a2_region_put);
 
+/* For rproc subdevices (us48_vnet): the rproc, and the pool mapping, which is valid only between a subdev's prepare and unprepare. */
+struct rproc *us48_a2_rproc(void)
+{
+	return region_owner ? region_owner->rproc : NULL;
+}
+EXPORT_SYMBOL_GPL(us48_a2_rproc);
+
+void *us48_a2_pool_va(size_t *size)
+{
+	struct us48_a2 *a = region_owner;
+
+	if (!a || !a->va)
+		return NULL;
+	*size = a->size;
+	return a->va;
+}
+EXPORT_SYMBOL_GPL(us48_a2_pool_va);
+
 static int a2_wait(struct us48_a2 *a, u32 mask, u32 want, const char *what)
 {
 	u32 d;
@@ -258,7 +276,7 @@ static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *wha
 	if (off == U32_MAX) {
 		dev_err(a->dev, "payload: no %s offset (DT ubnt,%s-offset or module parameter)\n", what, what);
 		ret = -EINVAL;
-	} else if (off < A2_STUB_KEEP || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
+	} else if (off < A2_STUB_KEEP || off > a->size - HW_A2_VNET_SIZE - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_VNET_SIZE - HW_A2_SHARED_SIZE - off) {
 		dev_err(a->dev, "payload: %s %s (%zu B) at +%#x does not fit the carveout\n", what, n, fw->size, off);
 		ret = -EFBIG;
 	} else {

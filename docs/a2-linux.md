@@ -5,6 +5,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 ## Memory map (a2 AXI view)
 - RAM = hwdb `a2_carveout` (0x08000000, 64 MiB): host DDR low alias via PAXB OARR_0/OMAP_0 (#53). DTS macros come from hwdb (`scripts/build_a2_linux.py`).
 - Linux RAM = carveout minus last MiB; last MiB = hwdb `a2_shared` (`hwdb/soc/a2_linux.toml`), `no-map`.
+- MiB below it = hwdb `a2_vnet` (`0x0be00000`): inside the `memory` node, `reserved-memory` without `no-map` (mapped write-back, not allocated), rings of `us48-vnet` ([a2-design.md](a2-design.md)). `/init` on a2 loads `us48_vnet` and sets `vnet0` 10.48.0.2/30.
 - Kernel at base + 0x8000 (AUTO_ZRELADDR derives the base from where the zImage runs; ARM_PATCH_PHYS_VIRT), reaches ~base + 0x0f30000 with bss.
 - zImage at base + 0x1000000, DTB above the kernel end (layout requests in a2-design.md). Built-in initramfs: no external initrd.
 - Peripherals (hwdb `a9.toml`, same addresses as a1): GIC dist 0x19021000, GIC cpu 0x19020100, global timer 0x19020200 (PPI 11), TWD 0x19020600 (PPI 13), PERIPHCLK = ARM/2 (conf I, host-timed on unit 1 at 100 and 1000 MHz); DTB value from `build_a2_linux.py --cpu-mhz`.
