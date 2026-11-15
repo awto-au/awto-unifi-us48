@@ -124,6 +124,35 @@ static int tscreg_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops tscreg_ops = { .set = tscreg_set };
 module_param_cb(tscreg, &tscreg_ops, NULL, 0200);
 
+/* echo "<front> <aer> <reg> <mask> <val>" > .../tscwr: RMW one TSC register (bring-up experiments, AER = lane or 0 for core regs). */
+static int tscwr_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int front, aer, reg, mask, v;
+	u16 cur = 0;
+	int i, ret = -EINVAL;
+
+	if (sscanf(val, "%u %x %x %x %x", &front, &aer, &reg, &mask, &v) != 5 || reg > 0x1ffff || mask > 0xffff || v > 0xffff)
+		return -EINVAL;
+	mutex_lock(&dump_lock);
+	if (!dump_u)
+		ret = -ENODEV;
+	for (i = 0; dump_u && i < dump_u->nports; i++) {
+		if (dump_u->cfgs[i].copper || dump_u->cfgs[i].front != front)
+			continue;
+		mutex_lock(&dump_u->mdio);
+		ret = us48_tsc_wr(dump_u, 0xffde, aer);
+		if (!ret && mask != 0xffff)
+			ret = us48_tsc_rd(dump_u, reg, &cur);
+		ret = ret ?: us48_tsc_wr(dump_u, reg, (cur & ~mask) | v);
+		mutex_unlock(&dump_u->mdio);
+	}
+	mutex_unlock(&dump_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops tscwr_ops = { .set = tscwr_set };
+module_param_cb(tscwr, &tscwr_ops, NULL, 0200);
+
 static const struct kernel_param_ops rx_restart_ops = { .set = rx_restart_set };
 module_param_cb(rx_restart, &rx_restart_ops, NULL, 0200);
 

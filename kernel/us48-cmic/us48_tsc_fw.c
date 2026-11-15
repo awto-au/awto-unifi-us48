@@ -11,11 +11,12 @@
 
 #include "us48_cmic.h"
 
-enum { TSC_RMW, TSC_DELAY, TSC_LANE_RESET, TSC_UC_RX, TSC_FW, TSC_PLL, TSC_CRC };
+enum { TSC_RMW, TSC_DELAY, TSC_LANE_RESET, TSC_UC_RX, TSC_FW, TSC_PLL, TSC_CRC, TSC_UC_CMD };
 enum { TSC_LANE, TSC_SHARED, TSC_PAIR, TSC_ALL };
 struct tsc_step {
 	u8 op, scope;
 	u16 reg, mask, val;
+	u8 devad;
 };
 
 #include "us48_tsc_init.h"
@@ -57,13 +58,48 @@ static int tsc_set_aer(struct us48_cmic *u, u8 aer)
 
 static int tsc_rmw_one(struct us48_cmic *u, const struct tsc_step *s, u8 aer)
 {
+	u32 reg = s->devad << 16 | s->reg;
 	u16 v = 0;
 
 	if (tsc_set_aer(u, aer))
 		return -EIO;
-	if (s->mask != 0xffff && us48_tsc_rd(u, s->reg, &v))
+	if (s->mask != 0xffff && us48_tsc_rd(u, reg, &v))
 		return -EIO;
-	return us48_tsc_wr(u, s->reg, (v & ~s->mask) | s->val);
+	return us48_tsc_wr(u, reg, (v & ~s->mask) | s->val);
+}
+
+#define UC_CTRL_REG		0xc20e
+#define DSC_DIAG_CTRL0_REG	0xc20d
+/* OM _tsc_uc_cmd_seq polls READY_FOR_CMD 2000 reads without a time base; one MIIM read ~65 us, so 130 ms. Expiry = error. */
+#define UC_READY_MS		130
+
+/* Graceful uC stop (0) / resume (2) of one lane, OM _tsc_uc_cmd_seq (rev < A2): UC_CTRL = cmd << 8 | GP_UC_REQ. */
+static int tsc_uc_cmd(struct us48_cmic *u, u8 lane, u8 cmd)
+{
+	ktime_t t0 = ktime_get();
+	u16 v = 0;
+
+	if (tsc_set_aer(u, lane) || us48_tsc_rd(u, DSC_DIAG_CTRL0_REG, &v))
+		return -EIO;
+	if (v & BIT(0))		/* DIAGNOSTICS_EN: uC busy with diagnostics, OM skips */
+		return 0;
+	do {
+		if (us48_tsc_rd(u, UC_CTRL_REG, &v))
+			return -EIO;
+		if (v & BIT(7))
+			break;
+		tsc_delay(1000);
+	} while (ktime_ms_delta(ktime_get(), t0) < UC_READY_MS);
+	if (!(v & BIT(7))) {
+		dev_err(u->dev, "tsc uC cmd %u lane %u: UC_CTRL %04x not ready after %lld ms (limit %u ms)\n", cmd, lane, v,
+			ktime_ms_delta(ktime_get(), t0), UC_READY_MS);
+		return -ETIMEDOUT;
+	}
+	if (us48_tsc_wr(u, UC_CTRL_REG, v & ~(BIT(7) | BIT(6) | GENMASK(5, 4))) ||
+	    us48_tsc_wr(u, UC_CTRL_REG, cmd << 8 | 1))
+		return -EIO;
+	tsc_delay(1000);
+	return 0;
 }
 
 static int tsc_rmw(struct us48_cmic *u, const struct tsc_step *s, u8 lane)
@@ -158,6 +194,9 @@ static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lan
 			m = (lane_mask << TSC_RESET_RX_SHIFT) | (lane_mask << TSC_RESET_TX_SHIFT);
 			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = TSC_RESET_REG, .mask = m, .val = st[i].val ? m : 0 }, 0);
 			break;
+		case TSC_UC_CMD:
+			ret = tsc_uc_cmd(u, lane, st[i].val);
+			break;
 		case TSC_UC_RX:
 			ret = us48_tsc_uc_ram_wr(u, lane, 0x04d0 + 0x100 * lane, st[i].val ? 0x0e00 : 0x0d00);
 			break;
@@ -200,8 +239,16 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 		if (u->cfgs[i].copper)
 			continue;
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
+		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
+		/* SFP+ 1 (lane 0) has a passive DAC: FIRMWARE_MODE 2 = OM's CR mode; with 0 the RX never block-syncs (#78, board). */
+		if (!ret && u->cfgs[i].lane == 0)
+			ret = tsc_uc_cmd(u, 0, 0) ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc260, .mask = 0xffff, .val = 2 }, 0) ?:
+			      tsc_uc_cmd(u, 0, 2) ?: us48_tsc_uc_ram_wr(u, 0, 0x04d0, 0x0d00) ?:
+			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc137, .mask = BIT(0) }, 0) ?:	/* RSTB_LANE 0 */
+			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc21e, .mask = BIT(15), .val = BIT(15) }, 0) ?:	/* RXSEQSTART */
+			      us48_tsc_uc_ram_wr(u, 0, 0x04d0, 0x0e00);
 		if (!ret)
-			dev_info(u->dev, "tsc %s: stage 2 done\n", u->cfgs[i].name);
+			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);
 	}
 	mutex_unlock(&u->mdio);
 	return ret;
