@@ -72,3 +72,16 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 | + PL310 L2 node (`build_a2_linux.py --l2`) | 1.32 s | 1.58 s |
 
 - Debug profile options (poisoning, lockdep, UBSAN) are the cost, not the console or decompression (4 s).
+
+## Corruption above 100 MHz: offline analysis (#79)
+- Leading suspect: Linux UP maps RAM write-back **no-write-allocate** (NMRR `0x40e040e0`, `arch/arm/mm/proc-v7-2level.S:119-140`; `mmu.c:57` default `CPOLICY_WRITEBACK`; write-allocate is forced only for SMP, `mmu.c:452-456`; `CONFIG_SMP` is off). Bustest maps RAM write-back write-allocate (`bustest.c:77`) and never reloads a word it stored a few cycles before.
+- A9 L1: 2 line-fill buffers, 1 eviction buffer, 4-entry 64-bit merging store buffer (DDI0388 p7-2/7-3). A store miss on a non-allocating mapping leaves as a merged 64-bit AXI write; the next load of that line issues a line fill with no BRESP wait. AXI does not order AW against AR.
+- PAXB has no read-behind-write ordering on at least one path (`pcie-harness.md` "Window flush", 3dd7608). Store-to-load distance shrinks with the CPU clock, so a race that needs the load right behind the store appears above 100 MHz.
+- Controls found (regdb): `PAXB_0_PCIE_PAXB_RX_DEBUG_CONTROL_0` 0x1801210c (`RX_IGNORE_BRESP` bit 5 reset 0, `RX_FREE_ARID_COUNT` 1:0 reset 3, `RX_PAXB_FREE_CMPL_BUF_COUNT` 4:2 reset 7); `PAXB_0_PCIE_RC_AXI_CONFIG` 0x18012100 reset 0x3bfdf (AxCACHE 0xe, AxUSER 0x1f); `PAXB_0_PCIE_EP_AXI_CONFIG` 0x18012104 reset 0x3ffff (AxCACHE 0xf = bufferable; stock BDE writes 0).
+- Root port DevCtl 0x2c10 on stock = relaxed ordering + no-snoop on (`stock-bootlog-facts.md:38`); mainline PCI core leaves the bit as found.
+- A9 always sets AWUSER[8] (early BRESP permitted, DDI0388 p8-7); only an L2C-310 acts on it, so it does not explain the L2-off failure. Linux UP does not touch ACTLR (`proc-v7.S:309-316` is `CONFIG_SMP` only).
+
+## Ordering test (`a2fw/rawtest.c`, `us48-a2-rawtest.elf`)
+- Store word, load it back at once, under WBWA / WB-no-WA (Linux) / WT / NC mappings (tests A, B), plus store + line clean-invalidate + reload (C) and store + 9 same-set loads + reload (D). Memory truth re-read through the NC alias after clean+invalidate.
+- Output: `trace0` text. `m` = wrong loads, `r` = wrong words in memory; `m>0, r=0` = stale read, `r>0` = lost or late write. Header shows ACTLR and the L1 way size.
+- Run at `cpu_mhz=1000`: `insmod us48_a2.ko firmware name`, `echo start`, `cat /sys/kernel/debug/remoteproc/remoteproc0/trace0` (a1 text only, no DCC). Expect A_nwa/B_nwa to fail if the leading suspect is right; repeat at 100 MHz as control.
