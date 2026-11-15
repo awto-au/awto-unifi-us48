@@ -96,7 +96,7 @@ def check_config() -> None:
     log("config ok: AUTO_ZRELADDR, ARM_PATCH_PHYS_VIRT, HVC_DCC, EARLYCON, CMDLINE_FROM_BOOTLOADER (DT bootargs win)")
 
 
-def macros(db) -> dict:
+def macros(db, cpu_mhz: int, bootargs: str) -> dict:
     ram, shared = db.region("a2_carveout"), db.region("a2_shared")
     if shared.base + shared.size != ram.base + ram.size:
         die("hwdb a2_shared is not the last bytes of a2_carveout")
@@ -112,6 +112,8 @@ def macros(db) -> dict:
     m.update(pair("SHARED", shared.base, shared.size))
     for name, blk in (("GIC_DIST", "gic_dist"), ("GIC_CPU", "gic_cpu"), ("GTIMER", "gtimer"), ("TWD", "twd")):
         m.update(pair(name, db.addr(blk)))
+    m["A2_BOOTARGS"] = '"%s"' % bootargs
+    m["A2_PERIPH_HZ"] = str(cpu_mhz * 500000)  # PERIPHCLK = ARM/2
     for name, blk in (("RNG", "rng"), ("WDT", "sp805"), ("SP804", "sp804_0"), ("DMAC", "dmac")):  # unit 1 CCB blocks, #84
         m.update(pair(name, db.addr(blk)))
     if PERIPH:
@@ -121,18 +123,18 @@ def macros(db) -> dict:
     return m
 
 
-def build_dtb(db) -> Path:
+def build_dtb(db, cpu_mhz: int, bootargs: str, name: str) -> Path:
     dtc = BUILD / "scripts/dtc/dtc"
     if not dtc.exists():
         die(f"{dtc} missing: run build_mainline.py once")
-    defs = [f"-D{k}={v}" for k, v in sorted(macros(db).items())]
+    defs = [f"-D{k}={v}" for k, v in sorted(macros(db, cpu_mhz, bootargs).items())]
     pre = OUT / "us48-a2.pre.dts"
     cmd = ["cpp", "-nostdinc", "-undef", "-D__DTS__", "-x", "assembler-with-cpp", "-I", str(TREE / "include"),
            *defs, str(DTS), "-o", str(pre)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUT)
     if r.returncode:
         die("cpp: " + r.stderr.strip())
-    dtb = OUT / "us48-a2.dtb"
+    dtb = OUT / name
     r = subprocess.run([str(dtc), "-I", "dts", "-O", "dtb", "-@", "-Wno-unit_address_vs_reg", "-o", str(dtb), str(pre)],
                        capture_output=True, text=True, timeout=TOOL_TIMEOUT)
     log("dtc: " + (r.stderr.strip() or "clean"))
@@ -171,6 +173,9 @@ def check_layout(db, zimage: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--cpu-mhz", type=int, default=1000, help="a2 ARM MHz = us48_a2 cpu_mhz (default 1000); sets the DTB timer clock")
+    ap.add_argument("--bootargs", default="console=hvc0 earlycon=dcc", help="a2 kernel command line (DT chosen/bootargs)")
+    ap.add_argument("--dtb-name", default="us48-a2.dtb", help="output name in tmp/a2")
     ap.add_argument("--build", action="store_true", help="run scripts/build_mainline.py first")
     ap.add_argument("--periph", action="store_true", help="DTB with the unit 1 rng/sp805/sp804 nodes enabled (#84, conf I)")
     ap.add_argument("--dmac", action="store_true", help="DTB with the unit 1 PL330 enabled; only after a1 released dmac_idm.RESET_CONTROL (#84)")
@@ -186,10 +191,10 @@ def main() -> int:
         die(f"{z} missing: run with --build")
     check_config()
     db = hwdb.load()
-    dtb = build_dtb(db)
+    dtb = build_dtb(db, a.cpu_mhz, a.bootargs, a.dtb_name)
     shutil.copy2(z, OUT / "zImage")
     check_layout(db, z)
-    log(f"output: tmp/a2/zImage {(OUT / 'zImage').stat().st_size} B, tmp/a2/us48-a2.dtb {dtb.stat().st_size} B")
+    log(f"output: tmp/a2/zImage {(OUT / 'zImage').stat().st_size} B, {dtb} {dtb.stat().st_size} B")
     return 0
 
 

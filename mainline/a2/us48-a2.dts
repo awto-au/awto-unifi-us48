@@ -5,7 +5,7 @@
  * Addresses come from hwdb via scripts/build_a2_linux.py (-D macros): never edited here.
  * Deliberately absent (a2 must not touch): DDR controller 0x60000000 (stalls a2), QSPI/flash, PCIe,
  * L2 PL310 (left off as the boot ROM leaves it), anything on the CCB/APB buses (docs/a2.md, #53).
- * Clock rates: conf I, a2 PERIPHCLK is not measured on unit 1 (docs/a2-linux.md).
+ * Clock: PERIPHCLK = ARM/2 (docs/a2-linux.md).
  */
 
 /dts-v1/;
@@ -14,7 +14,7 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 
 #if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || \
-	!defined(A2_GIC_DIST_BASE_H) || !defined(A2_GIC_DIST_BASE) || !defined(A2_GIC_CPU_BASE) || !defined(A2_GTIMER_BASE) || !defined(A2_TWD_BASE)
+	!defined(A2_GIC_DIST_BASE_H) || !defined(A2_GIC_DIST_BASE) || !defined(A2_GIC_CPU_BASE) || !defined(A2_GTIMER_BASE) || !defined(A2_TWD_BASE) || !defined(A2_PERIPH_HZ) || !defined(A2_BOOTARGS)
 #error "A2_* macros (value and _H unit-address digits) come from hwdb via scripts/build_a2_linux.py"
 #endif
 
@@ -35,7 +35,7 @@
 
 	chosen {
 		/* DCC console: a1 drains DBGDTRTX over PCIe (docs/a2-linux.md). No ttyS: unit 1 UART is not wired. */
-		bootargs = "console=hvc0 earlycon=dcc";
+		bootargs = A2_BOOTARGS;
 	};
 
 	cpus {
@@ -68,11 +68,11 @@
 	};
 
 	clocks {
-		/* conf I: PERIPHCLK = ARM/2, ARM at what unit 1's CCU leaves (400 MHz assumed as unit 0); a2 rate TBD (#70) */
+		/* PERIPHCLK = ARM/2 (conf I, host-timed on unit 1); ARM = us48_a2 cpu_mhz, A2_PERIPH_HZ from build_a2_linux.py --cpu-mhz */
 		periph_clk: periph_clk {
 			#clock-cells = <0>;
 			compatible = "fixed-clock";
-			clock-frequency = <200000000>;
+			clock-frequency = <A2_PERIPH_HZ>;
 		};
 	};
 

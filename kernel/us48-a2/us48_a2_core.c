@@ -8,6 +8,8 @@
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/ktime.h>
+#include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -34,6 +36,28 @@
  * Expiry: log op + DSCR + limit, -ETIMEDOUT. A stalled a2 (bad AXI read) never halts: stop resets it.
  */
 #define DBG_WAIT_US	1000
+
+/*
+ * a2 ARM clock: same sequence as awto-uboot us48_cpu_switch (uboot-port/board/ubiquiti/us48/board.c, docs/clock-audit.md 2),
+ * written through the unit 1 regmap before the release. 0 = leave the CCU as the ROM left it.
+ * GO and PLL lock: ~10 us / tens of us expected (I, unmeasured on unit 1); 1 ms limit, expiry = log + restore.
+ */
+static uint cpu_mhz = 1000;
+module_param(cpu_mhz, uint, 0644);
+MODULE_PARM_DESC(cpu_mhz, "a2 ARM clock set at start: 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO a multiple of 25 MHz; 0 = leave");
+#define CCU(r)		(HW_CCU_BASE + HW_CCU_##r)
+#define CCU_UNLOCK	0xa5a501
+#define CCU_LOCKED	(HW_CCU_PLLARMA_LOCK_MASK | HW_CCU_PLLARMA_LOCK_RAW_MASK)
+#define CCU_WAIT_US	1000
+/* up to 600 MHz: VCO 4 x MHz through ch0 (mdiv 4, fid 6; 400 = stock); above: VCO 2 x MHz through ch1 (mdiv 2, fid 7) */
+#define CCU_FID6(mhz)	((mhz) <= 600)
+#define CCU_VCO_MHZ(mhz)	(CCU_FID6(mhz) ? (mhz) * 4 : (mhz) * 2)
+#define CCU_POLICY(mhz)	(CCU_FID6(mhz) ? 0x86060606 : 0x87070707)
+#define CCU_PLLARMA_VAL(mhz, post) (HW_CCU_PLLARMA_LOCK_MASK | 1 << HW_CCU_PLLARMA_PDIV_SHIFT | \
+				    (CCU_VCO_MHZ(mhz) / 25) << HW_CCU_PLLARMA_NDIV_INT_SHIFT | ((post) ? 3 : 1))
+
+/* Stub text + boot args (+0x200) end below this; an uncompressed Image goes at +0x8000, a zImage at +0x1000000 */
+#define A2_STUB_KEEP	0x1000
 
 /* Payload mode (Linux on a2): after the stub ELF, zImage + DTB (+ initramfs) are copied into the carveout. */
 static bool payload;
@@ -164,7 +188,7 @@ static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *wha
 	if (off == U32_MAX) {
 		dev_err(a->dev, "payload: no %s offset (DT ubnt,%s-offset or module parameter)\n", what, what);
 		ret = -EINVAL;
-	} else if (off < HW_A2_STUB_SIZE || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
+	} else if (off < A2_STUB_KEEP || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
 		dev_err(a->dev, "payload: %s %s (%zu B) at +%#x does not fit the carveout\n", what, n, fw->size, off);
 		ret = -EFBIG;
 	} else {
@@ -234,6 +258,8 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 	}
 	if (ret || !payload)
 		return ret;
+	if (cpu_mhz > 400)
+		dev_warn(a->dev, "Linux payload at cpu_mhz %u: memory corruption seen above 400 MHz (#70, #79)\n", cpu_mhz);
 	ret = a2_blob(a, kernel_fw, koff, "kernel", false) ?: a2_blob(a, dtb_fw, doff, "dtb", false) ?:
 	      a2_blob(a, initrd_fw, ioff, "initrd", true);
 	if (ret || ub)
@@ -248,6 +274,121 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 	args->magic = US48_A2_BOOT_MAGIC;	/* last: the stub parks without it */
 	return 0;
 }
+
+/* clk-iproc-armpll.c recalc: bypass, lock, offset mode, 0 = max divider; 0 returned when not a plain PLL rate */
+static ulong a2_arm_hz(struct us48_a2 *a, u32 *fid_out)
+{
+	u32 dbg, pa, pb, pc, c5, off;
+	u64 ndiv;
+	u32 fid, pdiv, mdiv;
+
+	if (regmap_read(a->map, CCU(POLICY_DBG), &dbg) || regmap_read(a->map, CCU(PLLARMA), &pa) ||
+	    regmap_read(a->map, CCU(PLLARMB), &pb) || regmap_read(a->map, CCU(PLLARMC), &pc) ||
+	    regmap_read(a->map, CCU(PLLARMCTL5), &c5) || regmap_read(a->map, CCU(PLLARM_OFFSET), &off))
+		return 0;
+	fid = (dbg & HW_CCU_POLICY_DBG_ACT_FREQ_MASK) >> HW_CCU_POLICY_DBG_ACT_FREQ_SHIFT;
+	if (fid_out)
+		*fid_out = fid;
+	if (fid == 0)
+		return 25000000;
+	if (fid == 2)
+		return 100000000;	/* sys clk row of the Broadcom table (armpll.c:26); unit 1 ROM default */
+	if ((fid != 6 && fid != 7) || (pc & HW_CCU_PLLARMC_CH0_BYPASS_MASK) || !(pa & HW_CCU_PLLARMA_LOCK_MASK) ||
+	    (off & HW_CCU_PLLARM_OFFSET_SW_CTL_MASK))
+		return 0;
+	mdiv = (fid == 6 ? pc : c5) & 0xff;
+	ndiv = (pa & HW_CCU_PLLARMA_NDIV_INT_MASK) >> HW_CCU_PLLARMA_NDIV_INT_SHIFT;
+	pdiv = (pa & HW_CCU_PLLARMA_PDIV_MASK) >> HW_CCU_PLLARMA_PDIV_SHIFT;
+	ndiv = ((ndiv ?: 1024) << 20) | (pb & HW_CCU_PLLARMB_NDIV_FRAC_MASK);
+	return div_u64(div_u64(div_u64(25000000ULL * ndiv, 1 << 20), pdiv ?: 8), mdiv ?: 256);
+}
+
+static int a2_ccu_go(struct us48_a2 *a, u32 policy)
+{
+	u32 v;
+	int ret = regmap_write(a->map, CCU(POLICY_FREQ), policy) ?: regmap_write(a->map, CCU(POLICY_CTL), 3);
+
+	if (ret)
+		return ret;
+	ret = regmap_read_poll_timeout(a->map, CCU(POLICY_CTL), v, !(v & HW_CCU_POLICY_CTL_GO_MASK), 0, CCU_WAIT_US);
+	if (ret)
+		dev_err(a->dev, "ccu GO (policy %#x): POLICY_CTL %#x, limit %d us, ret %d\n", policy, v, CCU_WAIT_US, ret);
+	return ret;
+}
+
+/* E2 relock (sys clk while the PLL relocks, then fid 7). Failure: PLL and policy restored to what was read. */
+static int a2_set_cpu(struct us48_a2 *a, uint mhz)
+{
+	u32 fid = 0, old_pa, old_pol, pb, v;
+	ulong hz = a2_arm_hz(a, &fid);
+	ktime_t t0 = ktime_get();
+	int ret;
+
+	if (!mhz)
+		return 0;
+	if (hz / 1000000 == mhz && fid == (CCU_FID6(mhz) ? 6 : 7))
+		return 0;
+	if (!(mhz >= 400 && mhz < 2000 && CCU_VCO_MHZ(mhz) % 25 == 0 && CCU_VCO_MHZ(mhz) >= 1600 && CCU_VCO_MHZ(mhz) <= 4000))
+		return dev_err_probe(a->dev, -EINVAL, "cpu_mhz %u: 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO 1600..4000 and a multiple of 25\n", mhz);
+	ret = regmap_read(a->map, CCU(PLLARMCTL5), &v);
+	if (ret)
+		return ret;
+	if ((v & 0xff) != 2 || (fid != 2 && fid != 6 && fid != 7))
+		return dev_err_probe(a->dev, -EINVAL, "ccu gate: ch1 mdiv %u (want 2), active fid %u (want 2/6/7)\n", v & 0xff, fid);
+	ret = regmap_read(a->map, CCU(PLLARMA), &old_pa);
+	ret = ret ?: regmap_read(a->map, CCU(POLICY_FREQ), &old_pol);
+	ret = ret ?: regmap_read(a->map, CCU(PLLARMB), &pb);
+	ret = ret ?: regmap_write(a->map, CCU(WR_ACCESS), CCU_UNLOCK);
+	if (ret)
+		return ret;
+	ret = a2_ccu_go(a, 0x82020202);
+	if (ret)
+		goto restore;
+	ret = regmap_write(a->map, CCU(PLLARMB), (pb & ~HW_CCU_PLLARMB_NDIV_FRAC_MASK) | 1);
+	ret = ret ?: regmap_write(a->map, CCU(PLLARMA), CCU_PLLARMA_VAL(mhz, 0));
+	ret = ret ?: regmap_read_poll_timeout(a->map, CCU(PLLARMA), v, (v & CCU_LOCKED) == CCU_LOCKED, 0, CCU_WAIT_US);
+	if (ret) {
+		dev_err(a->dev, "ccu PLL lock: PLLARMA %#x, limit %d us, ret %d\n", v, CCU_WAIT_US, ret);
+		goto restore;
+	}
+	ret = regmap_write(a->map, CCU(PLLARMA), CCU_PLLARMA_VAL(mhz, 1)) ?: a2_ccu_go(a, CCU_POLICY(mhz));
+	if (!ret)
+		goto out;
+restore:
+	regmap_write(a->map, CCU(PLLARMA), old_pa);
+	a2_ccu_go(a, old_pol);
+out:
+	regmap_write(a->map, CCU(WR_ACCESS), 0);
+	hz = a2_arm_hz(a, &fid);
+	dev_info(a->dev, "a2 ARM %lu MHz (fid %u), requested %u, ret %d, %lld us\n", hz / 1000000, fid, mhz, ret,
+		 ktime_to_us(ktime_sub(ktime_get(), t0)));
+	return ret;
+}
+
+static int a2_ccu_show(struct seq_file *m, void *unused)
+{
+	static const struct { const char *n; u32 r; } regs[] = {
+		{ "ARM_DIV", HW_CCU_ARM_DIV }, { "POLICY_FREQ", HW_CCU_POLICY_FREQ }, { "POLICY_CTL", HW_CCU_POLICY_CTL },
+		{ "POLICY_DBG", HW_CCU_POLICY_DBG }, { "PLLARMA", HW_CCU_PLLARMA }, { "PLLARMB", HW_CCU_PLLARMB },
+		{ "PLLARMC", HW_CCU_PLLARMC }, { "PLLARMCTL5", HW_CCU_PLLARMCTL5 }, { "PLLARM_OFFSET", HW_CCU_PLLARM_OFFSET },
+		{ "PLL_DEBUG", HW_CCU_PLL_DEBUG },
+	};
+	struct us48_a2 *a = m->private;
+	u32 v, fid = 0;
+	ulong hz;
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(regs); i++) {
+		ret = regmap_read(a->map, HW_CCU_BASE + regs[i].r, &v);
+		if (ret)
+			return ret;
+		seq_printf(m, "%-14s %#010x\n", regs[i].n, v);
+	}
+	hz = a2_arm_hz(a, &fid);
+	seq_printf(m, "fid %u ARM %lu Hz (%lu MHz) PERIPHCLK %lu Hz (conf I: ARM/2)\n", fid, hz, hz / 1000000, hz / 2);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(a2_ccu);
 
 /* Before the firmware load: window to the carveout, a2 held in ROM so it cannot run stale code over the load. */
 static int us48_a2_prepare(struct rproc *rproc)
@@ -293,6 +434,7 @@ static int us48_a2_start(struct rproc *rproc)
 	struct us48_a2 *a = rproc->priv;
 	int ret = a2_reset(a);
 
+	ret = ret ?: a2_set_cpu(a, cpu_mhz);
 	ret = ret ?: a2_halt(a);
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);
 	if (!ret)
@@ -404,6 +546,8 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 		us48_a2_dcc_debugfs(a->dcc, rproc->dbg_dir);
 		if (rproc->dbg_dir)
 			debugfs_create_file("pcsr", 0444, rproc->dbg_dir, a, &a2_pcsr_fops);
+		if (rproc->dbg_dir)
+			debugfs_create_file("ccu", 0444, rproc->dbg_dir, a, &a2_ccu_fops);
 	}
 	return ret;
 }
