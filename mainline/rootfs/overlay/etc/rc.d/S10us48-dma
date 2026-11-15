@@ -1,0 +1,9 @@
+#!/bin/sh
+# PL330 DMAC (#84): us48_idm_reset (reset controller from the DT `dmac_idm` node) first, then pl330 (DT `resets`).
+# The tree has no udev/depmod: modules are loaded by explicit insmod, like the other rc.d scripts.
+
+M=/lib/modules/$(uname -r)
+exec 2>/dev/kmsg
+for m in us48_idm_reset pl330; do
+	insmod $M/$m.ko || echo "us48-dma: insmod $m failed rc=$?" > /dev/kmsg
+done
