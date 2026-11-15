@@ -102,7 +102,7 @@ static void smem_set_bits(struct us48_cmic *u, u32 blk, u32 addr, int words, int
 
 /* ---- TSC SerDes over MIIM (clause 45, devad 0) ---- */
 
-static int tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
+int us48_tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
 {
 	u32 st;
 	int ret;
@@ -117,8 +117,9 @@ static int tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
 		dev_err(u->dev, "tsc write %04x <- %04x: no OPN_DONE in %u us\n", reg, val, MIIM_TIMEOUT_US);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(us48_tsc_wr);
 
-static int tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
+int us48_tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 {
 	u32 st;
 	int ret;
@@ -133,6 +134,7 @@ static int tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 	wr(u, MIIM_CTRL, 0);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(us48_tsc_rd);
 
 static uint phy_dbg;
 module_param(phy_dbg, uint, 0644);
@@ -166,16 +168,16 @@ static void tsc_dump_one(struct us48_cmic *u, const struct port_cfg *c)
 	int i, n = 0;
 
 	mutex_lock(&u->mdio);
-	if (tsc_wr(u, 0xffde, 0))
+	if (us48_tsc_wr(u, 0xffde, 0))
 		goto out;
 	for (i = 0; i < ARRAY_SIZE(tsc_core); i++)
-		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_core[i].n, tsc_rd(u, tsc_core[i].reg, &v) ? 0xffff : v);
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_core[i].n, us48_tsc_rd(u, tsc_core[i].reg, &v) ? 0xffff : v);
 	dev_info(u->dev, "tsc %s core:%s\n", c->name, b);
-	if (tsc_wr(u, 0xffde, c->lane))
+	if (us48_tsc_wr(u, 0xffde, c->lane))
 		goto out;
 	n = 0;
 	for (i = 0; i < ARRAY_SIZE(tsc_lane); i++) {
-		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_lane[i].n, tsc_rd(u, tsc_lane[i].reg, &v) ? 0xffff : v);
+		n += scnprintf(b + n, sizeof(b) - n, " %s=%04x", tsc_lane[i].n, us48_tsc_rd(u, tsc_lane[i].reg, &v) ? 0xffff : v);
 		if (i == 6 || i == 11) {
 			dev_info(u->dev, "tsc %s lane %d:%s\n", c->name, c->lane, b);
 			n = 0;
@@ -229,9 +231,9 @@ void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u16 lo, u16 h
 	int n = 0;
 
 	mutex_lock(&u->mdio);
-	tsc_wr(u, 0xffde, c->lane);
+	us48_tsc_wr(u, 0xffde, c->lane);
 	for (r = lo; r <= hi; r++) {
-		n += scnprintf(b + n, sizeof(b) - n, " %04x=%04x", r, tsc_rd(u, r, &v) ? 0xffff : v);
+		n += scnprintf(b + n, sizeof(b) - n, " %04x=%04x", r, us48_tsc_rd(u, r, &v) ? 0xffff : v);
 		if (n > 100 || r == hi) {
 			dev_info(u->dev, "tsc %s range:%s\n", c->name, b);
 			n = 0;
@@ -246,23 +248,23 @@ static int tsc_rmw(struct us48_cmic *u, u8 lane, u16 reg, u16 clr, u16 set)
 {
 	u16 v;
 
-	if (tsc_wr(u, 0xffde, lane) || tsc_rd(u, reg, &v))
+	if (us48_tsc_wr(u, 0xffde, lane) || us48_tsc_rd(u, reg, &v))
 		return -EIO;
-	return tsc_wr(u, reg, (v & ~clr) | set);
+	return us48_tsc_wr(u, reg, (v & ~clr) | set);
 }
 
 /* uC mailbox proxy write of one RAM word (OM phy_tsc_iblk_proxy_write, driver-internals 13.3b). Caller holds u->mdio. */
-static int tsc_uc_ram_wr(struct us48_cmic *u, u8 lane, u16 ram, u16 data)
+int us48_tsc_uc_ram_wr(struct us48_cmic *u, u8 lane, u16 ram, u16 data)
 {
 	ktime_t t0 = ktime_get();
 	u16 v = 0;
 
-	if (tsc_wr(u, 0xffde, 0) || tsc_wr(u, 0xffc8, 0) || tsc_wr(u, 0xffc0, ram) || tsc_wr(u, 0xffc1, lane) ||
-	    tsc_wr(u, 0xffc3, data) || tsc_wr(u, 0xffc8, 0x0019))	/* REQ | WR | RAM */
+	if (us48_tsc_wr(u, 0xffde, 0) || us48_tsc_wr(u, 0xffc8, 0) || us48_tsc_wr(u, 0xffc0, ram) || us48_tsc_wr(u, 0xffc1, lane) ||
+	    us48_tsc_wr(u, 0xffc3, data) || us48_tsc_wr(u, 0xffc8, 0x0019))	/* REQ | WR | RAM */
 		return -EIO;
 	/* uC services a mailbox request in its main loop (not measured): 10 ms first-run bound, elapsed logged. */
 	while (ktime_us_delta(ktime_get(), t0) < 10000) {
-		if (tsc_rd(u, 0xffc8, &v))
+		if (us48_tsc_rd(u, 0xffc8, &v))
 			return -EIO;
 		if (v & BIT(15))
 			break;
@@ -270,9 +272,10 @@ static int tsc_uc_ram_wr(struct us48_cmic *u, u8 lane, u16 ram, u16 data)
 	}
 	dev_info(u->dev, "tsc uC mailbox ram %04x <- %04x lane %d: %s after %lld us (mailbox %04x)\n", ram, data, lane,
 		 (v & BIT(15)) ? "done" : "TIMEOUT", ktime_us_delta(ktime_get(), t0), v);
-	tsc_wr(u, 0xffc8, 0);
+	us48_tsc_wr(u, 0xffc8, 0);
 	return (v & BIT(15)) ? 0 : -ETIMEDOUT;
 }
+EXPORT_SYMBOL_GPL(us48_tsc_uc_ram_wr);
 
 /*
  * Per-lane RX restart without a firmware download (driver-internals 13.3b, from OM _tsc_serdes_stop /
@@ -286,10 +289,10 @@ int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c)
 
 	mutex_lock(&u->mdio);
 	ret = tsc_rmw(u, c->lane, 0xc138, BIT(2) | BIT(1), 0);
-	ret = ret ?: tsc_uc_ram_wr(u, c->lane, ram, 0x0d00);		/* uC lane stop */
+	ret = ret ?: us48_tsc_uc_ram_wr(u, c->lane, ram, 0x0d00);		/* uC lane stop */
 	ret = ret ?: tsc_rmw(u, c->lane, 0xc137, BIT(0), 0);		/* RSTB_LANE = 0 */
 	ret = ret ?: tsc_rmw(u, c->lane, 0xc21e, 0, BIT(15));		/* RXSEQSTART */
-	ret = ret ?: tsc_uc_ram_wr(u, c->lane, ram, 0x0e00);		/* uC lane start (forced SFI, non-AN) */
+	ret = ret ?: us48_tsc_uc_ram_wr(u, c->lane, ram, 0x0e00);		/* uC lane start (forced SFI, non-AN) */
 	if (ret) {
 		mutex_unlock(&u->mdio);
 		dev_err(u->dev, "%s: rx restart failed: %d\n", c->name, ret);
@@ -298,8 +301,8 @@ int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c)
 	/* RX adaptation has no OM bound: 1 s first-run backstop, first-lock time logged for tightening. */
 	t0 = ktime_get();
 	do {
-		tsc_wr(u, 0xffde, c->lane);
-		if (!tsc_rd(u, 0xc150, &pmd) && !tsc_rd(u, 0xc154, &pcs) && (pmd & BIT(3)) && (pcs & BIT(1)))
+		us48_tsc_wr(u, 0xffde, c->lane);
+		if (!us48_tsc_rd(u, 0xc150, &pmd) && !us48_tsc_rd(u, 0xc154, &pcs) && (pmd & BIT(3)) && (pcs & BIT(1)))
 			break;
 		mutex_unlock(&u->mdio);
 		msleep(10);
@@ -334,6 +337,7 @@ static int gphy_rd(struct us48_cmic *u, u8 phy, u8 reg, u16 *val)
 
 static struct us48_cmic *dbg_u;
 static const struct port_cfg *dbg_cfg;
+static DEFINE_MUTEX(dbg_lock);	/* the mib param vs unbind */
 
 /* echo 1 > /sys/module/us48_cmic/parameters/mib: log the GPORT RX counters of the first copper port (#56). */
 static int mib_set(const char *val, const struct kernel_param *kp)
@@ -345,8 +349,11 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 	u32 v[2];
 	int i;
 
-	if (!dbg_u || !dbg_cfg)
+	mutex_lock(&dbg_lock);
+	if (!dbg_u || !dbg_cfg) {
+		mutex_unlock(&dbg_lock);
 		return -ENODEV;
+	}
 	for (i = 0; i < ARRAY_SIZE(r); i++) {
 		v[0] = v[1] = 0;
 		if (sbus(dbg_u, 0x0b, dbg_cfg->blk, r[i].a | dbg_cfg->lane, v, 2))
@@ -364,6 +371,7 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 		dev_info(dbg_u->dev, "mib cpu cos%d: EGRDROPPKT %u HOLPKTSETLIMIT %u CELLMAXLIMIT %08x\n", i, d[0],
 			 h[0] & 0x7ff, c[0]);
 	}
+	mutex_unlock(&dbg_lock);
 	return 0;
 }
 
@@ -388,8 +396,10 @@ static void copper_enable(struct us48_port *p)
 	ret = bcm_hr2_ge_bringup(&cu, &ge);
 	mutex_unlock(&u->mdio);
 	if (p->cfg->front == 1) {
+		mutex_lock(&dbg_lock);
 		dbg_u = u;
 		dbg_cfg = p->cfg;
+		mutex_unlock(&dbg_lock);
 	}
 	dev_info(u->dev, "%s: copper bring-up %s (block %d lane %d)\n", p->cfg->name, ret ? "FAILED" : "done",
 		 p->cfg->blk, p->cfg->lane);
@@ -449,7 +459,7 @@ static void link_work_fn(struct work_struct *w)
 			}
 		} else {
 			mutex_lock(&u->mdio);
-			up = !tsc_wr(u, 0xffde, p->cfg->lane) && !tsc_rd(u, 0xc154, &v) && (v & BIT(1));
+			up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
 			mutex_unlock(&u->mdio);
 		}
 		if (up != netif_carrier_ok(p->ndev)) {
@@ -488,9 +498,9 @@ static void port_enable(struct us48_port *p)
 		return;
 	}
 	mutex_lock(&u->mdio);
-	ret = tsc_wr(u, 0xffde, a);			/* AER: lane select */
+	ret = us48_tsc_wr(u, 0xffde, a);			/* AER: lane select */
 	for (i = 0; !ret && i < ARRAY_SIZE(seq); i++)
-		ret = tsc_wr(u, seq[i][0], seq[i][1]);
+		ret = us48_tsc_wr(u, seq[i][0], seq[i][1]);
 	mutex_unlock(&u->mdio);
 	if (ret)
 		return;
@@ -860,7 +870,7 @@ static int us48_poll(struct napi_struct *napi, int budget)
 		done++;
 	}
 	/* Engine halted with every filled slot consumed: restart it from DCB 0. */
-	if (!done && !(le32_to_cpu(READ_ONCE(u->rx_dcb[16 * u->rx_next + 15])) & DCB_W15_DONE) &&
+	if (!done && !READ_ONCE(u->quiesced) && !(le32_to_cpu(READ_ONCE(u->rx_dcb[16 * u->rx_next + 15])) & DCB_W15_DONE) &&
 	    !(rd(u, DMA_STAT) & DMA_ACTIVE(RX_CH)))
 		rx_arm(u);
 	if (skb_queue_len(&u->skb_pool) < SKB_POOL / 2)
@@ -1019,12 +1029,94 @@ static void us48_free_napi_dev(void *data)
 	free_netdev(u->napi_dev);
 }
 
+/* Both channels off and their descriptor pointers cleared: nothing can fetch a freed DCB, even if EN is set later. */
+static void dma_stop_all(struct us48_cmic *u)
+{
+	int ch;
+
+	for (ch = 0; ch < 2; ch++) {
+		dma_abort(u, ch);
+		wr(u, DMA_DESC(ch), 0);
+	}
+}
+
+/* Self-check at unbind: a DMA left running into freed rings is the classic reload crash. Expiry-free, read-only. */
+static void us48_selfcheck(struct us48_cmic *u)
+{
+	int ch, bad = 0;
+
+	for (ch = 0; ch < 2; ch++)
+		bad += !!(rd(u, DMA_CTRL(ch)) & (DMA_EN | DMA_ABORT)) + !!(rd(u, DMA_STAT) & DMA_ACTIVE(ch));
+	bad += u->nopen != 0;
+	bad += u->tx_head != u->tx_tail || u->tx_tail != u->tx_run;
+	bad += !skb_queue_empty(&u->skb_pool);
+	if (bad)
+		dev_err(u->dev, "unbind self-check: %d problems: DMA_CTRL %08x/%08x DMA_STAT %08x nopen %d tx %u/%u/%u pool %u\n",
+			bad, rd(u, DMA_CTRL(0)), rd(u, DMA_CTRL(1)), rd(u, DMA_STAT), u->nopen, u->tx_tail, u->tx_run,
+			u->tx_head, skb_queue_len(&u->skb_pool));
+	WARN_ON(bad);
+}
+
+void us48_remove_common(struct us48_cmic *u)
+{
+	int i;
+
+	cancel_delayed_work_sync(&u->link_work);
+	/* ndo_stop of an open port stops the poll timer, NAPI and both channels. */
+	for (i = 0; i < u->nports; i++) {
+		if (u->port[i] && u->port[i]->registered) {
+			unregister_netdev(u->port[i]->ndev);
+			u->port[i]->registered = false;
+		}
+	}
+	/* Stopped for good: ports that never opened still get the explicit abort. */
+	hrtimer_cancel(&u->poll_timer);
+	WRITE_ONCE(u->quiesced, true);
+	spin_lock_bh(&u->tx_lock);
+	dma_stop_all(u);
+	spin_unlock_bh(&u->tx_lock);
+	cancel_work_sync(&u->pool_work);
+	skb_queue_purge(&u->skb_pool);
+	us48_selfcheck(u);
+}
+EXPORT_SYMBOL_GPL(us48_remove_common);
+
+int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
+{
+	struct bcm_cmic_unit cu = { .base = cmic };
+	int ch, ops = 0, errs = 0;
+
+	/* The bootloader may leave a channel running into RAM Linux now owns: log it, abort + wait (bounded), then reset. */
+	for (ch = 0; ch < 2; ch++) {
+		u32 ctrl = ioread32(cmic + DMA_CTRL(ch));
+
+		if ((ctrl & DMA_EN) || (ioread32(cmic + DMA_STAT) & DMA_ACTIVE(ch)))
+			dev_info(dev, "left by bootloader: ch%d CTRL %08x DESC %08x STAT %08x\n", ch, ctrl,
+				 ioread32(cmic + DMA_DESC(ch)), ioread32(cmic + DMA_STAT));
+		bcm_hr2_dma_abort(&cu, ch);
+	}
+	/* Every load: full cold init (chip reset via the TOP resets of the list), whatever state the chip is in. */
+	if (unit)
+		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE, &ops, &errs);
+	else
+		bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE, &ops, &errs);
+	/* The RX credit release must follow the pipe reset (#46, #34). */
+	bcm_hr2_dma_init(&cu);
+	if (errs)
+		dev_err(dev, "unit %d cold init: %d ops, %d FAILED\n", unit, ops, errs);
+	else
+		dev_info(dev, "unit %d cold init: %d ops\n", unit, ops);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(us48_chip_cold_init);
+
 int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
-		      int nports, u8 modid, struct us48_cmic **out)
+		      int nports, u8 modid, const struct firmware *fw, us48_serdes_init_t serdes_init,
+		      struct us48_cmic **out)
 {
 	struct us48_cmic *u;
 	u32 link[2];
-	int i, ch, ret;
+	int i, ret;
 
 	u = devm_kzalloc(dev, sizeof(*u), GFP_KERNEL);
 	if (!u)
@@ -1045,13 +1137,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		return ret;
 	*out = u;
 
-	/* Stock's DCBs live in RAM the kernel has reused: stop both channels before anything else. */
-	for (ch = 0; ch < 2; ch++) {
-		dev_info(dev, "stock left ch%d CTRL %08x DESC %08x\n", ch, rd(u, DMA_CTRL(ch)),
-			 rd(u, DMA_DESC(ch)));
-		dma_abort(u, ch);
-	}
-	/* Init (section 5): keep stock's endian bits, ch0 TX / ch1 RX, all CPU COS to ch1. */
+	/* The caller ran us48_chip_cold_init: channels are idle. Init (section 5): keep endian bits, ch0 TX / ch1 RX. */
 	wr(u, DMA_CTRL(TX_CH), (rd(u, DMA_CTRL(TX_CH)) & DMA_ENDIAN) | DMA_DIR_TX);
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) & DMA_ENDIAN);
 	wr(u, COS_CTRL_RX_0(RX_CH), 0xffffffff);
@@ -1103,6 +1189,11 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		netif_carrier_off(nd);
 	}
 
+	if (serdes_init) {
+		ret = serdes_init(u, fw);
+		if (ret)
+			dev_err(dev, "SerDes bring-up failed (%d): 10G links stay down\n", ret);
+	}
 	for (i = 0; i < u->nports; i++) {
 		struct us48_port *p = u->port[i];
 
@@ -1120,10 +1211,12 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	}
 
 	for (i = 0; i < u->nports; i++) {
-		/* devm: unregister (ndo_stop aborts both channels) runs before the DMA memory is freed. */
-		ret = devm_register_netdev(dev, u->port[i]->ndev);
-		if (ret)
+		ret = register_netdev(u->port[i]->ndev);
+		if (ret) {
+			us48_remove_common(u);
 			return ret;
+		}
+		u->port[i]->registered = true;
 		netdev_info(u->port[i]->ndev, "front %d (logical port %d), MAC %pM, VLAN %d\n", u->port[i]->cfg->front,
 			    u->port[i]->cfg->lport, u->port[i]->ndev->dev_addr, u->port[i]->vid);
 	}
@@ -1139,8 +1232,9 @@ void us48_quiesce(struct us48_cmic *u)
 	int i;
 
 	cancel_delayed_work_sync(&u->link_work);
-	dma_abort(u, RX_CH);
-	dma_abort(u, TX_CH);
+	hrtimer_cancel(&u->poll_timer);
+	WRITE_ONCE(u->quiesced, true);
+	dma_stop_all(u);
 	for (i = 0; i < u->nports; i++)
 		port_tab_set(u, u->cfgs[i].lport, 1, false);
 }
@@ -1151,9 +1245,6 @@ static uint unit0 = 1;
 module_param(unit0, uint, 0444);
 MODULE_PARM_DESC(unit0, "1 (default) = drive unit 0 front 1 (ge1) over AXI; 0 = core only (us48_cmic_xe.ko needs the core loaded)");
 
-module_param_named(gaps, bcm_hr2_init_gaps, uint, 0644);
-MODULE_PARM_DESC(gaps, "1 = unit 0 cold init also sleeps the 599 stock trace gaps of 10 ms (default 0: hardware waits only)");
-
 #define UNIT0_CMIC_BASE	0x48000000
 #define UNIT0_CMIC_LEN	0x40000
 
@@ -1163,26 +1254,33 @@ static int us48_cmic_plat_probe(struct platform_device *pdev)
 {
 	struct us48_cmic *u = NULL;
 	void __iomem *cmic = devm_ioremap(&pdev->dev, UNIT0_CMIC_BASE, UNIT0_CMIC_LEN);
-	struct bcm_cmic_unit cu = { .base = cmic };
-	int ops, errs;
+	int ret;
 
 	if (!cmic)
 		return -ENOMEM;
-	/*
-	 * Cold chip (power-on, nothing ran a net command): the shared init guards on the SBUS ring map, so a chip
-	 * stock or awto-uboot already set up is left alone. The RX credit release must follow the pipe reset (#46, #34).
-	 */
-	bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL, &ops, &errs);
-	if (ops) {
-		bcm_hr2_dma_init(&cu);
-		dev_info(&pdev->dev, "unit 0 was cold: init %d ops, %d failed\n", ops, errs);
-	}
-	return us48_probe_common(&pdev->dev, &pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, &u);
+	ret = us48_chip_cold_init(&pdev->dev, cmic, 0);
+	if (ret)
+		return ret;
+	ret = us48_probe_common(&pdev->dev, &pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, NULL, NULL, &u);
+	if (!ret)
+		platform_set_drvdata(pdev, u);
+	return ret;
+}
+
+static void us48_cmic_plat_remove(struct platform_device *pdev)
+{
+	struct us48_cmic *u = platform_get_drvdata(pdev);
+
+	mutex_lock(&dbg_lock);
+	dbg_u = NULL;
+	mutex_unlock(&dbg_lock);
+	us48_remove_common(u);
 }
 
 static struct platform_driver us48_cmic_plat_driver = {
 	.driver		= { .name = "us48_cmic_u0" },
 	.probe		= us48_cmic_plat_probe,
+	.remove		= us48_cmic_plat_remove,
 };
 
 static int __init us48_cmic_init(void)
@@ -1204,7 +1302,6 @@ static int __init us48_cmic_init(void)
 
 static void __exit us48_cmic_exit(void)
 {
-	dbg_u = NULL;
 	if (unit0_pdev && !IS_ERR(unit0_pdev)) {
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);

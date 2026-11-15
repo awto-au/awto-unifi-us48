@@ -91,6 +91,7 @@ struct us48_port {
 	const struct port_cfg *cfg;
 	u16 vid;			/* private VLAN id = front port number */
 	bool open;
+	bool registered;
 };
 
 struct us48_cmic {
@@ -108,6 +109,7 @@ struct us48_cmic {
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
 	spinlock_t tx_lock;
 	int nopen;
+	bool quiesced;			/* DMA stopped for good: NAPI must not re-arm RX */
 	__le32 *rx_dcb;			/* RX_RING x 16 words */
 	dma_addr_t rx_dcb_dma;
 	void *rx_buf;			/* RX_RING x BUF_SZ */
@@ -129,10 +131,24 @@ struct us48_cmic {
 extern const struct port_cfg us48_unit1_cfgs[];
 extern const int us48_unit1_nports;
 
+struct firmware;
+/* Optional SerDes bring-up (unit 1: TSC microcode), run before the ports are enabled; failure is logged, not fatal. */
+typedef int (*us48_serdes_init_t)(struct us48_cmic *u, const struct firmware *fw);
+
 int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
-		      int nports, u8 modid, struct us48_cmic **out);
-/* Stop link polling and DMA, park the ports in VLAN 1 (shutdown and unbind). */
+		      int nports, u8 modid, const struct firmware *fw, us48_serdes_init_t serdes_init, struct us48_cmic **out);
+/* Reset + full cold init of one chip (every load, whatever state it is in), DMA stopped first. unit 0 or 1. */
+int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit);
+/* Unbind: stop link polling, unregister the netdevs (ndo_stop), stop DMA for good and self-check. */
+void us48_remove_common(struct us48_cmic *u);
+/* Stop link polling and DMA, park the ports in VLAN 1 (shutdown). */
 void us48_quiesce(struct us48_cmic *u);
+/* TSC MIIM access (clause 45, AER via 0xffde), caller holds u->mdio. */
+int us48_tsc_wr(struct us48_cmic *u, u32 reg, u16 val);
+int us48_tsc_rd(struct us48_cmic *u, u32 reg, u16 *val);
+int us48_tsc_uc_ram_wr(struct us48_cmic *u, u8 lane, u16 ram, u16 data);
+/* TSC stage 0 + microcode + stage 2 for every xe port (us48_tsc_fw.c, linked into us48_cmic_xe.ko). */
+int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw);
 /* Read-only TSC / XLMAC status of every xe port, logged (write-only 'tsc' param of the front-end). */
 void us48_tsc_dump(struct us48_cmic *u);
 

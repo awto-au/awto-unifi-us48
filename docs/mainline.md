@@ -38,6 +38,18 @@
 - Debug profile only: static test tools in `/usr/bin` (`build_rootfs.py --tools`, docs/core-bringup.md); in-tree `=m` modules (`pl330`, `dmatest`, torture, `test_*`) are staged into `/lib/modules/<release>` by `build_mainline.py`.
 - Stage is rebuilt on every `build_mainline.py` run (`tmp/mainline/rootfs`); the busybox/dropbear builds are a few seconds each.
 
+## Module reload (#78, #56)
+
+- `us48_cmic` (core + unit 0 ge1) and `us48_cmic_xe` (unit 1 xe49/xe50/ge40) are reloadable on the fly.
+- Every load resets the chip and runs the full cold init, whatever state it is in (no ring-map guard: `BCM_HR2_INIT_FORCE`; awto-uboot keeps its guard). A load briefly resets the switch: traffic drops (ge1 = ssh), expected.
+  - Unit 0: `bcm_hr2_u0_cold_init` (stock write list), unit 1: `bcm_hr2_u1_cold_init` with the minimum list `bcm_cmic_hr2_init1_min_data.h` (5541 ops, `scripts/gen_bcm_hr2_init1_min.py` from `init_phases.py --emit-min`).
+  - Order: abort both DMA channels (logged as "left by bootloader" if one was running), TOP reset + cold init, credit release (`bcm_hr2_dma_init`), rings, ports.
+- Unload (`rmmod`): link work cancelled, netdevs unregistered (ndo_stop stops the poll timer, NAPI, both channels), both channels aborted and `DMA_DESC` cleared, skb pool purged; rings and netdev memory freed by devres afterwards. A self-check at the end logs `unbind self-check` (and `WARN`s) if DMA_CTRL/STAT, `nopen`, the TX ring or the skb pool are not clean. Reboot/shutdown keeps `us48_quiesce`.
+- `us48_cmic` cannot go while `us48_cmic_xe` is loaded (symbols); `scripts/mod_reload.py` handles the chain.
+- `scripts/mod_reload.py <module> [args]`: one detached `rmmod; insmod` script on the board (log `/tmp/mod_reload.log`), waits for ssh (30 s first-run limit), fetches the log; console-socket fallback. Log `tmp/logs/mod_reload.log`.
+- 10G microcode: `hwdb/firmware/us48-tsc.bin` -> `/lib/firmware`, loaded by `us48_cmic_xe` (driver-internals 9, Linux loader).
+- awto-uboot: `remove` of both eth devices (`DM_FLAG_ACTIVE_DMA`) aborts the channels at bootm, and the common abort clears `DMA_DESC`. The earlier Linux log `stock left ch0 CTRL 00000001` had EN clear (bit 0 = TX direction only): no DMA was running.
+
 ## Profiles
 
 | | `normal` | `debug` (default) |

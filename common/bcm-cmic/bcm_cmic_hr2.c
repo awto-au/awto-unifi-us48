@@ -273,6 +273,7 @@ void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch)
 			       ch, ABORT_WAIT_US, stat);
 	}
 	wr(u, DMA_CTRL(ch), rd(u, DMA_CTRL(ch)) & ~(DMA_EN | DMA_ABORT));
+	wr(u, DMA_DESC(ch), 0);		/* no descriptor left pointing into RAM the next stage owns */
 	wr(u, DMA_STAT_CLR, BIT(ch));
 }
 

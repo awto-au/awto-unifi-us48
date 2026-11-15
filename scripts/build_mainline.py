@@ -203,6 +203,8 @@ def stage_rootfs() -> str:
         fw = ROOT / "tmp/a2fw" / name
         if fw.exists():
             shutil.copy2(fw, stage / "lib/firmware" / fw.name)
+    # TSC SerDes microcode (OpenMDK ucode, scripts/gen_tsc.py): always staged; us48_cmic_xe request_firmware()s it
+    shutil.copy2(ROOT / "hwdb/firmware/us48-tsc.bin", stage / "lib/firmware/us48-tsc.bin")
     return str(write_initramfs_list(stage))
 
 

@@ -167,7 +167,23 @@ static int us48_eth_free_pkt(struct udevice *dev, uchar *packet, int length)
 	return 0;
 }
 
-/* Runs before bootm too: no DMA may run into the next stage. */
+/* Both channels off and DESC cleared: no DMA may run into the next stage. */
+static void us48_eth_dma_off(struct us48_eth_priv *p)
+{
+	bcm_hr2_dma_abort(&p->unit, 1);
+	bcm_hr2_dma_abort(&p->unit, 0);
+}
+
+/* bootm calls remove on DM_FLAG_ACTIVE_DMA devices (eth_halt only reaches the current device, and only with NETCONSOLE). */
+static int us48_eth_remove(struct udevice *dev)
+{
+	struct us48_eth_priv *p = dev_get_priv(dev);
+
+	if (p->up)
+		us48_eth_dma_off(p);
+	return 0;
+}
+
 static void us48_eth_stop(struct udevice *dev)
 {
 	struct us48_eth_priv *p = dev_get_priv(dev);
@@ -175,8 +191,7 @@ static void us48_eth_stop(struct udevice *dev)
 
 	if (!p->up)
 		return;
-	bcm_hr2_dma_abort(&p->unit, 1);
-	bcm_hr2_dma_abort(&p->unit, 0);
+	us48_eth_dma_off(p);
 	p->dma.tx_len = 0;
 	if (p->ge)
 		bcm_hr2_ge_l2_cpu(&p->unit, p->ge, pdata->enetaddr, false);
@@ -258,10 +273,11 @@ U_BOOT_DRIVER(us48_cmic_eth) = {
 	.of_match	= us48_eth_ids,
 	.of_to_plat	= us48_eth_of_to_plat,
 	.probe		= us48_eth_probe,
+	.remove		= us48_eth_remove,
 	.ops		= &us48_eth_ops,
 	.priv_auto	= sizeof(struct us48_eth_priv),
 	.plat_auto	= sizeof(struct eth_pdata),
-	.flags		= DM_FLAG_ALLOC_PRIV_DMA,
+	.flags		= DM_FLAG_ALLOC_PRIV_DMA | DM_FLAG_ACTIVE_DMA,
 };
 
 static const struct udevice_id us48_ge_ids[] = {
@@ -275,8 +291,9 @@ U_BOOT_DRIVER(us48_cmic_ge) = {
 	.of_match	= us48_ge_ids,
 	.of_to_plat	= us48_eth_of_to_plat,
 	.probe		= us48_ge_probe,
+	.remove		= us48_eth_remove,
 	.ops		= &us48_eth_ops,
 	.priv_auto	= sizeof(struct us48_eth_priv),
 	.plat_auto	= sizeof(struct eth_pdata),
-	.flags		= DM_FLAG_ALLOC_PRIV_DMA,
+	.flags		= DM_FLAG_ALLOC_PRIV_DMA | DM_FLAG_ACTIVE_DMA,
 };
