@@ -1,53 +1,52 @@
 # PCI layer for the second chip (us48_pci)
 
-Module `kernel/us48-pci/us48_pci.c` (+ `us48_pci.h`). Owns PCI `0000:01:00.0` (BCM53346, unit 1). No netdev code. Issue #54 (a2 driver), #46 (two-controller split).
+Module `kernel/us48-pci/us48_pci.c` (+ `us48_pci.h`). Owns PCI `0000:01:00.0` (BCM53346, unit 1), auxiliary bus parent. No netdev code. Issue #54 (a2 driver), #46 (two-controller split).
 C = confirmed (evidence in repo/issues), I = inferred.
 
 ## What it owns
 - PCI ID `14e4:8346`, function 0 only (01:00.1 shares the ID, rejected). C ([driver-internals.md](driver-internals.md) 14, us48_cmic.c)
 - `pcim_enable_device`, `pci_set_master`, BAR0 (32 KB) + BAR2 (256 KB CMIC) mapped. C (#53 probe 2)
-- DMA: coherent mask 32-bit (as us48_cmic); chip inbound window is 128 MiB, so client bus addresses must be below `US48_PCI_DMA_LIMIT` (0x08000000). C (stock DCBs at ~0x075fxxxx), I (window size >= 128 MiB, not decoded)
-- Shutdown: IMAP0_7 restored, bus master cleared (stock U-Boot PCIe init hangs on live DMA). C (us48_cmic shutdown comment)
-- BAR0 map: chipcommon at +0x0, endpoint PAXB at +0x2000+off. C (driver-internals 14.2); 4 KiB AXI window at +0x7000 selected by IMAP0_7 (+0x2c1c, default 0x18032001). C (docs/a2.md)
+- DMA: coherent mask 32-bit; chip inbound window is 128 MiB, so client bus addresses must be below `US48_PCI_DMA_LIMIT` (0x08000000). C (stock DCBs at ~0x075fxxxx), I (window size >= 128 MiB, not decoded)
+- Shutdown: IMAP0_7 restored, a2 outbound window off, bus master cleared (stock U-Boot PCIe init hangs on live DMA). Aux drivers shut down first (children before parent).
+- BAR0 map: chipcommon at +0x0, endpoint PAXB at +0x2000+off, 4 KiB AXI window at +0x7000 selected by IMAP0_7 (default 0x18032001). C (docs/a2.md). Offsets come from hwdb (`HW_PAXB1_EP_*`, `HW_BAR0_AXI_WIN_*`).
 
-## API (`us48_pci.h`, all EXPORT_SYMBOL_GPL)
-| Function | Does | Source of the sequence |
+## Aux devices (parent `us48_pci`, ids `.0`)
+| Device | Driver | Notes |
 |---|---|---|
-| `us48_pci_get/put` | refcounted handle, `ERR_PTR(-ENODEV)` if unbound | - |
-| `us48_pci_cmic_read/write(off)` | raw BAR2 word | us48_cmic.c |
-| `us48_pci_bar0_read/write(off)`, `us48_pci_paxb_read/write(off)` | raw BAR0 / BAR0+0x2000 word | driver-internals 14.2 |
-| `us48_pci_schan(op, blk, addr, data, words, ack)` | S-channel op, serialised; core = `common/bcm-cmic/bcm_cmic_schan.c` (included) | bcm_cmic_schan.c |
-| `us48_pci_axi_read32/write32/write` | unit-1 AXI word/buffer via IMAP0_7 + window; window left on last page, restored at remove/shutdown | a2_loader.py `page/rd/wr` |
-| `us48_pci_a2_host_window(en)` | OARR_0 = 0x08000001 (0 = off), OMAP_0 = 0: a2 AXI 0x08000000.. = host phys 0x0.. | docs/a2.md, #53 |
-| `us48_pci_a2_reset` | clear then set CRU_CONTROL.ARM_RST_N (0x1803e000 b4), read-modify-write | a2_loader.py `reset` (writes 0x20, 0x30) |
-| `us48_pci_a2_halt` | unlock LAR 0xc5acce55, DSCR.HDBGEN, DRCR halt, wait DSCR.halted | a2_loader.py `start` |
-| `us48_pci_a2_set_pc(pc)` | halted only: DSCR.ITREN, DTRRX = pc, ITR `mrc p14` (0xee100e15) + `mov pc,r0` (0xe1a0f000), ITREN off | a2_force_pc.py |
-| `us48_pci_a2_release` | DRCR = restart + clear sticky, wait DSCR.restarted | a2_loader.py `start` |
-| `us48_pci_a2_load(addr, img, len)` | host words into a2 AXI (SRAM 0x1b000000, 16 KiB) | a2_loader.py `load` |
-| `us48_pci_a2_run(entry)` | halt + set_pc + release | a2_loader.py `start` |
-| `us48_pci_a2_pc_sample` | read PCSR (debug +0x84) | a2_force_pc.py (read only) |
-| `us48_pci_a2_boot_from_pcie` | `-EOPNOTSUPP` | docs/a2.md: PCIe boot path not taken |
+| `us48_pci.a2.0` | `us48_a2` (remoteproc, `kernel/us48-a2`) | regmap + outbound window |
+| `us48_pci.cmic.0` | `us48_cmic_xe` (netdev, `kernel/us48-cmic`) | BAR2 base + PCI device (DMA) |
+| `us48_pci.clk.0` | none yet | stub for the clk provider (a2-design.md order 4) |
 
-- Locking: `win_lock` covers IMAP0_7 + window + OARR_0 + debug sequences + raw BAR0/BAR2 word access; `schan_lock` covers S-channel. One owner of the window, as #54 requires.
-- Mailbox protocol (stub cmd 1/2/3, heartbeat) is NOT in this layer: it is stub-specific (`tools/a2_stub.S`); belongs to the future remoteproc-style client.
-- Debug waits: 1 ms backstop (`DBG_WAIT_US`), expiry logs DSCR and returns -ETIMEDOUT. Not measured on the bus. I
+## API (`us48_pci.h`, EXPORT_SYMBOL_GPL)
+| Function | Does |
+|---|---|
+| `us48_pci_from_adev(adev)` | parent handle, valid until the aux driver's remove() returns |
+| `us48_pci_dev(p)` | PCI device for DMA mask and mappings |
+| `us48_pci_regmap(p)` | unit 1 AXI, 32-bit, `reg_bits = val_bits = 32`, no cache |
+| `us48_pci_cmic_base(p)`, `us48_pci_schan(...)` | BAR2 mapping; S-channel op (core `common/bcm-cmic/bcm_cmic_schan.c`, included, unchanged) |
+| `us48_pci_link_ok(p)` | 0, or -ENODEV when the endpoint config space reads all-ones (link down or PERST asserted) |
+| `us48_pci_outbound_map(p, host, len, &axi)` / `_unmap` | PAXB OMAP_0/OARR_0, one window; 64 MiB granule; `axi` = a2 address of `host` |
+
+- Removed with the aux conversion: `us48_pci_get/put`, raw BAR0/BAR2/PAXB word accessors, `us48_pci_axi_*`, `us48_pci_a2_*` (the sequences live in `us48_a2.c` on the regmap).
+- Regmap: access tables generated by `scripts/hwdb_gen.py regmap` -> `hwdb/gen/us48_unit1_regmap.h` (hwdb blocks in 0x18000000-0x1bffffff plus unit 1 SRAM; blocks without registers are read-only). Anything else returns -EIO before touching AXI. PCIe-routed windows and the DDR hazard are never in the table.
+- Locking: `win_lock` is the regmap lock and also covers OARR_0/OMAP_0; `schan_lock` covers S-channel. The window page is cached and written only when it changes.
+- Link check per access: one config read (`pci_device_is_present`), plus a re-check when a read returns all-ones.
+- Debug waits (in `us48_a2.c`): 1 ms backstop (`DBG_WAIT_US`), expiry logs DSCR, limit and returns -ETIMEDOUT. Not measured on the bus. I
+- Mailbox protocol (stub cmd 1/2/3) is not in the driver; it was `tools/a2_stub.S` specific.
 
 ## Consumers
-- `us48_cmic` (netdev, unit 1): today owns the same PCI ID and BAR2. C
-- a2 client (#54): remoteproc-style driver on `us48_pci_a2_*` + stub mailbox.
-- `rust/a2ctl`: later a client via char device/debugfs instead of raw BAR access.
+- `us48_cmic_xe`: aux driver of `us48_pci.cmic`. `us48_probe_common(dev, dma_dev, ...)`: devres/netdev parent = aux device, DMA = PCI device. Unit 0 front-end passes the platform device twice. C (builds)
+- `us48_a2`: remoteproc, a2-design.md.
+- `kernel/us48-cmic-test`: standalone scaffold with its own PCI driver; load only one PCI-ID owner at a time.
+- `rust/a2ctl`: bring-up tool, raw BAR access.
 
-## Migration of us48_cmic (not done)
-- Both drivers match `14e4:8346`; only one can bind. Until migrated, load only one of them.
-- Step 1: drop `pci_driver` from us48_cmic; `us48_cmic_init` calls `us48_pci_get()`, uses `us48_pci_cmic_*`/`us48_pci_schan` or takes a BAR2 pointer accessor (add `us48_pci_cmic_base()` then).
-- Step 2: DMA device = the PCI device (`pdev->dev`); expose it via an accessor (not yet exported).
-- Step 3: move the shutdown (clear master, PERST# note) to us48_pci; netdev keeps `ndo_stop` DMA abort.
-- Step 4: us48_cmic `request_module`/`MODULE_SOFTDEP("pre: us48_pci")`; stock ordering (unit 1 first at boot, #46) preserved.
-- Step 5: us48_cmic's platform (unit 0) front-end stays independent; schan core to be shared, not duplicated: if it also links `bcm_cmic_schan.c`, export it from one module instead of including twice.
+## Migration of us48_cmic: done
+- Steps 1-4 of the old plan: PCI driver dropped from `us48_cmic_xe`, DMA device via `us48_pci_dev()`, shutdown moved to `us48_pci` (aux shutdown quiesces first), load order `us48_pci.ko` before `us48_cmic_xe.ko` (`openwrt/files/etc/init.d/us48-net`, symbol dependency for modprobe).
+- Step 5 (shared S-channel core): `us48_pci` and `us48_cmic.ko` each still link `bcm_cmic_schan.c`; export from one module later.
 
 ## Verification state
-- Builds against `tmp/linux-mainline` (v7.4-rc1) out of tree, no compiler warnings; modpost unresolved-symbol warnings only because `Module.symvers` is absent (same as build_mainline). Log `tmp/logs/us48_pci_build.log`. C
-- Never loaded or run on the board. I
+- `python3 scripts/build_mainline.py --module-only --tree tmp/linux-a2 --build-dir tmp/mainline/build-a2` builds us48_pci, us48_a2, us48_cmic, us48_cmic_xe against v7.4-rc1 + `mainline/*.patch` with kernel Module.symvers: no compiler or modpost warnings. Log `tmp/logs/build_modules-make.log`. The board DTB builds (W=1). C
+- Never loaded or run on the board: aux binding, regmap window moves, remoteproc start/stop, the xe migration. I
 
 ## Open unknowns
 | # | Unknown | C/I |
@@ -56,7 +55,7 @@ C = confirmed (evidence in repo/issues), I = inferred.
 | 2 | Word-wide window writes only proven via U-Boot `mw.l`; ordering/posting of back-to-back writeL via Linux readl/writel untested | I |
 | 3 | DSCR bit meanings (b0 halted, b1 restarted, b13 ITRen, b14 HDBGen, b24 InstrCompl) are ARMv7 debug arch, matched by scripts; not re-read from a datasheet | I |
 | 4 | PCSR at debug +0x84 shares the ITR offset; script `a2_force_pc.py` reads it, value meaning unverified | I |
-| 5 | PCI inbound window size and whether coherent mask 32 is safe for high-bank RAM (bus >= 0x08000000 would miss it) | I |
+| 5 | PCI inbound window size (unit 1 DMA) and, for a2 reaching the upper bank, unit 0 IARR_1 SIZE encoding / IMAP1 (a2-design.md) | I |
 | 6 | Whether Linux PERST# at RC probe disturbs a2/IMAP0_7 state | I |
 | 7 | `reset` with RMW vs script's absolute 0x20/0x30 (other CRU_CONTROL bits on unit 1 read 0x30) | I |
 | 8 | Boot via PCIe strap override (`STRAPS_SW_OVERRIDE`, BOOT_DEV 7): not taken by a2 | C |
