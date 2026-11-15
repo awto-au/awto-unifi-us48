@@ -2,6 +2,7 @@
 # Boot sequence: base mounts, syslogd, then /etc/rc.d/S* in order (plain scripts, argument "start").
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
+mount -t debugfs debugfs /sys/kernel/debug || echo "rc.sh: debugfs not mounted (kernel without CONFIG_DEBUG_FS, normal profile)"
 mount -t devtmpfs devtmpfs /dev
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts
