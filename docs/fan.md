@@ -70,19 +70,18 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
 - `0x48002000–0x200c` (CMIC GP block: DATA_OUT `+4`, OUT_EN `+8` as written by the old fand) unchanged between levels: select pins don't depend on the level.
 - SPCR0 `0x1500` = `0x8d`, `0x1504` = `0x83` (mode/baud, decode vs OpenBCM `mspi.c`).
 
-## Quiet rule (Dan 2026-11-15)
+## Fan default (Dan 2026-11-15): 100 %, quiet rule switchable
 
-- Why: lab noise; fans stay at level 0 (50 %, quietest preset, no off) until everything works.
-- Default and start-up: level 0, never 100 %.
-- Sensor read failure or bogus value (outside -40..150 C): stay at level 0, log (once per minute in Linux).
-- Emergency: any die (PVTMON) >= 110 C (steady-state rating, [clock-audit.md](clock-audit.md)) or any LM75 >= 80 C -> 100 %. Back to level 0 at die <= 100 C and LM75 <= 70 C.
-- Where it lives (one switch each):
-  - awto-uboot `fan.c`: `#define FAN_QUIET 1`. Boot-time only, no loop: a hot reading at boot gives 100 % until Linux or `fan 0`.
-  - `kernel/us48-fan`: module param `quiet` (default 1; `us48_fan.quiet=0` or `/sys/module/us48_fan/parameters/quiet`).
+- Default: 100 % (level 3) from power-on. Replaces the quiet rule until Dan says otherwise.
+- awto-uboot: Kconfig `US48_FAN_BOOT_LEVEL` (default 3, range 0..3), applied in `us48_fan_boot` before the temperature report; emergency logic unchanged.
+- `kernel/us48-fan`: module param `level` (default 3) = floor in automatic mode (thermal governor asks 0 with no trip active, so the driver keeps max(req, level)); `quiet` default 0. `pwm1_enable=1` manual overrides the floor.
+- Quiet rule = `US48_FAN_BOOT_LEVEL=0` + `us48_fan.level=0 us48_fan.quiet=1`:
+  - level 0 (50 %, no off) at boot and on failure; sensor failure or bogus value (outside -40..150 C) stays at 0, log once per minute in Linux.
+  - Emergency: die (PVTMON) >= 110 C ([clock-audit.md](clock-audit.md)) or any LM75 >= 80 C -> 100 %; back to 0 at die <= 100 C and LM75 <= 70 C.
+  - awto-uboot `fan.c` `FAN_QUIET` 1 (die trip 110 C, read failures stay at the boot level); 0 = pre-2026-11-15 policy (die >= 100 C or any read failure = 100 %).
   - DT thermal zones (`mainline/0013`): LM75 trip 80 C hysteresis 10 C; die trip 110 C hysteresis 10 C.
-- Switching back to the old policy (100 % on probe/failure): set the switch to 0 and set the DT trips to LM75 80 C / hysteresis 30 C, die 100 C / hysteresis 10 C.
-- `us48-fand` is deleted. Until `us48-fan` is proven on the board Linux has no fan writer: fans keep awto-uboot's level 0.
-- Emergency escalation exists only in awto-uboot (boot time) and in `us48-fan` once loaded.
+- `us48-fand` is deleted; emergency escalation exists in awto-uboot (boot time) and in `us48-fan`.
+- Board check 2026-11-15: cold awto-uboot prints `level 3 (100 %)` on both groups (tx byte 0 = 0x30); Linux `pwm1` 255, `pwm1_enable` 2.
 
 ## Fan protocol and measurements (#12, #19)
 

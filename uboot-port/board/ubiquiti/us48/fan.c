@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * US-48 fans: 7-byte MSPI board-IO frame per switch chip (docs/fan.md, docs/board.md MSPI section).
- * Presets only (level 0..3 = 50/70/90/100 %), no off, no tach. Quiet rule (docs/fan.md): level 0 at boot, 100 %
- * only for a die >= 110 C or an LM75 >= 80 C; read failures stay at level 0 and log. FAN_QUIET 0 = old policy.
+ * Presets only (level 0..3 = 50/70/90/100 %), no off, no tach. Boot level = US48_FAN_BOOT_LEVEL (default 3 = 100 %, docs/fan.md);
+ * with level 0 (quiet rule) 100 % only for a die >= 110 C or an LM75 >= 80 C. FAN_QUIET 0 = old policy.
  */
 
 #include <command.h>
@@ -249,7 +249,7 @@ static int fan_all(u8 level)
 	return r;
 }
 
-/* Called once from board_init (console up): probe unit 1, level 0 on both groups, temps, 100 % only on an emergency */
+/* Called once from board_init (console up): probe unit 1, boot level on both groups, temps, 100 % only on an emergency */
 void us48_fan_boot(void)
 {
 	int hot = 0;
@@ -260,7 +260,7 @@ void us48_fan_boot(void)
 	} else {
 		printf("fan: PCIe link to unit 1 down, no unit 1 access; fans left at their power-on state (default speed unknown, docs/fan.md)\n");
 	}
-	fan_all(0);
+	fan_all(CONFIG_US48_FAN_BOOT_LEVEL);
 	lm75_show(&hot);
 	pvt_show("unit 0", &unit0, &hot);
 	if (unit1_ok)
@@ -271,7 +271,8 @@ void us48_fan_boot(void)
 		printf("fan: emergency (LM75 >= 80 C or die >= %d C): 100 %%\n", DIE_HOT / 10);
 		fan_all(3);
 	} else {
-		printf("fan: no emergency, staying at level 0 (50 %%)\n");
+		printf("fan: no emergency, boot level %d (%d %%)\n", CONFIG_US48_FAN_BOOT_LEVEL,
+		       CONFIG_US48_FAN_BOOT_LEVEL == 3 ? 100 : 50 + 20 * CONFIG_US48_FAN_BOOT_LEVEL);
 	}
 }
 

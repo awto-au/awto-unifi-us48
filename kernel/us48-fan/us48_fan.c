@@ -2,7 +2,7 @@
 /*
  * us48_fan: US-48-500W fans as SPI client of us48_cmic_mspi: hwmon pwm1 (4 discrete levels) + thermal cooling device.
  * Frame, select lines and levels: docs/fan.md, docs/board.md MSPI. Policy lives in the DT thermal zones (#19).
- * Quiet rule (param quiet, default on, docs/fan.md): level 0 on probe/failure; only DT emergency trips raise it.
+ * Default 100 % (param level = 3, Dan 2026-11-15); quiet=1 = quiet rule: level 0 on probe/failure, DT emergency trips only.
  */
 #include <linux/gpio/consumer.h>
 #include <linux/hwmon.h>
@@ -24,9 +24,13 @@
 #define WATCH_MS	2000
 
 /* quiet=0 restores the old fail-safe: level 3 on probe, sensor loss and write errors (docs/fan.md) */
-static bool quiet = true;
+static bool quiet;
 module_param(quiet, bool, 0644);
-MODULE_PARM_DESC(quiet, "Dan 2026-11-15 lab noise: level 0 unless a DT emergency trip fires (default 1)");
+MODULE_PARM_DESC(quiet, "quiet rule (lab noise): level 0 unless a DT emergency trip fires (default 0)");
+
+static uint level = LEVEL_FULL;
+module_param(level, uint, 0644);
+MODULE_PARM_DESC(level, "level floor from probe on (thermal trips raise it), 0..3 = 50/70/90/100 % (default 3); 0 with quiet");
 
 /* Failure log once per minute: a dead sensor is noted, not spammed */
 #define LOG_MS		60000
@@ -49,6 +53,12 @@ struct fan {
 	struct delayed_work watch;
 };
 
+/* floor in automatic mode: the thermal governor requests 0 while no trip is active */
+static unsigned int base_level(void)
+{
+	return min_t(uint, level, LEVEL_FULL);
+}
+
 static unsigned int fail_level(void)
 {
 	return quiet ? 0 : LEVEL_FULL;
@@ -70,7 +80,7 @@ static int fan_frame(struct fan *f, unsigned int level)
 /* Caller holds f->lock. Sends the wanted level if it differs from the wire; a failed write falls back to 3. */
 static int fan_apply(struct fan *f)
 {
-	unsigned int want = f->manual_mode ? f->manual : f->req;
+	unsigned int want = f->manual_mode ? f->manual : max(f->req, base_level());
 	int ret;
 
 	if (!f->sensors_ok || f->wr_err)
@@ -251,6 +261,7 @@ static int fan_probe(struct spi_device *spi)
 		return -ENOMEM;
 	f->spi = spi;
 	f->hw = -1;
+	f->req = base_level();
 	mutex_init(&f->lock);
 	INIT_DELAYED_WORK(&f->watch, fan_watch);
 
