@@ -130,11 +130,14 @@ Cold power-cycle x2, t0 = relay ON call (normal profile, quiet off, a1 at 1000 M
 | userspace (`rc.sh`) | +6.27 | +6.29 |
 | `us48-net: done` | +6.80 | +6.80 |
 | shell prompt | +6.86 | +6.86 |
-| ping / ssh | not reached | not reached |
+| ping / ssh (2026-11-15 18:03, normal profile, fixed init) | +20.6 s | +20.6 s |
 
 - Stock first stage chain: power-on to shell was ~140-220 s on stock, ~32 s from flash earlier today (debug image, no autoboot).
 - No kernel initcall gap above 0.16 s (dmesg deltas): kernel init is spread, nothing to cut.
 - `sf probe` clock 12.5 / 25 / 50 MHz: identical `sf read` time (0.482 s for 3.7 MB, crc `6dfd3b22`); `crc32` over 3.7 MB with caches = 0.060 s, so skipping the bootm data CRC saves under 0.1 s (kept).
 - `cp.l` from the BSPI window `0x1c2e0000`: 0.321 s for the same bytes (crc identical) vs 0.482 s: -0.16 s, built (`tmp/us48boot_xip.c`) but not flashed (host to board network down at the time, TFTP flash path needs it).
 - Remaining waits: uboot-1 to awto-uboot 2.8 s (fixed: env reads the whole 2 MiB slot, uboot-1 verify), bootdelay 1.0 s (fixed by the 1 s window decision), kernel 1.4 s, userspace 0.6 s.
-- Network after a cold flash boot: ge1 carrier 0 until awto-uboot initialises the switch (`us48-ge: cold init` runs on the first net command); with it, carrier 1 but `L2 insert ... failed: unicast to us will not arrive`. Not tuned (Dan 2026-11-15, #84).
+- Network after a cold flash boot (#34): the stock trace's pipe-reset DONE polls were dropped from the replay, so the next range started while the previous one ran. With I/D caches on (#75) the S-channel ops are fast enough to overlap: L2X only half cleared (entries >= 0x2000 NAK on read), `L2_ENTRY_PARITY_STATUS` nonzero, L2 insert NAK in awto-uboot and Linux.
+  - Fix: `bcm_cmic_hr2_init.c` polls DONE (bit 18, 5 ms) after each nonzero write to `ING_HW_RESET_CONTROL_2` / `EGR_HW_RESET_CONTROL_1`.
+  - The Linux `us48_cmic` unit 0 probe runs `bcm_hr2_u0_cold_init` (guarded on the SBUS ring map) + `bcm_hr2_dma_init` (RX credit pulse after the EP reset), then the normal bring-up. A chip awto-uboot already initialised is left alone.
+  - ssh +20.6 s = userspace +6.3, cold init +6.6 (net done +12.9), GPHY AN 3.1 s, then sw1 STP ~5 s. Warm (awto-uboot `ping`, then `us48boot`): ssh +11.3 s after `us48boot`.

@@ -33,8 +33,9 @@ BOARD_IP = "192.168.25.207"  # ip-registry us48-boot
 FULL_OVERALL_S = 120.0
 OVERALL_S = 40.0
 STALL_S = 15.0
-# network is not tuned here (Dan 2026-11-15, #84): after the shell prompt wait this long for ping/ssh, then report
-NET_GRACE_S = 5.0
+# after the shell prompt wait this long for ping/ssh, then report. Measured 2026-11-15: ge1 link +3.2 s (GPHY AN) after
+# the driver probe, ssh ~2.5 s after the prompt; 15 s = 4x backstop, expiry = logged, not fatal.
+NET_GRACE_S = 15.0
 FULL_STALL_S = 40.0  # kernel init is silent for a while with quiet console; 40 s = hung
 SIZE = 0x200000  # the env reads the whole 2 MiB uboot slot; bootm checks only the header length
 

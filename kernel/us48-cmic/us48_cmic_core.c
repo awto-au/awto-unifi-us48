@@ -1160,9 +1160,20 @@ static int us48_cmic_plat_probe(struct platform_device *pdev)
 {
 	struct us48_cmic *u = NULL;
 	void __iomem *cmic = devm_ioremap(&pdev->dev, UNIT0_CMIC_BASE, UNIT0_CMIC_LEN);
+	struct bcm_cmic_unit cu = { .base = cmic };
+	int ops, errs;
 
 	if (!cmic)
 		return -ENOMEM;
+	/*
+	 * Cold chip (power-on, nothing ran a net command): the shared init guards on the SBUS ring map, so a chip
+	 * stock or awto-uboot already set up is left alone. The RX credit release must follow the pipe reset (#46, #34).
+	 */
+	bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL, &ops, &errs);
+	if (ops) {
+		bcm_hr2_dma_init(&cu);
+		dev_info(&pdev->dev, "unit 0 was cold: init %d ops, %d failed\n", ops, errs);
+	}
 	return us48_probe_common(&pdev->dev, &pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, &u);
 }
 
