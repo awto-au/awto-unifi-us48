@@ -251,3 +251,11 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Only 0 is clean: default `rx_arid=0`.
 - a2 Linux start (normal image, `dcc_poll=1`, a1 idle, 15 s limit for the shell): rx_arid 2 hung in 7 of 13 starts (stub `aJ`, no Linux output), rx_arid 3 0/2, 1 0/1, 0 0/1 (+0/1 with the new default); small samples.
 - Throughput cost: none measurable (table in core-bringup.md, "RX_FREE_ARID_COUNT cost").
+
+## Reboot with a2 running / unit 1 wedged (#90, #91, 2026-11-16)
+- Trigger: a2 read of CMIC COSLC `0x48023000` (hwdb_gaps.py adhoc) wedges the unit 1 CMIC AXI slave; a2 stays `running`.
+- Before the fix, `reboot` with a2 running hung in `device_shutdown` (no `Restarting system`): pcie-iproc shutdown asserts PERST# while the DCC poller has a read in flight. a1 stalls, SP805 bites, uboot-1 loops at `DRAM: 256 MiB` (stalled PCIe transaction survives the reset; hangs before `soc_pcie_hw_init` prints). Manually asserting PERST# on the wedged board (CLK_CONTROL = 0 with a2 polling) reproduces it.
+- Fix: `us48_a2` reboot notifier calls `rproc_shutdown()` (DCC stop, halt best effort, a2 reset) before device shutdown. a1 then restarts, uboot-1 passes, awto-uboot cycles PERST# and links up.
+- Not fixed: the CMIC stays wedged across PERST# and a2 reset. awto-uboot `fan: probing unit 1 BAR at 0x08040000` reads BAR2 and stalls, SP805 loop until a relay power cycle.
+- A wedge with a1 CMIC users loaded (pvtmon, xe, fan, gpio) stalls a1 itself on the first CMIC read; the test (`warm_reboot_test.py w`) unloads them first.
+- Test: `scripts/warm_reboot_test.py w` (3 of 3: banner 3.0 s, awto-uboot reached, then the fan-probe loop).

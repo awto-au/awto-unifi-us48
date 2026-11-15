@@ -2,7 +2,8 @@
 """warm_reboot_test — warm reboot of the normal image after a2 never started / started+stopped (#90).
 
 Usage: warm_reboot_test.py CASE [--reps N] [--no-cycle]
-  CASE: a = a2 never started, b = a2 100 MHz started + stopped, c = a2 1000 MHz started + stopped
+  CASE: a = a2 never started, b = a2 100 MHz started + stopped, c = a2 1000 MHz started + stopped,
+        w = unit 1 wedged (a2 read of CMIC COSLC 0x48023000, hwdb_gaps.py adhoc; CMIC users unloaded so a1 stays alive), a2 left running (#90, #91)
 Each rep: power cycle (dev.py power-cycle, autochain boots kernel0), wait ssh, case setup, `reboot` over ssh, watch tio log.
 Verdicts: ok (banner + ssh back), no-banner (hang, no U-Boot banner), banner-no-linux. A hang is left as is: the next rep power cycles.
 Log: tmp/logs/warm_reboot_test.log (+ console tail of every failing rep).
@@ -78,6 +79,15 @@ def rep(case: str, n: int, cycle: bool) -> str:
         log(f"case {case} rep {n}: a2 stopped, state {r.stdout.strip()!r}; dmesg: {lx('dmesg | tail -4').stdout.strip()!r}")
         if r.stdout.strip() != "offline":
             raise SystemExit("a2 not offline after stop")
+    if case == "w":
+        lx("rmmod us48_fan us48_pvtmon us48_cmic_xe us48_cmic_gpio us48_cmic_mspi")	# their CMIC reads would stall a1 on the wedge
+        # adhoc run ends by hang detection (HANG_S 1 s); a2 stays 'running'
+        subprocess.run([sys.executable, str(ROOT / "scripts/hwdb_gaps.py"), "adhoc", "0x48023000", "0x48023004"],
+                       capture_output=True, text=True, timeout=60, cwd=ROOT)
+        r = lx("cat /sys/class/remoteproc/remoteproc0/state")
+        if r.returncode or r.stdout.strip() != "running":
+            raise SystemExit(f"wedge case: a1 not alive with a2 running after the wedge (rc {r.returncode}, {r.stdout.strip()!r}): stop and report")
+        log(f"case w rep {n}: wedged, a1 alive, a2 {r.stdout.strip()}")
     off = TIO.stat().st_size
     lx("sync")
     t_reboot = time.monotonic()
@@ -101,7 +111,7 @@ def rep(case: str, n: int, cycle: bool) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("case", choices=("a", "b", "c"))
+    ap.add_argument("case", choices=("a", "b", "c", "w"))
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--no-cycle", action="store_true", help="first rep uses the board as it is (must be normal-image Linux)")
     a = ap.parse_args()

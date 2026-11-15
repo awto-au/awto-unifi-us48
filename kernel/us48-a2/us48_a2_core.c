@@ -17,6 +17,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/reboot.h>
 #include <linux/regmap.h>
 #include <linux/remoteproc.h>
 #include <linux/seq_file.h>
@@ -132,6 +133,7 @@ struct us48_a2 {
 	struct us48_pci *p;
 	struct regmap *map;
 	struct us48_a2_dcc *dcc;	/* console reader: runs from before the release until stop */
+	struct notifier_block reboot_nb;
 	phys_addr_t phys;
 	size_t size;
 	void *va;	/* WC buffer of the carveout, valid between prepare and unprepare */
@@ -659,6 +661,26 @@ static int us48_a2_stop(struct rproc *rproc)
 	if (a2_halt(a))
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
 	return a2_reset(a);
+}
+
+/*
+ * Reboot: a running a2 (DCC poller, reads in flight) must be stopped before pcie-iproc shutdown asserts PERST#;
+ * a read in flight at PERST# never completes and stalls a1 until the SP805 bites, after which uboot-1 hangs (#90, #91).
+ */
+static int us48_a2_reboot(struct notifier_block *nb, unsigned long action, void *data)
+{
+	struct us48_a2 *a = container_of(nb, struct us48_a2, reboot_nb);
+
+	if (a->rproc->state == RPROC_RUNNING) {
+		dev_info(a->dev, "reboot: stopping a2 before PERST#\n");
+		rproc_shutdown(a->rproc);
+	}
+	return NOTIFY_DONE;
+}
+
+static void a2_reboot_exit(void *data)
+{
+	unregister_reboot_notifier(data);
 }
 
 /*
@@ -1251,6 +1273,13 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	a->dcc = us48_a2_dcc_create(dev, a->map);
 	if (IS_ERR(a->dcc))
 		return PTR_ERR(a->dcc);
+	a->reboot_nb.notifier_call = us48_a2_reboot;
+	ret = register_reboot_notifier(&a->reboot_nb);
+	if (ret)
+		return ret;
+	ret = devm_add_action_or_reset(dev, a2_reboot_exit, &a->reboot_nb);
+	if (ret)
+		return ret;
 	ret = devm_rproc_add(dev, rproc);
 	if (!ret) {
 		us48_a2_dcc_debugfs(a->dcc, rproc->dbg_dir);
