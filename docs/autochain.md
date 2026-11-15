@@ -52,4 +52,31 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 - Alternative: `bootm 0x1c0e0000` straight from the BSPI XIP window. `bootm` then copies via BSPI, which may be faster than MSPI `sf read`. Measure both.
 - Not done: `verify=n` (a corrupt image would hang, recoverable only with JTAG).
 
+## Measured 2026-11-15 (uboot-1 prompt, `scripts/autochain_time.py`, 20 ms host tick, 2 reps, image CRC `bf43ffdd` OK in all)
+
+| Form | probe | `sf read` |
+|---|---|---|
+| `sf probe 0`, read `0xd0000` | 0.02 s | 0.181 s |
+| `sf probe 0`, read exact `0xcdbf0` | 0.02 s | 0.181 s |
+| `sf probe 0 12500000` | 0.02 s | 0.341 s |
+| `sf probe 0 25000000` | 0.02 s | 0.341 s |
+| `sf probe 0 50000000` | 0.02 s | 0.181 s |
+
+- 12.5 and 25 MHz give the same time (clamp); default = 50 MHz. Exact size saves nothing measurable.
+- `bootm` from RAM: -> "Starting kernel" 0.51-0.54 s (verify 0.22 s, load 0.25 s). Path total: 0.02 + 0.18 + 0.52 = ~0.72 s.
+- `bootm 0x1c0e0000` (XIP window covers `0xe0000`): -> "Starting kernel" 0.80 s (verify 0.38 s, load 0.38 s). Slower; not used.
+- Chosen bootcmd: `sf probe 0 50000000; sf read 0x01000000 0xe0000 0xcdbf0; bootm 0x01000000` (image 842736 B incl. 64 B header).
+- Typing the three commands on one line at the prompt loses characters after `sf read` (16 B UART FIFO, CPU busy); irrelevant for env bootcmd.
+- Cold power-up (relay ON call = t0, includes ~1 s relay API latency): uboot-1 banner +1.0 s, DDR done +1.2 s, PCIe line +1.65 s, countdown +1.8 s.
+- Both cold and warm uboot-1 print "port 0 is not active!!" (#67).
+
+## BLOCKER: env not written (2026-11-15)
+
+- `autochain_boot.py --manual` (cold power-cycle, abort countdown, `sf read` + `bootm`, no env write): awto-uboot (11:50 build) prints `fan: probing unit 1 BAR at 0x08040000` and hangs. Same after a warm reboot from mainline Linux.
+  - Cause: no PCIe link to unit 1 (#67). SP805 resets after ~10 s -> uboot-1 again.
+- With `bootdelay=0` this is an endless reset loop and no serial escape (see above). Env stays stock until awto-uboot survives a down PCIe link.
+- Built env (not written): `scripts/autochain_env.py --base private/backups/20261012T055324Z/mtd1-u-boot-env.bin --size 842736 --hz 50000000`.
+  - Live `0xc0000` = backup `mtd1` byte-identical (crc32 `893a81cd`). Format: u32 LE CRC32 over bytes 4..64K, vars, `0xff` fill, no redundant flag.
+  - Diff: `bootcmd` and `bootdelay` only; 9 other vars unchanged.
+
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).
