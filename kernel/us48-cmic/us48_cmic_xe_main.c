@@ -81,7 +81,7 @@ static const struct kernel_param_ops tsc_ops = { .set = tsc_set };
 module_param_cb(tsc, &tsc_ops, NULL, 0200);
 
 /* Run fn on the xe port of that front number under dump_lock (unbind waits for it). */
-static int xe_port_op(unsigned int front, unsigned int lo, unsigned int hi, bool restart)
+static int xe_port_op(unsigned int front, u32 lo, u32 hi, int aer, bool restart)
 {
 	int i, ret = -EINVAL;
 
@@ -94,7 +94,7 @@ static int xe_port_op(unsigned int front, unsigned int lo, unsigned int hi, bool
 		if (restart) {
 			ret = us48_tsc_rx_restart(dump_u, &dump_u->cfgs[i]);
 		} else {
-			us48_tsc_range(dump_u, &dump_u->cfgs[i], lo, hi);
+			us48_tsc_range(dump_u, &dump_u->cfgs[i], lo, hi, aer);
 			ret = 0;
 		}
 	}
@@ -108,17 +108,18 @@ static int rx_restart_set(const char *val, const struct kernel_param *kp)
 	unsigned int front;
 	int ret = kstrtouint(val, 0, &front);
 
-	return ret ?: xe_port_op(front, 0, 0, true);
+	return ret ?: xe_port_op(front, 0, 0, -1, true);
 }
 
-/* echo "49 c010 c01f" > .../tscreg: log those TSC registers of front 49/50 (AER = its lane). */
+/* echo "49 c010 c01f [aer]" > .../tscreg: log those TSC registers of front 49/50 (AER = its lane unless given); "49 19200 19212" = devad 1 (PMD). */
 static int tscreg_set(const char *val, const struct kernel_param *kp)
 {
 	unsigned int front, lo, hi;
+	int aer = -1, n = sscanf(val, "%u %x %x %i", &front, &lo, &hi, &aer);
 
-	if (sscanf(val, "%u %x %x", &front, &lo, &hi) != 3 || hi < lo || hi - lo > 63 || hi > 0xffff)
+	if (n < 3 || hi < lo || hi - lo > 63 || hi > 0x1ffff || aer > 3)
 		return -EINVAL;
-	return xe_port_op(front, lo, hi, false);
+	return xe_port_op(front, lo, hi, n == 4 ? aer : -1, false);
 }
 
 static const struct kernel_param_ops tscreg_ops = { .set = tscreg_set };

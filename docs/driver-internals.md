@@ -633,6 +633,16 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 - `XLPORT_FAULT_LINK_STATUS` lane 2 stayed 0x1 after RF cleared: treat as latched, judge by PCS live b7 / `XLMAC_RX_LSS_STATUS`.
 - XLPORT MIB is lane-indexed by the low address byte (RPKT lane 0 = 0, lane 2 live).
 
+### 13.6 xe49 TX not locked by sw1: stock SDK driver vs ours (#78, 2026-11-16)
+- Stock `switchdrvr` uses the SDK `phy_tscmod` driver (strings `phy_tscmod_*`), not OM `bcmi_tsc_xgxs`. Source: OpenBCM 6.5.16 `src/soc/phy/tscmod/` (copy in `/vendors/broadcom/openbcm/sdk-6.5.16-tscmod/`). C
+- Stock MIIM/TSC writes are not in any trace (CMC0 MIIM page untraced); the comparison below is against that SDK source. Stock S-channel XLPORT0/XLMAC writes: `scripts/xe49_stock_diff.py`. C
+- Same as ours: `0x9000` 0x7a80 (156.25 MHz, div66), encode 5 + SCR_MODE 3, decode, credits (CREDIT0 0x4021, MAC_CREDITGENCNT 4), KR/BR taps 0x5a54, KX/OS/2P5 0x03f0, ANATX 0x2020 (IDRIVER 0 from prop 0x2020 & 0xff), RAM_BASE, FIRMWARE_MODE 2 for DAC, RX uC enable. C
+- Differs, tested on the board, no effect: `0xf014` TEMPERATURE without FORCE (0x22a6; OM 0xa2a6); `0xc101` CREDIT1 0 (SDK writes 0x8400, RESERVED0 is not stored; our `port_enable` writes 0x0084); lane 0 TLA status `0x9212` = 3 (other lanes 2), cleared by START_SEQUENCER toggle. C
+- TX_X1 TX PI (`0x9200..`, devad 0) is only touched by SDK remote loopback and SyncE PPM, never by init; reads 0 (TX_PI_EN 0). C
+- Local PCS loopback on lane 0 (0x9009 bit 4, credits/TX/RX off around it): PCS_LIVE 0x0003, no RF: our TX stream decodes in our own RX. C
+- sw1 `SerDes 7` is **lan6** (pcs phandle map lan1..8 = SerDes 2..9), not lan3. The 30.3 s `RX calibration did not pass` loop belongs to lan6 (SFP+ 2 light); lan3 (SerDes 4) never logs, i.e. its calibration worker keeps waiting in `rxcal_ready`. C (sw1 DT, `pcs-rtl-otto.c`)
+- Lane map tests (TX map swaps 0<->1/2/3, analog regs follow the swap: AER 0 `0xc0xx` hits the swapped-in lane): no change. C
+
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
 Symptom was: RX ch1 armed, `CURR_DESC` advanced, nothing written. Resolved in 14.4 (VLAN/STG membership, not PCIe).

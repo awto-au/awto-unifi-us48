@@ -225,16 +225,18 @@ void us48_tsc_dump(struct us48_cmic *u)
 EXPORT_SYMBOL_GPL(us48_tsc_dump);
 
 /* Log TSC registers lo..hi (AER = lane) of one port: lane A/B comparison (#46). */
-void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u16 lo, u16 hi)
+/* lo/hi = devad << 16 | reg16 (devad 1 = PMD regs); aer >= 0 overrides the port's lane. */
+void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u32 lo, u32 hi, int aer)
 {
 	char b[160];
-	u16 v, r;
+	u16 v;
+	u32 r;
 	int n = 0;
 
 	mutex_lock(&u->mdio);
-	us48_tsc_wr(u, 0xffde, c->lane);
+	us48_tsc_wr(u, 0xffde, aer >= 0 ? aer : c->lane);
 	for (r = lo; r <= hi; r++) {
-		n += scnprintf(b + n, sizeof(b) - n, " %04x=%04x", r, us48_tsc_rd(u, r, &v) ? 0xffff : v);
+		n += scnprintf(b + n, sizeof(b) - n, " %x=%04x", r, us48_tsc_rd(u, r, &v) ? 0xffff : v);
 		if (n > 100 || r == hi) {
 			dev_info(u->dev, "tsc %s range:%s\n", c->name, b);
 			n = 0;
