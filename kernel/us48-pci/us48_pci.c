@@ -31,7 +31,7 @@
 #define IMAP_VALID	1
 #define OUT_GRANULE	SZ_64M	/* OARR/OMAP ADDR[31:26] */
 
-enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_NUM };
+enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_NUM };
 
 struct us48_pci_adev {
 	struct auxiliary_device adev;
@@ -160,6 +160,33 @@ static const struct regmap_config us48_axi_cfg = {
 	.unlock = axi_unlock,
 };
 
+void __iomem *us48_pci_win_move(struct us48_pci *p, u32 axi)
+{
+	if (us48_pci_link_ok(p))
+		return ERR_PTR(-ENODEV);
+	win_page(p, axi);
+	return p->bar0 + AXI_WIN + (axi & AXI_PAGE_MASK);
+}
+EXPORT_SYMBOL_GPL(us48_pci_win_move);
+
+void __iomem *us48_pci_win_get(struct us48_pci *p, u32 axi)
+{
+	void __iomem *va;
+
+	mutex_lock(&p->win_lock);
+	va = us48_pci_win_move(p, axi);
+	if (IS_ERR(va))
+		mutex_unlock(&p->win_lock);
+	return va;
+}
+EXPORT_SYMBOL_GPL(us48_pci_win_get);
+
+void us48_pci_win_put(struct us48_pci *p)
+{
+	mutex_unlock(&p->win_lock);
+}
+EXPORT_SYMBOL_GPL(us48_pci_win_put);
+
 /* --- a2 outbound window to host RAM --- */
 
 int us48_pci_outbound_map(struct us48_pci *p, phys_addr_t host, size_t len, u32 *axi)
@@ -253,6 +280,7 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	static const char * const names[ADEV_NUM] = {
 		[ADEV_A2] = US48_PCI_AUX_A2, [ADEV_CMIC] = US48_PCI_AUX_CMIC, [ADEV_CLK] = US48_PCI_AUX_CLK,
+		[ADEV_BUSTEST] = US48_PCI_AUX_BUSTEST,
 	};
 	struct us48_pci *p;
 	int i, ret;

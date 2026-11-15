@@ -207,10 +207,11 @@ def stage_rootfs() -> Path:
     # Bench image: keep the PoE state stock left (cameras stay powered for link/RX tests); production keeps poe-off.
     for f in (stage / "etc/rc.d").glob("S*us48-poe-off"):
         f.unlink()
-    fw = ROOT / "tmp/a2fw/us48-a2.elf"	# scripts/build_a2fw.py; remoteproc loads /lib/firmware/us48-a2.elf
-    if fw.exists():
-        (stage / "lib/firmware").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(fw, stage / "lib/firmware" / fw.name)
+    for name in ("us48-a2.elf", "us48-a2-bustest.elf", "us48-a2-bustest-nommu.elf"):	# scripts/build_a2fw.py; remoteproc loads /lib/firmware/<name>
+        fw = ROOT / "tmp/a2fw" / name
+        if fw.exists():
+            (stage / "lib/firmware").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(fw, stage / "lib/firmware" / fw.name)
     if not (stage / "init").exists():
         (stage / "init").symlink_to("sbin/init")
     lst = OUTDIR / "initramfs.list"
@@ -246,6 +247,7 @@ def configure(jobs: int) -> None:
 
 # Build order = dependency order: us48_pci (aux parent) first, its Module.symvers feeds the others.
 MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko"]),
+           ("kernel/us48-bustest", ["us48_bustest.ko"]),
            ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"])]
 
 

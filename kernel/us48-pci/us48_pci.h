@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * us48_pci: PCI owner of the second chip (BCM53346, unit 1, PCIe 0000:01:00.0) and auxiliary bus parent.
- * Aux devices (names us48_pci.<x>.0): a2 (remoteproc), cmic (netdev), clk (stub).
+ * Aux devices (names us48_pci.<x>.0): a2 (remoteproc), cmic (netdev), clk (stub), bustest (#80).
  * Facts + unknowns (C/I): docs/pci-layer.md, design: docs/a2-design.md.
  */
 #ifndef US48_PCI_H
@@ -18,6 +18,7 @@ struct us48_pci;
 #define US48_PCI_AUX_A2		"a2"
 #define US48_PCI_AUX_CMIC	"cmic"
 #define US48_PCI_AUX_CLK	"clk"
+#define US48_PCI_AUX_BUSTEST	"bustest"
 /* aux driver id_table names: KBUILD_MODNAME.<name> */
 #define US48_PCI_AUX_ID(n)	"us48_pci." n
 
@@ -36,6 +37,15 @@ struct device *us48_pci_dev(struct us48_pci *p);
  * Window moves are serialised by one lock; link down or PERST asserted: -ENODEV.
  */
 struct regmap *us48_pci_regmap(struct us48_pci *p);
+
+/*
+ * Raw IMAP window access for the bus test (kernel/us48-bustest): takes the window lock, points the 4 KiB window at
+ * the page of axi and returns the window address of axi (valid to the end of that page), or ERR_PTR(-ENODEV).
+ * _move re-points while locked, _put unlocks. No access table check: the caller owns the address.
+ */
+void __iomem *us48_pci_win_get(struct us48_pci *p, u32 axi);
+void __iomem *us48_pci_win_move(struct us48_pci *p, u32 axi);
+void us48_pci_win_put(struct us48_pci *p);
 
 /* BAR2 (CMIC) mapping for the cmic aux driver. */
 void __iomem *us48_pci_cmic_base(struct us48_pci *p);

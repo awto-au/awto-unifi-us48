@@ -60,11 +60,14 @@ SECTIONS {{
   /DISCARD/ : {{ *(.ARM.*) *(.comment) *(.note*) }}
 }}
 """)
-    for name, srcs in (("us48-a2", ("start.S", "main.c")), ("us48-a2-boot", ("boot.S", "bootrsc.c"))):
+    # (name, sources, extra cflags); bustest = PCIe harness firmware (#80), -nommu = fallback without the MMU setup
+    for name, srcs, extra in (("us48-a2", ("start.S", "main.c"), []), ("us48-a2-boot", ("boot.S", "bootrsc.c"), []),
+                              ("us48-a2-bustest", ("start.S", "bustest.c"), []),
+                              ("us48-a2-bustest-nommu", ("start.S", "bustest.c"), ["-DNO_MMU"])):
         objs = []
         for src in srcs:
             obj = OUT / f"{name}-{src}.o"
-            run([f"{T}gcc", *CFLAGS, "-c", "-o", obj, SRC / src])
+            run([f"{T}gcc", *CFLAGS, *extra, "-c", "-o", obj, SRC / src])
             objs.append(obj)
         elf = OUT / f"{name}.elf"
         run([f"{T}ld", "-T", ld, "-o", elf, *objs])
