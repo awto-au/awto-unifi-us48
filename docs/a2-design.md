@@ -33,7 +33,7 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 
 - hwdb regions `a2_carveout` / `a2_stub` / `a2_dtb` / `a2_zimage` / `a2_initrd` (`hwdb/soc/memmap.toml`) are the one record of the a2 view. Drivers, `a2fw/` and the a2 DTS take their addresses from them.
 - a2 physical RAM: base `0x08000000`, 64 MiB (`HW_A2_CARVEOUT_BASE/SIZE`) = host DDR low alias `0x04000000-0x07ffffff` through OARR_0 = 0x08000001, OMAP_0 = 0x04000000.
-- Offsets in the RAM: stub ELF/self-test/trace `+0` (1 MiB), DTB `+0x00b00000`, zImage `+0x01000000`, initramfs `+0x02000000` (up to 32 MiB). Kernel decompresses to `+0x8000` and must not reach the DTB.
+- Offsets in the RAM: stub ELF code `+0` (1 MiB, kernel RAM once Linux runs), zImage `+0x01000000` (15 MiB), DTB `+0x01f00000` (1 MiB), optional external initramfs `+0x02000000` (31 MiB), `a2_shared` `+0x03f00000` (1 MiB: resource table at its base, trace0 at +0x1000, no-map in the a2 DTB). The kernel decompresses to `+0x8000` and reaches ~`+0x0f30000`, so nothing else lives below `+0x01000000`.
 - Host side: DT `reserved-memory` `a2@4000000` (compatible `ubnt,us48-a2-carveout`, `no-map`, offsets as `ubnt,{dtb,kernel,initrd}-offset`; `mainline/0010`). The CMA area moves to `cma=8M@32M-64M` (`mainline/us48_defconfig`): a1 keeps 64 MiB of low RAM + the 128 MiB upper bank.
 - Why the low alias: it is the only DDR known to be reachable by a2 (docs/a2.md, #53).
 - OARR/OMAP have a 64 MiB granule (regdb `ADDR 31:26`): a2 reaches the whole 64 MiB aligned block, not only the carveout. The carveout is sized to the granule so nothing else sits in it. Driver check: carveout must not cross a granule.
@@ -51,8 +51,8 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 ## Payload mode: Linux on a2 (#79)
 
 - `us48_a2.payload=1` (param, runtime): after the stub ELF (`us48-a2-boot.elf`, set via `/sys/class/remoteproc/remoteproc0/firmware`) the driver copies `/lib/firmware/us48-a2-zImage`, `us48-a2.dtb` and optionally `us48-a2-initrd` into the carveout at the DT offsets (module params `kernel_off`/`dtb_off`/`initrd_off` override) and writes the stub's boot args (`a2fw/us48_a2_boot.h`: magic, zImage, DTB; magic last).
-- Stub (`a2fw/boot.S`) at the a2 entry: MMU and D-cache off, I-cache invalidated then on, r0 = 0, r1 = 0xffffffff, r2 = DTB, `bx` zImage. No magic = it parks, never a guessed address.
-- Initramfs: the driver does not edit the DTB. The a2 DTS `chosen` node carries `linux,initrd-start/end` = a2 view `0x0a000000` + size (the DTS build owns the size).
+- Both ELFs (self-test, boot stub) link code at `a2_stub` and the resource table + trace at `a2_shared`; the loaded table is therefore not overwritten by the kernel. Stub (`a2fw/boot.S`) at the a2 entry: MMU and D-cache off, I-cache invalidated then on, r0 = 0, r1 = 0xffffffff, r2 = DTB, `bx` zImage. No magic = it parks, never a guessed address.
+- Initramfs: built into the zImage today; an external one is optional (`us48-a2-initrd`), its addresses go into the a2 DTS `chosen` node (the driver does not edit the DTB). Blobs must end below `a2_shared`.
 - a2 boots the same kernel build as a1 (plain zImage, no appended DTB); modules are shared by kernel.release. Same remoteproc stop/start reloads everything: `echo stop`, replace the files, `echo start`.
 - Start/stop/recovery/coredump are the standard remoteproc paths; the payload only changes what `load` copies.
 
@@ -61,11 +61,15 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 - Same kernel image and initramfs as a1 (`scripts/build_mainline.py`); a2 differs only by DTB (`mainline/a2/us48-a2.dts`, r2, nothing appended) and its bootargs. `/init` picks the role from the DT root compatible (`ubnt,us48-a2`).
 - a2 RAM base = hwdb `a2_carveout` (HW_A2_CARVEOUT_BASE, a2 AXI 0x08000000, 64 MiB). The DTS gets it from hwdb through `scripts/build_a2_linux.py` (cpp -D macros), never as a literal.
 - Linux RAM = carveout minus the last MiB. Last MiB = hwdb `a2_shared` (resource table, trace ring, vrings), `no-map` in the a2 DTB.
-- **Layout requests to the loader side (the kernel decompresses to base + 0x8000 and reaches ~base + 0x0f30000, bss included):**
-  - DTB must sit above that: move `a2_dtb` from +0x0b00000 (inside the decompressed kernel, overwritten before it is read) to +0x1f00000 (a2_zimage shrinks to 15 MiB); `ubnt,dtb-offset` in mainline/0010 follows.
-  - First MiB (`a2_stub`) is kernel RAM once Linux runs: resource table/trace da must live in `a2_shared`, not at the carveout start.
-  - zImage (10.3 MB with the built-in initramfs) at +0x1000000 is fine; no `us48-a2-initrd` is needed (initrd offset unused).
-- DCC console reader (a1 side, in `us48-a2`): started before a2 is released; poll period <= 10 ms (the kernel's `hvc_dcc_check` gives up after 100 ms and never registers hvc0; earlycon blocks per character until drained). Regmap reads of `cs_debug0` through the unit 1 access table (the block is in the table or add it). Link down -> `-ENODEV`, a2 stays blocked in DCC until the reader returns.
+- Layout requests to the loader side: done. DTB `+0x01f00000` (`mainline/0010` follows hwdb), zImage 15 MiB at `+0x01000000`, resource table + trace in `a2_shared`; zImage (10.3 MB with the built-in initramfs) fits, no `us48-a2-initrd` needed.
+- DCC console reader (a1 side, in `us48-a2`): implemented, see the DCC console section above. Must run before a2 is released (`hvc_dcc_check` gives up after 100 ms, earlycon blocks per character).
+
+### DCC console (a2 -> host tty)
+- `kernel/us48-a2/us48_a2_dcc.c`: tty `ttyA2` + log ring (8 KiB, debugfs `remoteproc0/dcc_log`) behind a2's `hvc_dcc` / `earlycon=dcc`. Input: tty writes go to DTRRX when `DTRRXfull` is clear.
+- Poll: hrtimer 5 ms -> high-priority work (regmap sleeps): while `DSCR.DTRTXfull`, read `DTRTX` (one character per word), up to 256 words per poll.
+- Started in `start()` after set-PC and before the release; stopped in `stop()` before the halt (DSCR is shared with the debug sequences). 5 ms = 1/20 of a2's 100 ms `hvc_dcc_check` window.
+- Open `/dev/ttyA2` (or `cat`) before `echo start` to catch the boot text on the tty; `dcc_log` keeps the last 8 KiB either way.
+- Poll error (link down, -EIO) stops the poller and logs once; a2 stays blocked in DCC until the next start.
 
 ## Order
 

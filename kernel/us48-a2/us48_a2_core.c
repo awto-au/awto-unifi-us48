@@ -17,6 +17,7 @@
 #include "us48_hwdb.h"
 #include "us48_pci.h"
 #include "us48_a2_boot.h"
+#include "us48_a2_dcc.h"
 
 #define A2_FW		"us48-a2.elf"
 #define A2_CARVEOUT	"a2-carveout"	/* must match the firmware resource table */
@@ -51,6 +52,7 @@ struct us48_a2 {
 	struct device *dev;
 	struct us48_pci *p;
 	struct regmap *map;
+	struct us48_a2_dcc *dcc;	/* console reader: runs from before the release until stop */
 	phys_addr_t phys;
 	size_t size;
 	void *va;	/* WC mapping of the carveout */
@@ -118,7 +120,7 @@ static int a2_release(struct us48_a2 *a)
 			      HW_CS_DEBUG0_DSCR_RESTARTED_MASK, "restart");
 }
 
-/* Copy one firmware file to carveout + off; the offset must be past the stub MiB and the file must fit. */
+/* Copy one firmware file to carveout + off: past the stub MiB, below a2_shared (resource table, trace). */
 static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *what)
 {
 	const struct firmware *fw;
@@ -129,7 +131,7 @@ static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *wha
 	ret = request_firmware(&fw, name, a->dev);
 	if (ret)
 		return dev_err_probe(a->dev, ret, "payload: %s %s\n", what, name);
-	if (off < HW_A2_STUB_SIZE || off > a->size || fw->size > a->size - off) {
+	if (off < HW_A2_STUB_SIZE || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
 		dev_err(a->dev, "payload: %s %s (%zu B) at +%#x does not fit the carveout\n", what, name, fw->size, off);
 		ret = -EFBIG;
 	} else {
@@ -215,9 +217,13 @@ static int us48_a2_start(struct rproc *rproc)
 
 	ret = ret ?: a2_halt(a);
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);
+	if (!ret)
+		us48_a2_dcc_start(a->dcc);	/* before the release: a2's hvc_dcc gives up after 100 ms */
 	ret = ret ?: a2_release(a);
-	if (ret)
+	if (ret) {
+		us48_a2_dcc_stop(a->dcc);
 		a2_reset(a);	/* never leave a2 halted */
+	}
 	return ret;
 }
 
@@ -226,6 +232,7 @@ static int us48_a2_stop(struct rproc *rproc)
 {
 	struct us48_a2 *a = rproc->priv;
 
+	us48_a2_dcc_stop(a->dcc);	/* before the halt: DSCR is shared with the debug sequences */
 	if (a2_halt(a))
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
 	return a2_reset(a);
@@ -284,7 +291,14 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if (IS_ERR(a->va))
 		return PTR_ERR(a->va);
 	dev_info(dev, "carveout %pa+%zx, a2 AXI %#x\n", &a->phys, a->size, a->da);
-	return devm_rproc_add(dev, rproc);
+	/* created before rproc_add: devres releases it after rproc_del, which may still call stop() */
+	a->dcc = us48_a2_dcc_create(dev, a->map);
+	if (IS_ERR(a->dcc))
+		return PTR_ERR(a->dcc);
+	ret = devm_rproc_add(dev, rproc);
+	if (!ret)
+		us48_a2_dcc_debugfs(a->dcc, rproc->dbg_dir);
+	return ret;
 }
 
 static const struct auxiliary_device_id us48_a2_ids[] = {
