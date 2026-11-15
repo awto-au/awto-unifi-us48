@@ -41,19 +41,19 @@
 "CHIPCOMMONA_CLOCKCTLSTATUS" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CHIPCOMMONA_UART0_RBR_THR_DLL" = {seen = false, why = "UART FIFO: read pops the RX byte"}
 "CHIPCOMMONA_UART0_DLH_IER" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART0_IIR_FCR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
+"CHIPCOMMONA_UART0_IIR_FCR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
 "CHIPCOMMONA_UART0_LCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CHIPCOMMONA_UART0_MCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART0_LSR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART0_MSR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
+"CHIPCOMMONA_UART0_LSR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
+"CHIPCOMMONA_UART0_MSR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
 "CHIPCOMMONA_UART0_SCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CHIPCOMMONA_UART1_RBR_THR_DLL" = {seen = false, why = "UART FIFO: read pops the RX byte"}
 "CHIPCOMMONA_UART1_DLH_IER" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART1_IIR_FCR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
+"CHIPCOMMONA_UART1_IIR_FCR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
 "CHIPCOMMONA_UART1_LCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CHIPCOMMONA_UART1_MCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART1_LSR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
-"CHIPCOMMONA_UART1_MSR" = {seen = false, why = "abort dfsr 0x1", date = "2026-11-16", unit = 1}
+"CHIPCOMMONA_UART1_LSR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
+"CHIPCOMMONA_UART1_MSR" = {seen = false, why = "UART: read clears the interrupt id / line status / modem status bits"}
 "CHIPCOMMONA_UART1_SCR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "DDR_DENALI_CTL_00" = {seen = true, reset_ok = false, ro_ok = true, date = "2026-11-16", unit = 1}
 "DDR_DENALI_CTL_01" = {seen = true, reset_ok = false, ro_ok = true, date = "2026-11-16", unit = 1}

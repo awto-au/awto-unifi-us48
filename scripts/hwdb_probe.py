@@ -257,6 +257,8 @@ def report():
             out.append(f"[hw.{cur}]")
         nm = k.split(".", 1)[1]
         c, w = cold.get(k), warm.get(k)
+        if r["skip"] and not r["skip"].startswith(("deferred", "not in this run")):
+            c = w = None  # skipped or blocked now: ignore a result left over from an older list
         cls = ""
         if c is None:
             why = r["skip"] or "not read"
