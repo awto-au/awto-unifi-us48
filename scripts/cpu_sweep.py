@@ -91,6 +91,27 @@ def step(mhz: int, image: str | None) -> dict:
     if run(["scripts/autochain_boot.py"], 60):
         res["first_error"] = "cold boot to awto-uboot failed"
         return res
+    # first net use after power-up loses ARP in the sw1 forwarding delay (seen 2026-11-15): ping until alive, <= 4 x 15 s
+    alive = False
+    sess = dev.console.Session()
+    try:
+        sess.write(b"\x03\r\n")
+        sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
+        sess.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip 192.168.25.30")
+        sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
+        for n in range(4):
+            sess.send_line("ping 192.168.25.30")
+            hit = sess.expect([b"is alive", b"not alive"], 16.0, "ping")
+            sess.send_line("")
+            sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
+            if hit == b"is alive":
+                alive = True
+                break
+    except dev.console.Timeout as e:
+        say(f"net warm-up: {e}")
+    finally:
+        sess.close()
+    say(f"net warm-up alive={alive}")
     if mhz != 1550 and run(["scripts/u2_ramboot.py", "--image", f"tmp/uboot/us48-uboot-cpu{mhz}.bin"], 120):
         res["first_error"] = "variant ramboot failed"
         return res
