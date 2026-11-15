@@ -1,0 +1,816 @@
+# ubnt app functions (no bytes). Restricted TOML subset: scripts/ghidra/hwdb_export.py rewrites this file.
+
+[binary.ubntapp]
+desc = "ubnt app carried inside uboot-1 (flash 0x5814c, 0x50000 B), copied to 0x67030000 every boot; go ${ubntaddr} <cmd>"
+base = 0x67030000
+arch = "armv7"
+
+[binary.ubntapp.func.ubnt_go_dispatch]
+name = "ubnt_go_dispatch"
+addr = 0x67030020
+size = 1292
+role = "`go ${ubntaddr} <cmd>` entry: strcmp chain over uappinit/usetbrev/usetmac/uclear*/usetsshkey/usetled/ubntboot/usetbid/ucheckboard/ureset_button/uwrite/uprintenv/usetenv/usaveenv (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.printf]
+name = "printf"
+addr = 0x67030578
+size = 8
+role = "trampoline into U-Boot (109 callers)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.malloc]
+name = "malloc"
+addr = 0x67030590
+size = 8
+role = "trampoline into U-Boot"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.free]
+name = "free"
+addr = 0x67030598
+size = 8
+role = "trampoline into U-Boot"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.getenv]
+name = "getenv"
+addr = 0x670305c0
+size = 8
+role = "trampoline into U-Boot"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.setenv]
+name = "setenv"
+addr = 0x670305c8
+size = 8
+role = "trampoline into U-Boot"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.bootsel_migrate_v1_v2]
+name = "bootsel_migrate_v1_v2"
+addr = 0x670306e8
+size = 132
+role = "'BS: v1->v2' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.bootsel_persist]
+name = "bootsel_persist"
+addr = 0x67030774
+size = 88
+role = "'BS: persist failed rc=%d' (string); writes the bootsel record (flash 0x1ee0000, docs/uboot.md s7)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.bootsel_load]
+name = "bootsel_load"
+addr = 0x67030890
+size = 572
+role = "'BS: bad magic %x', reads ubnt_hcrc_a/_b env"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.bootsel_select]
+name = "bootsel_select"
+addr = 0x67030afc
+size = 520
+role = "'BS: force_fallback -> swap roles', 'BS: active exhausted -> swap roles' (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.bootsel_check_slot_hcrc]
+name = "bootsel_check_slot_hcrc"
+addr = 0x67030e28
+size = 460
+role = "'BS: slot A firmware changed (hcrc ..)' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.bootsel_skip_bootcount]
+name = "bootsel_skip_bootcount"
+addr = 0x67031040
+size = 20
+role = "'BS: skip bootcount increment (runtime-only policy)' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rsa_verify_image]
+name = "rsa_verify_image"
+addr = 0x670310ec
+size = 308
+role = "'Key import failed', 'Img hash failed' (strings); not reached from ubntboot"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.ubnt_env_check_default]
+name = "ubnt_env_check_default"
+addr = 0x670312a0
+size = 284
+role = "'u-boot-env is invalid, overiding with default' (string); runs in uappinit"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uprintenv]
+name = "do_uprintenv"
+addr = 0x670313dc
+size = 76
+role = "dispatcher branch"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.do_usetenv]
+name = "do_usetenv"
+addr = 0x67031430
+size = 4
+role = "dispatcher branch"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.rsa_signed_image_check]
+name = "rsa_signed_image_check"
+addr = 0x670317dc
+size = 828
+role = "'RSA Signed Image. Verfiying please wait...' (string); no caller"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ufwupdate_unused]
+name = "ufwupdate_unused"
+addr = 0x67031b4c
+size = 868
+role = "'Copying to kernel0 partition' (string); writes u-boot/kernel0; no caller"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.gpio_output_disable]
+name = "gpio_output_disable"
+addr = 0x67031ef4
+size = 40
+role = "clears bit in GPIO output-enable shadow (pins < 24)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.gpio_set_value]
+name = "gpio_set_value"
+addr = 0x67031f20
+size = 76
+role = "sets output-enable + data bit for pin < 24"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.gpio_get_value]
+name = "gpio_get_value"
+addr = 0x67031f70
+size = 60
+role = "reads data-in or data-out bit"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.gpio_init]
+name = "gpio_init"
+addr = 0x67031fe0
+size = 100
+role = "fills CCA GPIO descriptor (base 0x18000000, DIN 0x18000060), zeroes int regs"
+regs = ["cca.GPIO_DIN"]
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.gpio_pulse]
+name = "gpio_pulse"
+addr = 0x6703201c
+size = 180
+role = "drives a pin then waits (udelay trampoline)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.build_boot_args]
+name = "build_boot_args"
+addr = 0x67032114
+size = 240
+role = "appends ubntbootid / ubnt_active_slot / ubnt_current_slot (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.load_verify_kernel]
+name = "load_verify_kernel"
+addr = 0x67032274
+size = 380
+role = "'Loading Kernel Image @ %x', 'Verifying parition' (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.do_usetbid]
+name = "do_usetbid"
+addr = 0x6703241c
+size = 232
+role = "'Board ID: %hx' (string); read-modify-write EEPROM 0x1ff0000"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetbrev]
+name = "do_usetbrev"
+addr = 0x67032510
+size = 240
+role = "'BOM Rev: %05d-%02d' (string); read-modify-write EEPROM 0x1ff0000"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetmac]
+name = "do_usetmac"
+addr = 0x6703260c
+size = 316
+role = "'MAC0 / MAC1' (strings); read-modify-write EEPROM 0x1ff0000"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uclearcal]
+name = "do_uclearcal"
+addr = 0x67032758
+size = 4
+role = "dispatcher target (4 B branch) into do_uclearcal_body"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uclearcal_body]
+name = "do_uclearcal_body"
+addr = 0x6703275c
+size = 444
+role = "'reset_bid=%d reset_eth=%d' (string); rewrites EEPROM 0x1ff0000"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uclearcfg]
+name = "do_uclearcfg"
+addr = 0x67032938
+size = 4
+role = "dispatcher target (4 B branch) into do_uclearcfg_body"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uclearcfg_body]
+name = "do_uclearcfg_body"
+addr = 0x6703293c
+size = 44
+role = "erases 0x1ef0000 (| arg & 0xffff) 1 MiB (cfg)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uclearenv]
+name = "do_uclearenv"
+addr = 0x6703296c
+size = 12
+role = "erases 0xc0000 64 KiB (u-boot-env)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetsshkey]
+name = "do_usetsshkey"
+addr = 0x67032978
+size = 4
+role = "dispatcher target (4 B branch) into do_usetsshkey_body"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetsshkey_body]
+name = "do_usetsshkey_body"
+addr = 0x6703297c
+size = 916
+role = "'doesn't contain valid key' (string); rewrites EEPROM 0x1ff0000"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetled]
+name = "do_usetled"
+addr = 0x67032d40
+size = 4
+role = "dispatcher target (4 B branch) into do_usetled_body"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_usetled_body]
+name = "do_usetled_body"
+addr = 0x67032d44
+size = 164
+role = "'Invalid Pattern: %x' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_ubntboot]
+name = "do_ubntboot"
+addr = 0x67032dec
+size = 4
+role = "dispatcher target (4 B branch) into do_ubntboot_body"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_ubntboot_body]
+name = "do_ubntboot_body"
+addr = 0x67032df0
+size = 268
+role = "force_bootsel env, bootsel_select, build_boot_args, load_verify_kernel (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.print_board_banner]
+name = "print_board_banner"
+addr = 0x67032f10
+size = 52
+role = "'Board: Ubiquiti Networks %s board' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_ucheckboard]
+name = "do_ucheckboard"
+addr = 0x67032f4c
+size = 16
+role = "prints board banner"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.do_uappinit]
+name = "do_uappinit"
+addr = 0x67032f5c
+size = 68
+role = "'UBNT application initialized' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_uwrite]
+name = "do_uwrite"
+addr = 0x67032fa4
+size = 8
+role = "returns 0"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.do_ureset_button]
+name = "do_ureset_button"
+addr = 0x67032fac
+size = 200
+role = "GPIO 11 polled; held: erase cfg 0x1ef0000 + env 0xc0000 (strings)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.eeprom_load]
+name = "eeprom_load"
+addr = 0x67033080
+size = 252
+role = "reads 64 KiB EEPROM partition 0x1ff0000 into a buffer, byte-swaps board fields, magic check"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.board_name]
+name = "board_name"
+addr = 0x67033180
+size = 32
+role = "'Unknown' / 'BCM95615x'"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.mtdparts_build]
+name = "mtdparts_build"
+addr = 0x670331a8
+size = 484
+role = "'mtdparts=spi1.0:768k(u-boot)...' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.spi_cmd]
+name = "spi_cmd"
+addr = 0x6703358c
+size = 168
+role = "function-name string"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ubnt_spi_init]
+name = "ubnt_spi_init"
+addr = 0x6703363c
+size = 204
+role = "function-name string"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ubnt_spi_flash_erase]
+name = "ubnt_spi_flash_erase"
+addr = 0x6703371c
+size = 548
+role = "function-name string"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ubnt_spi_flash_read]
+name = "ubnt_spi_flash_read"
+addr = 0x67033970
+size = 436
+role = "function-name string"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ubnt_spi_flash_write]
+name = "ubnt_spi_flash_write"
+addr = 0x67033b3c
+size = 604
+role = "function-name string"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.ubnt_flash_erase]
+name = "ubnt_flash_erase"
+addr = 0x67033dc0
+size = 20
+role = "ubnt_spi_flash_erase wrapper"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.crc32]
+name = "crc32"
+addr = 0x67033de8
+size = 68
+role = "table crc32"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.ctype_flags]
+name = "ctype_flags"
+addr = 0x67033e6c
+size = 52
+role = "character class lookup"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.memcmp]
+name = "memcmp"
+addr = 0x67034114
+size = 264
+role = "libc"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.memset]
+name = "memset"
+addr = 0x6703421c
+size = 152
+role = "libc"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.memcpy]
+name = "memcpy"
+addr = 0x670342b4
+size = 452
+role = "libc"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.strncmp]
+name = "strncmp"
+addr = 0x670345fc
+size = 64
+role = "libc (3 args)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.strlen]
+name = "strlen"
+addr = 0x67034b5c
+size = 52
+role = "libc"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.__aeabi_uidivmod]
+name = "__aeabi_uidivmod"
+addr = 0x67034cc8
+size = 168
+role = "divide"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.__aeabi_uidiv]
+name = "__aeabi_uidiv"
+addr = 0x67034d70
+size = 32
+role = "divide wrapper"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.raise]
+name = "raise"
+addr = 0x670357e8
+size = 28
+role = "'FATAL: signal received = %d' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.sha1_compress]
+name = "sha1_compress"
+addr = 0x67035808
+size = 1292
+role = "sha1.c block function"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.sha1_done]
+name = "sha1_done"
+addr = 0x67035d1c
+size = 388
+role = "sha1.c: md != NULL, out != NULL"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.sha1_init]
+name = "sha1_init"
+addr = 0x67035eb0
+size = 128
+role = "sha1.c: md != NULL"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.sha1_process]
+name = "sha1_process"
+addr = 0x67035f38
+size = 328
+role = "sha1.c: in != NULL, md != NULL"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "I"
+
+[binary.ubntapp.func.crypt_argchk]
+name = "crypt_argchk"
+addr = 0x67037a0c
+size = 24
+role = "'LTC_ARGCHK '%s' failure on line %d of file %s' (string)"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.crypt_register_hash]
+name = "crypt_register_hash"
+addr = 0x67037a28
+size = 188
+role = "libtomcrypt: only reference to source-file string crypt_register_hash.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rsa_exptmod]
+name = "rsa_exptmod"
+addr = 0x67037af4
+size = 700
+role = "libtomcrypt: only reference to source-file string rsa_exptmod.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rsa_import]
+name = "rsa_import"
+addr = 0x67037dd8
+size = 1040
+role = "libtomcrypt: only reference to source-file string rsa_import.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rsa_make_key]
+name = "rsa_make_key"
+addr = 0x6703820c
+size = 972
+role = "libtomcrypt: only reference to source-file string rsa_make_key.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rsa_verify_hash]
+name = "rsa_verify_hash"
+addr = 0x670385f0
+size = 988
+role = "libtomcrypt: only reference to source-file string rsa_verify_hash.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.rand_prime]
+name = "rand_prime"
+addr = 0x67038b38
+size = 376
+role = "libtomcrypt: only reference to source-file string rand_prime.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.zeromem]
+name = "zeromem"
+addr = 0x67038d48
+size = 84
+role = "libtomcrypt: only reference to source-file string zeromem.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_sequence_ex]
+name = "der_decode_sequence_ex"
+addr = 0x67038da4
+size = 1624
+role = "libtomcrypt: only reference to source-file string der_decode_sequence_ex.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_sequence_multi]
+name = "der_decode_sequence_multi"
+addr = 0x6703943c
+size = 324
+role = "libtomcrypt: only reference to source-file string der_decode_sequence_multi.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_sequence]
+name = "der_length_sequence"
+addr = 0x67039588
+size = 560
+role = "libtomcrypt: only reference to source-file string der_length_sequence.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_short_integer]
+name = "der_decode_short_integer"
+addr = 0x670397c8
+size = 176
+role = "libtomcrypt: only reference to source-file string der_decode_short_integer.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_short_integer]
+name = "der_length_short_integer"
+addr = 0x67039888
+size = 128
+role = "libtomcrypt: only reference to source-file string der_length_short_integer.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_utctime]
+name = "der_decode_utctime"
+addr = 0x67039910
+size = 1232
+role = "libtomcrypt: only reference to source-file string der_decode_utctime.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_utctime]
+name = "der_length_utctime"
+addr = 0x67039e48
+size = 128
+role = "libtomcrypt: only reference to source-file string der_length_utctime.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_utf8_string]
+name = "der_decode_utf8_string"
+addr = 0x67039ed8
+size = 500
+role = "libtomcrypt: only reference to source-file string der_decode_utf8_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_utf8_string]
+name = "der_length_utf8_string"
+addr = 0x6703a114
+size = 264
+role = "libtomcrypt: only reference to source-file string der_length_utf8_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.pkcs_1_pss_decode]
+name = "pkcs_1_pss_decode"
+addr = 0x6703a22c
+size = 928
+role = "libtomcrypt: only reference to source-file string pkcs_1_pss_decode.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_bit_string]
+name = "der_decode_bit_string"
+addr = 0x6703a720
+size = 388
+role = "libtomcrypt: only reference to source-file string der_decode_bit_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_bit_string]
+name = "der_length_bit_string"
+addr = 0x6703a8bc
+size = 132
+role = "libtomcrypt: only reference to source-file string der_length_bit_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_boolean]
+name = "der_decode_boolean"
+addr = 0x6703a948
+size = 168
+role = "libtomcrypt: only reference to source-file string der_decode_boolean.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_boolean]
+name = "der_length_boolean"
+addr = 0x6703aa00
+size = 56
+role = "libtomcrypt: source-file string der_length_boolean.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_choice]
+name = "der_decode_choice"
+addr = 0x6703aa40
+size = 916
+role = "libtomcrypt: only reference to source-file string der_decode_choice.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_ia5_string]
+name = "der_decode_ia5_string"
+addr = 0x6703adec
+size = 348
+role = "libtomcrypt: only reference to source-file string der_decode_ia5_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_ia5_string]
+name = "der_length_ia5_string"
+addr = 0x6703afe4
+size = 228
+role = "libtomcrypt: only reference to source-file string der_length_ia5_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_integer]
+name = "der_decode_integer"
+addr = 0x6703b0d8
+size = 600
+role = "libtomcrypt: only reference to source-file string der_decode_integer.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_integer]
+name = "der_length_integer"
+addr = 0x6703b370
+size = 312
+role = "libtomcrypt: only reference to source-file string der_length_integer.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_object_identifier]
+name = "der_decode_object_identifier"
+addr = 0x6703b4c0
+size = 400
+role = "libtomcrypt: only reference to source-file string der_decode_object_identifier.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_object_identifier]
+name = "der_length_object_identifier"
+addr = 0x6703b68c
+size = 308
+role = "libtomcrypt: only reference to source-file string der_length_object_identifier.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_octet_string]
+name = "der_decode_octet_string"
+addr = 0x6703b7d0
+size = 320
+role = "libtomcrypt: only reference to source-file string der_decode_octet_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_octet_string]
+name = "der_length_octet_string"
+addr = 0x6703b928
+size = 140
+role = "libtomcrypt: only reference to source-file string der_length_octet_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_decode_printable_string]
+name = "der_decode_printable_string"
+addr = 0x6703b9bc
+size = 348
+role = "libtomcrypt: only reference to source-file string der_decode_printable_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.der_length_printable_string]
+name = "der_length_printable_string"
+addr = 0x6703bbb4
+size = 228
+role = "libtomcrypt: only reference to source-file string der_length_printable_string.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+
+[binary.ubntapp.func.pkcs_1_mgf1]
+name = "pkcs_1_mgf1"
+addr = 0x6703bca8
+size = 528
+role = "libtomcrypt: only reference to source-file string pkcs_1_mgf1.c"
+src = "ghidra ubntapp.bin 2026-11-15"
+conf = "C"
+

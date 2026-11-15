@@ -38,10 +38,15 @@
 - `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry. Report only.
 - Context collisions exist (0x1c000000 is also the L2X S-channel table id).
 
-## Ghidra round-trip (not yet run inside Ghidra; export merge logic unit-checked with plain Python)
+## Ghidra round-trip (run on uboot-1 and the ubnt app, 2026-11-15, #69)
 - Import: run `hwdb/gen/ghidra_import_hwdb.py` in a program: memory blocks for axi0 regions/blocks, labels per register, struct `<block>_regs` for dense blocks, function names + role comments from `hwdb/fw` for the binary matching the program name (or arg 1).
 - Export: run `hwdb/gen/ghidra_export_hwdb.py [binary] [repo-root]`: writes non-default function names, sizes, function comments and EOL/PRE comments to `hwdb/fw/<binary>.toml`; keeps `role/regs/src/conf` of known addresses; new functions get `src = "ghidra <program> <date>"`, `conf = "I"`. Source: `scripts/ghidra/hwdb_export.py`.
 - Ghidra is a consumer and contributor, not the store.
+- Runner: `scripts/ghidra_pyrun.py` (PyGhidra venv `tmp/pgvenv`, setup in its docstring; `python -I`). `analyzeHeadless` has no Jython, `.py` scripts need PyGhidra.
+- Flow per binary (project `tmp/ghidra/proj/<name>`, program `<name>.bin`; uboot1 = `full-flash.bin[0:447118]` at 0x1c000000, ubntapp = base 0x67030000):
+  1. `analyzeHeadless ... -import` (raw ARM:LE:32:v7 + base), 2. `ghidra_import_hwdb.py`, 3. `scripts/ghidra/find_funcs.py lo hi` (push-prologue scan, `cmp r2` entry fix; auto-analysis misses table-reached functions),
+  4. `ExportAll.java` + `scripts/ghidra_func_regs.py <name>` (registers per function), 5. `scripts/ghidra/apply_names.py names.tsv lo hi` (comment `[C|I] role @regs a.B,c.D`), 6. `hwdb_export.py` parses the tag into `role/conf/regs`.
+  - `regs` accept `block.REG` or a block name only (`hwdb.py check`).
 
 ## Port map
 - `hwdb/board/ports.toml` is the source; `scripts/us48_portmap.py [switchdrvr]` verifies the FastPath table (VA 0x1d8ecb4) and the OpenBCM p2l rule against it.

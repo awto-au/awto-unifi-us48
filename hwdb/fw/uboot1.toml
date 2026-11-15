@@ -9,13 +9,219 @@ arch = "armv7"
 [binary.uboot1.func.relocate_code]
 name = "relocate_code"
 addr = 0x1c0000a0
+size = 272
 role = "copy first 0x5814c B + 1278 R_ARM_RELATIVE fixups (@0x5595c) to 0x6ffa0000"
 src = "docs/uboot.md s6"
 conf = "C"
 
+[binary.uboot1.func.irq_entry]
+name = "irq_entry"
+addr = 0x1c0003c0
+size = 128
+role = "IRQ vector stub: calls gic_handle_irq, then the exception report"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.print_clocks]
+name = "print_clocks"
+addr = 0x1c0017e0
+size = 396
+role = "prints 'arm_clk=..MHz, axi_clk, apb_clk, arm_periph_clk' (string)"
+regs = ["ccu.PLLARMA", "ccu.PLLARMB", "ccu.POLICY_FREQ", "ccu.WR_ACCESS"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.gtimer_init]
+name = "gtimer_init"
+addr = 0x1c001978
+size = 40
+role = "A9 global timer: stop, zero counter, enable (GTIMER control/counter)"
+regs = ["gtimer.CONTROL", "gtimer.COUNTER_HI", "gtimer.COUNTER_LO"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.timer_init]
+name = "timer_init"
+addr = 0x1c0019a0
+size = 16
+role = "wrapper: gtimer_init"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.get_timer]
+name = "get_timer"
+addr = 0x1c0019b0
+size = 148
+role = "ms elapsed since arg, from the 64-bit global timer and prescaler (200 MHz periph clk)"
+regs = ["gtimer.CONTROL", "gtimer.COUNTER_HI", "gtimer.COUNTER_LO"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.gtimer_delay_us]
+name = "gtimer_delay_us"
+addr = 0x1c001a44
+size = 276
+role = "busy-wait arg microseconds on the global timer; used by udelay"
+regs = ["gtimer.CONTROL", "gtimer.COUNTER_HI", "gtimer.COUNTER_LO"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.reset_cpu]
+name = "reset_cpu"
+addr = 0x1c001be0
+size = 20
+role = "writes DMU.CRU_RESET = 0 then spins (called by do_reset 'resetting ...')"
+regs = ["dmu.CRU_RESET"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.get_cpu_id]
+name = "get_cpu_id"
+addr = 0x1c001c10
+size = 12
+role = "reads CP15 MPIDR affinity 0 (core number)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.gic_disable_irq]
+name = "gic_disable_irq"
+addr = 0x1c001c70
+size = 36
+role = "GIC distributor ICENABLER write for irq arg"
+regs = ["gic_dist.CTLR"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.gic_config_irq]
+name = "gic_config_irq"
+addr = 0x1c001cc0
+size = 264
+role = "GIC distributor: disable, set enable/config/priority/target for irq"
+regs = ["gic_dist.CTLR"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.gic_dist_init]
+name = "gic_dist_init"
+addr = 0x1c001dc8
+size = 244
+role = "GIC distributor reset: disable, clear enables, pending, priorities"
+regs = ["gic_cpu.CTLR", "gic_cpu.PMR", "gic_dist", "gic_dist.CTLR", "gic_dist.ISENABLER"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.gic_handle_irq]
+name = "gic_handle_irq"
+addr = 0x1c001ebc
+size = 232
+role = "reads GIC CPU IAR, dispatches the handler table, writes EOIR"
+regs = ["gic_cpu.EOIR", "gic_cpu.IAR"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.l2cc_set_aux_ctrl]
+name = "l2cc_set_aux_ctrl"
+addr = 0x1c0020b8
+size = 44
+role = "PL310 aux ctrl (way/latency bits) and tag/data latency regs"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.l2cc_inv_all_start]
+name = "l2cc_inv_all_start"
+addr = 0x1c0020e4
+size = 20
+role = "PL310 invalidate-by-way (0x77c) = 0xffff"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.l2cc_unlock_ways]
+name = "l2cc_unlock_ways"
+addr = 0x1c0020f8
+size = 20
+role = "PL310 lockdown register 0x954 = 0xffff"
+regs = ["pl310.UNLOCK_ALL_LINES"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.l2cc_enable]
+name = "l2cc_enable"
+addr = 0x1c00210c
+size = 116
+role = "PL310 setup, invalidate, wait, CTRL = 1"
+regs = ["pl310", "pl310.CTRL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.l2cc_invalidate]
+name = "l2cc_invalidate"
+addr = 0x1c002180
+size = 180
+role = "PL310 invalidate-by-way with wait; prints on failure (string)"
+regs = ["pl310", "pl310.CTRL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.xgpll_reset_toggle]
+name = "xgpll_reset_toggle"
+addr = 0x1c002244
+size = 76
+role = "XGPLL CTRL_3 reset bit sequence before DDR init"
+regs = ["xgpll.CTRL_3", "xgpll.STATUS"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.genpll_config]
+name = "genpll_config"
+addr = 0x1c002290
+size = 368
+role = "GENPLL CTRL0..2 from a frequency table row"
+regs = ["genpll.CTRL0", "genpll.CTRL1", "genpll.CTRL2", "genpll.CTRL3", "genpll.STATUS"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.genpll_get_hz]
+name = "genpll_get_hz"
+addr = 0x1c002408
+size = 80
+role = "VCO/channel frequency from GENPLL CTRL1/CTRL2 and the 25 MHz reference"
+regs = ["genpll.CTRL1", "genpll.CTRL2"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.get_apb_clk]
+name = "get_apb_clk"
+addr = 0x1c002458
+size = 96
+role = "APB clock from GENPLL; CCA CORECTRL and IDM bit select"
+regs = ["cca", "cca.CORECTRL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.cru_standby_prepare]
+name = "cru_standby_prepare"
+addr = 0x1c0024b8
+size = 160
+role = "CRU 0x1803e004/e008 handshake before standby"
+regs = ["cru"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.cru_standby_wfi]
+name = "cru_standby_wfi"
+addr = 0x1c002558
+size = 140
+role = "CRU 0x1803e00c timer = 1000, enable, wfi"
+regs = ["cru"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
 [binary.uboot1.func.iproc_config_armpll]
 name = "iproc_config_armpll"
 addr = 0x1c0025e4
+size = 476
 role = "called with 400 (MHz) for BCM53342/3/4; re-programs ARM PLL every boot"
 regs = ["ccu.WR_ACCESS", "ccu.POLICY_FREQ", "ccu.POLICY_CTL", "ccu.PLLARMA", "ccu.PLLARMB"]
 src = "docs/uboot.md s5; docs/clocks.md"
@@ -24,6 +230,7 @@ conf = "I"
 [binary.uboot1.func.wdt_arm]
 name = "wdt_arm"
 addr = 0x1c0027d8
+size = 44
 role = "arm A9 private watchdog 30 s (load 0x0165A0BC, control 0xFF0B); called from board_init_r"
 regs = ["twd.WDT_LOAD", "twd.WDT_CONTROL"]
 src = "docs/uboot.md s2"
@@ -32,6 +239,7 @@ conf = "C"
 [binary.uboot1.func.wdt_pet]
 name = "wdt_pet"
 addr = 0x1c002808
+size = 32
 role = "reload private watchdog from saved value; called from getc/putc, udelay, memmove_wd, hush loop, CRC loops"
 regs = ["twd.WDT_LOAD"]
 src = "docs/uboot.md s2"
@@ -40,6 +248,7 @@ conf = "C"
 [binary.uboot1.func.wdt_stop]
 name = "wdt_stop"
 addr = 0x1c00282c
+size = 56
 role = "disable keys 0x12345678/0x87654321, control 0; called by do_bootm_linux at 0x1c00d4fc"
 regs = ["twd.WDT_DISABLE", "twd.WDT_CONTROL"]
 src = "docs/uboot.md s2"
@@ -48,49 +257,391 @@ conf = "C"
 [binary.uboot1.func.do_wdt]
 name = "do_wdt"
 addr = 0x1c002868
-role = "`wdt` command handler (table @0x1c0553c8)"
-regs = ["twd.WDT_LOAD", "twd.WDT_CONTROL", "twd.WDT_DISABLE"]
+size = 532
+role = "cmd table entry wdt (0x1c0553c8)"
+regs = ["twd", "twd.WDT_CONTROL", "twd.WDT_LOAD"]
 src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.shmoo_find_saved]
+name = "shmoo_find_saved"
+addr = 0x1c002abc
+size = 268
+role = "builds id key (CHIPID, DEV_REV_ID, 0x18109500), checks the shmoo blob at flash 0xd0000 (magic 0x59, sum); returns blob or 0"
+regs = ["cca.CHIPID", "cmic0.DEV_REV_ID"]
+src = "docs/sram.md Boot flow"
+conf = "C"
+
+[binary.uboot1.func.xgpll_get_ddr_mhz]
+name = "xgpll_get_ddr_mhz"
+addr = 0x1c002bcc
+size = 64
+role = "DDR clock in MHz from XGPLL CTRL_4 ndiv and CTRL_2 mdiv"
+regs = ["xgpll.CTRL_2", "xgpll.CTRL_4"]
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 
-[binary.uboot1.func.FUN_1c002abc]
-name = "FUN_1c002abc"
-addr = 0x1c002abc
-role = "replay (register,value) pairs as register writes (89 pairs from 0x1c0d0000)"
-src = "docs/sram.md Boot flow"
+[binary.uboot1.func.xgpll_set_ddr_clock]
+name = "xgpll_set_ddr_clock"
+addr = 0x1c002c0c
+size = 300
+role = "programs XGPLL for a DDR rate; 'Error in change_ddr_clock' (string)"
+regs = ["xgpll.CTRL_0", "xgpll.CTRL_1", "xgpll.CTRL_2", "xgpll.CTRL_4", "xgpll.STATUS"]
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "C"
 
-[binary.uboot1.func.FUN_1c003548]
-name = "FUN_1c003548"
+[binary.uboot1.func.ddrc_write_table]
+name = "ddrc_write_table"
+addr = 0x1c002d48
+size = 44
+role = "writes (index, value) pairs to DDR controller 0x18010000 until -1"
+regs = ["ddr_ctl.CTL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_mode_regs_write]
+name = "ddr_mode_regs_write"
+addr = 0x1c002e0c
+size = 132
+role = "DRAM mode register write via DDRC, poll; 'DRAM mode registers write failed'"
+regs = ["ddr_ctl.CTL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_phy_init]
+name = "ddr_phy_init"
+addr = 0x1c002e94
+size = 868
+role = "DDR PHY/CRU LCPLL bring-up, auto calibration, 'DDR PHY is not up' (strings)"
+regs = ["cca.CHIPID", "ddr_ctl.CTL", "ddr_phy", "ddr_phy.PLL_CONFIG", "ddr_phy.PLL_STATUS", "ddr_phy.REVISION", "ddr_phy.STRAP_CONTROL", "ddr_phy.STRAP_CONTROL2", "ddr_phy.VDL_CALIBRATE", "ddr_phy.VDL_CALIB_STATUS", "ddr_phy.VDL_OVRIDE_BIT_CTL", "ddr_phy.WL0_READ_DATA_DLY", "ddr_phy.WL0_WR_PREAMBLE_MODE", "ddr_phy.ZQ_PVT_COMP_CTL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.shmoo_save_to_flash]
+name = "shmoo_save_to_flash"
+addr = 0x1c003218
+size = 788
+role = "'Writing Shmoo values into flash' (string); sf write to 0xd0000"
+regs = ["ddr_phy", "ddr_phy.REVISION"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_init]
+name = "ddr_init"
 addr = 0x1c003548
-role = "DDR init (shmoo replay from mtd2)"
+size = 1044
+role = "DDR init: DEV ID / SKU ID / type / speed lines, PHY, calibration, shmoo replay (strings)"
+regs = ["cca.CHIPID", "cmic0.DEV_REV_ID", "ddr_ctl.CTL", "ddr_phy.REVISION", "ddr_phy.STRAP_CONTROL", "ddr_phy.STRAP_CONTROL2"]
 src = "docs/sram.md Boot flow"
 conf = "C"
 
-[binary.uboot1.func.FUN_1c00c2d4]
-name = "FUN_1c00c2d4"
+[binary.uboot1.func.nand_cmd]
+name = "nand_cmd"
+addr = 0x1c003b40
+size = 300
+role = "iProc NAND command with INTFC/RO_CTRL timeout (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.nand_page_read]
+name = "nand_page_read"
+addr = 0x1c003c7c
+size = 652
+role = "'page_read %llx not %x aligned' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.nand_wait_ctlr_ready]
+name = "nand_wait_ctlr_ready"
+addr = 0x1c004040
+size = 124
+role = "waits NAND INTFC ready bit with get_timer (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.nand_check_bad_block]
+name = "nand_check_bad_block"
+addr = 0x1c0040f0
+size = 348
+role = "'NAND%d bad block' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.nand_probe_chip]
+name = "nand_probe_chip"
+addr = 0x1c004c44
+size = 2260
+role = "NAND ID table (Micron MT29F..), strap check (strings)"
+regs = ["dmu.STRAPS_CAPTURED"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.iproc_nand_init_chip]
+name = "iproc_nand_init_chip"
+addr = 0x1c004c78
+size = 424
+role = "'NAND not supported on this iProc board' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.iproc_nand_init]
+name = "iproc_nand_init"
+addr = 0x1c004e38
+size = 320
+role = "'iProc NAND chip could not be initialized' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.iproc_nand_read_page]
+name = "iproc_nand_read_page"
+addr = 0x1c005408
+size = 104
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func._iproc_nand_block_erase]
+name = "_iproc_nand_block_erase"
+addr = 0x1c005480
+size = 312
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func._iproc_nand_page_program]
+name = "_iproc_nand_page_program"
+addr = 0x1c0055cc
+size = 972
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.iproc_nand_write_page_hwecc]
+name = "iproc_nand_write_page_hwecc"
+addr = 0x1c0059c8
+size = 92
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.iproc_nand_write_page]
+name = "iproc_nand_write_page"
+addr = 0x1c005a40
+size = 100
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.nand_erase_blocks]
+name = "nand_erase_blocks"
+addr = 0x1c005ac0
+size = 564
+role = "'erase block %llx failed' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_find_pll_dividers]
+name = "ddr_find_pll_dividers"
+addr = 0x1c0060e8
+size = 224
+role = "'Freq=%d n=%d m=%d err=%d' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_phy_reg_read]
+name = "ddr_phy_reg_read"
+addr = 0x1c0062e4
+size = 32
+role = "reads DDR PHY register 0x18010800 + offset (92 callers)"
+regs = ["ddr_phy.REVISION"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_phy_dump_regs]
+name = "ddr_phy_dump_regs"
+addr = 0x1c006304
+size = 1648
+role = "prints 'Address = 0x%04X Data = 0x%08X' lines (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_phy_reg_write]
+name = "ddr_phy_reg_write"
+addr = 0x1c006a14
+size = 28
+role = "writes DDR PHY register 0x18010800 + offset (164 callers)"
+regs = ["ddr_phy.REVISION"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_phy_reg_modify]
+name = "ddr_phy_reg_modify"
+addr = 0x1c007814
+size = 56
+role = "read-modify-write DDR PHY register 0x18010800 + offset"
+regs = ["ddr_phy.REVISION"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_self_test]
+name = "ddr_self_test"
+addr = 0x1c008080
+size = 4
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func._soc_ddr_shmoo_prepare_for_shmoo]
+name = "_soc_ddr_shmoo_prepare_for_shmoo"
+addr = 0x1c00835c
+size = 2056
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ddr_calib_steps]
+name = "ddr_calib_steps"
+addr = 0x1c008c78
+size = 928
+role = "'calib_steps: %d' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_rd_data_dly]
+name = "ddr_shmoo_rd_data_dly"
+addr = 0x1c00901c
+size = 1348
+role = "'RD_DATA_DLY Iter' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_wr_dm]
+name = "ddr_shmoo_wr_dm"
+addr = 0x1c009898
+size = 3980
+role = "'THIS SHMOO WR_DM feature' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_vref_rd_dq]
+name = "ddr_shmoo_vref_rd_dq"
+addr = 0x1c00a874
+size = 2576
+role = "'Switching to Vref Step / RD_DQ Step' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_addrc]
+name = "ddr_shmoo_addrc"
+addr = 0x1c00b290
+size = 2608
+role = "'**** ADDRC Shmoo' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_rd_dqs_en]
+name = "ddr_shmoo_rd_dqs_en"
+addr = 0x1c00bdcc
+size = 1256
+role = "'Switching to RD_DQS / RD_EN Step' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ddr_shmoo_main]
+name = "ddr_shmoo_main"
 addr = 0x1c00c2d4
-role = "DDR tune; state block ~0x2a0 B at 0x1b000000"
+size = 2796
+role = "shmoo driver: sizeof(soc_ddr_shmoo_param_t), state block at 0x1b000000 (strings)"
 src = "docs/sram.md"
+conf = "C"
+
+[binary.uboot1.func.v7_dcache_inval_range]
+name = "v7_dcache_inval_range"
+addr = 0x1c00cf10
+size = 160
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.l2cc_clean_inv_all]
+name = "l2cc_clean_inv_all"
+addr = 0x1c00cfe4
+size = 80
+role = "PL310 clean+invalidate-by-way (0x7fc)"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.l2cc_inv_all]
+name = "l2cc_inv_all"
+addr = 0x1c00cffc
+size = 80
+role = "PL310 invalidate-by-way (0x77c)"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.v7_dcache_inval_by_mva]
+name = "v7_dcache_inval_by_mva"
+addr = 0x1c00d07c
+size = 128
+role = "invalidate D-cache by MVA then outer range"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.v7_outer_cache_inval_range]
+name = "v7_outer_cache_inval_range"
+addr = 0x1c00d088
+size = 216
+role = "function-name string"
+regs = ["pl310"]
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "C"
 
 [binary.uboot1.func.cleanup_before_linux]
 name = "cleanup_before_linux"
 addr = 0x1c00d0c8
+size = 40
 role = "cache/MMU teardown before kernel entry"
 src = "docs/uboot.md s4"
 conf = "I"
 
+[binary.uboot1.func.display_banner]
+name = "display_banner"
+addr = 0x1c00d168
+size = 40
+role = "prints the U-Boot version banner (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.init_baudrate]
+name = "init_baudrate"
+addr = 0x1c00d19c
+size = 64
+role = "getenv baudrate into gd (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
 [binary.uboot1.func.board_init_r]
 name = "board_init_r"
 addr = 0x1c00d278
+size = 168
 role = "mem_malloc_init(dest-0x50000, 0x50000); arms the private watchdog"
 src = "docs/uboot.md s2, s6"
+conf = "C"
+
+[binary.uboot1.func.hang]
+name = "hang"
+addr = 0x1c00d344
+size = 16
+role = "'### ERROR ### Please RESET the board ###' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "C"
 
 [binary.uboot1.func.board_init_f]
 name = "board_init_f"
 addr = 0x1c00d358
+size = 312
 role = "computes relocaddr = (0x70000000 - 0x5ff8c) & ~0x3fff"
 src = "docs/uboot.md s6"
 conf = "C"
@@ -98,6 +649,7 @@ conf = "C"
 [binary.uboot1.func.do_bootm_linux]
 name = "do_bootm_linux"
 addr = 0x1c00d4ac
+size = 128
 role = "kernel handoff; calls wdt_stop at 0x1c00d4fc before 'Starting kernel ...'"
 regs = ["twd.WDT_DISABLE"]
 src = "docs/uboot.md s2, s4"
@@ -106,20 +658,121 @@ conf = "C"
 [binary.uboot1.func.boot_prep_linux]
 name = "boot_prep_linux"
 addr = 0x1c00d538
+size = 404
 role = "builds the ATAG list at 0x8000"
 src = "docs/uboot.md s4"
 conf = "I"
 
+[binary.uboot1.func.v7_outer_cache_disable]
+name = "v7_outer_cache_disable"
+addr = 0x1c00d8c4
+size = 36
+role = "'Disabling outer cache' (string); PL310 CTRL = 0"
+regs = ["pl310.CTRL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.v7_outer_cache_enable]
+name = "v7_outer_cache_enable"
+addr = 0x1c00d8ec
+size = 20
+role = "PL310 CTRL = 1"
+regs = ["pl310.CTRL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.show_regs]
+name = "show_regs"
+addr = 0x1c00d994
+size = 320
+role = "prints pc/lr/sp and r0-r10 (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_undefined_instruction]
+name = "do_undefined_instruction"
+addr = 0x1c00db04
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_software_interrupt]
+name = "do_software_interrupt"
+addr = 0x1c00db2c
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_prefetch_abort]
+name = "do_prefetch_abort"
+addr = 0x1c00db54
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_data_abort]
+name = "do_data_abort"
+addr = 0x1c00db7c
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_not_used]
+name = "do_not_used"
+addr = 0x1c00dba4
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_fiq]
+name = "do_fiq"
+addr = 0x1c00dbcc
+size = 36
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_reset]
+name = "do_reset"
+addr = 0x1c00dbf4
+size = 44
+role = "'resetting ...' (string); calls reset_cpu"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.enable_caches]
+name = "enable_caches"
+addr = 0x1c00dc34
+size = 12
+role = "'WARNING: Caches not enabled' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
 [binary.uboot1.func.dcache_enable]
 name = "dcache_enable"
 addr = 0x1c00dc9c
+size = 316
 role = "builds the page table (sections 0x000-0x07f cacheable, 0x080-0x1df device, 0x1e0-0x1ff cacheable, 0x200-0xfff device)"
 src = "docs/uboot.md s6"
+conf = "C"
+
+[binary.uboot1.func.do_go]
+name = "do_go"
+addr = 0x1c00de50
+size = 68
+role = "cmd table entry go (0x1c055400)"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "C"
 
 [binary.uboot1.func.load_image]
 name = "load_image"
 addr = 0x1c00e018
+size = 476
 role = "image load helper for bootm"
 src = "docs/uboot.md s4"
 conf = "I"
@@ -127,20 +780,631 @@ conf = "I"
 [binary.uboot1.func.find_os]
 name = "find_os"
 addr = 0x1c00e218
+size = 1016
 role = "bootm OS lookup"
 src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.bootm_os_linux]
+name = "bootm_os_linux"
+addr = 0x1c00e658
+size = 596
+role = "bootm 'initrd_start/initrd_end' env + linux handoff"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 
 [binary.uboot1.func.do_bootm]
 name = "do_bootm"
 addr = 0x1c00e8d8
-role = "bootm command"
+size = 664
+role = "cmd table entry bootm (0x1c05541c)"
 src = "docs/uboot.md s4"
+conf = "C"
+
+[binary.uboot1.func.bootm_autostart]
+name = "bootm_autostart"
+addr = 0x1c00eb98
+size = 132
+role = "'Automatic boot of image at addr' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
+
+[binary.uboot1.func.do_coninfo]
+name = "do_coninfo"
+addr = 0x1c00ec30
+size = 228
+role = "cmd table entry coninfo (0x1c055438)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_echo]
+name = "do_echo"
+addr = 0x1c00ed2c
+size = 220
+role = "cmd table entry echo (0x1c055454)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_exit]
+name = "do_exit"
+addr = 0x1c00ee10
+size = 52
+role = "cmd table entry exit (0x1c055470)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_help]
+name = "do_help"
+addr = 0x1c00ee44
+size = 4
+role = "cmd table entry help (0x1c0554a8)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_itest]
+name = "do_itest"
+addr = 0x1c00f118
+size = 144
+role = "cmd table entry itest (0x1c0554c4)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_ls]
+name = "do_ls"
+addr = 0x1c00f26c
+size = 104
+role = "cmd table entry ls (0x1c0554fc)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_fsload]
+name = "do_fsload"
+addr = 0x1c00f2e4
+size = 340
+role = "cmd table entry fsload (0x1c055518)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_fsinfo]
+name = "do_fsinfo"
+addr = 0x1c00f468
+size = 108
+role = "cmd table entry fsinfo (0x1c0554e0)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_license]
+name = "do_license"
+addr = 0x1c00f4e8
+size = 128
+role = "cmd table entry license (0x1c055534)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.load_serial_ymodem]
+name = "load_serial_ymodem"
+addr = 0x1c00f590
+size = 248
+role = "'## Total Size' (string), sets filesize"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.do_load_serial_bin]
+name = "do_load_serial_bin"
+addr = 0x1c00fc9c
+size = 4
+role = "cmd table entry loady (0x1c055550)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_crc]
+name = "do_mem_crc"
+addr = 0x1c01021c
+size = 352
+role = "cmd table entry crc32 (0x1c055614)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_base]
+name = "do_mem_base"
+addr = 0x1c010390
+size = 76
+role = "cmd table entry base (0x1c0555f8)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_mtest]
+name = "do_mem_mtest"
+addr = 0x1c0103e8
+size = 500
+role = "cmd table entry mtest (0x1c0555c0)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_loop]
+name = "do_mem_loop"
+addr = 0x1c0105f4
+size = 284
+role = "cmd table entry loop (0x1c0555dc)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_cp]
+name = "do_mem_cp"
+addr = 0x1c010710
+size = 268
+role = "cmd table entry cp (0x1c05564c)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_cmp]
+name = "do_mem_cmp"
+addr = 0x1c010824
+size = 404
+role = "cmd table entry cmp (0x1c055630)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_mw]
+name = "do_mem_mw"
+addr = 0x1c0109d0
+size = 200
+role = "cmd table entry mw (0x1c055668)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_mwc]
+name = "do_mem_mwc"
+addr = 0x1c010a9c
+size = 128
+role = "cmd table entry mwc (0x1c055588)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_md]
+name = "do_mem_md"
+addr = 0x1c010b20
+size = 224
+role = "cmd table entry md (0x1c0556bc)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_mdc]
+name = "do_mem_mdc"
+addr = 0x1c010c10
+size = 128
+role = "cmd table entry mdc (0x1c0555a4)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_nm]
+name = "do_mem_nm"
+addr = 0x1c010e54
+size = 8
+role = "cmd table entry nm (0x1c055684)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mem_mm]
+name = "do_mem_mm"
+addr = 0x1c010e5c
+size = 8
+role = "cmd table entry mm (0x1c0556a0)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_sleep]
+name = "do_sleep"
+addr = 0x1c010e64
+size = 112
+role = "cmd table entry sleep (0x1c0556d8)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_mtdparts]
+name = "do_mtdparts"
+addr = 0x1c012e84
+size = 1696
+role = "cmd table entry mtdparts (0x1c0556f4)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_chpart]
+name = "do_chpart"
+addr = 0x1c0135c8
+size = 220
+role = "cmd table entry chpart (0x1c055710)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_urescue]
+name = "do_urescue"
+addr = 0x1c0136c4
+size = 8
+role = "cmd table entry urescue (0x1c055764)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_ping]
+name = "do_ping"
+addr = 0x1c0136cc
+size = 124
+role = "cmd table entry ping (0x1c05572c)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.netboot_common]
+name = "netboot_common"
+addr = 0x1c013758
+size = 748
+role = "loadaddr/domain/dnsip env then bootm"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.do_tftpsrv]
+name = "do_tftpsrv"
+addr = 0x1c013a94
+size = 12
+role = "cmd table entry tftpsrv (0x1c055780)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_dhcp]
+name = "do_dhcp"
+addr = 0x1c013aa0
+size = 12
+role = "cmd table entry dhcp (0x1c055748)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_tftpb]
+name = "do_tftpb"
+addr = 0x1c013aac
+size = 12
+role = "cmd table entry tftpboot (0x1c05579c)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_bootp]
+name = "do_bootp"
+addr = 0x1c013ab8
+size = 12
+role = "cmd table entry bootp (0x1c0557b8)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_env]
+name = "do_env"
+addr = 0x1c013ac4
+size = 96
+role = "cmd table entry env (0x1c055828)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_env_export]
+name = "do_env_export"
+addr = 0x1c013b48
+size = 668
+role = "string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_env_default]
+name = "do_env_default"
+addr = 0x1c013e10
+size = 172
+role = "'## Resetting to default environment'"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_saveenv]
+name = "do_saveenv"
+addr = 0x1c013ec0
+size = 52
+role = "cmd table entry saveenv (0x1c055844)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.printenv_one]
+name = "printenv_one"
+addr = 0x1c013f00
+size = 180
+role = "prints one name=value"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.do_printenv]
+name = "do_printenv"
+addr = 0x1c013fc0
+size = 152
+role = "cmd table entry printenv (0x1c05580c)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func._do_env_set]
+name = "_do_env_set"
+addr = 0x1c0142bc
+size = 476
+role = "'## Error inserting variable' strings"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_setenv]
+name = "do_setenv"
+addr = 0x1c0144b4
+size = 32
+role = "cmd table entry setenv (0x1c0557f0)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.setenv]
+name = "setenv"
+addr = 0x1c0144d4
+size = 100
+role = "set env var (39 callers)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.do_env_import]
+name = "do_env_import"
+addr = 0x1c014544
+size = 752
+role = "strings"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.getenv]
+name = "getenv"
+addr = 0x1c0149f8
+size = 128
+role = "env lookup (47 callers)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.getenv_ulong]
+name = "getenv_ulong"
+addr = 0x1c014a80
+size = 48
+role = "getenv + strtoul"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.do_pci]
+name = "do_pci"
+addr = 0x1c01589c
+size = 1152
+role = "cmd table entry pci (0x1c055860)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_spi_flash]
+name = "do_spi_flash"
+addr = 0x1c015d30
+size = 1976
+role = "cmd table entry sf (0x1c05587c)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_source]
+name = "do_source"
+addr = 0x1c016690
+size = 68
+role = "cmd table entry source (0x1c055898)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_spi_xfer]
+name = "do_spi_xfer"
+addr = 0x1c0166d8
+size = 680
+role = "cmd table entry sspi (0x1c0558b4)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_false]
+name = "do_false"
+addr = 0x1c0169b8
+size = 8
+role = "cmd table entry false (0x1c0558ec)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_true]
+name = "do_true"
+addr = 0x1c0169c0
+size = 8
+role = "cmd table entry true (0x1c0558d0)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_test]
+name = "do_test"
+addr = 0x1c0169c8
+size = 1300
+role = "cmd table entry test (0x1c055908)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_version]
+name = "do_version"
+addr = 0x1c016f28
+size = 64
+role = "cmd table entry version (0x1c055924)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.find_cmd_tbl]
+name = "find_cmd_tbl"
+addr = 0x1c016f7c
+size = 184
+role = "looks up a command in the table (strncmp + length)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.find_cmd]
+name = "find_cmd"
+addr = 0x1c017034
+size = 52
+role = "find_cmd_tbl over the cmd table"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.cmd_usage]
+name = "cmd_usage"
+addr = 0x1c017074
+size = 96
+role = "'Usage:' / 'No additional help available' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func._do_help]
+name = "_do_help"
+addr = 0x1c0170e0
+size = 476
+role = "'Unknown command '%s' - try 'help' without arguments' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.run_command]
+name = "run_command"
+addr = 0x1c0179b4
+size = 132
+role = "'Unknown command '%s' - try 'help'' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.getc]
+name = "getc"
+addr = 0x1c017c70
+size = 124
+role = "console getc over stdin device or serial"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.tstc]
+name = "tstc"
+addr = 0x1c017c94
+size = 128
+role = "console tstc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.putc]
+name = "putc"
+addr = 0x1c017cb8
+size = 100
+role = "console putc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.puts]
+name = "puts"
+addr = 0x1c017ce0
+size = 88
+role = "console puts"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.printf]
+name = "printf"
+addr = 0x1c017d08
+size = 88
+role = "vsprintf into a stack buffer then puts (786 callers)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.panic]
+name = "panic"
+addr = 0x1c017d60
+size = 64
+role = "printf then reset"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ctrlc]
+name = "ctrlc"
+addr = 0x1c017da0
+size = 80
+role = "tstc + getc, true on Ctrl-C (0x3)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.stdio_print_current_devices]
+name = "stdio_print_current_devices"
+addr = 0x1c017ed0
+size = 188
+role = "'Out:' / 'Err:' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.sbrk]
+name = "sbrk"
+addr = 0x1c0180ac
+size = 120
+role = "moves the malloc break (mem_malloc_start/end bounds)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.free]
+name = "free"
+addr = 0x1c018274
+size = 844
+role = "dlmalloc free"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.malloc]
+name = "malloc"
+addr = 0x1c018504
+size = 1804
+role = "dlmalloc malloc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.set_default_env]
+name = "set_default_env"
+addr = 0x1c019528
+size = 228
+role = "function-name string; prints '- saving default environment to flash...'"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.env_import]
+name = "env_import"
+addr = 0x1c01968c
+size = 248
+role = "function-name string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.env_relocate_spec]
+name = "env_relocate_spec"
+addr = 0x1c0197a4
+size = 220
+role = "'!bad CRC', '!spi_flash_read() failed' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.env_save_spi]
+name = "env_save_spi"
+addr = 0x1c019904
+size = 376
+role = "'Erasing SPI flash...' then writes env at 0xc0000"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.do_showvar]
+name = "do_showvar"
+addr = 0x1c019e68
+size = 324
+role = "cmd table entry showvar (0x1c055940)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
 
 [binary.uboot1.func.image_check_hcrc]
 name = "image_check_hcrc"
 addr = 0x1c01c294
+size = 80
 role = "uImage header CRC"
 src = "docs/uboot.md s1"
 conf = "I"
@@ -148,6 +1412,7 @@ conf = "I"
 [binary.uboot1.func.image_check_dcrc]
 name = "image_check_dcrc"
 addr = 0x1c01c2e4
+size = 56
 role = "uImage data CRC"
 src = "docs/uboot.md s1"
 conf = "I"
@@ -155,6 +1420,7 @@ conf = "I"
 [binary.uboot1.func.getenv_yesno]
 name = "getenv_yesno"
 addr = 0x1c01c3e0
+size = 40
 role = "env boolean helper"
 src = "docs/uboot.md s4"
 conf = "I"
@@ -162,6 +1428,7 @@ conf = "I"
 [binary.uboot1.func.memmove_wd]
 name = "memmove_wd"
 addr = 0x1c01c504
+size = 40
 role = "memmove that pets the watchdog"
 regs = ["twd.WDT_LOAD"]
 src = "docs/uboot.md s2"
@@ -170,65 +1437,197 @@ conf = "C"
 [binary.uboot1.func.main_loop]
 name = "main_loop"
 addr = 0x1c01dba8
-role = "hush main loop"
+size = 268
+role = "existing"
 src = "docs/uboot.md s2"
-conf = "I"
+conf = "C"
+
+[binary.uboot1.func.do_run]
+name = "do_run"
+addr = 0x1c01dccc
+size = 124
+role = "cmd table entry run (0x1c0557d4)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
 
 [binary.uboot1.func.ubntapp_loader]
 name = "ubntapp_loader"
 addr = 0x1c01e33c
+size = 188
 role = "reads 0x50000 B from flash 0x5814c to 0x67030000 every boot, magic 0x87564523, sets ubntaddr"
 src = "docs/uboot.md s6"
 conf = "C"
 
+[binary.uboot1.func.cca_gpio_show_irq_info]
+name = "cca_gpio_show_irq_info"
+addr = 0x1c01f41c
+size = 444
+role = "prints 'Level high interrupt' / 'Falling edge interrupt' (strings) from CCA GPIO int regs"
+regs = ["cca"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.iproc_gpio_init]
+name = "iproc_gpio_init"
+addr = 0x1c01f608
+size = 56
+role = "fills the CCA GPIO descriptor (base 0x18000000, DIN/DOUT)"
+regs = ["cca.GPIO_DIN"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
 [binary.uboot1.func.gpio_set]
 name = "gpio_set"
 addr = 0x1c01f680
+size = 76
 role = "CCA GPIO setter; callers use pins 6, 7 only"
 regs = ["cca.GPIO_DOUT", "cca.GPIO_OUTEN"]
 src = "docs/uboot.md s5"
 conf = "C"
 
+[binary.uboot1.func.mtd_bug]
+name = "mtd_bug"
+addr = 0x1c0203c8
+size = 128
+role = "'U-Boot BUG at %s:%d' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_cmd]
+name = "spi_flash_cmd"
+addr = 0x1c0205fc
+size = 140
+role = "spi_xfer wrapper for one command"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.spi_flash_cmd_wait_ready]
+name = "spi_flash_cmd_wait_ready"
+addr = 0x1c020868
+size = 216
+role = "polls status with get_timer and wdt_pet"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.spi_flash_probe]
+name = "spi_flash_probe"
+addr = 0x1c020af4
+size = 220
+role = "'SF: Unsupported manufacturer' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_free]
+name = "spi_flash_free"
+addr = 0x1c020bdc
+size = 28
+role = "frees the flash struct"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.spi_flash_probe_atmel]
+name = "spi_flash_probe_atmel"
+addr = 0x1c0211f4
+size = 412
+role = "'AT45DB021D' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_eon]
+name = "spi_flash_probe_eon"
+addr = 0x1c0219cc
+size = 192
+role = "'EN25Q32B' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_macronix]
+name = "spi_flash_probe_macronix"
+addr = 0x1c0220bc
+size = 192
+role = "'MX25L3205D' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_spansion]
+name = "spi_flash_probe_spansion"
+addr = 0x1c022190
+size = 212
+role = "'S25FL008A' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_sst]
+name = "spi_flash_probe_sst"
+addr = 0x1c02245c
+size = 220
+role = "'SST25VF080B' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_stmicro]
+name = "spi_flash_probe_stmicro"
+addr = 0x1c022bfc
+size = 252
+role = "'M25P16' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.spi_flash_probe_winbond]
+name = "spi_flash_probe_winbond"
+addr = 0x1c022d0c
+size = 180
+role = "'W25X16' string"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.pci_bar_assign]
+name = "pci_bar_assign"
+addr = 0x1c023468
+size = 504
+role = "assign BARs of one function bottom-up from the port membase: size align up, 64-bit BARs also clear the upper dword; command = arg 5"
+src = "Ghidra FUN_1c023468; #76"
+conf = "I"
+
+[binary.uboot1.func.pci_class_str]
+name = "pci_class_str"
+addr = 0x1c023760
+size = 360
+role = "'Does not fit any class' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.rc_cfg_write]
+name = "rc_cfg_write"
+addr = 0x1c023928
+size = 312
+role = "RC own config write via CONFIG_IND_ADDR/DATA"
+regs = ["paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
 [binary.uboot1.func.mdio_read]
 name = "mdio_read"
 addr = 0x1c023c64
+size = 360
 role = "CCB MDIO read of register r0 (PHY addr 2): wait busy clear (100 x 10 us), cmd = reg << 18 | 0x61020000, ctrl (0x18032000, CHIPCOMMONB_MII_MANAGEMENT_CONTROL) = 0x9a, cmd at 0x18032004"
+regs = ["iproc_axi"]
 src = "disassembly 0x1c023c64 (Ghidra FUN_1c023c64); docs/uboot.md s5"
 conf = "C"
 
 [binary.uboot1.func.mdio_write]
 name = "mdio_write"
 addr = 0x1c023de4
+size = 364
 role = "CCB MDIO write (reg r0, value r1) for the PCIe SerDes; same busy wait"
+regs = ["iproc_axi"]
 src = "disassembly 0x1c023de4"
-conf = "I"
-
-[binary.uboot1.func.soc_pcie_hw_init]
-name = "soc_pcie_hw_init"
-addr = 0x1c0244b0
-role = "per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL"
-regs = ["idm_pcie_m0.RESET_CONTROL", "idm_pcie_s0.RESET_CONTROL", "paxb0.CLK_CONTROL", "paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA", "paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
-src = "disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76"
-conf = "C"
-
-[binary.uboot1.func.soc_pcie_check_link]
-name = "soc_pcie_check_link"
-addr = 0x1c024084
-role = "RC header type must be 1 (else 'End-Point mode - ignored'), walk cap list for PCIe cap, read LNKSTA; active iff (LNKSTA & 0x3f0) != 0"
-regs = ["rccfg0.HEADER_TYPE", "rccfg0.LNKSTA"]
-src = "Ghidra FUN_1c024084; disassembly 0x1c0241dc; #76"
-conf = "C"
-
-[binary.uboot1.func.pci_bar_assign]
-name = "pci_bar_assign"
-addr = 0x1c023468
-role = "assign BARs of one function bottom-up from the port membase: size align up, 64-bit BARs also clear the upper dword; command = arg 5"
-src = "Ghidra FUN_1c023468; #76"
 conf = "I"
 
 [binary.uboot1.func.rc_cfg_read16]
 name = "rc_cfg_read16"
 addr = 0x1c023f88
+size = 44
 role = "RC own config read: CONFIG_IND_ADDR = off & 0xffc, CONFIG_IND_DATA >> ((off & 3) * 8)"
 regs = ["paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA"]
 src = "disassembly 0x1c023f88; #76"
@@ -237,81 +1636,573 @@ conf = "C"
 [binary.uboot1.func.rc_cfg_read8]
 name = "rc_cfg_read8"
 addr = 0x1c023fb4
+size = 44
 role = "same, byte"
 regs = ["paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA"]
 src = "disassembly 0x1c023fb4; #76"
 conf = "C"
 
+[binary.uboot1.func.soc_pcie_check_link]
+name = "soc_pcie_check_link"
+addr = 0x1c024084
+size = 444
+role = "RC header type must be 1 (else 'End-Point mode - ignored'), walk cap list for PCIe cap, read LNKSTA; active iff (LNKSTA & 0x3f0) != 0"
+regs = ["rccfg0.HEADER_TYPE", "rccfg0.LNKSTA"]
+src = "Ghidra FUN_1c024084; disassembly 0x1c0241dc; #76"
+conf = "C"
+
 [binary.uboot1.func.ep_cfg_read32]
 name = "ep_cfg_read32"
 addr = 0x1c024258
+size = 132
 role = "endpoint config read: CFG_ADDR = devfn bits | bus << 20 | reg & 0xfc, data = CFG_DATA"
 regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
 src = "Ghidra FUN_1c024258; #76"
 conf = "C"
 
-[binary.uboot1.func.serial_getc]
-name = "serial_getc"
-addr = 0x1c024a04
-role = "serial receive; pets the watchdog"
-regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
-src = "docs/uboot.md s2"
+[binary.uboot1.func.ep_cfg_read16]
+name = "ep_cfg_read16"
+addr = 0x1c0242a0
+size = 160
+role = "endpoint config read 16-bit"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 
-[binary.uboot1.func.serial_putc]
-name = "serial_putc"
-addr = 0x1c024a1c
-role = "serial transmit; pets the watchdog"
+[binary.uboot1.func.ep_cfg_read8]
+name = "ep_cfg_read8"
+addr = 0x1c0242e8
+size = 160
+role = "endpoint config read 8-bit"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ep_cfg_write8]
+name = "ep_cfg_write8"
+addr = 0x1c024330
+size = 128
+role = "endpoint config write"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ep_cfg_write16]
+name = "ep_cfg_write16"
+addr = 0x1c024378
+size = 136
+role = "endpoint config write"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ep_cfg_write32]
+name = "ep_cfg_write32"
+addr = 0x1c0243c0
+size = 136
+role = "endpoint config write"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.soc_pcie_hw_init]
+name = "soc_pcie_hw_init"
+addr = 0x1c0244b0
+size = 1028
+role = "per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL"
+regs = ["paxb0.CLK_CONTROL", "paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA", "idm_pcie_m0.RESET_CONTROL", "idm_pcie_s0.RESET_CONTROL"]
+src = "disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76"
+conf = "C"
+
+[binary.uboot1.func.pci_init_board]
+name = "pci_init_board"
+addr = 0x1c02493c
+size = 20
+role = "runs soc_pcie_hw_init per port"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ns16550_init]
+name = "ns16550_init"
+addr = 0x1c024950
+size = 72
+role = "LCR=0x83, divisor, LCR=3, MCR=3, FCR=7 on the base arg"
+regs = ["uart1.DLH_IER", "uart1.IIR_FCR", "uart1.LCR", "uart1.MCR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ns16550_putc]
+name = "ns16550_putc"
+addr = 0x1c0249e4
+size = 32
+role = "waits LSR THRE (0x20) then writes THR"
 regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
-src = "docs/uboot.md s2"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.ns16550_getc]
+name = "ns16550_getc"
+addr = 0x1c024a08
+size = 20
+role = "waits LSR DR (0x1), pets watchdog, reads RBR"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.serial_getc]
+name = "serial_getc"
+addr = 0x1c024a1c
+size = 24
+role = "wait LSR DR, read RBR"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.serial_calc_divisor]
+name = "serial_calc_divisor"
+addr = 0x1c024a40
+size = 36
+role = "apb clock / (16 x baud)"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 
 [binary.uboot1.func.serial_init]
 name = "serial_init"
 addr = 0x1c024a64
+size = 32
 role = "UART1 115200 8N1, FIFO enabled"
 regs = ["uart1.LCR", "uart1.RBR_THR_DLL", "uart1.DLH_IER", "uart1.IIR_FCR"]
 src = "docs/uboot.md s5"
 conf = "C"
 
+[binary.uboot1.func.serial_putc]
+name = "serial_putc"
+addr = 0x1c024a84
+size = 80
+role = "CR before LF, then ns16550_putc"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.serial_puts]
+name = "serial_puts"
+addr = 0x1c024b9c
+size = 8
+role = "loops serial_putc"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.serial_setbrg]
+name = "serial_setbrg"
+addr = 0x1c024bb4
+size = 124
+role = "programs UART1 divisor registers"
+regs = ["uart1.DLH_IER", "uart1.LCR", "uart1.RBR_THR_DLL"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
 [binary.uboot1.func.spi_setup_slave]
 name = "spi_setup_slave"
-addr = 0x1c025020
-role = "QSPI MSPI/BSPI setup for flash (spi1.0)"
-regs = ["mspi.SPCR0_LSB", "mspi.SPCR0_MSB"]
-src = "docs/uboot.md s5"
+addr = 0x1c024ff4
+size = 44
+role = "allocates the 0x34 B slave struct, selects QSPI clock in CRU_CONTROL, MSPI/BSPI bases 0x18027200/0x18027000"
+regs = ["bspi", "bspi_raf", "cru.CONTROL", "mspi.ENDQP", "mspi.NEWQP", "mspi.SPCR0_LSB", "mspi.SPCR0_MSB", "mspi.SPCR1_LSB", "mspi.SPCR1_MSB", "mspi.SPCR2"]
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "C"
+
+[binary.uboot1.func.spi_cs_activate]
+name = "spi_cs_activate"
+addr = 0x1c025170
+size = 92
+role = "MSPI CS assert (22 callers)"
+regs = ["bspi", "bspi_raf"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.spi_cs_deactivate]
+name = "spi_cs_deactivate"
+addr = 0x1c0251cc
+size = 104
+role = "MSPI CS release"
+regs = ["bspi", "bspi_raf", "mspi"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.spi_xfer]
+name = "spi_xfer"
+addr = 0x1c025234
+size = 1260
+role = "MSPI queue transfer; 80k TXRAM/RXRAM accesses in the emulator trace"
+regs = ["bspi", "bspi_raf", "mspi.CDRAM", "mspi.ENDQP", "mspi.NEWQP", "mspi.RXRAM", "mspi.STATUS", "mspi.TXRAM"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.crc32]
+name = "crc32"
+addr = 0x1c028518
+size = 20
+role = "crc32 over a buffer"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.crc32_wd]
+name = "crc32_wd"
+addr = 0x1c02852c
+size = 84
+role = "crc32 with watchdog pets"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.print_size]
+name = "print_size"
+addr = 0x1c0285f0
+size = 368
+role = "'%llu Bytes', 'PTGMK' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.print_buffer]
+name = "print_buffer"
+addr = 0x1c028778
+size = 488
+role = "'%08lx:' hexdump (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.zunzip]
+name = "zunzip"
+addr = 0x1c028a9c
+size = 304
+role = "'Error: inflate() returned %d' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.gunzip]
+name = "gunzip"
+addr = 0x1c028be4
+size = 240
+role = "'Error: Bad gzipped data' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.hsearch_r]
+name = "hsearch_r"
+addr = 0x1c02905c
+size = 876
+role = "hash table search"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.hexport_r]
+name = "hexport_r"
+addr = 0x1c029494
+size = 836
+role = "'Env export buffer too small' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.himport_r]
+name = "himport_r"
+addr = 0x1c0297e8
+size = 1072
+role = "'not in imported env' (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.strcpy]
+name = "strcpy"
+addr = 0x1c02a3fc
+size = 28
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.strncpy]
+name = "strncpy"
+addr = 0x1c02a418
+size = 40
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.strcmp]
+name = "strcmp"
+addr = 0x1c02a4e4
+size = 52
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.strncmp]
+name = "strncmp"
+addr = 0x1c02a518
+size = 128
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.strchr]
+name = "strchr"
+addr = 0x1c02a598
+size = 72
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.strlen]
+name = "strlen"
+addr = 0x1c02a638
+size = 52
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.memset]
+name = "memset"
+addr = 0x1c02a9c8
+size = 124
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.memcpy]
+name = "memcpy"
+addr = 0x1c02aa78
+size = 140
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.memmove]
+name = "memmove"
+addr = 0x1c02ab04
+size = 96
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.memcmp]
+name = "memcmp"
+addr = 0x1c02ab64
+size = 84
+role = "libc"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
 
 [binary.uboot1.func.udelay]
 name = "udelay"
 addr = 0x1c02ad00
-role = "udelay(us): chunks of <= 10 s, pets the watchdog + timer wait per chunk"
+size = 52
+role = "existing"
 src = "docs/uboot.md s2; disassembly 0x1c02ad00-0x1c02ad30"
 conf = "C"
 
 [binary.uboot1.func.mdelay]
 name = "mdelay"
 addr = 0x1c02ad34
+size = 32
 role = "mdelay(ms): ms x udelay(1000)"
 src = "disassembly 0x1c02ad34-0x1c02ad4c"
 conf = "C"
 
+[binary.uboot1.func.simple_strtoul]
+name = "simple_strtoul"
+addr = 0x1c02b398
+size = 308
+role = "'0x' prefix handling, digit table"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.vsprintf]
+name = "vsprintf"
+addr = 0x1c02b820
+size = 2324
+role = "printf engine"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.sprintf]
+name = "sprintf"
+addr = 0x1c02c144
+size = 48
+role = "vsprintf wrapper"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.arp_request]
+name = "arp_request"
+addr = 0x1c030fc8
+size = 368
+role = "'gatewayip needed but not set' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.dhcp_handler]
+name = "dhcp_handler"
+addr = 0x1c0316d4
+size = 1196
+role = "'DHCP: INVALID STATE' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.bootp_request]
+name = "bootp_request"
+addr = 0x1c031eb0
+size = 4
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
 [binary.uboot1.func.cpu_eth_init]
 name = "cpu_eth_init"
 addr = 0x1c031eb4
+size = 8
 src = "docs/uboot.md s5"
+conf = "I"
+
+[binary.uboot1.func.eth_register_dev]
+name = "eth_register_dev"
+addr = 0x1c031ebc
+size = 108
+role = "ethact handling"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 
 [binary.uboot1.func.eth_register]
 name = "eth_register"
 addr = 0x1c032380
+size = 136
 src = "docs/uboot.md s5"
 conf = "I"
+
+[binary.uboot1.func.eth_initialize]
+name = "eth_initialize"
+addr = 0x1c0328bc
+size = 236
+role = "'No ethernet found.' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.tftp_handler]
+name = "tftp_handler"
+addr = 0x1c034184
+size = 992
+role = "'TFTP error', blksize (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.tftp_start]
+name = "tftp_start"
+addr = 0x1c03465c
+size = 844
+role = "tftpblocksize/tftptimeout env (strings)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.tftp_start_server]
+name = "tftp_start_server"
+addr = 0x1c034a34
+size = 192
+role = "'Listening for TFTP transfer on' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.idm_wrappers_init]
+name = "idm_wrappers_init"
+addr = 0x1c034b20
+size = 288
+role = "writes 0x33a to 17 IDM wrapper control registers (0x181xx900)"
+regs = ["idm_pcie_s0"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.ihost_ccu_policy_init]
+name = "ihost_ccu_policy_init"
+addr = 0x1c034c40
+size = 60
+role = "writes 0x5551 / 2 to CCU registers 0x19003000/4000/7000"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.dram_init]
+name = "dram_init"
+addr = 0x1c034ca4
+size = 40
+role = "calls xgpll_reset_toggle and ddr_init; sets ram size (init sequence)"
+regs = ["cmic0.DEV_REV_ID"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.arm_clock_init]
+name = "arm_clock_init"
+addr = 0x1c034ccc
+size = 116
+role = "reads device rev id; iproc_config_armpll(400 or 1000); 0x180000a4 low byte = 2"
+regs = ["cca", "cca.CORECTRL", "cmic0.DEV_REV_ID"]
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.misc_init_r]
+name = "misc_init_r"
+addr = 0x1c034d40
+size = 128
+role = "'Unlocking L2 Cache' string; print_clocks, shmoo save, outer cache disable"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
 
 [binary.uboot1.func.board_eth_init]
 name = "board_eth_init"
 addr = 0x1c034dd0
+size = 8
 role = "prints 'Board Net Initialization Failed'; no AMAC/GMAC driver"
 src = "docs/uboot.md s5"
+conf = "I"
+
+[binary.uboot1.func.board_led_init]
+name = "board_led_init"
+addr = 0x1c034dd8
+size = 180
+role = "gpio_set on pins 6/7 with udelay"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.verify_kernel_partition]
+name = "verify_kernel_partition"
+addr = 0x1c034e90
+size = 400
+role = "'Verifying '%s' parition' (string); unused helper"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.raise]
+name = "raise"
+addr = 0x1c03504c
+size = 28
+role = "'raise: Signal # %d caught' (string)"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "C"
+
+[binary.uboot1.func.__aeabi_uidivmod]
+name = "__aeabi_uidivmod"
+addr = 0x1c035074
+size = 168
+role = "32-bit unsigned divide"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.__aeabi_uidiv]
+name = "__aeabi_uidiv"
+addr = 0x1c03511c
+size = 32
+role = "divide with divide-by-zero trap"
+src = "ghidra uboot1.bin 2026-11-15"
+conf = "I"
+
+[binary.uboot1.func.__aeabi_uldiv]
+name = "__aeabi_uldiv"
+addr = 0x1c035238
+size = 76
+role = "64-bit divide wrapper"
+src = "ghidra uboot1.bin 2026-11-15"
 conf = "I"
 

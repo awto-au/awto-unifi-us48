@@ -443,6 +443,114 @@ Same registers as `paxb0`.
 | `0xdc` | `LNKCTL2` | 32 | rw |  |  | I | link control 2 (target link speed bits 3:0); mainline drops gen2 to gen1 if NLW = 0 | pcie-iproc.c:820-826 (IPROC_PCI_EXP_CAP + PCI_EXP_LNKCTL2 = 0xac + 0x30) |
 | `0x43c` | `CLASS_CTRL` | 32 | rw |  |  | C | class code override: mainline forces 0x060400 (PCI-PCI bridge) | pcie-iproc.c:795-800 |
 
+## Firmware: ubntapp
+
+ubnt app carried inside uboot-1 (flash 0x5814c, 0x50000 B), copied to 0x67030000 every boot; go ${ubntaddr} <cmd> (base `0x67030000`)
+
+| Address | Function | Role | Registers | conf | Source |
+|---|---|---|---|---|---|
+| `0x67030020` | `ubnt_go_dispatch` | `go ${ubntaddr} <cmd>` entry: strcmp chain over uappinit/usetbrev/usetmac/uclear*/usetsshkey/usetled/ubntboot/usetbid/ucheckboard/ureset_button/uwrite/uprintenv/usetenv/usaveenv (strings) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030578` | `printf` | trampoline into U-Boot (109 callers) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030590` | `malloc` | trampoline into U-Boot |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030598` | `free` | trampoline into U-Boot |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670305c0` | `getenv` | trampoline into U-Boot |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670305c8` | `setenv` | trampoline into U-Boot |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670306e8` | `bootsel_migrate_v1_v2` | 'BS: v1->v2' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030774` | `bootsel_persist` | 'BS: persist failed rc=%d' (string); writes the bootsel record (flash 0x1ee0000, docs/uboot.md s7) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030890` | `bootsel_load` | 'BS: bad magic %x', reads ubnt_hcrc_a/_b env |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030afc` | `bootsel_select` | 'BS: force_fallback -> swap roles', 'BS: active exhausted -> swap roles' (strings) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67030e28` | `bootsel_check_slot_hcrc` | 'BS: slot A firmware changed (hcrc ..)' (string) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031040` | `bootsel_skip_bootcount` | 'BS: skip bootcount increment (runtime-only policy)' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x670310ec` | `rsa_verify_image` | 'Key import failed', 'Img hash failed' (strings); not reached from ubntboot |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670312a0` | `ubnt_env_check_default` | 'u-boot-env is invalid, overiding with default' (string); runs in uappinit |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x670313dc` | `do_uprintenv` | dispatcher branch |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031430` | `do_usetenv` | dispatcher branch |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670317dc` | `rsa_signed_image_check` | 'RSA Signed Image. Verfiying please wait...' (string); no caller |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031b4c` | `ufwupdate_unused` | 'Copying to kernel0 partition' (string); writes u-boot/kernel0; no caller |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031ef4` | `gpio_output_disable` | clears bit in GPIO output-enable shadow (pins < 24) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031f20` | `gpio_set_value` | sets output-enable + data bit for pin < 24 |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031f70` | `gpio_get_value` | reads data-in or data-out bit |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67031fe0` | `gpio_init` | fills CCA GPIO descriptor (base 0x18000000, DIN 0x18000060), zeroes int regs | cca.GPIO_DIN | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703201c` | `gpio_pulse` | drives a pin then waits (udelay trampoline) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032114` | `build_boot_args` | appends ubntbootid / ubnt_active_slot / ubnt_current_slot (strings) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032274` | `load_verify_kernel` | 'Loading Kernel Image @ %x', 'Verifying parition' (strings) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703241c` | `do_usetbid` | 'Board ID: %hx' (string); read-modify-write EEPROM 0x1ff0000 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032510` | `do_usetbrev` | 'BOM Rev: %05d-%02d' (string); read-modify-write EEPROM 0x1ff0000 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703260c` | `do_usetmac` | 'MAC0 / MAC1' (strings); read-modify-write EEPROM 0x1ff0000 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032758` | `do_uclearcal` | dispatcher target (4 B branch) into do_uclearcal_body |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703275c` | `do_uclearcal_body` | 'reset_bid=%d reset_eth=%d' (string); rewrites EEPROM 0x1ff0000 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032938` | `do_uclearcfg` | dispatcher target (4 B branch) into do_uclearcfg_body |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703293c` | `do_uclearcfg_body` | erases 0x1ef0000 (\| arg & 0xffff) 1 MiB (cfg) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703296c` | `do_uclearenv` | erases 0xc0000 64 KiB (u-boot-env) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032978` | `do_usetsshkey` | dispatcher target (4 B branch) into do_usetsshkey_body |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703297c` | `do_usetsshkey_body` | 'doesn't contain valid key' (string); rewrites EEPROM 0x1ff0000 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032d40` | `do_usetled` | dispatcher target (4 B branch) into do_usetled_body |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032d44` | `do_usetled_body` | 'Invalid Pattern: %x' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032dec` | `do_ubntboot` | dispatcher target (4 B branch) into do_ubntboot_body |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032df0` | `do_ubntboot_body` | force_bootsel env, bootsel_select, build_boot_args, load_verify_kernel (strings) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032f10` | `print_board_banner` | 'Board: Ubiquiti Networks %s board' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032f4c` | `do_ucheckboard` | prints board banner |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032f5c` | `do_uappinit` | 'UBNT application initialized' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032fa4` | `do_uwrite` | returns 0 |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67032fac` | `do_ureset_button` | GPIO 11 polled; held: erase cfg 0x1ef0000 + env 0xc0000 (strings) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033080` | `eeprom_load` | reads 64 KiB EEPROM partition 0x1ff0000 into a buffer, byte-swaps board fields, magic check |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033180` | `board_name` | 'Unknown' / 'BCM95615x' |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670331a8` | `mtdparts_build` | 'mtdparts=spi1.0:768k(u-boot)...' (string) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703358c` | `spi_cmd` | function-name string |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703363c` | `ubnt_spi_init` | function-name string |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703371c` | `ubnt_spi_flash_erase` | function-name string |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033970` | `ubnt_spi_flash_read` | function-name string |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033b3c` | `ubnt_spi_flash_write` | function-name string |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033dc0` | `ubnt_flash_erase` | ubnt_spi_flash_erase wrapper |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033de8` | `crc32` | table crc32 |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67033e6c` | `ctype_flags` | character class lookup |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67034114` | `memcmp` | libc |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703421c` | `memset` | libc |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670342b4` | `memcpy` | libc |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670345fc` | `strncmp` | libc (3 args) |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67034b5c` | `strlen` | libc |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67034cc8` | `__aeabi_uidivmod` | divide |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67034d70` | `__aeabi_uidiv` | divide wrapper |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x670357e8` | `raise` | 'FATAL: signal received = %d' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67035808` | `sha1_compress` | sha1.c block function |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67035d1c` | `sha1_done` | sha1.c: md != NULL, out != NULL |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67035eb0` | `sha1_init` | sha1.c: md != NULL |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67035f38` | `sha1_process` | sha1.c: in != NULL, md != NULL |  | I | ghidra ubntapp.bin 2026-11-15 |
+| `0x67037a0c` | `crypt_argchk` | 'LTC_ARGCHK '%s' failure on line %d of file %s' (string) |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67037a28` | `crypt_register_hash` | libtomcrypt: only reference to source-file string crypt_register_hash.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67037af4` | `rsa_exptmod` | libtomcrypt: only reference to source-file string rsa_exptmod.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67037dd8` | `rsa_import` | libtomcrypt: only reference to source-file string rsa_import.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703820c` | `rsa_make_key` | libtomcrypt: only reference to source-file string rsa_make_key.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x670385f0` | `rsa_verify_hash` | libtomcrypt: only reference to source-file string rsa_verify_hash.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67038b38` | `rand_prime` | libtomcrypt: only reference to source-file string rand_prime.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67038d48` | `zeromem` | libtomcrypt: only reference to source-file string zeromem.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67038da4` | `der_decode_sequence_ex` | libtomcrypt: only reference to source-file string der_decode_sequence_ex.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703943c` | `der_decode_sequence_multi` | libtomcrypt: only reference to source-file string der_decode_sequence_multi.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67039588` | `der_length_sequence` | libtomcrypt: only reference to source-file string der_length_sequence.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x670397c8` | `der_decode_short_integer` | libtomcrypt: only reference to source-file string der_decode_short_integer.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67039888` | `der_length_short_integer` | libtomcrypt: only reference to source-file string der_length_short_integer.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67039910` | `der_decode_utctime` | libtomcrypt: only reference to source-file string der_decode_utctime.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67039e48` | `der_length_utctime` | libtomcrypt: only reference to source-file string der_length_utctime.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x67039ed8` | `der_decode_utf8_string` | libtomcrypt: only reference to source-file string der_decode_utf8_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703a114` | `der_length_utf8_string` | libtomcrypt: only reference to source-file string der_length_utf8_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703a22c` | `pkcs_1_pss_decode` | libtomcrypt: only reference to source-file string pkcs_1_pss_decode.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703a720` | `der_decode_bit_string` | libtomcrypt: only reference to source-file string der_decode_bit_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703a8bc` | `der_length_bit_string` | libtomcrypt: only reference to source-file string der_length_bit_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703a948` | `der_decode_boolean` | libtomcrypt: only reference to source-file string der_decode_boolean.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703aa00` | `der_length_boolean` | libtomcrypt: source-file string der_length_boolean.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703aa40` | `der_decode_choice` | libtomcrypt: only reference to source-file string der_decode_choice.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703adec` | `der_decode_ia5_string` | libtomcrypt: only reference to source-file string der_decode_ia5_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703afe4` | `der_length_ia5_string` | libtomcrypt: only reference to source-file string der_length_ia5_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b0d8` | `der_decode_integer` | libtomcrypt: only reference to source-file string der_decode_integer.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b370` | `der_length_integer` | libtomcrypt: only reference to source-file string der_length_integer.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b4c0` | `der_decode_object_identifier` | libtomcrypt: only reference to source-file string der_decode_object_identifier.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b68c` | `der_length_object_identifier` | libtomcrypt: only reference to source-file string der_length_object_identifier.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b7d0` | `der_decode_octet_string` | libtomcrypt: only reference to source-file string der_decode_octet_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b928` | `der_length_octet_string` | libtomcrypt: only reference to source-file string der_length_octet_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703b9bc` | `der_decode_printable_string` | libtomcrypt: only reference to source-file string der_decode_printable_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703bbb4` | `der_length_printable_string` | libtomcrypt: only reference to source-file string der_length_printable_string.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+| `0x6703bca8` | `pkcs_1_mgf1` | libtomcrypt: only reference to source-file string pkcs_1_mgf1.c |  | C | ghidra ubntapp.bin 2026-11-15 |
+
 ## Firmware: uboot1
 
 stock U-Boot of the US-48-500W (uboot-1) (base `0x1c000000`)
@@ -450,44 +558,268 @@ stock U-Boot of the US-48-500W (uboot-1) (base `0x1c000000`)
 | Address | Function | Role | Registers | conf | Source |
 |---|---|---|---|---|---|
 | `0x1c0000a0` | `relocate_code` | copy first 0x5814c B + 1278 R_ARM_RELATIVE fixups (@0x5595c) to 0x6ffa0000 |  | C | docs/uboot.md s6 |
+| `0x1c0003c0` | `irq_entry` | IRQ vector stub: calls gic_handle_irq, then the exception report |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0017e0` | `print_clocks` | prints 'arm_clk=..MHz, axi_clk, apb_clk, arm_periph_clk' (string) | ccu.PLLARMA, ccu.PLLARMB, ccu.POLICY_FREQ, ccu.WR_ACCESS | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001978` | `gtimer_init` | A9 global timer: stop, zero counter, enable (GTIMER control/counter) | gtimer.CONTROL, gtimer.COUNTER_HI, gtimer.COUNTER_LO | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0019a0` | `timer_init` | wrapper: gtimer_init |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0019b0` | `get_timer` | ms elapsed since arg, from the 64-bit global timer and prescaler (200 MHz periph clk) | gtimer.CONTROL, gtimer.COUNTER_HI, gtimer.COUNTER_LO | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001a44` | `gtimer_delay_us` | busy-wait arg microseconds on the global timer; used by udelay | gtimer.CONTROL, gtimer.COUNTER_HI, gtimer.COUNTER_LO | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001be0` | `reset_cpu` | writes DMU.CRU_RESET = 0 then spins (called by do_reset 'resetting ...') | dmu.CRU_RESET | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001c10` | `get_cpu_id` | reads CP15 MPIDR affinity 0 (core number) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001c70` | `gic_disable_irq` | GIC distributor ICENABLER write for irq arg | gic_dist.CTLR | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001cc0` | `gic_config_irq` | GIC distributor: disable, set enable/config/priority/target for irq | gic_dist.CTLR | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001dc8` | `gic_dist_init` | GIC distributor reset: disable, clear enables, pending, priorities | gic_cpu.CTLR, gic_cpu.PMR, gic_dist, gic_dist.CTLR, gic_dist.ISENABLER | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c001ebc` | `gic_handle_irq` | reads GIC CPU IAR, dispatches the handler table, writes EOIR | gic_cpu.EOIR, gic_cpu.IAR | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0020b8` | `l2cc_set_aux_ctrl` | PL310 aux ctrl (way/latency bits) and tag/data latency regs | pl310 | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0020e4` | `l2cc_inv_all_start` | PL310 invalidate-by-way (0x77c) = 0xffff | pl310 | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0020f8` | `l2cc_unlock_ways` | PL310 lockdown register 0x954 = 0xffff | pl310.UNLOCK_ALL_LINES | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00210c` | `l2cc_enable` | PL310 setup, invalidate, wait, CTRL = 1 | pl310, pl310.CTRL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002180` | `l2cc_invalidate` | PL310 invalidate-by-way with wait; prints on failure (string) | pl310, pl310.CTRL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002244` | `xgpll_reset_toggle` | XGPLL CTRL_3 reset bit sequence before DDR init | xgpll.CTRL_3, xgpll.STATUS | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002290` | `genpll_config` | GENPLL CTRL0..2 from a frequency table row | genpll.CTRL0, genpll.CTRL1, genpll.CTRL2, genpll.CTRL3, genpll.STATUS | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002408` | `genpll_get_hz` | VCO/channel frequency from GENPLL CTRL1/CTRL2 and the 25 MHz reference | genpll.CTRL1, genpll.CTRL2 | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002458` | `get_apb_clk` | APB clock from GENPLL; CCA CORECTRL and IDM bit select | cca, cca.CORECTRL | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0024b8` | `cru_standby_prepare` | CRU 0x1803e004/e008 handshake before standby | cru | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002558` | `cru_standby_wfi` | CRU 0x1803e00c timer = 1000, enable, wfi | cru | I | ghidra uboot1.bin 2026-11-15 |
 | `0x1c0025e4` | `iproc_config_armpll` | called with 400 (MHz) for BCM53342/3/4; re-programs ARM PLL every boot | ccu.WR_ACCESS, ccu.POLICY_FREQ, ccu.POLICY_CTL, ccu.PLLARMA, ccu.PLLARMB | I | docs/uboot.md s5; docs/clocks.md |
 | `0x1c0027d8` | `wdt_arm` | arm A9 private watchdog 30 s (load 0x0165A0BC, control 0xFF0B); called from board_init_r | twd.WDT_LOAD, twd.WDT_CONTROL | C | docs/uboot.md s2 |
 | `0x1c002808` | `wdt_pet` | reload private watchdog from saved value; called from getc/putc, udelay, memmove_wd, hush loop, CRC loops | twd.WDT_LOAD | C | docs/uboot.md s2 |
 | `0x1c00282c` | `wdt_stop` | disable keys 0x12345678/0x87654321, control 0; called by do_bootm_linux at 0x1c00d4fc | twd.WDT_DISABLE, twd.WDT_CONTROL | C | docs/uboot.md s2 |
-| `0x1c002868` | `do_wdt` | `wdt` command handler (table @0x1c0553c8) | twd.WDT_LOAD, twd.WDT_CONTROL, twd.WDT_DISABLE | I | docs/uboot.md s2 |
-| `0x1c002abc` | `FUN_1c002abc` | replay (register,value) pairs as register writes (89 pairs from 0x1c0d0000) |  | C | docs/sram.md Boot flow |
-| `0x1c003548` | `FUN_1c003548` | DDR init (shmoo replay from mtd2) |  | C | docs/sram.md Boot flow |
-| `0x1c00c2d4` | `FUN_1c00c2d4` | DDR tune; state block ~0x2a0 B at 0x1b000000 |  | C | docs/sram.md |
+| `0x1c002868` | `do_wdt` | cmd table entry wdt (0x1c0553c8) | twd, twd.WDT_CONTROL, twd.WDT_LOAD | C | docs/uboot.md s2 |
+| `0x1c002abc` | `shmoo_find_saved` | builds id key (CHIPID, DEV_REV_ID, 0x18109500), checks the shmoo blob at flash 0xd0000 (magic 0x59, sum); returns blob or 0 | cca.CHIPID, cmic0.DEV_REV_ID | C | docs/sram.md Boot flow |
+| `0x1c002bcc` | `xgpll_get_ddr_mhz` | DDR clock in MHz from XGPLL CTRL_4 ndiv and CTRL_2 mdiv | xgpll.CTRL_2, xgpll.CTRL_4 | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002c0c` | `xgpll_set_ddr_clock` | programs XGPLL for a DDR rate; 'Error in change_ddr_clock' (string) | xgpll.CTRL_0, xgpll.CTRL_1, xgpll.CTRL_2, xgpll.CTRL_4, xgpll.STATUS | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002d48` | `ddrc_write_table` | writes (index, value) pairs to DDR controller 0x18010000 until -1 | ddr_ctl.CTL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002e0c` | `ddr_mode_regs_write` | DRAM mode register write via DDRC, poll; 'DRAM mode registers write failed' | ddr_ctl.CTL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c002e94` | `ddr_phy_init` | DDR PHY/CRU LCPLL bring-up, auto calibration, 'DDR PHY is not up' (strings) | cca.CHIPID, ddr_ctl.CTL, ddr_phy, ddr_phy.PLL_CONFIG, ddr_phy.PLL_STATUS, ddr_phy.REVISION, ddr_phy.STRAP_CONTROL, ddr_phy.STRAP_CONTROL2, ddr_phy.VDL_CALIBRATE, ddr_phy.VDL_CALIB_STATUS, ddr_phy.VDL_OVRIDE_BIT_CTL, ddr_phy.WL0_READ_DATA_DLY, ddr_phy.WL0_WR_PREAMBLE_MODE, ddr_phy.ZQ_PVT_COMP_CTL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c003218` | `shmoo_save_to_flash` | 'Writing Shmoo values into flash' (string); sf write to 0xd0000 | ddr_phy, ddr_phy.REVISION | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c003548` | `ddr_init` | DDR init: DEV ID / SKU ID / type / speed lines, PHY, calibration, shmoo replay (strings) | cca.CHIPID, cmic0.DEV_REV_ID, ddr_ctl.CTL, ddr_phy.REVISION, ddr_phy.STRAP_CONTROL, ddr_phy.STRAP_CONTROL2 | C | docs/sram.md Boot flow |
+| `0x1c003b40` | `nand_cmd` | iProc NAND command with INTFC/RO_CTRL timeout (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c003c7c` | `nand_page_read` | 'page_read %llx not %x aligned' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c004040` | `nand_wait_ctlr_ready` | waits NAND INTFC ready bit with get_timer (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0040f0` | `nand_check_bad_block` | 'NAND%d bad block' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c004c44` | `nand_probe_chip` | NAND ID table (Micron MT29F..), strap check (strings) | dmu.STRAPS_CAPTURED | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c004c78` | `iproc_nand_init_chip` | 'NAND not supported on this iProc board' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c004e38` | `iproc_nand_init` | 'iProc NAND chip could not be initialized' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c005408` | `iproc_nand_read_page` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c005480` | `_iproc_nand_block_erase` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0055cc` | `_iproc_nand_page_program` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0059c8` | `iproc_nand_write_page_hwecc` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c005a40` | `iproc_nand_write_page` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c005ac0` | `nand_erase_blocks` | 'erase block %llx failed' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0060e8` | `ddr_find_pll_dividers` | 'Freq=%d n=%d m=%d err=%d' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0062e4` | `ddr_phy_reg_read` | reads DDR PHY register 0x18010800 + offset (92 callers) | ddr_phy.REVISION | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c006304` | `ddr_phy_dump_regs` | prints 'Address = 0x%04X Data = 0x%08X' lines (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c006a14` | `ddr_phy_reg_write` | writes DDR PHY register 0x18010800 + offset (164 callers) | ddr_phy.REVISION | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c007814` | `ddr_phy_reg_modify` | read-modify-write DDR PHY register 0x18010800 + offset | ddr_phy.REVISION | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c008080` | `ddr_self_test` |  |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00835c` | `_soc_ddr_shmoo_prepare_for_shmoo` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c008c78` | `ddr_calib_steps` | 'calib_steps: %d' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00901c` | `ddr_shmoo_rd_data_dly` | 'RD_DATA_DLY Iter' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c009898` | `ddr_shmoo_wr_dm` | 'THIS SHMOO WR_DM feature' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00a874` | `ddr_shmoo_vref_rd_dq` | 'Switching to Vref Step / RD_DQ Step' (strings) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00b290` | `ddr_shmoo_addrc` | '**** ADDRC Shmoo' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00bdcc` | `ddr_shmoo_rd_dqs_en` | 'Switching to RD_DQS / RD_EN Step' (strings) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00c2d4` | `ddr_shmoo_main` | shmoo driver: sizeof(soc_ddr_shmoo_param_t), state block at 0x1b000000 (strings) |  | C | docs/sram.md |
+| `0x1c00cf10` | `v7_dcache_inval_range` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00cfe4` | `l2cc_clean_inv_all` | PL310 clean+invalidate-by-way (0x7fc) | pl310 | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00cffc` | `l2cc_inv_all` | PL310 invalidate-by-way (0x77c) | pl310 | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00d07c` | `v7_dcache_inval_by_mva` | invalidate D-cache by MVA then outer range | pl310 | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00d088` | `v7_outer_cache_inval_range` | function-name string | pl310 | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c00d0c8` | `cleanup_before_linux` | cache/MMU teardown before kernel entry |  | I | docs/uboot.md s4 |
+| `0x1c00d168` | `display_banner` | prints the U-Boot version banner (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00d19c` | `init_baudrate` | getenv baudrate into gd (string) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c00d278` | `board_init_r` | mem_malloc_init(dest-0x50000, 0x50000); arms the private watchdog |  | C | docs/uboot.md s2, s6 |
+| `0x1c00d344` | `hang` | '### ERROR ### Please RESET the board ###' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c00d358` | `board_init_f` | computes relocaddr = (0x70000000 - 0x5ff8c) & ~0x3fff |  | C | docs/uboot.md s6 |
 | `0x1c00d4ac` | `do_bootm_linux` | kernel handoff; calls wdt_stop at 0x1c00d4fc before 'Starting kernel ...' | twd.WDT_DISABLE | C | docs/uboot.md s2, s4 |
 | `0x1c00d538` | `boot_prep_linux` | builds the ATAG list at 0x8000 |  | I | docs/uboot.md s4 |
+| `0x1c00d8c4` | `v7_outer_cache_disable` | 'Disabling outer cache' (string); PL310 CTRL = 0 | pl310.CTRL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00d8ec` | `v7_outer_cache_enable` | PL310 CTRL = 1 | pl310.CTRL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00d994` | `show_regs` | prints pc/lr/sp and r0-r10 (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00db04` | `do_undefined_instruction` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00db2c` | `do_software_interrupt` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00db54` | `do_prefetch_abort` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00db7c` | `do_data_abort` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00dba4` | `do_not_used` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00dbcc` | `do_fiq` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00dbf4` | `do_reset` | 'resetting ...' (string); calls reset_cpu |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00dc34` | `enable_caches` | 'WARNING: Caches not enabled' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c00dc9c` | `dcache_enable` | builds the page table (sections 0x000-0x07f cacheable, 0x080-0x1df device, 0x1e0-0x1ff cacheable, 0x200-0xfff device) |  | C | docs/uboot.md s6 |
+| `0x1c00de50` | `do_go` | cmd table entry go (0x1c055400) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c00e018` | `load_image` | image load helper for bootm |  | I | docs/uboot.md s4 |
 | `0x1c00e218` | `find_os` | bootm OS lookup |  | I | docs/uboot.md s4 |
-| `0x1c00e8d8` | `do_bootm` | bootm command |  | I | docs/uboot.md s4 |
+| `0x1c00e658` | `bootm_os_linux` | bootm 'initrd_start/initrd_end' env + linux handoff |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00e8d8` | `do_bootm` | cmd table entry bootm (0x1c05541c) |  | C | docs/uboot.md s4 |
+| `0x1c00eb98` | `bootm_autostart` | 'Automatic boot of image at addr' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00ec30` | `do_coninfo` | cmd table entry coninfo (0x1c055438) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00ed2c` | `do_echo` | cmd table entry echo (0x1c055454) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00ee10` | `do_exit` | cmd table entry exit (0x1c055470) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00ee44` | `do_help` | cmd table entry help (0x1c0554a8) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f118` | `do_itest` | cmd table entry itest (0x1c0554c4) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f26c` | `do_ls` | cmd table entry ls (0x1c0554fc) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f2e4` | `do_fsload` | cmd table entry fsload (0x1c055518) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f468` | `do_fsinfo` | cmd table entry fsinfo (0x1c0554e0) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f4e8` | `do_license` | cmd table entry license (0x1c055534) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00f590` | `load_serial_ymodem` | '## Total Size' (string), sets filesize |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c00fc9c` | `do_load_serial_bin` | cmd table entry loady (0x1c055550) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c01021c` | `do_mem_crc` | cmd table entry crc32 (0x1c055614) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010390` | `do_mem_base` | cmd table entry base (0x1c0555f8) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0103e8` | `do_mem_mtest` | cmd table entry mtest (0x1c0555c0) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0105f4` | `do_mem_loop` | cmd table entry loop (0x1c0555dc) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010710` | `do_mem_cp` | cmd table entry cp (0x1c05564c) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010824` | `do_mem_cmp` | cmd table entry cmp (0x1c055630) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0109d0` | `do_mem_mw` | cmd table entry mw (0x1c055668) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010a9c` | `do_mem_mwc` | cmd table entry mwc (0x1c055588) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010b20` | `do_mem_md` | cmd table entry md (0x1c0556bc) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010c10` | `do_mem_mdc` | cmd table entry mdc (0x1c0555a4) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010e54` | `do_mem_nm` | cmd table entry nm (0x1c055684) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010e5c` | `do_mem_mm` | cmd table entry mm (0x1c0556a0) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c010e64` | `do_sleep` | cmd table entry sleep (0x1c0556d8) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c012e84` | `do_mtdparts` | cmd table entry mtdparts (0x1c0556f4) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0135c8` | `do_chpart` | cmd table entry chpart (0x1c055710) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0136c4` | `do_urescue` | cmd table entry urescue (0x1c055764) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0136cc` | `do_ping` | cmd table entry ping (0x1c05572c) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013758` | `netboot_common` | loadaddr/domain/dnsip env then bootm |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013a94` | `do_tftpsrv` | cmd table entry tftpsrv (0x1c055780) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013aa0` | `do_dhcp` | cmd table entry dhcp (0x1c055748) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013aac` | `do_tftpb` | cmd table entry tftpboot (0x1c05579c) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013ab8` | `do_bootp` | cmd table entry bootp (0x1c0557b8) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013ac4` | `do_env` | cmd table entry env (0x1c055828) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013b48` | `do_env_export` | string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013e10` | `do_env_default` | '## Resetting to default environment' |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013ec0` | `do_saveenv` | cmd table entry saveenv (0x1c055844) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013f00` | `printenv_one` | prints one name=value |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c013fc0` | `do_printenv` | cmd table entry printenv (0x1c05580c) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0142bc` | `_do_env_set` | '## Error inserting variable' strings |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0144b4` | `do_setenv` | cmd table entry setenv (0x1c0557f0) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0144d4` | `setenv` | set env var (39 callers) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c014544` | `do_env_import` | strings |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0149f8` | `getenv` | env lookup (47 callers) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c014a80` | `getenv_ulong` | getenv + strtoul |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c01589c` | `do_pci` | cmd table entry pci (0x1c055860) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c015d30` | `do_spi_flash` | cmd table entry sf (0x1c05587c) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c016690` | `do_source` | cmd table entry source (0x1c055898) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0166d8` | `do_spi_xfer` | cmd table entry sspi (0x1c0558b4) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0169b8` | `do_false` | cmd table entry false (0x1c0558ec) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0169c0` | `do_true` | cmd table entry true (0x1c0558d0) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0169c8` | `do_test` | cmd table entry test (0x1c055908) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c016f28` | `do_version` | cmd table entry version (0x1c055924) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c016f7c` | `find_cmd_tbl` | looks up a command in the table (strncmp + length) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017034` | `find_cmd` | find_cmd_tbl over the cmd table |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017074` | `cmd_usage` | 'Usage:' / 'No additional help available' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0170e0` | `_do_help` | 'Unknown command '%s' - try 'help' without arguments' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0179b4` | `run_command` | 'Unknown command '%s' - try 'help'' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017c70` | `getc` | console getc over stdin device or serial |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017c94` | `tstc` | console tstc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017cb8` | `putc` | console putc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017ce0` | `puts` | console puts |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017d08` | `printf` | vsprintf into a stack buffer then puts (786 callers) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017d60` | `panic` | printf then reset |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017da0` | `ctrlc` | tstc + getc, true on Ctrl-C (0x3) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c017ed0` | `stdio_print_current_devices` | 'Out:' / 'Err:' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0180ac` | `sbrk` | moves the malloc break (mem_malloc_start/end bounds) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c018274` | `free` | dlmalloc free |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c018504` | `malloc` | dlmalloc malloc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c019528` | `set_default_env` | function-name string; prints '- saving default environment to flash...' |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c01968c` | `env_import` | function-name string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0197a4` | `env_relocate_spec` | '!bad CRC', '!spi_flash_read() failed' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c019904` | `env_save_spi` | 'Erasing SPI flash...' then writes env at 0xc0000 |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c019e68` | `do_showvar` | cmd table entry showvar (0x1c055940) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c01c294` | `image_check_hcrc` | uImage header CRC |  | I | docs/uboot.md s1 |
 | `0x1c01c2e4` | `image_check_dcrc` | uImage data CRC |  | I | docs/uboot.md s1 |
 | `0x1c01c3e0` | `getenv_yesno` | env boolean helper |  | I | docs/uboot.md s4 |
 | `0x1c01c504` | `memmove_wd` | memmove that pets the watchdog | twd.WDT_LOAD | C | docs/uboot.md s2 |
-| `0x1c01dba8` | `main_loop` | hush main loop |  | I | docs/uboot.md s2 |
+| `0x1c01dba8` | `main_loop` | existing |  | C | docs/uboot.md s2 |
+| `0x1c01dccc` | `do_run` | cmd table entry run (0x1c0557d4) |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c01e33c` | `ubntapp_loader` | reads 0x50000 B from flash 0x5814c to 0x67030000 every boot, magic 0x87564523, sets ubntaddr |  | C | docs/uboot.md s6 |
+| `0x1c01f41c` | `cca_gpio_show_irq_info` | prints 'Level high interrupt' / 'Falling edge interrupt' (strings) from CCA GPIO int regs | cca | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c01f608` | `iproc_gpio_init` | fills the CCA GPIO descriptor (base 0x18000000, DIN/DOUT) | cca.GPIO_DIN | I | ghidra uboot1.bin 2026-11-15 |
 | `0x1c01f680` | `gpio_set` | CCA GPIO setter; callers use pins 6, 7 only | cca.GPIO_DOUT, cca.GPIO_OUTEN | C | docs/uboot.md s5 |
+| `0x1c0203c8` | `mtd_bug` | 'U-Boot BUG at %s:%d' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0205fc` | `spi_flash_cmd` | spi_xfer wrapper for one command |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c020868` | `spi_flash_cmd_wait_ready` | polls status with get_timer and wdt_pet |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c020af4` | `spi_flash_probe` | 'SF: Unsupported manufacturer' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c020bdc` | `spi_flash_free` | frees the flash struct |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0211f4` | `spi_flash_probe_atmel` | 'AT45DB021D' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0219cc` | `spi_flash_probe_eon` | 'EN25Q32B' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0220bc` | `spi_flash_probe_macronix` | 'MX25L3205D' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c022190` | `spi_flash_probe_spansion` | 'S25FL008A' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02245c` | `spi_flash_probe_sst` | 'SST25VF080B' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c022bfc` | `spi_flash_probe_stmicro` | 'M25P16' string |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c022d0c` | `spi_flash_probe_winbond` | 'W25X16' string |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c023468` | `pci_bar_assign` | assign BARs of one function bottom-up from the port membase: size align up, 64-bit BARs also clear the upper dword; command = arg 5 |  | I | Ghidra FUN_1c023468; #76 |
-| `0x1c023c64` | `mdio_read` | CCB MDIO read of register r0 (PHY addr 2): wait busy clear (100 x 10 us), cmd = reg << 18 \| 0x61020000, ctrl (0x18032000, CHIPCOMMONB_MII_MANAGEMENT_CONTROL) = 0x9a, cmd at 0x18032004 |  | C | disassembly 0x1c023c64 (Ghidra FUN_1c023c64); docs/uboot.md s5 |
-| `0x1c023de4` | `mdio_write` | CCB MDIO write (reg r0, value r1) for the PCIe SerDes; same busy wait |  | I | disassembly 0x1c023de4 |
+| `0x1c023760` | `pci_class_str` | 'Does not fit any class' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c023928` | `rc_cfg_write` | RC own config write via CONFIG_IND_ADDR/DATA | paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c023c64` | `mdio_read` | CCB MDIO read of register r0 (PHY addr 2): wait busy clear (100 x 10 us), cmd = reg << 18 \| 0x61020000, ctrl (0x18032000, CHIPCOMMONB_MII_MANAGEMENT_CONTROL) = 0x9a, cmd at 0x18032004 | iproc_axi | C | disassembly 0x1c023c64 (Ghidra FUN_1c023c64); docs/uboot.md s5 |
+| `0x1c023de4` | `mdio_write` | CCB MDIO write (reg r0, value r1) for the PCIe SerDes; same busy wait | iproc_axi | I | disassembly 0x1c023de4 |
 | `0x1c023f88` | `rc_cfg_read16` | RC own config read: CONFIG_IND_ADDR = off & 0xffc, CONFIG_IND_DATA >> ((off & 3) * 8) | paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA | C | disassembly 0x1c023f88; #76 |
 | `0x1c023fb4` | `rc_cfg_read8` | same, byte | paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA | C | disassembly 0x1c023fb4; #76 |
 | `0x1c024084` | `soc_pcie_check_link` | RC header type must be 1 (else 'End-Point mode - ignored'), walk cap list for PCIe cap, read LNKSTA; active iff (LNKSTA & 0x3f0) != 0 | rccfg0.HEADER_TYPE, rccfg0.LNKSTA | C | Ghidra FUN_1c024084; disassembly 0x1c0241dc; #76 |
 | `0x1c024258` | `ep_cfg_read32` | endpoint config read: CFG_ADDR = devfn bits \| bus << 20 \| reg & 0xfc, data = CFG_DATA | paxb0.CFG_ADDR, paxb0.CFG_DATA | C | Ghidra FUN_1c024258; #76 |
-| `0x1c0244b0` | `soc_pcie_hw_init` | per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL | idm_pcie_m0.RESET_CONTROL, idm_pcie_s0.RESET_CONTROL, paxb0.CLK_CONTROL, paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA, paxb0.CFG_ADDR, paxb0.CFG_DATA | C | disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76 |
-| `0x1c024a04` | `serial_getc` | serial receive; pets the watchdog | uart1.LSR, uart1.RBR_THR_DLL | I | docs/uboot.md s2 |
-| `0x1c024a1c` | `serial_putc` | serial transmit; pets the watchdog | uart1.LSR, uart1.RBR_THR_DLL | I | docs/uboot.md s2 |
+| `0x1c0242a0` | `ep_cfg_read16` | endpoint config read 16-bit | paxb0.CFG_ADDR, paxb0.CFG_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0242e8` | `ep_cfg_read8` | endpoint config read 8-bit | paxb0.CFG_ADDR, paxb0.CFG_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024330` | `ep_cfg_write8` | endpoint config write | paxb0.CFG_ADDR, paxb0.CFG_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024378` | `ep_cfg_write16` | endpoint config write | paxb0.CFG_ADDR, paxb0.CFG_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0243c0` | `ep_cfg_write32` | endpoint config write | paxb0.CFG_ADDR, paxb0.CFG_DATA | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0244b0` | `soc_pcie_hw_init` | per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL | paxb0.CLK_CONTROL, paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA, idm_pcie_m0.RESET_CONTROL, idm_pcie_s0.RESET_CONTROL | C | disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76 |
+| `0x1c02493c` | `pci_init_board` | runs soc_pcie_hw_init per port |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024950` | `ns16550_init` | LCR=0x83, divisor, LCR=3, MCR=3, FCR=7 on the base arg | uart1.DLH_IER, uart1.IIR_FCR, uart1.LCR, uart1.MCR, uart1.RBR_THR_DLL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0249e4` | `ns16550_putc` | waits LSR THRE (0x20) then writes THR | uart1.LSR, uart1.RBR_THR_DLL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024a08` | `ns16550_getc` | waits LSR DR (0x1), pets watchdog, reads RBR | uart1.LSR, uart1.RBR_THR_DLL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024a1c` | `serial_getc` | wait LSR DR, read RBR | uart1.LSR, uart1.RBR_THR_DLL | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024a40` | `serial_calc_divisor` | apb clock / (16 x baud) |  | I | ghidra uboot1.bin 2026-11-15 |
 | `0x1c024a64` | `serial_init` | UART1 115200 8N1, FIFO enabled | uart1.LCR, uart1.RBR_THR_DLL, uart1.DLH_IER, uart1.IIR_FCR | C | docs/uboot.md s5 |
-| `0x1c025020` | `spi_setup_slave` | QSPI MSPI/BSPI setup for flash (spi1.0) | mspi.SPCR0_LSB, mspi.SPCR0_MSB | C | docs/uboot.md s5 |
-| `0x1c02ad00` | `udelay` | udelay(us): chunks of <= 10 s, pets the watchdog + timer wait per chunk |  | C | docs/uboot.md s2; disassembly 0x1c02ad00-0x1c02ad30 |
+| `0x1c024a84` | `serial_putc` | CR before LF, then ns16550_putc | uart1.LSR, uart1.RBR_THR_DLL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024b9c` | `serial_puts` | loops serial_putc | uart1.LSR, uart1.RBR_THR_DLL | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024bb4` | `serial_setbrg` | programs UART1 divisor registers | uart1.DLH_IER, uart1.LCR, uart1.RBR_THR_DLL | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c024ff4` | `spi_setup_slave` | allocates the 0x34 B slave struct, selects QSPI clock in CRU_CONTROL, MSPI/BSPI bases 0x18027200/0x18027000 | bspi, bspi_raf, cru.CONTROL, mspi.ENDQP, mspi.NEWQP, mspi.SPCR0_LSB, mspi.SPCR0_MSB, mspi.SPCR1_LSB, mspi.SPCR1_MSB, mspi.SPCR2 | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c025170` | `spi_cs_activate` | MSPI CS assert (22 callers) | bspi, bspi_raf | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0251cc` | `spi_cs_deactivate` | MSPI CS release | bspi, bspi_raf, mspi | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c025234` | `spi_xfer` | MSPI queue transfer; 80k TXRAM/RXRAM accesses in the emulator trace | bspi, bspi_raf, mspi.CDRAM, mspi.ENDQP, mspi.NEWQP, mspi.RXRAM, mspi.STATUS, mspi.TXRAM | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c028518` | `crc32` | crc32 over a buffer |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02852c` | `crc32_wd` | crc32 with watchdog pets |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0285f0` | `print_size` | '%llu Bytes', 'PTGMK' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c028778` | `print_buffer` | '%08lx:' hexdump (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c028a9c` | `zunzip` | 'Error: inflate() returned %d' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c028be4` | `gunzip` | 'Error: Bad gzipped data' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02905c` | `hsearch_r` | hash table search |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c029494` | `hexport_r` | 'Env export buffer too small' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0297e8` | `himport_r` | 'not in imported env' (strings) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a3fc` | `strcpy` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a418` | `strncpy` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a4e4` | `strcmp` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a518` | `strncmp` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a598` | `strchr` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a638` | `strlen` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02a9c8` | `memset` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02aa78` | `memcpy` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02ab04` | `memmove` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02ab64` | `memcmp` | libc |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02ad00` | `udelay` | existing |  | C | docs/uboot.md s2; disassembly 0x1c02ad00-0x1c02ad30 |
 | `0x1c02ad34` | `mdelay` | mdelay(ms): ms x udelay(1000) |  | C | disassembly 0x1c02ad34-0x1c02ad4c |
+| `0x1c02b398` | `simple_strtoul` | '0x' prefix handling, digit table |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02b820` | `vsprintf` | printf engine |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c02c144` | `sprintf` | vsprintf wrapper |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c030fc8` | `arp_request` | 'gatewayip needed but not set' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c0316d4` | `dhcp_handler` | 'DHCP: INVALID STATE' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c031eb0` | `bootp_request` |  |  | I | ghidra uboot1.bin 2026-11-15 |
 | `0x1c031eb4` | `cpu_eth_init` |  |  | I | docs/uboot.md s5 |
+| `0x1c031ebc` | `eth_register_dev` | ethact handling |  | I | ghidra uboot1.bin 2026-11-15 |
 | `0x1c032380` | `eth_register` |  |  | I | docs/uboot.md s5 |
+| `0x1c0328bc` | `eth_initialize` | 'No ethernet found.' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034184` | `tftp_handler` | 'TFTP error', blksize (strings) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c03465c` | `tftp_start` | tftpblocksize/tftptimeout env (strings) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034a34` | `tftp_start_server` | 'Listening for TFTP transfer on' (string) |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034b20` | `idm_wrappers_init` | writes 0x33a to 17 IDM wrapper control registers (0x181xx900) | idm_pcie_s0 | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034c40` | `ihost_ccu_policy_init` | writes 0x5551 / 2 to CCU registers 0x19003000/4000/7000 |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034ca4` | `dram_init` | calls xgpll_reset_toggle and ddr_init; sets ram size (init sequence) | cmic0.DEV_REV_ID | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034ccc` | `arm_clock_init` | reads device rev id; iproc_config_armpll(400 or 1000); 0x180000a4 low byte = 2 | cca, cca.CORECTRL, cmic0.DEV_REV_ID | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034d40` | `misc_init_r` | 'Unlocking L2 Cache' string; print_clocks, shmoo save, outer cache disable |  | C | ghidra uboot1.bin 2026-11-15 |
 | `0x1c034dd0` | `board_eth_init` | prints 'Board Net Initialization Failed'; no AMAC/GMAC driver |  | I | docs/uboot.md s5 |
+| `0x1c034dd8` | `board_led_init` | gpio_set on pins 6/7 with udelay |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c034e90` | `verify_kernel_partition` | 'Verifying '%s' parition' (string); unused helper |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c03504c` | `raise` | 'raise: Signal # %d caught' (string) |  | C | ghidra uboot1.bin 2026-11-15 |
+| `0x1c035074` | `__aeabi_uidivmod` | 32-bit unsigned divide |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c03511c` | `__aeabi_uidiv` | divide with divide-by-zero trap |  | I | ghidra uboot1.bin 2026-11-15 |
+| `0x1c035238` | `__aeabi_uldiv` | 64-bit divide wrapper |  | I | ghidra uboot1.bin 2026-11-15 |

@@ -81,6 +81,13 @@ def merge(doc, binary, prog, funcs, comments, today):
         t["name"], t["addr"] = name, addr
         if size:
             t["size"] = size
+        # comment tags set by the naming scripts: "[C] role @regs a.B,c.D" (C|I = conf)
+        m = re.match(r"^\[([CI])\] (.*?)(?: @regs (\S+))?$", cmt or "")
+        if m:
+            t["conf"] = m.group(1)
+            cmt = m.group(2)
+            if m.group(3):
+                t["regs"] = m.group(3).split(",")
         if cmt:
             t["role"] = cmt
         doc[bpath + ("func", re.sub(r"\W", "_", name))] = t

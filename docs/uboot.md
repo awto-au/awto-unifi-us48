@@ -154,6 +154,47 @@ Measured 2026-10-13, PL2303 USB-RS232 cable → front RJ45 (MAX3321), `scripts/d
 - Bare Enter at `u-boot>` repeats the last command (could be `loady`/`bootm`): probe with `echo`.
 - 115200 `loady` of 5.6 MB: 9.9 KiB/s ≈ 9.5 min.
 
+## 9. Flash, EEPROM, cfg and OTP writes (static, Ghidra round-trip 2026-11-15, #69)
+
+Names in `hwdb/fw/uboot1.toml` / `ubntapp.toml`. EEPROM = flash partition `0x1ff0000` (64 KiB, SPI, not I2C). cfg = `0x1ef0000` (1 MiB). Env = `0xc0000` (64 KiB). Shmoo = `0xd0000`.
+
+- **OTP: none (C).** No OTP/CRMU/I2C register block is referenced in uboot-1 or the app. Blocks touched: CCA, UART1, MSPI/BSPI/CRU, GENPLL/XGPLL, DDR ctl/PHY, PAXB+CCB MDIO, IDM wrappers, CCU, A9 private/PL310/GIC, DMU reset, `0x48010000` read-only (`regs` lists in the toml).
+- **uboot-1 proper writes flash only at (C):**
+  - env: `env_save_spi` 0x1c019904 (erase+write `0xc0000`/0x10000). Callers: `set_default_env` 0x1c019528 @0x1c019598, `do_saveenv` 0x1c013ec0 @0x1c013ee4.
+  - shmoo: `shmoo_save_to_flash` 0x1c003218 (`0xd0000`), from `misc_init_r` 0x1c034d40, when the saved blob is invalid (`shmoo_find_saved` 0x1c002abc).
+  - user commands `sf write/erase/update` (`do_spi_flash` 0x1c015d30), `saveenv`.
+  - No reference to EEPROM `0x1ff0000`, cfg `0x1ef0000` or bootsel `0x1ee0000` in uboot-1 proper.
+- **App (copy of flash 0x5814c at 0x67030000, `ubnt_go_dispatch` 0x67030020). Every flash access goes through `ubnt_spi_flash_{read,write,erase}` 0x67033970 / 0x67033b3c / 0x6703371c (C).**
+  - Every boot (`bootcmd` -> `go uappinit`, `do_uappinit` 0x67032f5c): `eeprom_load` 0x67033080 reads EEPROM `0x1ff0000` (read only); `ubnt_env_check_default` 0x670312a0 rewrites `u-boot-env` with the default env if it is invalid.
+  - `ubntboot` (`do_ubntboot_body` 0x67032df0): `bootsel_select` 0x67030afc can call `bootsel_persist` 0x67030774 (bootsel record `0x1ee0000`) after a role swap / force_fallback. Never increments the bootcount (0x67031040).
+  - `ureset_button` 0x67032fac (button held, polled only when `bootcmd` runs): erases cfg `0x1ef0000`/1 MiB and env `0xc0000`/64 KiB (calls `ubnt_flash_erase` 0x67033dc0 @0x67032fac body).
+  - Manual only (`go ${ubntaddr} <cmd>`, never from `bootcmd`):
+    - EEPROM `0x1ff0000` read-modify-write 64 KiB: `usetbid` 0x6703241c, `usetbrev` 0x67032510, `usetmac` 0x6703260c, `uclearcal` 0x67032758 -> body 0x6703275c, `usetsshkey` 0x67032978 -> body 0x6703297c.
+    - cfg erase: `uclearcfg` 0x67032938 -> body 0x6703293c (`0x1ef0000 | arg & 0xffff`, 1 MiB).
+    - env: `uclearenv` 0x6703296c (erase), `usaveenv` (inline in the dispatcher, write 64 KiB).
+  - `uclearcal` / `uclearcfg` / `usetsshkey` / `usetled` / `ubntboot` entries are 4-byte branches into the body at +4.
+  - Dead code (no caller): `ufwupdate_unused` 0x67031b4c (writes u-boot + kernel0), `rsa_signed_image_check` 0x670317dc, `rsa_verify_image` 0x670310ec, `uwrite` 0x67032fa4 (`return 0`).
+
+## 10. "saving default environment to flash" (C, decompile + emulator run)
+
+String `0x1c04cd6c` is printed by `set_default_env` 0x1c019528 only after the compiled-in default env imported OK (`himport_r` 0x1c0297e8 != 0), then `env_save_spi` 0x1c019904 erases and rewrites `0xc0000`. Import failure prints "Environment import failed" and does not save.
+
+`set_default_env(s)` callers (any of them rewrites the flash env):
+
+| # | Condition | Call site | Message |
+|---|---|---|---|
+| 1 | `env_relocate_spec` 0x1c0197a4 (from `env_relocate` 0x1c00d22c @0x1c00d274, in `board_init_r`): `gd->env_valid` (gd+0x14) == 0 | 0x1c0197d0 | `!bad CRC` |
+| 2 | same, `spi_flash_probe(0,0,10 MHz,mode 3)` returns 0 | 0x1c019b50 | `!spi_flash_probe() failed` |
+| 3 | same, read of 64 KiB at `0xc0000` fails | 0x1c019b40 | `!spi_flash_read() failed` |
+| 4 | same, `env_import(buf,1)` 0x1c01968c: `crc32(buf+4, 0xfffc)` != stored word | 0x1c019778 | `!bad CRC` |
+| 5 | `env_import`: `himport_r` of the flash env fails | 0x1c019764 | `Using default environment` |
+| 6 | `do_env_default` 0x1c013e10 (`env default -a`) | 0x1c013eb0 | `## Resetting to default environment` |
+| 7 | `env_save_spi` 0x1c019904: probe fails | 0x1c019a74 | (recursion: `set_default_env` -> `env_save_spi`) |
+
+- Message form for strings starting with `!`: "*** Warning - %s, using default environment" (string 0x1c04cd10); NULL -> "Using default environment".
+- Net effect: a bad or unreadable env CRC at boot rewrites `mtd1` from the compiled-in default (stock `bootcmd`). Matches the emulator run in §3.
+- Case 1 vs 4: only the gd->env_valid == 0 test and the CRC test are seen in the decompile; what sets gd+0x14 before `env_relocate` is not traced (I).
+
 ## Hazards
 
 | Command / condition | Effect |
