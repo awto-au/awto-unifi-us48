@@ -24,6 +24,28 @@ STEP_TIMEOUT_S = 30
 BIG = ["-DBIG_LINES=2048"]  # iftest_asm.S: 64 KiB of straight-line code, 2x the 32 KiB L1 I
 
 
+STRESS_K, STRESS_MP = 20000, 8  # stress_asm.S ALU iterations and 8 KiB store/load passes per outer iteration
+
+
+def stress_ref():
+    """Known answers of stress_asm.S: (EXP_A, EXP_B)."""
+    m = 0xFFFFFFFF
+    x = 0x12345678
+    for i in range(STRESS_K):
+        x = (x * 0x9E3779B1 + 0x7F4A7C15) & m
+        x ^= x >> 15
+        x = ((x << 7) | (x >> 25)) & m
+        x = (x + i) & m
+    a = x
+    for _ in range(STRESS_MP):
+        arr = [(x + w * 0x01000193) & m for w in range(2048)]
+        t = 0
+        for w in range(2047, -1, -1):
+            t = (t * 3 + arr[w]) & m
+        x = (x + t) & m
+    return a, x
+
+
 def run(cmd):
     logging.info("$ %s", " ".join(map(str, cmd)))
     try:
@@ -93,6 +115,18 @@ SECTIONS {{
                               ("us48-a2-rawtest-diag22", ("start.S", "rawtest.c"), ["-DDIAG_SET=0x400000"]),
                               ("us48-a2-rawtest-nic", ("start.S", "rawtest.c"), ["-DNIC_ISS=3"]),
                               ("us48-a2-rawtest-diag22-nic", ("start.S", "rawtest.c"), ["-DDIAG_SET=0x400000", "-DNIC_ISS=3"]),
+                              # H1 (#79): stale predictor/cache state across restarts; orig = rawtest.c from fc0b9c3
+                              ("us48-a2-entryprobe", ("start.S", "entryprobe.c"), ["-DENTRY_PROBE"]),
+                              ("us48-a2-rawtest-orig", ("start.S", "rawtest_orig.c"), []),
+                              ("us48-a2-rawtest-orig-z0", ("start.S", "rawtest_orig.c"), ["-DENTRY_Z0"]),
+                              ("us48-a2-rawtest-orig-z1", ("start.S", "rawtest_orig.c"), ["-DENTRY_Z1"]),
+                              ("us48-a2-rawtest-orig-inv", ("start.S", "rawtest_orig.c"), ["-DENTRY_FULL"]),
+                              ("us48-a2-rawtest-orig-inv-z0", ("start.S", "rawtest_orig.c"), ["-DENTRY_FULL", "-DENTRY_Z0"]),
+                              *((f"us48-a2-rawtest-orig-n{n}", ("start.S", "rawtest_orig.c"), [f"-DENTRY_NOPS={n}"]) for n in range(1, 9)),
+                              # H2 (#79): CPU + L1 stress from SRAM, target = 10 s at the named clock (cycles)
+                              *((f"us48-a2-stress{mhz}", ("start.S", "stress.c", "stress_asm.S"),
+                                 [f"-DSTRESS_TARGET={mhz * 10_000_000}ULL", f"-DSTRESS_K={STRESS_K}", f"-DSTRESS_MP={STRESS_MP}",
+                                  f"-DEXP_A=0x{stress_ref()[0]:08x}", f"-DEXP_B=0x{stress_ref()[1]:08x}"]) for mhz in (400, 600, 800, 1000)),
                               ("us48-a2-ifd-diag22-nic", ("start.S", "iftest.c", "iftest_asm.S"),
                                ["-DIF_D", *BIG, "-DWRAP_DATA=0", "-DDIAG_SET=0x400000", "-DNIC_ISS=3"])):
         objs = []

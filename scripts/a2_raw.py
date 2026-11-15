@@ -3,7 +3,7 @@
 
 Usage: a2_raw.py ELF_NAME [cpu_mhz] [wait_s] [axi_mhz] [k=v ...]   (k=v = us48_a2 module params set before start, e.g. dcc_poll=0 hdbgen_off=1; dcc_poll and hdbgen_off reset to 1/0 when not given; ELF in /lib/firmware; cpu_mhz 0 = leave PLL; axi_mhz = unit 1 GENPLL ch3, default
 keeps the module param (200); log tmp/logs/a2_raw.log). Last line: verdict (pcsr at the undefined vector 0xffff000c or r/m != 0 = FAIL).
-Wait: trace0 re-read every 0.2 s until it stops growing for 1 s; wait_s (default 5) is the cap. rawtest runs < 1 s at 1000 MHz.
+Wait: trace0 re-read every 0.2 s until it stops changing for 1 s (a trace with `done=` only ends at done=00000001); wait_s (default 5) is the cap. rawtest runs < 1 s at 1000 MHz.
 """
 import re
 import subprocess
@@ -28,6 +28,7 @@ n=0; last=""; same=0
 while [ $n -lt @N@ ]; do
   read -t 0.2 x <&3; n=$((n+1)); cur=$(cat $T/trace0)
   if [ "$cur" = "$last" ]; then same=$((same+1)); else same=0; fi
+  case "$cur" in *done=00000001*) break;; *done=*) same=0;; esac  # stress ELF: trace stays constant until done
   last="$cur"; [ $same -ge 5 ] && break
 done
 echo "$cur"; echo "poll=$n"; cat $T/pcsr | tail -1; tail -2 $T/ccu

@@ -164,3 +164,27 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 | `dcc_poll=0 hdbgen_off=1` | 0/8 |
 
 - Failures identical with the poller off (undefined vector 0xffff000c, or `pass=` missing). a1 debug access and HDBGEN are not the cause; Linux no-DCC boots not run (step 1 not clean).
+
+## H1 stale predictor / H2 CPU stability (#79, 2026-11-15, a2 1000 MHz, AXI 200, `dcc_poll=0`)
+- Entry state (`us48-a2-entryprobe`, `start.S` `ENTRY_PROBE`): SCTLR `0x00c52078` at entry = Z (bit 11) 0, I/C/M 0, V (bit 13) 1; ACTLR 0; Diagnostic 0; MIDR `0x414fc091` (r4p1). Branch prediction is off in every a2fw (nothing sets Z) and the entry code already does ICIALLU + BPIALL before I-cache on; `mmu_on` does D set/way invalidate + TLBIALL before M/C. `boot.S` does the same plus full invalidate with I off first.
+- Variants of `rawtest_orig.c` (= rawtest.c from fc0b9c3; `start.S` flags `ENTRY_Z0/Z1/FULL/NOPS`), ok / runs:
+
+| ELF | ok / runs |
+|---|---|
+| `rawtest-orig` (control) | 0/12 (+0/4 batch, +0/4 in the power-cycle test) |
+| `-z0` (SCTLR.Z cleared; same as entry state) | 9/12 |
+| `-z1` (Z = 1, branch prediction on) | 10/12 |
+| `-inv` (full ICIALLU/BPIALL/TLBIALL/DCISW with caches off before any enable) | 0/4 |
+| `-inv-z0` | 3/4 |
+| first a2 start after a power-cycle (`a2_up.py`), orig | 0/4 |
+| `-n1..-n8` (1..8 nops at entry) | 1/4, 1/4, 2/4, 1/4, 3/4, 1/4, 4/4, 0/4 |
+
+- H1 not supported: Z is 0 at entry (no BTB use), entry invalidation changes nothing (`-inv` 0/4), power-cycled first start fails the same. Pass rate moves with a 1-word shift (0/16 -> 9/12) but not monotonically with the shift (n1..n8): per-build bias plus run noise, not a stale-state effect.
+- H2 (`us48-a2-stress400/600/800/1000`, `stress.c` + `stress_asm.S`): loop copied to a2 SRAM, data and counters in SRAM, no PCIe traffic while it runs; ALU chain (mul/eor/ror) + 8 KiB store/load checksum, known answers from `build_a2fw.py`, duration from PMCCNTR = 10 s at the named clock:
+
+| a2 MHz | runs | mismatches (m + r) | passes per run |
+|---|---|---|---|
+| 600 / 800 / 1000 | 4 each | 0 | 0x1b2e / 0x243e / 0x2d4d (identical every run) |
+
+- H2 not supported: the CPU + L1 are stable at 1000 MHz (40 s total at 1000, 40 s at 800, 40 s at 600). Die max 88 C, LM75 max 66 C. Core voltage: regdb has `TOP_AVS_SEL_REG` (0x02074c00) and `TOP_PVTMON_CTRL_1.PVTMON_SELECT` (CMIC space); not read, H2 is clean.
+- Open: the corruption needs PCIe-resident code + data traffic with caches on (rawtest-class); streaming I+D (ifa/ifb/ifd) and SRAM-only CPU load are clean. Next: capture LR_und / SPSR_und at the first undefined (vector via VBAR in SRAM, or a1 halt + ITR read) to see which fetch returned what.
