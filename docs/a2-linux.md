@@ -270,3 +270,13 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Bare-metal `bustest` has no outer-cache maintenance (its NC-alias truth check would flag L2), so there is no L2-on bustest row; the a2 Linux `us48bench` rows replace it.
 - Halt time (`us48_a2`, debugfs `halt_n/halt_fail/halt_last_us/halt_max_us`): 30 stop/start cycles each at 100 MHz, 1000 MHz L2 off, 1000 MHz L2 on, 12 more under TCP traffic: typical 15-20 us, outliers 65-196 us, one 2931 us. `HALT_WAIT_US` = 3700 (1.25 x 2931).
 - Wedge seen once (normal image, after a2 Linux had run vnet traffic, stop then start): DSCR `0x3004002` (running, not halted) persisted through every later start; a2 then sat at PC `0x08000000` for any firmware; only a power cycle cleared it. Not a slow halt. `us48_a2` stop restored unit 0 `RX_FREE_ARID_COUNT` to 3 before halting a2 (reads in flight); it now halts and resets first. Unproven cause: 70+ stop/start cycles with the new order (12 under traffic) did not wedge; the old order wedged within about 60.
+- Normal image check, 3c820ff (2026-11-16, a1 `7.4.0-rc1-norm+` from kernel0 crc 82cb3d47, a2 normal zImage, 1000 MHz, AXI 200, `vnet_test.py`, 10 pings, 10 MiB TCP):
+
+| a2 | start to vnet up | ping a1->a2 / a2->a1 avg ms | TCP a1->a2 / a2->a1 MB/s | us48bench 8M rd/wr/cp MB/s |
+|---|---|---|---|---|
+| L2 on | 1.5 s | 0.76 / 1.08 (cold), 0.77 / 1.00 (RAM boot) | 5.04 / 4.35 (cold), 5.12 / 4.33 (RAM boot) | 67 / 254 / 66 |
+| L2 off | 2.3 s | 1.02 / 1.95 | 2.03 / 2.07 | 23 / 230 / 23 |
+
+- Normal image has no debugfs: halt stats come from the debug image, same commit, a2 1000 MHz L2 on, `a2_halt_cycles.py` 30 cycles: `halt_n` 60, `halt_fail` 0, `halt_max_us` 204 (typical 15-25 us, one 93). 10 more stop/start cycles with a 10 MiB TCP transfer running: n 83, fail 0, max 204.
+- Seen once, normal image, a2 L2 on: `a2 halt: DSCR 0x3004002, limit 3700 us, elapsed 8980 us, ret -110` on a start after a stop; the next start worked, no power cycle. The a2 shell had been stuck on an `nc` (console only; vnet still pinging) before that stop. Elapsed exceeds the 3700 us limit by 2.4x, so it is a slow halt, not the persistent wedge (#102).
+- Seen once, debug a1 (a2 normal zImage, L2 on, 1000 MHz): a2 oops in `irq` setup at boot (`NR_IRQS`, NULL write at 0x4, pc `0xc0423d5c`), next boot clean. About 14 L2-on a2 boots this session.
