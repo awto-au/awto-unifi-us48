@@ -16,7 +16,12 @@
 #define SCHAN_MAX_BLK	63
 #define MEM_MAX_WORDS	16
 
-static struct bcm_cmic_unit unit0 = { .base = (void __iomem *)CONFIG_BCM_CMIC_UNIT0_BASE };
+static struct bcm_cmic_unit units[2] = {
+	{ .base = (void __iomem *)CONFIG_BCM_CMIC_UNIT0_BASE },
+	{ .base = (void __iomem *)CONFIG_BCM_CMIC_UNIT1_BASE },
+};
+static struct bcm_cmic_unit *cu = &units[0];	/* `cmic unit <0|1>` selects the unit every command here acts on */
+bool us48_pcie_up(void);
 
 static bool num(const char *s, ulong *v)
 {
@@ -30,10 +35,18 @@ static int do_cmic(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 {
 	ulong off, n = 1, i;
 
+	if (argc == 3 && !strcmp(argv[1], "unit")) {
+		if (!num(argv[2], &n) || n > 1 || (n && !us48_pcie_up())) {
+			printf("cmic: unit 0, or 1 with the PCIe link up\n");
+			return CMD_RET_FAILURE;
+		}
+		cu = &units[n];
+		return CMD_RET_SUCCESS;
+	}
 	if (argc == 4 && !strcmp(argv[1], "w")) {	/* cmic w <off> <val>: one CMIC write (bring-up experiments, chip only) */
 		if (!num(argv[2], &off) || !num(argv[3], &n) || (off & 3) || off + 4 > CMIC_WINDOW)
 			return CMD_RET_USAGE;
-		writel(n, unit0.base + off);
+		writel(n, cu->base + off);
 		return CMD_RET_SUCCESS;
 	}
 
@@ -44,12 +57,12 @@ static int do_cmic(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 		return CMD_RET_FAILURE;
 	}
 	for (i = 0; i < n; i++)
-		printf("cmic 0 0x%05lx = 0x%08x\n", off + 4 * i, readl(unit0.base + off + 4 * i));
+		printf("cmic %d 0x%05lx = 0x%08x\n", (int)(cu - units), off + 4 * i, readl(cu->base + off + 4 * i));
 	return CMD_RET_SUCCESS;
 }
 
 U_BOOT_CMD(cmic, 4, 0, do_cmic, "CMIC register read (read-only)",
-	   "r <off> [words]  - unit 0 CMIC register(s), offset from base\nw <off> <val>    - one CMIC register write (chip only)");
+	   "unit <0|1>      - select the unit for cmic/schan/smem/hr2* (default 0)\nr <off> [words]  - CMIC register(s), offset from base\nw <off> <val>    - one CMIC register write (chip only)");
 
 static int sbus_read(bool mem, int argc, char *const argv[])
 {
@@ -66,12 +79,12 @@ static int sbus_read(bool mem, int argc, char *const argv[])
 		printf("blk 0..%d, words 1..%lu\n", SCHAN_MAX_BLK, max);
 		return CMD_RET_FAILURE;
 	}
-	ret = bcm_cmic_schan_op(&unit0, mem ? BCM_SCHAN_READ_MEM : BCM_SCHAN_READ_REG, blk, addr, data, words, &ack);
+	ret = bcm_cmic_schan_op(cu, mem ? BCM_SCHAN_READ_MEM : BCM_SCHAN_READ_REG, blk, addr, data, words, &ack);
 	if (ret) {
 		printf("%s r blk %lu addr 0x%lx: error %d\n", mem ? "smem" : "schan", blk, addr, ret);
 		return CMD_RET_FAILURE;
 	}
-	printf("%s 0 blk %lu addr 0x%08lx ack 0x%08x\n", mem ? "smem" : "schan", blk, addr, ack);
+	printf("%s %d blk %lu addr 0x%08lx ack 0x%08x\n", mem ? "smem" : "schan", (int)(cu - units), blk, addr, ack);
 	for (i = 0; i < words; i++)
 		printf("  [%lu] = 0x%08x\n", i, data[i]);
 	return CMD_RET_SUCCESS;
@@ -88,7 +101,7 @@ static int sbus_write(int argc, char *const argv[])
 		return CMD_RET_USAGE;
 	data[0] = w0;
 	data[1] = w1;
-	if (blk > SCHAN_MAX_BLK || bcm_cmic_schan_op(&unit0, BCM_SCHAN_WRITE_REG, blk, addr, data, argc == 6 ? 2 : 1, NULL))
+	if (blk > SCHAN_MAX_BLK || bcm_cmic_schan_op(cu, BCM_SCHAN_WRITE_REG, blk, addr, data, argc == 6 ? 2 : 1, NULL))
 		return CMD_RET_FAILURE;
 	return CMD_RET_SUCCESS;
 }
@@ -119,7 +132,7 @@ static int do_hr2x(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 
 	if (argc != 2 || !num(argv[1], &m))
 		return CMD_RET_USAGE;
-	bcm_hr2_u0_extra(&unit0, m, &ops, &errs);
+	bcm_hr2_u0_extra(cu, m, &ops, &errs);
 	printf("hr2x mask 0x%lx: %d ops, %d failed\n", m, ops, errs);
 	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
 }
@@ -146,7 +159,7 @@ static int do_hr2mem(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv
 		return CMD_RET_USAGE;
 	img = (u32 *)addr;
 	if (!strcmp(argv[1], "dump")) {
-		u32 n = bcm_hr2_mem_dump(&unit0, img, first, last, &errs);
+		u32 n = bcm_hr2_mem_dump(cu, img, first, last, &errs);
 
 		printf("hr2mem dump: %u bytes at 0x%lx crc32 0x%08x, %d read errors, %lu ms\n", n, addr, crc32(0, (u8 *)img, n), errs,
 		       get_timer(t0));
@@ -154,7 +167,7 @@ static int do_hr2mem(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv
 	}
 	if (strcmp(argv[1], "diff") && strcmp(argv[1], "sync"))
 		return CMD_RET_USAGE;
-	ret = bcm_hr2_mem_cmp(&unit0, img, first, last, argv[1][0] == 's', &total, &errs);
+	ret = bcm_hr2_mem_cmp(cu, img, first, last, argv[1][0] == 's', &total, &errs);
 	if (ret) {
 		printf("hr2mem: bad image (%d)\n", ret);
 		return CMD_RET_FAILURE;
@@ -177,12 +190,15 @@ static int do_hr2init(struct cmd_tbl *cmdtp, int flag, int argc, char *const arg
 	unsigned long t0 = get_timer(0);
 
 	if (argc == 2 && !strcmp(argv[1], "count")) {
-		printf("hr2init: %lu entries\n", (ulong)bcm_hr2_u0_replay_entries());
+		printf("hr2init: %lu entries\n", (ulong)(cu == &units[1] ? bcm_hr2_u1_replay_entries() : bcm_hr2_u0_replay_entries()));
 		return CMD_RET_SUCCESS;
 	}
 	if (argc < 2 || argc == 3 || argc > 4 || !num(argv[1], &m) || (argc == 4 && (!num(argv[2], &first) || !num(argv[3], &last))))
 		return CMD_RET_USAGE;
-	bcm_hr2_u0_replay(&unit0, m, first, last, &ops, &errs);
+	if (cu == &units[1])
+		bcm_hr2_u1_replay(cu, m, first, last, &ops, &errs);
+	else
+		bcm_hr2_u0_replay(cu, m, first, last, &ops, &errs);
 	printf("hr2init mask 0x%lx entries %lu..%lu: %d ops, %d failed, %lu ms\n", m, first, last, ops, errs, get_timer(t0));
 	return errs ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
 }
@@ -203,7 +219,7 @@ static int do_hr2reg(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv
 		return CMD_RET_USAGE;
 	img = (u32 *)addr;
 	if (!strcmp(argv[1], "dump")) {
-		u32 n = bcm_hr2_reg_dump(&unit0, img, &errs);
+		u32 n = bcm_hr2_reg_dump(cu, img, &errs);
 
 		printf("hr2reg dump: %u bytes at 0x%lx crc32 0x%08x, %d read errors, %lu ms\n", n, addr, crc32(0, (u8 *)img, n), errs,
 		       get_timer(t0));
@@ -211,7 +227,7 @@ static int do_hr2reg(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv
 	}
 	if (strcmp(argv[1], "diff") && strcmp(argv[1], "sync"))
 		return CMD_RET_USAGE;
-	ret = bcm_hr2_reg_cmp(&unit0, img, first, last, argv[1][0] == 's', &total, &errs);
+	ret = bcm_hr2_reg_cmp(cu, img, first, last, argv[1][0] == 's', &total, &errs);
 	if (ret) {
 		printf("hr2reg: bad image (%d)\n", ret);
 		return CMD_RET_FAILURE;
@@ -244,15 +260,15 @@ static int do_miim(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
 		return CMD_RET_USAGE;
 
 	if (!scan) {
-		ret = bcm_cmic_miim_read(&unit0, internal, bus, phy, reg, &v);
+		ret = bcm_cmic_miim_read(cu, internal, bus, phy, reg, &v);
 		if (ret)
 			return CMD_RET_FAILURE;
 		printf("miim %s bus %lu phy %lu reg %lu = 0x%04x\n", internal ? "int" : "ext", bus, phy, reg, v);
 		return CMD_RET_SUCCESS;
 	}
 	for (p = 0; p < 32; p++) {
-		if (bcm_cmic_miim_read(&unit0, internal, bus, p, 2, &id1) ||
-		    bcm_cmic_miim_read(&unit0, internal, bus, p, 3, &id2))
+		if (bcm_cmic_miim_read(cu, internal, bus, p, 2, &id1) ||
+		    bcm_cmic_miim_read(cu, internal, bus, p, 3, &id2))
 			return CMD_RET_FAILURE;
 		if ((id1 == 0xffff && id2 == 0xffff) || (!id1 && !id2))
 			continue;

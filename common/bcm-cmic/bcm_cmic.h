@@ -148,6 +148,10 @@ int bcm_hr2_reg_cmp(struct bcm_cmic_unit *u, const u32 *img, u32 first, u32 last
 /* Replay stock write list entries [first, last] (entry ordinals incl. delays) of the categories in mask on the live chip; no init guard. */
 int bcm_hr2_u0_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int first, unsigned int last, int *ops, int *errs);
 size_t bcm_hr2_u0_replay_entries(void);
+/* Unit 1 (generated from the stock unit-1 trace): cold init = CMIC ring map/timeout/MIIM rate + the filtered write list. */
+int bcm_hr2_u1_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs);
+int bcm_hr2_u1_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int first, unsigned int last, int *ops, int *errs);
+size_t bcm_hr2_u1_replay_entries(void);
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
 int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);

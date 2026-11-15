@@ -756,12 +756,18 @@ def _u2_tftp(s: console.Session, name: str) -> bool:
             # Warm the path first: link wait + sw1 STP forwarding delay + ARP make the first RRQ get lost, and the
             # restarted RRQ then races the server's first transfer thread ("First block is not block 1").
             s.send_line(f"setenv ipaddr {U2_IP}; setenv serverip {host}; ping {host}")
-            try:
-                s.expect([b"is alive"], U2_PING_S, "uboot-2 ping before tftp")
-            except console.Timeout as e:
-                log(str(e), "WARN")
-            s.send_line("")
-            s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after ping")
+            for attempt in (1, 2):  # first ping after a cold start dies in the sw1 STP forwarding delay ("not alive", seen 2026-11-15)
+                try:
+                    hit = s.expect([b"is alive", b"not alive"], U2_PING_S, "uboot-2 ping before tftp")
+                except console.Timeout as e:
+                    log(str(e), "WARN")
+                    hit = b"timeout"
+                s.send_line("")
+                s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after ping")
+                if hit == b"is alive" or attempt == 2:
+                    break
+                s.write(b"\x03\x03")
+                s.send_line(f"ping {host}")
             s.write(b"\x03\x03")  # the first 1-2 bytes after the prompt are dropped (seen 2026-11-15); ^C is a no-op at the prompt
             s.send_line(f"setenv tftpdstp {port}; tftpboot {LOAD_ADDR} {name}")
             t0 = last = time.monotonic()

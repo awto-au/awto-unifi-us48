@@ -54,6 +54,7 @@ STAGING = OUTDIR / "staging"
 MKUIMAGE = ROOT / "scripts/mkuimage.py"
 LOADADDR = 0x04000000  # = CONFIG_TEXT_BASE in us48_defconfig, checked after the build
 DEFCONFIG = "us48_defconfig"
+ENV_READ = 845048  # `sf read` size in the flashed env bootcmd (docs/autochain.md); a larger image fails bootm
 MAX_IMAGE = 1 << 20  # ~1 MiB at 9.9 KiB/s loady = ~100 s; room below the 0x04000000..0x07030000 free area
 # worktree add: ~9k files, seconds; store git calls are local
 GIT_TIMEOUT = 120
@@ -290,6 +291,8 @@ def pack() -> None:
         die(f"mkuimage: {r.stderr.strip()}")
     log(r.stdout.strip())
     log(f"u-boot-dtb.bin {binp.stat().st_size} B, chain image {OUT.stat().st_size} B -> {OUT.relative_to(ROOT)}")
+    if OUT.stat().st_size > ENV_READ:
+        log(f"WARN: image {OUT.stat().st_size} B > {ENV_READ} B read by the env bootcmd: do NOT flash (bootm CRC fails), RAM boot only (#78)")
     if OUT.stat().st_size > MAX_IMAGE:
         die(f"chain image over the {MAX_IMAGE} B budget (loady time + stock bootm window)")
 

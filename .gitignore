@@ -3,3 +3,4 @@ private/
 __pycache__/
 .venv/
 sources/**/*.pdf
+common/bcm-cmic/bcm_cmic_hr2_init1_data.h

@@ -19,6 +19,10 @@
 /* board pcie.c: unit 1 reachable (link up, BARs in place); any access to 0x08xxxxxx with a dead link hangs (#76) */
 bool us48_pcie_up(void);
 
+#define EP_BAR0			0x08000000	/* board pcie.c: unit 1 BAR0 (PAXB regs at +0x2000 + off) */
+#define EP_PAXB(off)		((void __iomem *)(EP_BAR0 + (off)))
+#define BCM_HR2_INIT_U1		0x1f
+
 /* Low RAM only: the chip's inbound window ends at 0x08000000, relocated U-Boot is far above. */
 #define DMA_REGION	0x03000000
 #define RX_DCB_OFF	0x0000
@@ -73,6 +77,17 @@ static int us48_eth_start(struct udevice *dev)
 		printf("us48_cmic_eth: PCIe link to unit 1 down, xe1 not started\n");
 		return -ENODEV;
 	}
+	if (!p->up && !p->ge) {
+		int ops, errs;
+
+		/* Endpoint PAXB outbound window for DMA to host RAM (docs/driver-internals.md 14.2), BAR0 = EP_BAR0 */
+		writel(0x0, EP_PAXB(0x2104));
+		writel(0x1, EP_PAXB(0x2d60));
+		writel(0x1, EP_PAXB(0x2d64));
+		bcm_hr2_u1_cold_init(&p->unit, env_get_hex("us48_u1_init_mask", BCM_HR2_INIT_U1), &ops, &errs);
+		if (ops)
+			printf("us48-xe1: cold init %d ops, %d failed\n", ops, errs);
+	}
 	bcm_hr2_dma_init(&p->unit);
 	if (!p->up && p->ge) {
 		int ops, errs;
@@ -87,8 +102,10 @@ static int us48_eth_start(struct udevice *dev)
 	}
 	if (!p->up) {
 		ret = p->ge ? bcm_hr2_ge_bringup(&p->unit, p->ge) : bcm_hr2_xe1_bringup(&p->unit, CML_FLAGS);
-		if (ret)
+		if (ret) {
+			printf("us48-%s: bring-up FAILED (%d), port not started\n", p->ge ? "ge1" : "xe1", ret);
 			return ret;
+		}
 		p->up = true;
 	}
 	if (p->ge) {
