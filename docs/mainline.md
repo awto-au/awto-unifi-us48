@@ -50,9 +50,12 @@
 - Base `us48_defconfig` = hardware + userspace needs; CPU-speed mitigations (Spectre) stay off in both.
 - Release string differs per profile (`7.4.0-rc1-norm+` / `7.4.0-rc1-dbg+`); modules are built per build dir and staged under that release.
 - Debug fragment: memory (KFENCE, SLUB_DEBUG_ON, DEBUG_PAGEALLOC, PAGE_POISONING, INIT_ON_ALLOC/FREE, DEBUG_VM, KMEMLEAK, DEBUG_SG/LIST/PLIST/NOTIFIERS, HARDENED_USERCOPY, FORTIFY, STACKPROTECTOR_STRONG), locking (PROVE_LOCKING, PROVE_RCU, DEBUG_OBJECTS*, mutex/rwsem/spinlock/ww checks), DMA_API_DEBUG, DEBUG_SHIRQ/DEVRES, softlockup panic, hung task, WQ_WATCHDOG, UBSAN (bounds, shift, unreachable), KALLSYMS_ALL, DWARF5, ftrace, kprobes, perf, dynamic debug, debugfs, IKCONFIG, PANIC_ON_OOPS. `DEBUG_DRIVER` off (noisy).
-- Lockdep tables sized down (`LOCKDEP_*_BITS`): lowmem is 64 MiB (a2 carveout at `0x04000000` splits bank 0).
+- Lockdep tables sized down (`LOCKDEP_*_BITS`): lowmem was 64 MiB while the a2 block was `no-map`; with the reusable pool (patch 18) it is 128 MiB, of which 64 MiB is movable-only until the early allocations are done. Tables not yet re-grown.
+- KASAN generic outline (`KASAN_STACK`) is in the debug fragment since patch 18, first boot unverified (#84). History: with the `no-map` a2 block lowmem was 64 MiB and inline panicked at memmap allocation (kernel 35 MiB + 8 MiB shadow + 8 MiB CMA + 14 MiB memmap), outline hung before earlycon output. Risk now:
+  - Early allocations (shadow = 1/8 of all lowmem incl. the pool = 16 MiB, memmap) must fit in the 64 MiB of lowmem outside the pool + default CMA: the pool is `memblock_reserve`d until `cma_activate_area()`. Sizes: docs/core-bringup.md (Memory map).
+  - A silent hang before earlycon would be the old outline failure again (not explained by memory): then boot with the normal profile and bisect `KASAN_STACK`, `KASAN_OUTLINE`.
 - Not enabled:
-  - KASAN: inline panics at memmap allocation (64 MiB lowmem exhausted: kernel 35 MiB + 8 MiB shadow + 8 MiB CMA + 14 MiB memmap); outline hangs before earlycon output. Tracked in the issue.
+  - KASAN inline: not tried since the pool change (outline only, below).
   - KCSAN, KMSAN, KASAN_SW_TAGS/HW_TAGS: no ARM32 support.
   - RCU stall detector: `TINY_RCU` (SMP off) has none.
   - `DMA_API_DEBUG_SG`, `DEBUG_TIMEKEEPING`: no longer exist in 7.4.
@@ -74,6 +77,10 @@
 | 10-13 | us-48-500w a2 reserved memory, auxiliary bus selectable, lm75 `#thermal-sensor-cells`, fans + thermal zones | see the patch files |
 | 14 | ARM: dts: broadcom: bcm-hr2: Add the APB clock to the PL330 DMA controller | `apb_pclk` missing, node never probed; `dma` label; fixed PERIPHID (#84) |
 | 15 | ARM: dts: broadcom: us-48-500w: Enable the PL330 DMA controller | `okay`; `pl330` is a module (#84, docs/core-bringup.md) |
+| 16 | ... Release the PL330 IDM reset through a reset controller | `dmac_idm` node for `kernel/us48-idm-reset` |
+| 17 | ... Read the boot flash with 1-1-4 quad | `spi-rx-bus-width = <4>` |
+| 18 | ... Make the a2 memory a reusable CMA pool | `a2@4000000` `shared-dma-pool` + `reusable` (was `no-map`), consumer node `a2-rproc` with `memory-region` and the offsets (#84 item 11) |
+| 19 | ... Add the on-chip SRAM as mmio-sram | `sram@1b000000` 16 KiB, one `dma-desc` pool; `CONFIG_SRAM=y` (#84 item 12) |
 
 Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.

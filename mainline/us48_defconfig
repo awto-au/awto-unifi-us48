@@ -109,6 +109,8 @@ CONFIG_PCIE_IPROC_MSI=y
 # a2 (unit 1 A9): us48_pci aux parent + us48_a2 remoteproc, out of tree (kernel/us48-*); AUXILIARY_BUS prompt = mainline/0011
 CONFIG_AUXILIARY_BUS=y
 CONFIG_REMOTEPROC=y
+# on-chip SRAM pools (mmio-sram, #84 item 12)
+CONFIG_SRAM=y
 CONFIG_SPI=y
 CONFIG_SPI_MEM=y
 CONFIG_SPI_BCM_QSPI=y

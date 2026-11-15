@@ -15,6 +15,10 @@ Related: [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md), [
 - Not listed in stock `/proc/iomem` (System RAM only 0x00000000-0x07ffffff and 0x68000000-0x6fffffff); stock Linux gets ATAGs with one MEM tag, no DT node, nothing reserves it. C
 - No SMP/spin-table/PSCI mailbox (single core), no DMA descriptors (CMIC DMA uses host RAM). C
 - Free after boot: all 16 KiB, once DDR is up (I). Mainline use: an `mmio-sram` DT node, `reg = <0x1b000000 0x4000>`.
+- Linux (#84 item 12, `mainline/0019`, `CONFIG_SRAM=y`): `sram@1b000000` = genalloc pool `dma-desc@0` (whole 16 KiB). Users in the tree today: none. Candidates, measured before kept: CMIC DCB rings, PL330 descriptors.
+  - Other users after the hand-over, checked: uboot-2 (`uboot-port/.../sram_clk.c`, clock switch routine run from SRAM) and stock uboot-1 (DDR-tune block, above) run only before Linux; the boot-ROM LUT stub experiments (`docs/uboot-self-boot.md`) are by hand. Nothing keeps state in it across the hand-over.
+  - Not checked: CMIC DMA addressing of SRAM (a descriptor in SRAM needs the DMA engine to reach AXI 0x1b000000).
+- Unit 1 (a2 DTS, `mainline/a2/us48-a2.dts`): same node via hwdb `a2_sram`; non-pool partitions keep the bring-up stub layout (`a2-stub@0` 0x400: mailbox +0x100, payload +0x200; `a2-stub-stack@3c00` 0x400: stack top +0x3ff0), pool `dma-desc@400` 0x3800. The a2 boot stub (`a2fw/boot.S`) and the Linux payload path do not use SRAM; the self-test ELFs (`iftest`, `stress`, `rawtest`) use all of it but only run without Linux on a2. a1 reaches unit 1 SRAM through the PAXB window, not as an `mmio-sram`.
 
 ### L2 cache locked as RAM at 0x50000000 (128 KiB)
 - This is the PL310 (L2C @0x19022000) locked by line, not a memory block. C

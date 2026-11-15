@@ -110,6 +110,8 @@ def macros(db, cpu_mhz: int, bootargs: str, l2: bool = False) -> dict:
     m = {}
     m.update(pair("RAM", ram.base, ram.size - shared.size))  # Linux RAM = carveout minus the shared MiB
     m.update(pair("SHARED", shared.base, shared.size))
+    sram = db.region("a2_sram")
+    m.update(pair("SRAM", sram.base, sram.size))
     for name, blk in (("GIC_DIST", "gic_dist"), ("GIC_CPU", "gic_cpu"), ("GTIMER", "gtimer"), ("TWD", "twd")):
         m.update(pair(name, db.addr(blk)))
     if l2:

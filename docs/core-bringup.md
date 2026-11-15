@@ -20,6 +20,30 @@
 | 10 | Buses | `I2C_BCM_IPROC`, `PINCTRL_IPROC_GPIO` | built in | `core_test buses`: adapter + gpiochip listing only | 11 I2C adapters, 3 gpiochips | no nodes in the a2 DTS (0 listed) |
 | - | Self-tests | `TEST_BITMAP`, `LOCK_TORTURE_TEST`, `RCU_TORTURE_TEST`, `TEST_UDELAY` | `test_bitmap`, `locktorture`, `rcutorture`, `torture`, `udelay_test` | `core_test selftest` (debug image) | `test_bitmap`, `locktorture`, `rcutorture` ok (~2 s each) | not run: the one-line command is ~300 chars, a1 -> ttyA20 DCC input stalled the console (a2 reset to recover) |
 
+## Memory map of a1 (#84 item 11, `mainline/0018`)
+
+- DDR in the DT: bank 0 `0x00000000` 128 MiB, bank 1 `0x68000000` 128 MiB = 256 MiB. Holes and reservations in the Linux image:
+
+| Region | Size | Kind | Note |
+|---|---|---|---|
+| `0x04000000..0x07ffffff` `a2@4000000` | 64 MiB | CMA pool, `reusable`, fixed address | movable memory while a2 is off; `us48_a2` takes it whole at start. Was `no-map` (lost to Linux, split lowmem) |
+| default CMA `cma=8M@32M-64M` | 8 MiB | CMA (cmdline) | coherent DMA of CMIC/PL330; stays |
+| KFENCE pool (debug) | 63 objects x 2 pages | reserved at boot | debug profile only |
+| kernel image, memmap, initramfs | per build | reserved | sizes below |
+| uboot-2 | none | | `TEXT_BASE 0x04000000` (inside the pool, dead after the hand-over), relocates to `ram_top` 0x70000000 = bank 1, inside the memory node: Linux owns it again. `docs/uboot-second-stage.md` |
+| uboot-1 (stock) | none | | own copy at `0x6ffa0000` and the ubnt app at `0x07030000` are dead after the hand-over; no DT reservation for either; ATAGs at `0x8000` ignored (`ARM_ATAG_DTB_COMPAT` off) |
+| L2 locked-as-RAM `0x50000000`, SRAM `0x1b000000`, flash `0x1c000000` | | not DDR | SRAM is an `mmio-sram` node (docs/sram.md) |
+
+- Not a hole, by design: uboot-2's CMIC DMA region `0x03000000` is ordinary RAM to Linux.
+- Lowmem is now one 128 MiB block (`0..0x08000000`), highmem is bank 1. The pool is `memblock_reserve`d until `cma_activate_area()`, so early allocations (KASAN shadow, memmap) only have the other 64 MiB minus the default CMA.
+- Expected `MemTotal` (not measured; first board run fills it in):
+  - before (`no-map`, first board run): 178260 kB.
+  - a2 off: about +65536 kB (pool) - 512 kB (memmap for it) = ~243300 kB for the same image; the KASAN debug image takes more (shadow 16 MiB, kernel 6.3 MiB larger): estimate ~226000 kB.
+  - a2 on: `MemTotal` unchanged (`cma_alloc` does not change totalram); `MemFree` and `CmaFree` drop by 65536 kB.
+- a2 side (Linux on a2): its DTB memory node is the 63 MiB carveout minus `a2_shared`; awto-uboot on a2 relocates to `ram_top` 0x0bf00000 inside that node, so it is returned to a2 Linux like on a1 (MemTotal 47732 kB measured with the 1 MiB shared reserve; expected ~48 MB minus kernel/memmap, nothing else held).
+- Offline builds (no warnings, DTB W=1 clean, a2 DTB clean): normal zImage 3.75 MB (13 MiB slot ok), debug zImage 8.16 MB, DTB 11 KB, a2 DTB 2.6 KB (2.8 KB with L2).
+- KASAN (debug fragment, outline): vmlinux text+data+bss 23.0 MiB (was 16.7 MiB without), zImage 7.8 MiB. Early lowmem need ~23 + 16 (shadow) + ~4 (memmap, page_ext) = ~43 MiB against ~56 MiB (64 - 8 default CMA): fits on paper. Boot result: not run.
+
 ## Drivers and DT
 
 - Normal profile: `PL330_DMA=m` only (a module for the swap-without-reboot rule). Debug adds `DMATEST`, `TEST_*`, `*_TORTURE_TEST` as `=m` (`mainline/us48_debug.config`).

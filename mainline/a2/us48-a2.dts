@@ -13,7 +13,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 
-#if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || \
+#if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || !defined(A2_SRAM_BASE) || !defined(A2_SRAM_SIZE) || \
 	!defined(A2_GIC_DIST_BASE_H) || !defined(A2_GIC_DIST_BASE) || !defined(A2_GIC_CPU_BASE) || !defined(A2_GTIMER_BASE) || !defined(A2_TWD_BASE) || !defined(A2_PERIPH_HZ) || !defined(A2_BOOTARGS)
 #error "A2_* macros (value and _H unit-address digits) come from hwdb via scripts/build_a2_linux.py"
 #endif
@@ -64,6 +64,32 @@
 		a2-shared@A2_SHARED_BASE_H {
 			reg = <A2_SHARED_BASE A2_SHARED_SIZE>;
 			no-map;
+		};
+	};
+
+	/*
+	 * Unit 1 on-chip SRAM (hwdb a2_sram, size conf I like unit 0). The two stub partitions are the bring-up
+	 * layout of tools/a2_stub.S (docs/a2.md: mailbox +0x100, payload +0x200, stack top +0x3ff0); not pool,
+	 * so nothing allocates over them. The rest is a pool for DMA descriptors.
+	 */
+	sram@A2_SRAM_BASE_H {
+		compatible = "mmio-sram";
+		reg = <A2_SRAM_BASE A2_SRAM_SIZE>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 A2_SRAM_BASE A2_SRAM_SIZE>;
+
+		a2-stub@0 {
+			reg = <0x0 0x400>;
+		};
+
+		dma-desc@400 {
+			reg = <0x400 0x3800>;
+			pool;
+		};
+
+		a2-stub-stack@3c00 {
+			reg = <0x3c00 0x400>;
 		};
 	};
 

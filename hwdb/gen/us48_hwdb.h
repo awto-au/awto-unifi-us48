@@ -48,7 +48,7 @@
 /* region a2_host_win (axi1): a2 outbound to host RAM via PAXB OARR_0 = 0x08000001, OMAP_0 = 0 (AXI 0x08000000.. = host phys 0x0..) [C] */
 #define HW_A2_HOST_WIN_BASE	0x08000000U
 #define HW_A2_HOST_WIN_SIZE	0x8000000U
-/* region a2_carveout (axi1): a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, no-map) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB [I] */
+/* region a2_carveout (axi1): a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, reusable shared-dma-pool = CMA, fixed address; mainline/0018) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB [I] */
 #define HW_A2_CARVEOUT_BASE	0x08000000U
 #define HW_A2_CARVEOUT_SIZE	0x4000000U
 /* region a2_stub (axi1): First MiB of the a2 RAM: ELF firmware code (self-test or boot stub), stub boot args at +0x100; kernel RAM once Linux runs. Resource table and trace are in a2_shared [I] */

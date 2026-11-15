@@ -1,0 +1,41 @@
+From 21b213d98bece3f9271a88c5a9bec087b93c3bbe Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Sun, 15 Nov 2026 23:39:43 +1100
+Subject: [PATCH 19/19] ARM: dts: broadcom: us-48-500w: Add the on-chip SRAM as
+ mmio-sram
+
+16 KiB at 0x1b000000 (writes stick, 0x1b004000 bus-faults). Nothing
+uses it after the boot loader: expose it as a genalloc pool for DMA
+descriptors.
+
+Signed-off-by: TODO
+---
+ .../broadcom/bcm53344-ubnt-unifi-us-48-500w.dts   | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 209285844bf9..737f0794237f 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -56,6 +56,21 @@ a2-rproc {
+ 		ubnt,initrd-offset = <0x02000000>;
+ 	};
+ 
++	/* 16 KiB on-chip SRAM of the BCM53344: free after boot (stock U-Boot only uses it during the DDR tune) */
++	sram@1b000000 {
++		compatible = "mmio-sram";
++		reg = <0x1b000000 0x4000>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges = <0 0x1b000000 0x4000>;
++
++		/* descriptors next to the DMA engines: CMIC DCB rings, PL330 */
++		dma-desc@0 {
++			reg = <0x0 0x4000>;
++			pool;
++		};
++	};
++
+ 	reboot {
+ 		compatible = "syscon-reboot";
+ 		regmap = <&dmu>;

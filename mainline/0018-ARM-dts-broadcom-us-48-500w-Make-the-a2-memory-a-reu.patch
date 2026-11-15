@@ -1,0 +1,59 @@
+From 6ea9513372e04f133b745c2496a8974610370368 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Sun, 15 Nov 2026 23:39:43 +1100
+Subject: [PATCH 18/19] ARM: dts: broadcom: us-48-500w: Make the a2 memory a
+ reusable CMA pool
+
+The 64 MiB block for the switch chip's Cortex-A9 was no-map: held
+even with the a2 off, and it split lowmem. Make it a reusable
+shared-dma-pool at the same fixed address (the PAXB outbound window has
+a 64 MiB granule): Linux uses it as movable memory, the remoteproc
+driver allocates it whole when the a2 starts.
+
+The remoteproc driver finds the pool through a consumer node
+(memory-region) that also carries the offsets inside the block.
+
+Signed-off-by: TODO
+---
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 24 +++++++++++++------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index c42b7c58edd2..209285844bf9 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -35,17 +35,27 @@ reserved-memory {
+ 		#size-cells = <1>;
+ 		ranges;
+ 
+-		/* RAM of the switch chip's Cortex-A9 (us48_a2 remoteproc), seen by it at 0x08000000 */
+-		a2@4000000 {
+-			compatible = "ubnt,us48-a2-carveout";
++		/*
++		 * RAM of the switch chip's Cortex-A9 (us48_a2 remoteproc), seen by it at 0x08000000.
++		 * Fixed address: the PAXB outbound window has a 64 MiB granule. Movable memory for
++		 * Linux while the a2 is off; the remoteproc driver takes it whole with dma_alloc_wc().
++		 */
++		a2_mem: a2@4000000 {
++			compatible = "shared-dma-pool";
+ 			reg = <0x04000000 0x04000000>;
+-			ubnt,dtb-offset = <0x01f00000>;
+-			ubnt,kernel-offset = <0x01000000>;
+-			ubnt,initrd-offset = <0x02000000>;
+-			no-map;
++			reusable;
+ 		};
+ 	};
+ 
++	/* Consumer of a2_mem and carrier of the layout inside it */
++	a2-rproc {
++		compatible = "ubnt,us48-a2-rproc";
++		memory-region = <&a2_mem>;
++		ubnt,dtb-offset = <0x01f00000>;
++		ubnt,kernel-offset = <0x01000000>;
++		ubnt,initrd-offset = <0x02000000>;
++	};
++
+ 	reboot {
+ 		compatible = "syscon-reboot";
+ 		regmap = <&dmu>;

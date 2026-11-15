@@ -166,8 +166,8 @@ base = 0x08000000
 size = 0x4000000
 kind = "ram"
 unit = 1
-desc = "a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, no-map) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB"
-src = "mainline/0010 reserved-memory node; docs/a2-design.md (single source for the a2 view); regdb PAXB_0_OARR_0/OMAP_0 (ADDR 31:26, 64 MiB granule)"
+desc = "a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, reusable shared-dma-pool = CMA, fixed address; mainline/0018) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB"
+src = "mainline/0010 + 0018 reserved-memory node; docs/a2-design.md (single source for the a2 view); regdb PAXB_0_OARR_0/OMAP_0 (ADDR 31:26, 64 MiB granule)"
 conf = "I"
 note = "64 MiB = one OARR granule; upper bank (host 0x68000000) needs unit 0 RC inbound IARR_1/IMAP1 decoded, docs/a2-design.md"
 
