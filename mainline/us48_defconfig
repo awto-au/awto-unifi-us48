@@ -10,7 +10,9 @@ CONFIG_ARM_THUMB=y
 CONFIG_HIGHMEM=y
 CONFIG_CMA=y
 CONFIG_DMA_CMA=y
-CONFIG_HZ_100=y
+# Tick: oneshot clockevents (arm_global_timer, per CPU, no broadcast needed) for hrtimers; HZ is per profile. #84 item 6
+CONFIG_NO_HZ_IDLE=y
+CONFIG_HIGH_RES_TIMERS=y
 CONFIG_KUSER_HELPERS=y
 # No Spectre mitigations: no untrusted code on this box; BPIALL on every kernel entry costs CPU
 # CONFIG_HARDEN_BRANCH_PREDICTOR is not set

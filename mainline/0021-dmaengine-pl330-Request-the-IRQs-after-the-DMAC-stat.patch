@@ -1,0 +1,65 @@
+From 6215dbdf4a847cedb48c7f445bb9a28c829e1a30 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Sun, 15 Nov 2026 23:57:43 +1100
+Subject: [PATCH 21/21] dmaengine: pl330: Request the IRQs after the DMAC state
+ is set up
+
+pl330_probe() requests the interrupts before pl330_add() has run
+spin_lock_init() on pl330->lock and tasklet_setup() on pl330->tasks.
+An interrupt that is already pending when the line is requested then
+runs pl330_irq_handler() on an uninitialised lock (lockdep: "non-static
+key"), and pl330_update() schedules the tasklet that has no callback,
+which oopses in interrupt context.
+
+This happens when the line is shared with another source or the DMAC
+asserts an interrupt out of reset.
+
+Request the interrupts after pl330_add() and unwind through probe_err2
+if a request fails, so the DMAC is deleted and its resets are asserted
+again.
+
+Signed-off-by: TODO
+---
+ drivers/dma/pl330.c | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
+index c2d0b473b8f4..2ced4fbc2aff 100644
+--- a/drivers/dma/pl330.c
++++ b/drivers/dma/pl330.c
+@@ -3068,6 +3068,14 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
+ 		}
+ 	}
+ 
++	pcfg = &pl330->pcfg;
++
++	pcfg->periph_id = adev->periphid;
++	ret = pl330_add(pl330);
++	if (ret)
++		return ret;
++
++	/* The handler needs the state set up by pl330_add(), request the IRQs after it */
+ 	for (i = 0; i < AMBA_NR_IRQS; i++) {
+ 		irq = adev->irq[i];
+ 		if (irq) {
+@@ -3075,19 +3083,12 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
+ 					       pl330_irq_handler, 0,
+ 					       dev_name(&adev->dev), pl330);
+ 			if (ret)
+-				return ret;
++				goto probe_err2;
+ 		} else {
+ 			break;
+ 		}
+ 	}
+ 
+-	pcfg = &pl330->pcfg;
+-
+-	pcfg->periph_id = adev->periphid;
+-	ret = pl330_add(pl330);
+-	if (ret)
+-		return ret;
+-
+ 	INIT_LIST_HEAD(&pl330->desc_pool);
+ 	spin_lock_init(&pl330->pool_lock);
+ 

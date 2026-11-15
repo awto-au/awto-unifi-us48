@@ -1,0 +1,46 @@
+From 26d9bed8002075b2e20d53c8a095aaa035fa2d1f Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Sun, 15 Nov 2026 23:57:32 +1100
+Subject: [PATCH 20/21] ARM: dts: broadcom: bcm-hr2: Fix the PL330 interrupts
+
+The PL330 interrupts were copied from bcm-nsp.dtsi. HR2 has the HX4/KT2
+interrupt layout: the UART (SPI 91) and the NAND controller (SPI 74) sit
+at the HX4/KT2 numbers, and between them the DMAC event lines start at
+SPI 52 with the abort line at SPI 68, not at SPI 47 and 63.
+
+SPI 47 to 51 are IDM and DDR controller interrupts there, so the old
+numbers claimed lines of other blocks, and a pending IDM interrupt
+reached the PL330 handler.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/bcm-hr2.dtsi | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+index 89037ffb8318..fc4eff2ba527 100644
+--- a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
++++ b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+@@ -164,15 +164,15 @@ dma: dma@20000 {
+ 			reg = <0x20000 0x1000>;
+ 			/* skips the PrimeCell ID read at boot: the DMAC may still be in IDM reset */
+ 			arm,primecell-periphid = <0x00041330>;
+-			interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
++			interrupts = <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
++				     <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 68 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&apb_clk>;
+ 			clock-names = "apb_pclk";
+ 			#dma-cells = <1>;
