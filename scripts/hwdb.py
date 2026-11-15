@@ -172,7 +172,8 @@ class Db:
         self.sdk_sbus_mems = {}
         self.ports = []
         self.hw = {}  # "sdk_iproc.NAME" / "sdk_cmic.NAME" -> {seen, reset_ok?, ro_ok?, date?, unit?, why?} from hwdb/validation/*.toml
-        self.blocked = []  # hwdb/validation/*-blocked.toml entries
+        self.hw0 = {}  # same for unit 0 (hwdb/validation/u0.toml); self.hw = unit 1 (u1.toml)
+        self.blocked = []  # hwdb/validation/*-blocked.toml entries; "unit" key added (from the file name uN-)
         self.files = []
         self._by_addr = None
 
@@ -257,10 +258,11 @@ class Db:
         for p in sorted((pathlib.Path(root) / "hwdb/validation").glob("*.toml")):
             with open(p, "rb") as f:
                 d = tomllib.load(f)
-            self.blocked += d.get("blocked", [])
+            unit = 0 if p.name.startswith("u0") else 1
+            self.blocked += [dict(b, unit=unit) for b in d.get("blocked", [])]
             for kind, regs in d.get("hw", {}).items():
                 for n, v in regs.items():
-                    self.hw["%s.%s" % (kind, n)] = v
+                    (self.hw0 if unit == 0 else self.hw)["%s.%s" % (kind, n)] = v
 
     def hw_of(self, name):
         """Validation record of 'block.REG' (hand reg with sdk= maps to its regdb entry) or 'sdk_iproc.REG'; None = never read."""

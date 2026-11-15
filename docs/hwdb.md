@@ -50,6 +50,15 @@
   - Blocked entries carry `state` = `in reset` (IDM `RESET_CONTROL` = 1) or `hang`.
 - Skipped on purpose: write-only (regdb flag 0x20), FIFO pops, semaphores, interrupt-acknowledge, clear-on-read UART status (`SKIP_NAME` in `scripts/hwdb_probe.py`).
 
+## Validation, unit 0 (#86, read-only from a1)
+- Files: `hwdb/validation/u0.toml` (`unit = 0`, same fields), `u0-values.tsv` (columns `uboot`, `linux`), `u0-blocked.toml` (`state` = `mapped` | `in reset` | `hang`, optional `phase`), `u0-vs-u1.tsv` (registers that read differently on the two units, `cause` column; `scripts/hwdb_u0_vs_u1.py`).
+- `reset_ok` is against the awto-uboot state (uboot-1 + awto-uboot ran before: a1 cannot read a cold chip); the linux state is the second value column.
+- uboot state: `python3 scripts/hwdb_probe.py --unit 0 build` then `python3 scripts/hwdb_probe_u0.py run uboot [--suspect NAME]` at the `awto-uboot>` prompt (`dev.py uboot`, or `hwdb_probe_u0.py prompt` = `reset`).
+  - Payload `a1fw/regprobe_u0.c` (+ `_asm.S`, `.ld`): TFTP to 0x01000000, `dcache flush` + `icache flush`, `go`. Own vectors (VBAR), data abort flagged and skipped, UART1 stream of 8-hex tokens; a stalled read = output stops (hang bound 1 s).
+  - Not `dcache off/on`: `on` rebuilds the page table and drops the uncached DMA regions of the eth driver (TFTP then fails).
+- linux state: `python3 scripts/hwdb_probe_u0.py run linux [--suspect NAME]`: `a1fw/regprobe_linux.c` (static musl, `/dev/mem` O_SYNC mmap, SIGBUS = external abort) over ssh.
+- Suspect ranges (`SUSPECT`, plus `dmac`) run one per pass; blocked entries with `phase = "uboot"` apply to that state only; `--unblock NAME --only LO HI` tries one blocked range.
+
 ## Lint
 - `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry. Report only.
 - Context collisions exist (0x1c000000 is also the L2X S-channel table id).

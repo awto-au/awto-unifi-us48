@@ -1,0 +1,36 @@
+# Unit 0 register ranges not read (a1 view, #86). lo/hi inclusive (AXI address), same a1 reads as scripts/hwdb_probe.py --unit 0.
+# state = "mapped" (hung or in reset on unit 1, taken over without a unit 0 read: u1-blocked.toml, cause in #91),
+#         "in reset" (unit 0 IDM RESET_CONTROL = 1 read on the board), "hang" (read stalled a1: power cycle).
+
+[[blocked]]
+name = "cmic_timesync"
+state = "mapped"
+lo = 0x48010600
+hi = 0x4801091f
+why = "unit 1: CMIC TIMESYNC hang (#91); unit 0 init has the same dropped TS/BS PLL writes"
+src = "hwdb/validation/u1-blocked.toml"
+
+[[blocked]]
+name = "cmic_mmu_coslc"
+state = "mapped"
+lo = 0x48023000
+hi = 0x48023007
+why = "unit 1: COSLC count addr/data hang cold and warm, wedged the CMIC AXI slave (#91); on unit 0 that wedges a1's own CMIC"
+src = "hwdb/validation/u1-blocked.toml"
+
+[[blocked]]
+name = "dmac"
+state = "in reset"
+phase = "uboot"
+lo = 0x18020000
+hi = 0x18020fff
+why = "uboot state: DMAC_M0_IDM_RESET_CONTROL (0x18114800) = 1 read by a1 (same as unit 1); Linux releases it (us48_idm_reset), read in the linux pass"
+src = "tmp/logs/hwdb_probe_u0.log 2026-11-16 uboot main pass"
+
+[[blocked]]
+name = "amac"
+state = "in reset"
+lo = 0x18022000
+hi = 0x18025fff
+why = "AMAC_IDM0_IDM_RESET_CONTROL (0x18110800) = 1 read by a1 in the uboot and the linux state (same as unit 1): GMAC0 is not released on this board"
+src = "tmp/logs/hwdb_probe_u0.log 2026-11-16 uboot main pass, linux main pass"
