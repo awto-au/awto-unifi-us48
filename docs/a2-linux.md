@@ -208,3 +208,10 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Highest clean SRAM-only clock 1700 MHz; first fail 1750 (sweep stopped there; 1800..1950 not tried).
 - Die temperature does not move with clock (PVTMON granularity ~0.5 C); die max 88 C, LM75 max 60 C.
 - Capacity: a2 SRAM 16 KiB; L2-as-RAM lockdown (128 KiB) not tested. Only small bare-metal code fits; Linux cannot run from SRAM.
+
+### debugfs `capture`: first vector fetch (#79, driver only, no a2 code)
+- `remoteproc0/capture`: write `arm [vc] [ms]` / `disarm`; read = state + dump. Needs `dcc_poll=0` and a2 running; default limit 30000 ms (expiry logs limit + elapsed).
+- `arm`: back-to-back PCSR reads, hit when PCSR is in 0xffff0000..0xffff002f (vector page, PCSR = address + 8). PCIe latency means a2 may be past the vector stub at halt.
+- `arm vc`: DBGVCR (offset 0x1c) catches undef / prefetch abort / data abort: a2 halts at the vector fetch itself; also catches legitimate Linux aborts, so use with bare-metal ELFs.
+- Dump: r0-r14, CPSR, DFSR/DFAR/IFSR/IFAR/SCTLR/TTBR0, banked sp/lr/spsr of und/abt/svc/sys; 8 words at LR-8 as a2 sees them (ldr through its caches) vs the carveout in a1's WC mapping, VA -> PA by ATS1CPR/PAR.
+- Ends with ITRen cleared, DBGVCR cleared and a2 reset (not resumed).

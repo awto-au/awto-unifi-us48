@@ -8,6 +8,7 @@
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/kthread.h>
 #include <linux/ktime.h>
 #include <linux/math64.h>
 #include <linux/module.h>
@@ -18,6 +19,7 @@
 #include <linux/seq_file.h>
 #include <linux/sizes.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
 #include "remoteproc_internal.h"
 #include "us48_hwdb.h"
 #include "us48_pci.h"
@@ -102,8 +104,18 @@ module_param(kernel_off, uint, 0644);
 module_param(dtb_off, uint, 0644);
 module_param(initrd_off, uint, 0644);
 
+enum a2_cap_state { CAP_IDLE, CAP_ARMED, CAP_DONE, CAP_FAILED };
+
 struct us48_a2 {
 	struct device *dev;
+	struct rproc *rproc;
+	struct mutex cap_lock;		/* cap_task and arming; cap_txt is valid only in CAP_DONE/CAP_FAILED */
+	struct task_struct *cap_task;
+	enum a2_cap_state cap_state;
+	bool cap_vc;
+	uint cap_ms;
+	char cap_txt[3072];
+	size_t cap_len;
 	struct us48_pci *p;
 	struct regmap *map;
 	struct us48_a2_dcc *dcc;	/* console reader: runs from before the release until stop */
@@ -511,11 +523,14 @@ static int us48_a2_start(struct rproc *rproc)
 	return ret;
 }
 
+static void a2_cap_disarm(struct us48_a2 *a);
+
 /* Halt is best effort (a stalled a2 never halts); the reset is what stops it. */
 static int us48_a2_stop(struct rproc *rproc)
 {
 	struct us48_a2 *a = rproc->priv;
 
+	a2_cap_disarm(a);
 	us48_a2_dcc_stop(a->dcc);	/* before the halt: DSCR is shared with the debug sequences */
 	if (a2_halt(a))
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
@@ -545,6 +560,292 @@ static int a2_pcsr_show(struct seq_file *m, void *unused)
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(a2_pcsr);
+
+/*
+ * debugfs capture: halt a2 at the first fetch from the vector page and dump its state over CoreSight,
+ * no code on a2 (#79). Needs dcc_poll=0. Ends with a2 reset: the corrupted a2 is not resumed.
+ * Regs: DDI0388I Table 10-1 (p10-5) offsets, DBGDSCR p8-9.
+ */
+#define A2_VEC_PCSR_LO	0xffff0000u	/* PCSR = address + 8 in ARM state: vectors 0x00-0x1c sample as 0x08-0x24 */
+#define A2_VEC_PCSR_LEN	0x30u
+#define A2_DBGVCR	0x01c		/* DDI0388I Table 10-1: DBGVCR; bits 1 undef, 3 prefetch abort, 4 data abort (DDI0406C C11) */
+#define A2_VCR_CATCH	(BIT(1) | BIT(3) | BIT(4))
+#define A2_CAP_DEF_MS	30000	/* backstop only: one rawtest run lasts seconds; expiry logs the limit and elapsed time */
+#define ARM_MCR_DTRTX	0xee000e15	/* mcr p14, 0, Rt, c0, c5, 0 (DBGDTRTXint, DDI0388I Table 10-1); Rt in bits 15:12 */
+#define ARM_MRS_R0_CPSR	0xe10f0000
+#define ARM_MRS_R0_SPSR	0xe14f0000
+#define ARM_MSR_CPSR_C(imm)	(0xe321f000 | (imm))	/* msr cpsr_c, #imm (imm8, I and F set) */
+#define ARM_MSR_CPSR_C_R0	0xe121f000
+#define ARM_LDR_R0_R1	0xe5910000
+#define ARM_MCR_ATS1CPR_R1	0xee071f18	/* mcr p15, 0, r1, c7, c8, 0 */
+#define ARM_MRC_PAR_R0	0xee170f14	/* mrc p15, 0, r0, c7, c4, 0 */
+
+static void cap_add(struct us48_a2 *a, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	a->cap_len += vscnprintf(a->cap_txt + a->cap_len, sizeof(a->cap_txt) - a->cap_len, fmt, ap);
+	va_end(ap);
+}
+
+/* Halted a2: run an ITR instruction that moves a value to DTRTX, return it. */
+static int a2_rd(struct us48_a2 *a, u32 ins, u32 *v, const char *what)
+{
+	int ret = a2_itr(a, ins, what);
+
+	ret = ret ?: a2_wait(a, HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK, HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK, what);
+	return ret ?: regmap_read(a->map, A2_DBG(DTRTX), v);
+}
+
+/* Halted a2: run an ITR instruction that leaves its result in r0, return it. */
+static int a2_rd0(struct us48_a2 *a, u32 ins, u32 *v, const char *what)
+{
+	return a2_itr(a, ins, what) ?: a2_rd(a, ARM_MCR_DTRTX, v, what);
+}
+
+/* a2 view (ldr through its caches) vs memory (a1's WC mapping) of 8 words at base; va -> PA by ATS1CPR/PAR */
+static int a2_cap_mem(struct us48_a2 *a, u32 base)
+{
+	u32 i, va, par, w, pa, mem;
+	int ret;
+
+	cap_add(a, "mem at %#x (va, par, pa, a2 view, memory):\n", base);
+	for (i = 0; i < 8; i++) {
+		va = base + 4 * i;
+		ret = a2_set_reg(a, 1, va) ?: a2_itr(a, ARM_MCR_ATS1CPR_R1, "ats1cpr");
+		ret = ret ?: a2_rd0(a, ARM_MRC_PAR_R0, &par, "par");
+		if (!ret)
+			ret = a2_set_reg(a, 1, va) ?: a2_rd0(a, ARM_LDR_R0_R1, &w, "ldr");
+		if (ret)
+			return ret;
+		pa = (par & ~0xfffu) | (va & 0xfff);
+		if ((par & 1) || pa < a->da || pa - a->da >= a->size) {
+			cap_add(a, "  %08x %08x -      %08x -\n", va, par, w);
+			continue;
+		}
+		mem = READ_ONCE(*(u32 *)(a->va + (pa - a->da)));
+		cap_add(a, "  %08x %08x %08x %08x %08x%s\n", va, par, pa, w, mem, w == mem ? "" : "  DIFF");
+	}
+	return 0;
+}
+
+static int a2_cap_regs(struct us48_a2 *a, u32 pcsr)
+{
+	static const struct { const char *n; u32 ins; } cp[] = {
+		{ "DFSR", 0xee150f10 }, { "DFAR", 0xee160f10 }, { "IFSR", 0xee150f30 }, { "IFAR", 0xee160f50 },
+		{ "SCTLR", 0xee110f10 }, { "TTBR0", 0xee120f10 },
+	};
+	static const struct { const char *n; u32 mode; } md[] = { { "und", 0xdb }, { "abt", 0xd7 }, { "svc", 0xd3 }, { "sys", 0xdf } };
+	u32 v, cpsr, lr_und = 0, lr_abt = 0;
+	int i, ret;
+
+	ret = regmap_set_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_ITREN_MASK | HW_CS_DEBUG0_DSCR_HDBGEN_MASK);
+	ret = ret ?: regmap_read(a->map, A2_DBG(DSCR), &v);
+	if (ret)
+		return ret;
+	cap_add(a, "trigger pcsr %#x, dscr %#x (moe %u)\n", pcsr, v, (v >> 2) & 15);
+	for (i = 0; i < 13; i++) {
+		ret = a2_rd(a, ARM_MCR_DTRTX | i << 12, &v, "mcr r");
+		if (ret)
+			return ret;
+		cap_add(a, "r%-2d %08x%s", i, v, i % 4 == 3 ? "\n" : "  ");
+	}
+	ret = a2_rd(a, ARM_MCR_DTRTX | 13 << 12, &v, "mcr sp");
+	cap_add(a, "sp  %08x  ", v);
+	ret = ret ?: a2_rd(a, ARM_MCR_DTRTX | 14 << 12, &v, "mcr lr");
+	cap_add(a, "lr  %08x\n", v);
+	ret = ret ?: a2_rd0(a, ARM_MRS_R0_CPSR, &cpsr, "mrs cpsr");
+	if (ret)
+		return ret;
+	cap_add(a, "cpsr %08x\n", cpsr);
+	for (i = 0; i < ARRAY_SIZE(cp); i++) {
+		ret = a2_rd0(a, cp[i].ins, &v, cp[i].n);
+		if (ret)
+			return ret;
+		cap_add(a, "%s %08x\n", cp[i].n, v);
+	}
+	/* banked sp, lr, spsr: switch mode through CPSR, restore after (DDI0388I: ITR may change mode) */
+	for (i = 0; i < ARRAY_SIZE(md); i++) {
+		u32 sp, lr, spsr = 0;
+
+		ret = a2_itr(a, ARM_MSR_CPSR_C(md[i].mode), "msr mode");
+		ret = ret ?: a2_rd(a, ARM_MCR_DTRTX | 13 << 12, &sp, "mcr sp");
+		ret = ret ?: a2_rd(a, ARM_MCR_DTRTX | 14 << 12, &lr, "mcr lr");
+		if (!ret && i < 3)
+			ret = a2_rd0(a, ARM_MRS_R0_SPSR, &spsr, "mrs spsr");
+		if (ret)
+			return ret;
+		cap_add(a, "%s: sp %08x lr %08x spsr %08x\n", md[i].n, sp, lr, spsr);
+		lr_und = i == 0 ? lr : lr_und;
+		lr_abt = i == 1 ? lr : lr_abt;
+	}
+	ret = a2_set_reg(a, 0, cpsr) ?: a2_itr(a, ARM_MSR_CPSR_C_R0, "msr restore");
+	if (ret)
+		return ret;
+	return a2_cap_mem(a, ((cpsr & 0x1f) == 0x17 ? lr_abt : lr_und) - 8);
+}
+
+static void a2_cap_done(struct us48_a2 *a, u32 pcsr)
+{
+	int ret = a2_halt(a);
+
+	a->cap_len = 0;
+	ret = ret ?: a2_cap_regs(a, pcsr);
+	if (ret)
+		cap_add(a, "capture failed: %d\n", ret);
+	regmap_clear_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_ITREN_MASK);
+	regmap_write(a->map, (HW_CS_DEBUG0_BASE + A2_DBGVCR), 0);
+	a2_reset(a);	/* never leave a2 halted */
+	smp_store_release(&a->cap_state, ret ? CAP_FAILED : CAP_DONE);
+}
+
+/* Fastest poll = back-to-back PCSR reads (one PCIe read each); vc mode polls DSCR.halted after DBGVCR halts at the fetch. */
+static int a2_cap_thread(void *arg)
+{
+	struct us48_a2 *a = arg;
+	ktime_t t0 = ktime_get();
+	u32 v = 0;
+	int ret = 0;
+
+	if (a->cap_vc) {
+		ret = regmap_write(a->map, A2_DBG(LAR), LAR_KEY);
+		ret = ret ?: regmap_set_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_HDBGEN_MASK);
+		ret = ret ?: regmap_write(a->map, (HW_CS_DEBUG0_BASE + A2_DBGVCR), A2_VCR_CATCH);
+	}
+	while (!ret && !kthread_should_stop()) {
+		ret = regmap_read(a->map, a->cap_vc ? A2_DBG(DSCR) : A2_DBG(ITR_PCSR), &v);
+		if (ret)
+			break;
+		if (a->cap_vc ? !!(v & HW_CS_DEBUG0_DSCR_HALTED_MASK) : (v - A2_VEC_PCSR_LO < A2_VEC_PCSR_LEN)) {
+			a2_cap_done(a, v);
+			return 0;
+		}
+		if (ktime_to_ms(ktime_sub(ktime_get(), t0)) >= a->cap_ms) {
+			dev_err(a->dev, "capture: no vector fetch in %u ms limit (elapsed %lld ms, last %#x)\n", a->cap_ms,
+				ktime_to_ms(ktime_sub(ktime_get(), t0)), v);
+			ret = -ETIMEDOUT;
+		}
+		cond_resched();
+	}
+	if (a->cap_vc)
+		regmap_write(a->map, (HW_CS_DEBUG0_BASE + A2_DBGVCR), 0);
+	a->cap_len = 0;
+	cap_add(a, "capture ended: %d\n", ret);
+	smp_store_release(&a->cap_state, CAP_FAILED);
+	return ret;
+}
+
+static void a2_cap_reap(struct us48_a2 *a)
+{
+	if (a->cap_task) {
+		kthread_stop(a->cap_task);
+		put_task_struct(a->cap_task);
+		a->cap_task = NULL;
+	}
+}
+
+static void a2_cap_disarm(struct us48_a2 *a)
+{
+	mutex_lock(&a->cap_lock);
+	a2_cap_reap(a);
+	mutex_unlock(&a->cap_lock);
+}
+
+static void a2_cap_exit(void *data)
+{
+	a2_cap_disarm(data);
+}
+
+static int a2_cap_arm(struct us48_a2 *a, bool vc, uint ms)
+{
+	struct task_struct *t;
+	int ret = 0;
+
+	mutex_lock(&a->cap_lock);
+	if (a->rproc->state != RPROC_RUNNING || dcc_poll) {
+		ret = -EBUSY;	/* a2 must run, and the DCC poller shares DSCR */
+	} else if (a->cap_state == CAP_ARMED) {
+		ret = -EBUSY;
+	} else {
+		a2_cap_reap(a);
+		a->cap_vc = vc;
+		a->cap_ms = ms;
+		a->cap_len = 0;
+		a->cap_state = CAP_ARMED;
+		t = kthread_create(a2_cap_thread, a, "a2-capture");
+		if (IS_ERR(t)) {
+			a->cap_state = CAP_IDLE;
+			ret = PTR_ERR(t);
+		} else {
+			get_task_struct(t);
+			a->cap_task = t;
+			wake_up_process(t);
+		}
+	}
+	mutex_unlock(&a->cap_lock);
+	return ret;
+}
+
+static int a2_cap_show(struct seq_file *m, void *unused)
+{
+	static const char *const names[] = { "idle", "armed", "done", "failed" };
+	struct us48_a2 *a = m->private;
+	enum a2_cap_state st = smp_load_acquire(&a->cap_state);
+
+	mutex_lock(&a->cap_lock);
+	seq_printf(m, "state %s\n", names[st]);
+	if (st == CAP_DONE || st == CAP_FAILED)
+		seq_write(m, a->cap_txt, a->cap_len);
+	mutex_unlock(&a->cap_lock);
+	return 0;
+}
+
+static int a2_cap_open(struct inode *inode, struct file *f)
+{
+	return single_open(f, a2_cap_show, inode->i_private);
+}
+
+/* write "arm [vc] [ms]" or "disarm" */
+static ssize_t a2_cap_write(struct file *f, const char __user *u, size_t n, loff_t *pos)
+{
+	struct us48_a2 *a = ((struct seq_file *)f->private_data)->private;
+	char buf[48], *p = buf, *tok;
+	bool vc = false;
+	uint ms = A2_CAP_DEF_MS;
+	int ret = 0;
+
+	if (n >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, u, n))
+		return -EFAULT;
+	buf[n] = 0;
+	p = strim(buf);
+	tok = strsep(&p, " ");
+	if (sysfs_streq(tok, "disarm")) {
+		a2_cap_disarm(a);
+		return n;
+	}
+	if (!sysfs_streq(tok, "arm"))
+		return -EINVAL;
+	while (!ret && (tok = strsep(&p, " "))) {
+		if (!strcmp(tok, "vc"))
+			vc = true;
+		else
+			ret = kstrtouint(tok, 0, &ms) ?: (ms ? 0 : -EINVAL);
+	}
+	ret = ret ?: a2_cap_arm(a, vc, ms);
+	return ret ?: n;
+}
+
+static const struct file_operations a2_cap_fops = {
+	.owner = THIS_MODULE,
+	.open = a2_cap_open,
+	.read = seq_read,
+	.write = a2_cap_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 static const struct rproc_ops us48_a2_ops = {
 	.prepare		= us48_a2_prepare,
@@ -586,6 +887,11 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	rproc->auto_boot = false;
 	a = rproc->priv;
 	a->dev = dev;
+	a->rproc = rproc;
+	mutex_init(&a->cap_lock);
+	ret = devm_add_action_or_reset(dev, a2_cap_exit, a);
+	if (ret)
+		return ret;
 	a->p = us48_pci_from_adev(adev);
 	a->map = us48_pci_regmap(a->p);
 	memcpy(a->dt_off, dt_off, sizeof(dt_off));
