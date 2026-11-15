@@ -10,7 +10,8 @@
 #define HB_TICKS	2000000
 #define GT(r)		(*(volatile uint32_t *)(HW_GTIMER_BASE + HW_GTIMER_##r))
 
-char trace[TRACE_SZ] __attribute__((aligned(4096)));
+/* in a2_shared (linker script): the first MiB is kernel RAM once Linux runs */
+char trace[TRACE_SZ] __attribute__((aligned(4096), section(".trace")));
 
 static unsigned int put(unsigned int off, const char *s)
 {
