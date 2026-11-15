@@ -313,8 +313,15 @@ static const struct of_device_id fan_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, fan_of_match);
 
+static const struct spi_device_id fan_spi_id[] = {
+	{ "us48-fan" },
+	{ }
+};
+MODULE_DEVICE_TABLE(spi, fan_spi_id);
+
 static struct spi_driver fan_driver = {
 	.driver = { .name = "us48_fan", .of_match_table = fan_of_match },
+	.id_table = fan_spi_id,
 	.probe = fan_probe,
 };
 module_spi_driver(fan_driver);
