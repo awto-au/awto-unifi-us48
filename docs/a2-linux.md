@@ -104,3 +104,15 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Cache probes (`us48-a2-rawtest-noic.elf` = SCTLR.I off, `-nodc.elf` = SCTLR.C off; `build_a2fw.py`), AXI 200, 1000 MHz, 25 s run each:
   - I-cache off: 5 passes, all m = r = 0, no abort. D-cache off: 16 passes, all m = r = 0, no abort. Cached build: abort within ~1 s, every run.
   - The fault needs I-cache and D-cache both on. Slower fetch/data rate in the probes lowers traffic; a rate effect is not separated from an I+D fill interaction.
+
+## Errata, ID routing and I-fetch/D-fill probes (#79, 2026-11-15, offline)
+- Docs in `/vendors/arm` (README manifest): DDI0388I (A9 TRM), UAN0009D (A9 r4 errata), UAN0007D (r2 errata), DDI0397I (NIC-301 TRM).
+- A9 r4p1 errata with a Diagnostic bit (CP15 c15 0 c0 1, secure RMW, undocumented in the TRM): 845369 bit 22 (eviction-buffer corruption on streaming transition; needs ACP or 2+ CPUs: UAN0009D p2-28), 794072 bit 4 (DMB loop DoS, MPCore SMP+FW only: p2-23). 761319 (read reorder, SMP shared WB only: p2-15) has no bit. Nothing in r4p1 covers line fills, ID reordering or a UP corruption.
+- A9 AXI IDs (DDI0388I p8-3/8-4): M0 reads: NC = 0, linefill 0 = 2, linefill 1 = 3; M1 (I-side) reads: IDs 0-3, 4 outstanding; M0 write interleave capability 1 (Table 8-1 p8-2). The TRM does not say whether read data interleaving/reordering across IDs is tolerated. Linefills are WRAP4 64-bit critical-word-first (p8-3).
+- ACTLR (Table 4-36 p4-28/29): no bit limits line fills or forces in-order returns. a2 ACTLR reads 0 (rawtest header, 102 runs): L1 prefetch (bit 2), L2 prefetch hint (bit 1), SMP, FW all off.
+- PAXB regdb (`regdb/hr2_regs.tsv`): only `RX_DEBUG_CONTROL_0` (inbound/AXI-master side) has read controls; no outbound read reorder/interleave bit. The NIC-301 interconnect does: `AXIIC_PCIE0_S0_FN_MOD_BM_ISS` 0x1a004008 bit 0/1 = read/write issuing capability of the switch toward the PCIe0 slave forced to 1 (DDI0397I Table 3-2 p3-6); `AXIIC_IHOST_M1_FN_MOD` 0x1a042108 / `AXIIC_PCIE0_M0_MAX_OT` 0x1a043110 exist too.
+- Probes (`a2fw/iftest.c`, `iftest_asm.S`, `a2_diag.h`; `build_a2fw.py`, -Werror clean), run with `scripts/a2_raw.py <elf> 1000`; verdict line as for rawtest:
+  - `us48-a2-ifa`: loop code in SRAM (0x1b001000), 64 KiB src/dst across PCIe, both L1 on.
+  - `us48-a2-ifb`: 64 KiB straight-line code across PCIe (one load/add/store per 32 B line), data in SRAM (4 KiB window), both L1 on.
+  - `us48-a2-ifd`: same code and 64 KiB data both across PCIe: every code line fill coincides with a data line fill.
+  - `us48-a2-rawtest-diag22`, `-nic`, `-diag22-nic`, `us48-a2-ifd-diag22-nic`: Diagnostic bit 22 and/or NIC PCIe0 slave issuing = 1 (`NIC_ISS=3`), header prints `diag:` and `nic:` read-back.

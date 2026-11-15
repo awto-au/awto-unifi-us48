@@ -21,6 +21,7 @@ CFLAGS = ["-mcpu=cortex-a9", "-marm", "-mfloat-abi=soft", "-O2", "-Wall", "-Wext
           "-fno-pic", "-nostdlib", "-fno-builtin", "-I", str(ROOT / "hwdb/gen")]
 # A compile or link is milliseconds on this host; 30 s = expiry means a hung tool, logged with the command.
 STEP_TIMEOUT_S = 30
+BIG = ["-DBIG_LINES=2048"]  # iftest_asm.S: 64 KiB of straight-line code, 2x the 32 KiB L1 I
 
 
 def run(cmd):
@@ -68,7 +69,17 @@ SECTIONS {{
                               ("us48-a2-bustest-nommu", ("start.S", "bustest.c"), ["-DNO_MMU"]),
                               ("us48-a2-rawtest", ("start.S", "rawtest.c"), []),  # read-after-write ordering (#79)
                               ("us48-a2-rawtest-noic", ("start.S", "rawtest.c"), ["-DNO_ICACHE"]),  # cache probes (#79)
-                              ("us48-a2-rawtest-nodc", ("start.S", "rawtest.c"), ["-DNO_DCACHE"])):
+                              ("us48-a2-rawtest-nodc", ("start.S", "rawtest.c"), ["-DNO_DCACHE"]),
+                              # I-fetch / D-fill probes (#79): ifa code in SRAM, ifb data in SRAM, ifd both over PCIe
+                              ("us48-a2-ifa", ("start.S", "iftest.c", "iftest_asm.S"), ["-DIF_A", *BIG, "-DWRAP_DATA=0"]),
+                              ("us48-a2-ifb", ("start.S", "iftest.c", "iftest_asm.S"), ["-DIF_B", *BIG, "-DWRAP_DATA=1"]),
+                              ("us48-a2-ifd", ("start.S", "iftest.c", "iftest_asm.S"), ["-DIF_D", *BIG, "-DWRAP_DATA=0"]),
+                              # (c) Diagnostic bit 22 (UAN0009 845369) and NIC-301 PCIe0 slave issuing = 1, on the failing rawtest and ifd
+                              ("us48-a2-rawtest-diag22", ("start.S", "rawtest.c"), ["-DDIAG_SET=0x400000"]),
+                              ("us48-a2-rawtest-nic", ("start.S", "rawtest.c"), ["-DNIC_ISS=3"]),
+                              ("us48-a2-rawtest-diag22-nic", ("start.S", "rawtest.c"), ["-DDIAG_SET=0x400000", "-DNIC_ISS=3"]),
+                              ("us48-a2-ifd-diag22-nic", ("start.S", "iftest.c", "iftest_asm.S"),
+                               ["-DIF_D", *BIG, "-DWRAP_DATA=0", "-DDIAG_SET=0x400000", "-DNIC_ISS=3"])):
         objs = []
         for src in srcs:
             obj = OUT / f"{name}-{src}.o"

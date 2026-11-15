@@ -6,6 +6,7 @@
  * (re-read through the non-cacheable alias after clean+invalidate). m > 0, r = 0: stale read. r > 0: write lost or late.
  */
 #include "rsc.h"
+#include "a2_diag.h"
 
 #define BASE		HW_A2_CARVEOUT_BASE
 #define PT_OFF		(HW_A2_SHARED_BASE - BASE + 0x4000U)	/* 16 KiB aligned first-level table, a2_shared */
@@ -233,12 +234,26 @@ int main(void)
 	uint32_t t, off, pass = 0, v;
 
 	mmu_on();
+#ifdef NIC_ISS
+	*(volatile uint32_t *)A2_NIC_PCIE0_S0_ISS = NIC_ISS;
+#endif
+#ifndef DIAG_SET
+#define DIAG_SET 0
+#endif
 	dcache_setway(2);	/* sets way_bytes */
 	off = put(0, "a2fw rawtest v1 actlr=");
 	__asm__ volatile("mrc p15, 0, %0, c1, c0, 1" : "=r"(v));
 	hex32(off, v);
 	off = put(off + 8, " way=");
 	hex32(off, way_bytes);
+	off = put(off + 8, " diag:");
+	hex32(off, a2_diag_rmw(DIAG_SET));
+	off = put(off + 8, " nic:");
+#ifdef NIC_ISS
+	hex32(off, *(volatile uint32_t *)A2_NIC_PCIE0_S0_ISS);
+#else
+	hex32(off, 0);
+#endif
 	off = put(off + 8, "\npass=");
 	off_pass = off;
 	off = put(off + 8, " (m = wrong loads, r = wrong words in memory)\n");
