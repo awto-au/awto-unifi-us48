@@ -20,6 +20,27 @@ CMD_CAP_S = 20.0
 LOG = ROOT / "tmp/logs/u2_run.log"
 
 
+def catch_window(s: console.Session, cycle: bool = True) -> bool:
+    """Power-cycle (cycle=True), then space every 20 ms from the awto-uboot banner until its prompt. False on WINDOW_S expiry."""
+    if not cycle:  # already at the prompt
+        s.write(b"\r")
+        s.buf = s.read_idle(0.3, 2.0)
+        return True
+    subprocess.run(RELAY + ["off"], check=True, capture_output=True)
+    s.buf = b""
+    subprocess.run(RELAY + ["on"], check=True, capture_output=True)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < WINDOW_S:
+        s._pump(0.02)
+        tail = s.buf[-3000:]
+        i = tail.rfind(b"awto-uboot 20")
+        if i >= 0 and b"awto-uboot> " in tail[i:]:
+            return True
+        if i >= 0:
+            s.write(b" ")
+    return False
+
+
 def main() -> int:
     a = sys.argv[1:]
     cycle = "--no-cycle" not in a
@@ -30,26 +51,9 @@ def main() -> int:
         return 1
     s = console.Session()
     out = b""
-    if cycle:
-        subprocess.run(RELAY + ["off"], check=True, capture_output=True)
-        s.buf = b""
-        subprocess.run(RELAY + ["on"], check=True, capture_output=True)
-    if not cycle:  # already at the prompt
-        s.write(b"\r")
-        s.buf = s.read_idle(0.3, 2.0)
-    else:
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < WINDOW_S:
-            s._pump(0.02)
-            tail = s.buf[-3000:]
-            i = tail.rfind(b"awto-uboot 20")
-            if i >= 0 and b"awto-uboot> " in tail[i:]:
-                break
-            if i >= 0:
-                s.write(b" ")
-        else:
-            print(f"no prompt in {WINDOW_S} s; tail={s.buf[-300:]!r}")
-            return 1
+    if not catch_window(s, cycle):
+        print(f"no prompt in {WINDOW_S} s; tail={s.buf[-300:]!r}")
+        return 1
     out = s.buf
     s.buf = b""
     s.read_idle(0.3, 1.0)
