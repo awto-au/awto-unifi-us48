@@ -2620,9 +2620,11 @@
 /* block pl310 (axi0): L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM [C] */
 #define HW_PL310_BASE	0x19022000U
 #define HW_PL310_SIZE	0x1000U
+#define HW_PL310_CACHE_ID	0x0U
 #define HW_PL310_CTRL	0x100U
 #define HW_PL310_CTRL_ENABLE_SHIFT	0
 #define HW_PL310_CTRL_ENABLE_MASK	0x1U
+#define HW_PL310_AUX_CTRL	0x104U
 #define HW_PL310_LOCKDOWN_D	0x900U
 #define HW_PL310_LOCKDOWN_D_COUNT	8
 #define HW_PL310_LOCKDOWN_D_STRIDE	8

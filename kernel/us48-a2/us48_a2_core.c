@@ -38,10 +38,12 @@
 #define ARM_MRC_DTRRX	0xee100e15	/* mrc p14, 0, r0, c0, c5, 0; Rt in bits 15:12 */
 #define ARM_MOV_PC_R0	0xe1a0f000
 /*
- * Debug handshakes: a few A9 cycles + a few PCIe round trips (~us each). 1 ms backstop, not measured on the bus.
- * Expiry: log op + DSCR + limit, -ETIMEDOUT. A stalled a2 (bad AXI read) never halts: stop resets it.
+ * Debug handshakes: a few A9 cycles + a few PCIe round trips (~us each). 1 ms backstop, not measured on the bus
+ * (a2_halt has its own measured limit). Expiry: log op + DSCR + limit, -ETIMEDOUT. A stalled a2 never halts: stop resets it.
  */
 #define DBG_WAIT_US	1000
+/* a2_halt wait: 1.25 x the worst of 220 measured halts (2.9 ms), typical 15-20 us; see #102 */
+#define HALT_WAIT_US	3700
 
 /*
  * a2 ARM clock: same sequence as awto-uboot us48_cpu_switch (uboot-port/board/ubiquiti/us48/board.c, docs/clock-audit.md 2),
@@ -103,6 +105,9 @@ MODULE_PARM_DESC(paxb_order, "unit 1 PAXB TX_DEBUG_CFG.EP_TX_WR_RD_ORDER: a2 rea
 static int rx_arid;
 module_param(rx_arid, int, 0644);
 MODULE_PARM_DESC(rx_arid, "unit 0 PAXB RX_FREE_ARID_COUNT while a2 runs (default 0 = one inbound read at a time, #79; 1..3 fault under a1 DDR load; -1 = leave the reset value 3)");
+static bool l2_aux = true;
+MODULE_PARM_DESC(l2_aux, "boot stub sets the unit 1 PL310 way size (stock uboot-1 aux) with L2 off before the kernel (default 1; a1 cannot reach the PL310)");
+module_param(l2_aux, bool, 0644);
 static bool stub_dcc = true;
 module_param(stub_dcc, bool, 0644);
 MODULE_PARM_DESC(stub_dcc, "boot stub writes DCC marker characters (proves the console path before the kernel runs)");
@@ -140,6 +145,7 @@ struct us48_a2 {
 	dma_addr_t dma;
 	u32 da;		/* a2 AXI address of the carveout start */
 	u32 dt_off[3];	/* kernel, dtb, initrd offsets from the DT, U32_MAX if absent */
+	u32 halt_n, halt_fail, halt_last_us, halt_max_us;	/* a2_halt wait statistics (debugfs halt_us) */
 };
 
 /* Pool mapping for the bus test (us48_a2_region_get): region_lock is held between get and put and by prepare/unprepare. */
@@ -205,11 +211,25 @@ static int a2_reset(struct us48_a2 *a)
 
 static int a2_halt(struct us48_a2 *a)
 {
+	ktime_t t0;
+	u32 d;
 	int ret = regmap_write(a->map, A2_DBG(LAR), LAR_KEY);
 
 	ret = ret ?: regmap_set_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_HDBGEN_MASK);
 	ret = ret ?: regmap_write(a->map, A2_DBG(DRCR), HW_CS_DEBUG0_DRCR_REQ_HALT_MASK);
-	return ret ?: a2_wait(a, HW_CS_DEBUG0_DSCR_HALTED_MASK, HW_CS_DEBUG0_DSCR_HALTED_MASK, "halt");
+	if (ret)
+		return ret;
+	t0 = ktime_get();
+	ret = regmap_read_poll_timeout(a->map, A2_DBG(DSCR), d, d & HW_CS_DEBUG0_DSCR_HALTED_MASK, 0, HALT_WAIT_US);
+	a->halt_last_us = ktime_to_us(ktime_sub(ktime_get(), t0));
+	a->halt_n++;
+	if (!ret && a->halt_last_us > a->halt_max_us)
+		a->halt_max_us = a->halt_last_us;
+	if (ret) {
+		a->halt_fail++;
+		dev_err(a->dev, "a2 halt: DSCR %#x, limit %d us, elapsed %u us, ret %d\n", d, HALT_WAIT_US, a->halt_last_us, ret);
+	}
+	return ret;
 }
 
 static int a2_itr(struct us48_a2 *a, u32 ins, const char *what)
@@ -355,7 +375,7 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 	args->kernel = a->da + koff;
 	args->dtb = a->da + doff;
 	args->status = 0;
-	args->flags = stub_dcc ? US48_A2_BOOT_F_DCC : 0;
+	args->flags = (stub_dcc ? US48_A2_BOOT_F_DCC : 0) | (l2_aux ? US48_A2_BOOT_F_L2AUX : 0);
 	args->dcc_fail = 0;
 	args->stage = 0;
 	wmb();
@@ -661,6 +681,8 @@ static int us48_a2_start(struct rproc *rproc)
 	if (ret) {
 		us48_a2_dcc_stop(a->dcc);
 		a2_reset(a);	/* never leave a2 halted */
+		if (rx_arid >= 0)
+			a2_rx_arid(3);
 	}
 	return ret;
 }
@@ -672,13 +694,16 @@ static int us48_a2_stop(struct rproc *rproc)
 {
 	struct us48_a2 *a = rproc->priv;
 
+	int ret;
+
 	a2_cap_disarm(a);
-	if (rx_arid >= 0)
-		a2_rx_arid(3);	/* reset value: unit 0 inbound reads (cmic DMA) back to full concurrency */
 	us48_a2_dcc_stop(a->dcc);	/* before the halt: DSCR is shared with the debug sequences */
 	if (a2_halt(a))
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
-	return a2_reset(a);
+	ret = a2_reset(a);
+	if (rx_arid >= 0)
+		a2_rx_arid(3);	/* reset value, after a2 is stopped: changing it with a2 reads in flight (#102) */
+	return ret;
 }
 
 /*
@@ -1309,6 +1334,12 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 			debugfs_create_file("capture", 0644, rproc->dbg_dir, a, &a2_cap_fops);
 		if (rproc->dbg_dir)
 			debugfs_create_file("paxb_tx", 0644, rproc->dbg_dir, a, &a2_paxb_tx_fops);
+		if (rproc->dbg_dir) {
+			debugfs_create_u32("halt_n", 0444, rproc->dbg_dir, &a->halt_n);
+			debugfs_create_u32("halt_fail", 0444, rproc->dbg_dir, &a->halt_fail);
+			debugfs_create_u32("halt_last_us", 0444, rproc->dbg_dir, &a->halt_last_us);
+			debugfs_create_u32("halt_max_us", 0444, rproc->dbg_dir, &a->halt_max_us);
+		}
 	}
 	return ret;
 }

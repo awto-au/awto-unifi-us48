@@ -62,7 +62,20 @@ _start:
         bl      dccput
         mov     r1, #2
         str     r1, [r4, #24]             @ stage 2: first marker written (CP14 DTR write did not fault)
-nodcc1: ldr     r5, [r4, #4]              @ zImage
+nodcc1: tst     r7, #US48_A2_BOOT_F_L2AUX
+        beq     nol2
+        @ PL310 (hwdb pl310, 0x19022000) resets with way size 0 (reserved); uboot-1 lowlevel_init @0x1c0005b8:
+        @ aux = (aux & ~0xf0000) | 0x0a120000 with L2 off. A leftover enable from the previous run is switched off first.
+        ldr     r0, =0x19022000
+        mov     r2, #0
+        str     r2, [r0, #0x100]          @ CTRL: L2 off, the kernel invalidates and enables it
+        ldr     r2, [r0, #0x104]
+        bic     r2, r2, #0xf0000
+        ldr     r3, =0x0a120000
+        orr     r2, r2, r3
+        str     r2, [r0, #0x104]
+        dsb
+nol2:   ldr     r5, [r4, #4]              @ zImage
         ldr     r6, [r4, #8]              @ DTB
         mov     r1, #3
         str     r1, [r4, #24]             @ stage 3: at the jump

@@ -235,6 +235,18 @@ src = "docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs
 conf = "C"
 note = "base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9)"
 
+[block.pl310.reg.CACHE_ID]
+offset = 0x0
+reset = 0x410000c9
+src = "ARM DDI 0246H Table 3-2 (reg0_cache_id 0x000); r3p3 = 0x410000C9; uboot-1 and a1 Linux read 0x410000c9, a2 Linux 0x410000c9"
+conf = "C"
+
+[block.pl310.reg.AUX_CTRL]
+offset = 0x104
+desc = "Auxiliary control; way size [19:17] and associativity [16] must be set before enable. uboot-1 lowlevel_init @0x1c0005b8..0x1c0005c8: (aux & ~0xf0000) | 0x0a120000 (16 KB ways, 8-way, event bus, round robin, NS int)"
+src = "ARM DDI 0246H Table 3-2 (reg1_aux_control 0x104), Table 3-9; uboot-1 flash image, literal 0x0a120000 at 0x1c001300"
+conf = "C"
+
 [block.pl310.reg.CTRL]
 offset = 0x100
 fields = ["ENABLE 0"]

@@ -2619,9 +2619,11 @@ pub const HW_GIC_DIST_SGIR: u32 = 0xf00;
 // block pl310 (axi0) [C]
 pub const HW_PL310_BASE: u32 = 0x19022000;
 pub const HW_PL310_SIZE: u32 = 0x1000;
+pub const HW_PL310_CACHE_ID: u32 = 0x0;
 pub const HW_PL310_CTRL: u32 = 0x100;
 pub const HW_PL310_CTRL_ENABLE_SHIFT: u32 = 0;
 pub const HW_PL310_CTRL_ENABLE_MASK: u32 = 0x1;
+pub const HW_PL310_AUX_CTRL: u32 = 0x104;
 pub const HW_PL310_LOCKDOWN_D: u32 = 0x900;
 pub const HW_PL310_LOCKDOWN_D_COUNT: u32 = 8;
 pub const HW_PL310_LOCKDOWN_D_STRIDE: u32 = 8;

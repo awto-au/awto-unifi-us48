@@ -6,6 +6,7 @@
 #define US48_A2_BOOT_MAGIC	0x62323461	/* "a24b" */
 #define US48_A2_BOOT_ARGS_OFF	0x200		/* from the carveout start; the driver writes it after the ELF load */
 #define US48_A2_BOOT_F_DCC	1		/* flags: the stub writes marker characters to DCC (proves the console path) */
+#define US48_A2_BOOT_F_L2AUX	2		/* flags: the stub sets the PL310 way size (stock aux) with L2 off, before the jump */
 #define US48_A2_BOOT_DCC_SPIN	0x100000	/* stub: max DSCR polls per marker, see boot.S */
 
 #ifndef __ASSEMBLER__

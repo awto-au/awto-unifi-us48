@@ -36,8 +36,11 @@ def catch_window(s: console.Session, cycle: bool = True) -> bool:
         i = tail.rfind(b"awto-uboot 20")
         if i >= 0 and b"awto-uboot> " in tail[i:]:
             return True
-        if i >= 0:
-            s.write(b" ")
+        if i >= 0 and s.backlog() == 0:  # one space in flight at most: tio reads input only while the tty is idle
+            try:
+                s.write(b" ")
+            except console.Timeout:  # tio stalled for 1 s: this space is lost, the next one is 20 ms away (logged by console)
+                pass
     return False
 
 

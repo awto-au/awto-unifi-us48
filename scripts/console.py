@@ -11,8 +11,11 @@
 """
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
+import struct
+import termios
 import select
 import socket
 import subprocess
@@ -42,6 +45,8 @@ TERMINALS = [
 # tio binds its socket within ~100 ms of the window opening; 8 s = wedged-launch backstop (awto-l8 ctl.py).
 SOCKET_BUDGET_S = 8.0
 POLL_S = 0.02
+# tio drains its socket at once (serial 115200 B/s max); a full send buffer for 1 s = tio stalled. Expiry: log + Timeout.
+SEND_BUDGET_S = 1.0
 
 
 def log(msg: str) -> None:
@@ -252,34 +257,51 @@ class Session:
             self._send(data)
 
     def _send(self, data: bytes) -> None:
-        # nonblocking socket: full buffer = EAGAIN; wait for writable, give up after 1 s (raises)
-        end = time.monotonic() + 1.0
+        # nonblocking socket: full buffer = EAGAIN. tio forwards socket input only while the tty is idle and blocks writing
+        # to a client that does not read, so keep reading while waiting. Timeout after SEND_BUDGET_S (tio stalled).
+        end = time.monotonic() + SEND_BUDGET_S
         while data:
             try:
                 data = data[self.s.send(data):]
             except BlockingIOError:
-                if time.monotonic() > end:
-                    raise
-                select.select([], [self.s], [], 0.05)
+                left = end - time.monotonic()
+                if left <= 0:
+                    log(f"send: tio socket full for {SEND_BUDGET_S:.1f} s, {len(data)} B unsent")
+                    raise Timeout(f"tio socket not draining: {len(data)} B unsent after {SEND_BUDGET_S:.1f} s")
+                rd, _wr, _x = select.select([self.s], [self.s], [], left)
+                if self.s in rd:
+                    self._pump(0)
+
+    def backlog(self) -> int:
+        """Bytes (skb memory) sent to tio and not yet read by it. tio reads socket input only while the tty is idle, and a
+        1-byte write costs ~768 B of the ~208 KB send buffer: ~270 unread single bytes fill it."""
+        return struct.unpack("i", fcntl.ioctl(self.s.fileno(), termios.TIOCOUTQ, b"\0\0\0\0"))[0]
 
     def send_line(self, text: str) -> None:
         log(f">> {text!r}")
         self.write(text.encode() + b"\r")
 
     def _pump(self, wait_s: float) -> bytes:
+        """Read what arrives within wait_s. select() sleeps in the kernel until readable or the deadline (no poll loop)."""
         deadline = time.monotonic() + wait_s
         while True:
             try:
                 chunk = self.s.recv(65536)
-                if not chunk:
-                    self._reconnect()  # tio respawned; raises if the window is really gone
-                    continue
-                self.buf += chunk
-                return chunk
-            except BlockingIOError:
+            except BlockingIOError:  # nothing yet (or readiness was spurious): wait for the rest of the budget
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return b""
+                select.select([self.s], [], [], left)
+                continue
+            except ConnectionResetError:
+                chunk = b""
+            if not chunk:
+                self._reconnect()  # tio respawned; raises if the window is really gone
                 if time.monotonic() >= deadline:
                     return b""
-                time.sleep(POLL_S)
+                continue
+            self.buf += chunk
+            return chunk
 
     def expect(self, patterns: list[bytes], budget_s: float, what: str) -> bytes:
         """Read until any pattern appears; return the matched pattern. Timeout names what was awaited."""

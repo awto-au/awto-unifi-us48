@@ -6,7 +6,7 @@
 - a2 side: /init loads us48_vnet and sets vnet0 10.48.0.2/30; commands are typed on /dev/ttyA20 (DCC), output in /tmp/a2.out.
 - TCP: busybox nc, 10 MiB of zeros; MB/s = 10.486 MB / wall time of the sender (nc exit), byte count checked on the receiver.
 - Waits: a2 banner+vnet 150 s (debug-profile a2 boots in 50 s; normal 3 s) is a backstop, command limits are per call below.
-Usage: vnet_test.py <label> [--mhz 100|1000] [--profile normal|debug] [--cycles N] [--reload] [--no-stage] [--no-tcp]
+Usage: vnet_test.py <label> [--mhz 100|1000] [--profile normal|debug] [--cycles N] [--reload] [--no-stage] [--no-tcp] [--dtb NAME] [--traffic]
 Log: tmp/logs/vnet_test.log
 """
 import argparse
@@ -101,12 +101,14 @@ def main() -> int:
     ap.add_argument("--reload", action="store_true")
     ap.add_argument("--no-stage", action="store_true")
     ap.add_argument("--no-tcp", action="store_true")
+    ap.add_argument("--traffic", action="store_true", help="each cycle: stop a2 while a 10 MiB TCP transfer a1 -> a2 is running (#102)")
+    ap.add_argument("--dtb", help="a2 DTB under tmp/a2 (default us48-a2.dtb at 100 MHz, else us48-a2-<mhz>.dtb; --l2 builds: us48-a2-<mhz>-l2.dtb)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     say(f"== {a.label}: a2 {a.mhz} MHz, profile {a.profile}")
     if not a.no_stage:
         mod = ROOT / f"tmp/mainline/rootfs-{a.profile}/lib/modules/{REL[a.profile]}"
-        dtb = ROOT / ("tmp/a2/us48-a2.dtb" if a.mhz == 100 else f"tmp/a2/us48-a2-{a.mhz}.dtb")
+        dtb = ROOT / "tmp/a2" / (a.dtb or ("us48-a2.dtb" if a.mhz == 100 else f"us48-a2-{a.mhz}.dtb"))
         for f, d in ((mod / "us48_a2.ko", "/tmp/us48_a2.ko"), (mod / "us48_vnet.ko", "/tmp/us48_vnet.ko"),
                      (ROOT / "tmp/a2/zImage", "/lib/firmware/us48-a2-zImage"), (dtb, "/lib/firmware/us48-a2.dtb"),
                      (ROOT / "tmp/a2fw/us48-a2-boot.elf", "/lib/firmware/us48-a2-boot.elf")):
@@ -131,6 +133,9 @@ cat /sys/module/us48_a2/parameters/cpu_mhz
     if not a.no_tcp:
         tcp()
     for i in range(1, a.cycles + 1):
+        if a.traffic:
+            lx('a2c "(nc -l -p 5001 > /dev/null) &" 200')
+            lx("dd if=/dev/zero of=/tmp/10m bs=1048576 count=10 2>/dev/null; (nc 10.48.0.2 5001 < /tmp/10m &) ; read -t 1.5 x <&3")
         out = lx("echo stop > $D/state; cat $D/state; dmesg | grep vnet0 | tail -2")
         say(f"cycle {i} stop: " + out.strip().replace("\n", " | "))
         out = start_a2()
@@ -143,6 +148,7 @@ ip addr add 10.48.0.1/30 dev vnet0; ip link set vnet0 up
 read -t 1 x <&3; ping -c 5 10.48.0.2 | tail -2; dmesg | tail -4""")
         say("a1 reload: " + out.strip().replace("\n", " | "))
         pings(5)
+    say("halt stats: " + lx("T=/sys/kernel/debug/remoteproc/remoteproc0; echo n=$(cat $T/halt_n) fail=$(cat $T/halt_fail) max_us=$(cat $T/halt_max_us); dmesg | grep 'a2 halt' | tail -3", pre=False).strip().replace("\n", " | "))
     say("dmesg problems: " + lx("dmesg | grep -i 'kasan\\|BUG:\\|WARNING\\|Oops\\|Call trace\\|rx ring' | head; echo end").strip().replace("\n", " | "))
     return 0
 

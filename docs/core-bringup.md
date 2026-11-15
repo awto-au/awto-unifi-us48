@@ -117,6 +117,8 @@
 | CMIC packet-DMA RX pps / MB/s | not measured | | no quick test exists (needs a traffic generator + RX loop, no script) |
 | a2 -> host DDR over PCIe (a2 at 1000, #80, 2026-11-15) | cached rd 113 / wr 1061, uncached rd 14 / wr 123 MB/s, 298 ns | PCIe x1 gen2 ~400 MB/s | from #80, not rerun |
 | a2 own DDR path at 100 MHz (this run) | L2 off rd/wr/cp 22/254/23 MB/s, 1520 ns; L2 on 55/259/59 MB/s, 1499 ns | | a2 RAM is host DDR over PCIe: every miss crosses it |
+| a2 Linux own RAM, 1000 MHz, L2 off (2026-11-16, `us48bench lat/bw` run on a2, debug a1) | lat 4K 6.7, 32K 570, 64K 1239, 2M 1530 ns; rd/wr/cp 16K 816/553/178, 256K 22/233/23, 8M 23/229/22 MB/s | | every L1 miss is a PCIe round trip |
+| a2 Linux own RAM, 1000 MHz, L2 on (PL310 128 KiB, aux 0x4e120001, same session) | lat 4K 4.4, 32K 5.6, 64K 34, 128K 411, 256K 1120, 2M 1260 ns; rd/wr/cp 16K 2110/961/675, 256K 71/275/67, 8M 67/254/66 MB/s | | reads x3 (22 -> 67 MB/s), 64 KiB working set at L2 latency; writes unchanged |
 
 ## RX_FREE_ARID_COUNT cost (#79, #88; a1 ARM 1000 MHz, L2 on; 2026-11-16, base 8224728 + rx_arid default 0)
 

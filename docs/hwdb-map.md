@@ -99,7 +99,7 @@
 | `gtimer` | axi0 | `0x19020200` | `0x100` | 0 | 3 | C | A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8 | ARM DDI 0407I Table 1-3 (0x0200-0x02FF); us48-uboot.dts timer@20200; docs/clocks.md |
 | `twd` | axi0 | `0x19020600` | `0x40` | 0 | 5 | C | A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm | ARM DDI 0407I Table 1-3 (0x0600-0x06FF); bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2 |
 | `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | ARM DDI 0407I Table 1-3 (0x1000-0x1FFF); us48-uboot.dts gic reg <0x21000 0x1000> |
-| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
+| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 7 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 33 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 13 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
 | `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 32 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
@@ -886,7 +886,9 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
+| `0x0` | `CACHE_ID` | 32 | rw | `0x410000c9` |  | C |  | ARM DDI 0246H Table 3-2 (reg0_cache_id 0x000); r3p3 = 0x410000C9; uboot-1 and a1 Linux read 0x410000c9, a2 Linux 0x410000c9 |
 | `0x100` | `CTRL` | 32 | rw | `0x0` | ENABLE[0] | C |  | ARM DDI 0246H Table 3-2 (reg1_control 0x100), Table 3-5 |
+| `0x104` | `AUX_CTRL` | 32 | rw |  |  | C | Auxiliary control; way size [19:17] and associativity [16] must be set before enable. uboot-1 lowlevel_init @0x1c0005b8..0x1c0005c8: (aux & ~0xf0000) \| 0x0a120000 (16 KB ways, 8-way, event bus, round robin, NS int) | ARM DDI 0246H Table 3-2 (reg1_aux_control 0x104), Table 3-9; uboot-1 flash image, literal 0x0a120000 at 0x1c001300 |
 | `0x900` | `LOCKDOWN_D[8]` | 32 | rw |  |  | C | Data lockdown by way, master n at +0x900 + 8n (0x900..0x938) | ARM DDI 0246H Table 3-2 (0x900-0x938), Table 3-20 |
 | `0x904` | `LOCKDOWN_I[8]` | 32 | rw |  |  | C | Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c) | ARM DDI 0246H Table 3-2 (0x904-0x93C), Table 3-21 |
 | `0x950` | `LOCKDOWN_BY_LINE` | 32 | rw | `0x0` |  | C | uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM) | ARM DDI 0246H Table 3-2 (reg9_lock_line_eng 0x950), Table 3-18 (lockdown_by_line_enable, bit 0); docs/sram.md (L2C+0x950) |

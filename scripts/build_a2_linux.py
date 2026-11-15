@@ -183,7 +183,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cpu-mhz", type=int, default=100, help="a2 ARM MHz = us48_a2 cpu_mhz (default 100, #79); sets the DTB timer clock")
     ap.add_argument("--bootargs", default="console=hvc0 earlycon=dcc", help="a2 kernel command line (DT chosen/bootargs)")
-    ap.add_argument("--l2", action="store_true", help="add the PL310 node (kernel enables L2)")
+    ap.add_argument("--no-l2", dest="l2", action="store_false", help="omit the PL310 node (default: L2 on, #85; boot stub sets the way size)")
     ap.add_argument("--dtb-name", default="us48-a2.dtb", help="output name in tmp/a2")
     ap.add_argument("--profile", choices=("normal", "debug"), default="debug", help="kernel build dir the zImage comes from (default debug)")
     ap.add_argument("--build", action="store_true", help="run scripts/build_mainline.py first")

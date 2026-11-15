@@ -28,7 +28,7 @@ def main() -> int:
             return 1
     t0 = time.monotonic()
     while time.monotonic() - t0 < SSH_S:
-        if run("scripts/lx.py", "mount -t debugfs none /sys/kernel/debug").returncode == 0:
+        if run("scripts/lx.py", "mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug").returncode == 0:
             print(f"ssh up {time.monotonic() - t0:.0f} s after handover")
             return 0
         time.sleep(2)

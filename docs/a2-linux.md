@@ -9,7 +9,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Kernel at base + 0x8000 (AUTO_ZRELADDR derives the base from where the zImage runs; ARM_PATCH_PHYS_VIRT), reaches ~base + 0x0f30000 with bss.
 - zImage at base + 0x1000000, DTB above the kernel end (layout requests in a2-design.md). Built-in initramfs: no external initrd.
 - Peripherals (hwdb `a9.toml`, same addresses as a1): GIC dist 0x19021000, GIC cpu 0x19020100, global timer 0x19020200 (PPI 11), TWD 0x19020600 (PPI 13), PERIPHCLK = ARM/2 (conf I, host-timed on unit 1 at 100 and 1000 MHz); DTB value from `build_a2_linux.py --cpu-mhz`.
-- Not in the DTS: DDR controller 0x60000000 (stalls a2), QSPI/flash, PCIe, PL310 (stays off as left by the ROM; the shared kernel only inits L2 from a DT node), CCB/APB peripherals.
+- Not in the DTS: DDR controller 0x60000000 (stalls a2), QSPI/flash, PCIe, PL310 only with `--l2` (default since 2026-11-16, see "a2 L2"), CCB/APB peripherals.
 
 ## Console: DCC
 - `CONFIG_HVC_DCC` + `earlycon=dcc`, bootargs `console=hvc0 earlycon=dcc` (a2 DTB `chosen`). DT bootargs win over `CONFIG_CMDLINE` (`CMDLINE_FROM_BOOTLOADER`, checked in drivers/of/fdt.c); a1 DTB has none and keeps its `ttyS0` cmdline.
@@ -36,7 +36,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - The decompressed kernel (RAM base + 0x8000 .. +0xe77044 with bss) overwrites the stub MiB: fine, the stub has jumped; the layout check is in `build_a2_linux.py`.
 - The decompressor prints nothing (`DEBUG_UNCOMPRESS` needs `!ARCH_MULTIPLATFORM`): the first output is `earlycon` at `parse_early_param`, so a silent a2 is not yet "kernel dead" (#79 bisect).
 - Atomics: ldrex/strex on host DDR over PCIe, local monitor only (UP, non-shared mapping); untested on a2.
-- Page tables, stack and all data cross PCIe on cache misses; L2 off. Expect slow boot; L1 only.
+- Page tables, stack and all data cross PCIe on cache misses; L2 absorbs them since 2026-11-16 ("a2 L2" below).
 - DTB timer clock must equal the real PERIPHCLK or printk time is scaled (`--cpu-mhz` = us48_a2 `cpu_mhz`).
 - ~14 MB uncompressed kernel + 10 MB zImage in 63 MiB leaves ~35 MiB free.
 - a1: first boot with HVC_DCC unmeasured (100 ms console probe).
@@ -260,3 +260,13 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Not fixed: the CMIC stays wedged across PERST# and a2 reset. awto-uboot `fan: probing unit 1 BAR at 0x08040000` reads BAR2 and stalls, SP805 loop until a relay power cycle.
 - A wedge with a1 CMIC users loaded (pvtmon, xe, fan, gpio) stalls a1 itself on the first CMIC read; the test (`warm_reboot_test.py w`) unloads them first.
 - Test: `scripts/warm_reboot_test.py w` (3 of 3: banner 3.0 s, awto-uboot reached, then the fan-probe loop).
+
+## a2 L2 (PL310) and the stop/start halt (#85, #88, #102, 2026-11-16)
+- DT: `build_a2_linux.py` adds the PL310 node by default (`--no-l2` omits it). Unit 1 PL310 resets with aux way size [19:17] = 0 (reserved): the kernel sized it 8 ways x 8 KB (64 kB), aux `0x46000001`. The unit 0 PL310 reads 8 x 16 KB, aux `0x4e120001`, because uboot-1 `lowlevel_init` (`0x1c0005b8..0x1c0005c8`, literal `0x0a120000` at `0x1c001300`) writes `(aux & ~0xf0000) | 0x0a120000`.
+- a1 cannot reach the PL310 of unit 1 (reads through the regmap return 0, id included); the boot stub does the write (`a2fw/boot.S`, flag `US48_A2_BOOT_F_L2AUX`, `us48_a2 l2_aux=1` default): CTRL = 0, aux as stock, then the kernel invalidates and enables. With it a2 prints `L2C-310 cache controller enabled, 8 ways, 128 kB`, `AUX_CTRL 0x4e120001` (same as a1), id `0x410000c9` (r3p3; errata lines as on a1: 769419 is unconditional in the kernel for any revision, the revision-gated ones do not apply). Kernel adds early BRESP, full line of zeros (ACTLR bits set by `l2c310_starting_cpu`), NS lockdown; nothing else is written.
+- Maintenance reaches the PoC: `us48_vnet` uses the DMA API (`dma_sync_single_*`, BIDIRECTIONAL = clean+invalidate incl. `outer_flush_range`), so the publish read-back misses L2 and queues behind the write at PAXB (`paxb_order`). vnet ping and 10 MiB TCP both ways ran clean with L2 on.
+- Stop: no L2 flush needed: a2 is reset, memory it owned is rewritten at the next start; the stub switches a leftover enabled L2 off before the kernel.
+- Results (a2 1000 MHz, AXI 200, debug a1 RAM boot, same session): vnet unchanged within noise (ping a1 -> a2 4.7-6.8 ms vs 5.0, TCP 1.86-1.88 / 1.82-1.90 vs 1.85 / 1.86-2.00 MB/s: a1 debug image bound); a2 boot to vnet up 2.1 s vs 3.1 s; a2 memory bandwidth in core-bringup.md. Stale-read check: `a2_cap.py LINUX 1000 --skip --limit-ms 6000` with two a1 `dd` 32 MiB tmpfs write loops: 5 of 5 runs clean (userspace reached, no abort), 3 more with one loop, 0 faults (run 6 hit ENOMEM on a1 from the load, not an a2 fault).
+- Bare-metal `bustest` has no outer-cache maintenance (its NC-alias truth check would flag L2), so there is no L2-on bustest row; the a2 Linux `us48bench` rows replace it.
+- Halt time (`us48_a2`, debugfs `halt_n/halt_fail/halt_last_us/halt_max_us`): 30 stop/start cycles each at 100 MHz, 1000 MHz L2 off, 1000 MHz L2 on, 12 more under TCP traffic: typical 15-20 us, outliers 65-196 us, one 2931 us. `HALT_WAIT_US` = 3700 (1.25 x 2931).
+- Wedge seen once (normal image, after a2 Linux had run vnet traffic, stop then start): DSCR `0x3004002` (running, not halted) persisted through every later start; a2 then sat at PC `0x08000000` for any firmware; only a power cycle cleared it. Not a slow halt. `us48_a2` stop restored unit 0 `RX_FREE_ARID_COUNT` to 3 before halting a2 (reads in flight); it now halts and resets first. Unproven cause: 70+ stop/start cycles with the new order (12 under traffic) did not wedge; the old order wedged within about 60.
