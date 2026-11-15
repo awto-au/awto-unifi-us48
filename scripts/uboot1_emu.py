@@ -30,19 +30,61 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/uboot1_emu.log"
 TSV = ROOT / "tmp/uboot1_emu.tsv"
 REP = ROOT / "tmp/uboot1_emu_report.md"
+DDRW = ROOT / "tmp/uboot1_emu_ddr_writes.tsv"
 FUNCS = ROOT / "tmp/ghidra/out/uboot/00-u-boot.bin.funcs.tsv"
 IMG_LEN = 447118
-XIP = 0x1C000000
 TEXT_END = 0x1C048000
 RELOC_SPAN = 0x5814C + 0x40000  # image + bss, for pc->image mapping
 
-# (name, start, size) device windows (mmio). Everything else mapped on demand as UNKNOWN pages.
-DEVICES = [
-    ("periph", 0x18000000, 0x40000),
-    ("ccu+a9priv", 0x19000000, 0x100000),
-    ("cmic", 0x48000000, 0x100000),
-    ("idm", 0x18100000, 0x100000),  # IDM wrappers (reset/io control), from unmapped faults
-]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
+
+DB = hwdb.load()
+
+
+def _rg(n):
+    r = DB.region(n)
+    return r.base, r.size or 0x1000
+
+
+# Memory map and register addresses come from hwdb (#72). Not in hwdb yet: the BSPI/RAF register
+# offsets (RAF_* below, from FUN_1c024d10), DDR controller/PHY and the IDM wrappers past 0x18120000
+# (those pages are auto-mapped on first access and listed as UNMAPPED in the report).
+A_UART = DB.addr("uart1")
+A_MSPI = DB.addr("mspi")
+A_BSPI = DB.addr("bspi")
+A_RAF = DB.addr("bspi_raf")
+A_GT = DB.addr("gtimer.COUNTER_LO")
+A_MSPI_REG = {n: DB.addr("mspi." + n) for n in ("SPCR0_MSB", "NEWQP", "ENDQP", "SPCR2", "STATUS", "TXRAM", "RXRAM", "CDRAM")}
+RAF_START, RAF_WORDS, RAF_CTRL, RAF_STATUS, RAF_FIFO = 0x00, 0x04, 0x08, 0x14, 0x18  # FUN_1c024d10
+# Timer-bounded polls the branch heuristic cannot decide (exit branch is backward): (caller return pc, reg addr) -> bits to set.
+# DDR PHY reg reader FUN_1c0062e4 (read at 0x1c0062f8), poll loops in FUN_1c007058 (timer: 0x1c005ef8 start, 0x1c005f34 expired).
+KNOWN_POLLS = {
+    (0x1C0072D4, 0x18010810): (0x1, "DDR PHY PLL lock: tst r3,#1 @0x1c0072dc, 'Timed out waiting for DDR PHY PLL to Lock' @0x1c0072f0"),
+    (0x1C0073BC, 0x1801083C): (0x400000, "DDR PHY ZQ calibration done: tst r3,#0x400000 @0x1c0073c4, 'Timed out waiting for ZQ Calibration' @0x1c0073d8"),
+}
+# Modelled DDR PHY status (read default when never written): VDL calibration status, bit0 idle, bit1 locked
+# (FUN_1c007058 @0x1c007560 / 0x1c0075b0).
+STATUS_DEFAULTS = {0x1801084C: 0x3}
+MSPI_CS = 0x180  # chip-select control, written by spi_xfer BEGIN/END
+BSPI_UPPER = 0x38  # upper address byte (<<24) written by FUN_1c024d10 @0x1c024e4c
+# device windows (mmio): hwdb regions of kind device in axi0, plus hand blocks outside them (cmic0)
+DEVICES = [(n, r.base, r.size) for n, r in DB.regions.items() if r.space == "axi0" and r.kind == "device"]
+DEVICES += [(n, b.base, b.size) for n, b in DB.blocks.items()
+            if b.space == "axi0" and b.origin == "hand" and n == "cmic0"]
+# hwdb regions may overlap (mpcore contains coresight): split so no page is mapped twice
+_pages = {}
+for _n, _b, _z in DEVICES:
+    for _pg in range(_b, _b + _z, 0x1000):
+        _pages[_pg] = _n
+DEVICES = []
+for _pg in sorted(_pages):
+    if DEVICES and DEVICES[-1][0] == _pages[_pg] and DEVICES[-1][1] + DEVICES[-1][2] == _pg:
+        DEVICES[-1] = (DEVICES[-1][0], DEVICES[-1][1], DEVICES[-1][2] + 0x1000)
+    else:
+        DEVICES.append(("%s_%x" % (_pages[_pg], _pg), _pg, 0x1000))
+XIP = DB.region("flash_xip").base
+FLASH_ID = (0xC2, 0x20, 0x19)  # MX25L25635E JEDEC (docs/hardware.md part; ID per Macronix datasheet, Linux m25p80 match in docs/stock-bootlog-facts.md)
 # phase classification: first match wins
 PHASES = [
     ("IDM/reset", [(0x18100000, 0x18200000)]),
@@ -74,7 +116,7 @@ REGNAMES.update(sp=UC_ARM_REG_SP, lr=UC_ARM_REG_LR, pc=UC_ARM_REG_PC, ip=UC_ARM_
 
 class SpiFlash:
     """Byte-stream model of the MX25L25635E behind the MSPI queue. Reads from the image, never writes."""
-    ID = (0xC2, 0x20, 0x19)
+    ID = FLASH_ID
 
     def __init__(self, data, log):
         self.data, self.log = data, log
@@ -129,6 +171,8 @@ class Emu:
         self.regs = {}  # (addr&~3) word store
         self.defaults = {}
         self.reads_logged = collections.Counter()
+        self.names = {}
+        self.ddrw = []
         self.pollcnt = collections.Counter()
         self.polls = {}  # (pc,addr) -> (func, value, ndisp)
         self.unmapped = {}
@@ -141,9 +185,13 @@ class Emu:
         self.key_sent = False
         self.blocks = {}
         self.nblk = 0
-        self.mspi_tx = {}
-        self.mspi_cd = {}
         self.mspi_done = 0
+        self.raf_fifo = collections.deque()
+        self.raf_n = 0
+        self.timer_reads = 0
+        self.flip = False
+        self.lastread = {}
+        self.leaf = {}
         self.gt = 0
         self.reloc = None
         self.stop_reason = None
@@ -155,6 +203,27 @@ class Emu:
 
     def log(self, m):
         self.out.write(m + "\n")
+
+    def nm(self, a):
+        """hwdb name of an address: ' [block.REG]', ' [block+0xoff]', ' [region+0xoff]' or ''."""
+        r = self.names.get(a)
+        if r is None:
+            hits = DB.find(a)
+            r = ""
+            for kind, n, off in hits:
+                if kind == "reg":
+                    r = " [%s]" % n
+                    break
+            else:
+                for kind, n, off in hits:
+                    if kind == "block":
+                        r = " [%s+0x%x]" % (n, off)
+                        break
+                else:
+                    if hits:
+                        r = " [%s+0x%x]" % (hits[0][1], hits[0][2])
+            self.names[a] = r
+        return r
 
     # ---------- symbols ----------
     def load_funcs(self):
@@ -192,6 +261,7 @@ class Emu:
     def load_defaults(self):
         p = ROOT / "tmp/logs/clock_trial.log"
         self.defaults[0x48010224] = 0x8344  # device id read by board init (docs/uboot.md s5)
+        self.defaults.update(STATUS_DEFAULTS)
         self.defaults[0x18000000] = 0xD060  # chipcommon id, 53344 decimal (I)
         if not p.exists():
             return
@@ -206,25 +276,35 @@ class Emu:
     def setup(self):
         a = self.a
         fl = pathlib.Path(a.flash) if a.flash else pathlib.Path(sorted(glob.glob(str(ROOT / "private/backups/*/full-flash.bin")))[-1])
-        data = fl.read_bytes()
+        data = bytearray(fl.read_bytes())
+        for ov in a.overlay:
+            f, _, off = ov.rpartition("@")
+            b = pathlib.Path(f).read_bytes()
+            data[int(off, 0):int(off, 0) + len(b)] = b
+            self.log("overlay %s %d B @ %s" % (f, len(b), off))
+        data = bytes(data)
         self.log("flash %s %d B" % (fl, len(data)))
         self.flash = SpiFlash(data, self.log)
         uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
         uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_A9)
         self.uc = uc
-        uc.mem_map(XIP, 0x2000000, UC_PROT_ALL)
-        uc.mem_write(XIP, data.ljust(0x2000000, b"\xff"))
-        uc.mem_map(0x1B000000, 0x4000)  # SRAM 16 KiB (docs/sram.md)
-        uc.mem_map(0x50000000, 0x20000)  # L2-as-RAM, stack at 0x5001eff0 (docs/sram.md)
-        mm = mmap.mmap(-1, 0x10000000)
+        fx, fz = _rg("flash_xip")
+        uc.mem_map(fx, fz, UC_PROT_ALL)
+        uc.mem_write(fx, data.ljust(fz, b"\xff"))
+        uc.mem_map(*_rg("sram"))
+        uc.mem_map(*_rg("l2_lockram"))
+        dbase, dsize = _rg("ddr")
+        mm = mmap.mmap(-1, dsize)
         self.ddr = mm
         ptr = ctypes.addressof(ctypes.c_char.from_buffer(mm))
-        uc.mem_map_ptr(0x60000000, 0x10000000, UC_PROT_ALL, ptr)
-        uc.mem_map_ptr(0x00000000, 0x08000000, UC_PROT_ALL, ptr)  # low alias (docs/uboot.md s6)
-        uc.mem_map(0xFFFF0000, 0x1000)  # boot ROM vectors: b .
-        uc.mem_write(0xFFFF0000, b"\xfe\xff\xff\xea" * 0x400)
-        for n, s, z in DEVICES:
-            uc.mmio_map(s, z, self.mread, n, self.mwrite, n)
+        uc.mem_map_ptr(dbase, dsize, UC_PROT_ALL, ptr)
+        abase, asize = _rg("ddr_alias")
+        uc.mem_map_ptr(abase, asize, UC_PROT_ALL, ptr)
+        vb = DB.region("bootrom").base  # boot ROM vectors: b .
+        uc.mem_map(vb, 0x1000)
+        uc.mem_write(vb, b"\xfe\xff\xff\xea" * 0x400)
+        for n, s0, z in DEVICES:
+            uc.mmio_map(s0, z, self.mread, n, self.mwrite, n)
         uc.hook_add(UC_HOOK_MEM_UNMAPPED, self.on_unmapped)
         uc.hook_add(UC_HOOK_BLOCK, self.on_block)
         uc.hook_add(UC_HOOK_INTR, self.on_intr)
@@ -250,7 +330,7 @@ class Emu:
         return self.regs.get(addr & ~3, 0) >> (8 * (addr & 3)) & 0xFF
 
     def is_uart(self, addr):
-        return 0x18000400 <= addr < 0x18000420
+        return A_UART <= addr < A_UART + 0x20
 
     def mread(self, uc, off, size, name):
         base = {d[0]: d[1] for d in DEVICES}[name]
@@ -263,13 +343,16 @@ class Emu:
                 flag = "UART"
             else:
                 return v  # LSR polls: not logged
-        elif addr == 0x18027220:  # MSPI_STATUS: SPIF
+        elif addr == A_MSPI_REG["STATUS"]:  # SPIF
             v, flag = self.mspi_done, "MSPI"
-        elif addr in (0x19020200, 0x19020204):  # A9 global timer counter (udelay)
-            if addr == 0x19020200:
+        elif addr in (A_GT, A_GT + 4):  # A9 global timer counter (udelay)
+            if addr == A_GT:
                 self.gt = (self.gt + self.a.timer_step) & 0xFFFFFFFFFFFFFFFF
-            v = (self.gt & 0xFFFFFFFF) if addr == 0x19020200 else self.gt >> 32
+                self.timer_reads += 1
+            v = (self.gt & 0xFFFFFFFF) if addr == A_GT else self.gt >> 32
             flag = "TIMER"
+        elif A_RAF <= addr < A_RAF + 0x24 and (addr - A_RAF) in (RAF_STATUS, RAF_FIFO):
+            v, flag = self.raf_read(addr - A_RAF), "RAF"
         else:
             w = self.regs.get(addr & ~3)
             if w is None:
@@ -307,11 +390,16 @@ class Emu:
         self.regs[addr & ~3] = val & 0xFFFFFFFF
         for k in [x for x in self.pollcnt if x[1] == addr]:
             self.pollcnt[k] = 0
-        if 0x18027200 <= addr < 0x18027400:
+            self.lastread.pop(k, None)
+        if A_MSPI <= addr < A_MSPI + 0x200:
             self.mspi_write(addr, val, pc)
+        elif A_RAF <= addr < A_RAF + 0x24:
+            self.raf_write(addr - A_RAF, val)
         ph = phase_of(addr)
         w = self.writes.setdefault((ph, addr), [pc, self.fn(pc), val, 0])
         w[3] += 1
+        if ph == "DDR/PHY/shmoo" or 0x18109000 <= addr < 0x1810B000:  # DDR ctrl/PHY + its IDM wrappers
+            self.ddrw.append((self.seq + 1, pc, self.fn(pc), addr, size, val))
         self.rec("W", pc, addr, size, val)
 
     # ---------- UART ----------
@@ -336,24 +424,48 @@ class Emu:
                 self.uc.emu_stop()
 
     # ---------- polls ----------
+    def is_leaf(self, pc):
+        """True when the load at pc is a leaf accessor (`bx lr` within 3 insns): the poll loop is in the caller."""
+        r = self.leaf.get(pc)
+        if r is None:
+            r = False
+            try:
+                for i, ins in enumerate(self.cs.disasm(bytes(self.uc.mem_read(pc, 16)), pc)):
+                    if ins.mnemonic == "bx" and ins.op_str == "lr":
+                        r = True
+                        break
+            except UcError:
+                pass
+            self.leaf[pc] = r
+        return r
+
     def poll(self, pc, addr, size, v):
-        key = (pc, addr)
+        ctx = self.uc.reg_read(UC_ARM_REG_LR) if self.is_leaf(pc) else 0
+        key = (pc, addr, ctx)
         self.pollcnt[key] += 1
-        if self.pollcnt[key] <= self.a.poll_n:
+        # a timer read between two reads of the same register = timer-bounded loop: it times out
+        # after a few iterations, long before --poll-n reads
+        tb = self.lastread.get(key) not in (None, self.timer_reads)
+        self.lastread[key] = self.timer_reads
+        if self.pollcnt[key] <= (self.a.timer_poll_n if tb else self.a.poll_n):
             return v, ""
-        nv = self.eval_poll(pc, size, v)
+        kp = KNOWN_POLLS.get((ctx, addr))
+        nv = (v | kp[0]) if kp else self.eval_poll(pc, size, v)
+        if (nv is None or nv == v) and ctx and tb:  # leaf accessor + timer-bounded loop: direction-flip rule
+            nv = self.eval_poll(pc, size, v, flip=True)
         if nv is None or nv == v:
             return v, ""
         if key not in self.polls:
             self.polls[key] = [self.fn(pc), nv, 0, v]
-            self.log("POLL pc=%08x %s addr=%08x stored=%08x -> satisfied %08x" % (pc, self.fn(pc), addr, v, nv))
+            self.log("POLL pc=%08x%s %s addr=%08x stored=%08x -> satisfied %08x%s" % (
+                pc, " caller=%08x" % ctx if ctx else "", self.fn(pc), addr, v, nv, " (timer-bounded)" if tb else ""))
         self.polls[key][2] += 1
         return nv, "POLL"
 
     def getregs(self):
         return {n: self.uc.reg_read(r) for n, r in REGNAMES.items()}
 
-    def eval_poll(self, pc, size, v):
+    def eval_poll(self, pc, size, v, flip=False):
         try:
             ins = next(self.cs.disasm(bytes(self.uc.mem_read(pc, 4)), pc))
         except StopIteration:
@@ -369,6 +481,9 @@ class Emu:
                 i = next(self.cs.disasm(bytes(self.uc.mem_read(pcn, 4)), pcn))
             except StopIteration:
                 break
+            if i.mnemonic == "bx" and i.op_str == "lr":  # leaf accessor: continue in the caller
+                pcn = self.uc.reg_read(UC_ARM_REG_LR) & ~1
+                continue
             ahead.append(i)
             if i.mnemonic.startswith("b") or i.mnemonic.startswith("cb"):
                 break
@@ -384,6 +499,18 @@ class Emu:
         cands += [0, 0xFFFFFFFF, 1, 2]
         regs0 = self.getregs()
         cpsr = self.uc.reg_read(UC_ARM_REG_CPSR)
+        if flip:
+            # the stored value keeps the loop spinning, so any value that flips the first branch exits it
+            self.flip = True
+            try:
+                base = self.sim(ahead, dict(regs0), dst, v & mask, cpsr, pc)
+                if base in ("T", "N"):
+                    for c in cands:
+                        if self.sim(ahead, dict(regs0), dst, c & mask, cpsr, pc) not in (base, None):
+                            return c & mask
+            finally:
+                self.flip = False
+            return None
         for c in cands:
             c &= mask
             r = self.sim(ahead, dict(regs0), dst, c, cpsr, pc)
@@ -427,6 +554,8 @@ class Emu:
                     if m.startswith("bl"):
                         return None
                     tgt = i.operands[0].imm & 0xFFFFFFFF
+                    if self.flip:
+                        return "T" if ok else "N"
                     final = tgt if ok else i.address + 4
                     return not (final <= i.address)
                 if m.startswith("cb"):
@@ -437,7 +566,7 @@ class Emu:
                 o = i.operands
                 mn = m
                 for sfx in ("eq", "ne", "hs", "lo", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "cs", "cc"):
-                    if mn.endswith(sfx) and mn[:-2] in ("tst", "teq", "cmp", "cmn", "and", "ands", "mov", "movs", "ubfx", "orr", "bic", "lsl", "lsr", "asr", "lsls", "lsrs", "uxtb", "uxth", "eor", "add", "sub", "mvn"):
+                    if mn.endswith(sfx) and mn[:-2] in ("tst", "teq", "cmp", "cmn", "and", "ands", "mov", "movs", "ubfx", "orr", "bic", "lsl", "lsr", "asr", "lsls", "lsrs", "uxtb", "uxth", "eor", "add", "sub", "mvn", "str", "ldr"):
                         mn = mn[:-2]
                         break
                 res = None
@@ -489,11 +618,11 @@ class Emu:
                     if i.update_flags:
                         n, z = res >> 31, int(res == 0)
                     continue
-                if m in ("str", "ldr") and o[1].type == AC.ARM_OP_MEM and o[1].mem.index == 0 and not i.writeback:
+                if mn in ("str", "ldr") and o[1].type == AC.ARM_OP_MEM and o[1].mem.index == 0 and not i.writeback:
                     base = R.get(i.reg_name(o[1].mem.base))
                     if base is not None:
                         key = (base + o[1].mem.disp) & 0xFFFFFFFF
-                        if m == "str":
+                        if mn == "str":
                             smem[key] = R.get(i.reg_name(o[0].reg))
                             continue
                         if key in smem:
@@ -513,33 +642,63 @@ class Emu:
         return None
 
     def mspi_write(self, addr, val, pc):
-        # Probe code @0x1c025234 mixes two TXRAM layouts (cmd/addr: words 0,1,2,3; data: words 0,2,4..).
-        # Model = flat list of the TXRAM words written since the last start; rx byte i lands at the
-        # same word index j and j+1 (data path reads 0x2c4+8k).
-        o = addr - 0x18027000
-        if 0x240 <= o < 0x2C0:
-            self.mspi_tx[(o - 0x240) // 4] = val & 0xFF
-        elif 0x340 <= o < 0x380:
-            self.mspi_cd[(o - 0x340) // 4] = val & 0xFF
-        elif o == 0x220:
+        # Queue model (FUN_1c025234): SPE runs slots NEWQP..ENDQP. Slot i: TX words 0x10+2i (MSB), 0x11+2i (LSB),
+        # RX words 0x30+2i / 0x31+2i, CDRAM[0x50+i] bit 7 = keep CS. SPCR0_MSB BITS 0 = 16-bit slots (2 bytes,
+        # MSB word first), 8 = 8-bit slots (byte in the MSB TX word, response in both RX words).
+        if addr == A_MSPI + MSPI_CS:  # CS: 1 = assert (new command), 0 = deassert (FUN_1c025234 @0x1c025304 / 0x1c0252a4)
+            if val & 1:
+                self.flash.reset()
+            else:
+                self.flash.end(pc)
+        elif addr == A_MSPI_REG["STATUS"]:
             self.mspi_done = 0
-        elif o == 0x218 and val & 0x40:  # SPE: run the queued words
-            cont_in = bool(self.flash.buf)
-            js = sorted(self.mspi_tx)
-            data_layout = len(js) > 1 and all(j % 2 == 0 for j in js)
-            for j in js:
-                rb = self.flash.xfer(self.mspi_tx[j], pc)
-                if data_layout:  # data queue: slot k at TX 0x240+8k, rx lsb read at 0x2c4+8k (@0x1c025488)
-                    k = j // 2
-                    self.regs[0x18027000 + 0x2C0 + 8 * k] = rb
-                    self.regs[0x18027000 + 0x2C4 + 8 * k] = rb
+        elif addr == A_MSPI_REG["SPCR2"] and val & 0x40:
+            w = lambda base, k: self.regs.get(base + 4 * k, 0) & 0xFF
+            n0 = self.regs.get(A_MSPI_REG["NEWQP"], 0) & 0xF
+            n1 = self.regs.get(A_MSPI_REG["ENDQP"], 0) & 0xF
+            wide = ((self.regs.get(A_MSPI_REG["SPCR0_MSB"], 0) >> 2) & 0xF) == 0
+            tx, rx, cd = A_MSPI_REG["TXRAM"], A_MSPI_REG["RXRAM"], A_MSPI_REG["CDRAM"]
+            for i in range(n0, n1 + 1):
+                if wide:
+                    ins = [w(tx, 2 * i), w(tx, 2 * i + 1)]
                 else:
-                    self.regs[0x18027000 + 0x2C0 + 4 * j] = rb
-            cont = (self.mspi_cd[max(self.mspi_cd)] >> 7) & 1 if self.mspi_cd else 0
+                    ins = [w(tx, 2 * i)]
+                outs = [self.flash.xfer(b, pc) for b in ins]
+                if wide:
+                    self.regs[rx + 8 * i] = outs[0]
+                    self.regs[rx + 8 * i + 4] = outs[1]
+                else:
+                    self.regs[rx + 8 * i] = self.regs[rx + 8 * i + 4] = outs[0]
+            cont = (self.regs.get(cd + 4 * n1, 0) >> 7) & 1
+            if self.a.trace_mspi:
+                self.log("MSPI run q=%d..%d wide=%d tx=%s cont=%d pc=%08x" % (n0, n1, wide, [w(tx, k) for k in range(2 * (n1 + 1))], cont, pc))
             if not cont:
                 self.flash.end(pc)
-            self.mspi_tx, self.mspi_cd = {}, {}
             self.mspi_done = 1
+
+    # BSPI RAF read engine (FUN_1c024d10): START_ADDR/NUM_WORDS, CTRL=1 starts, FIFO words (LE), STATUS bit1 = FIFO empty, bit0 = busy.
+    def raf_read(self, off):
+        if off == RAF_STATUS:
+            return 0x2 if not self.raf_fifo else 0x0
+        if off == RAF_FIFO:
+            return self.raf_fifo.popleft() if self.raf_fifo else 0
+        return 0
+
+    def raf_write(self, off, val):
+        if off == RAF_FIFO:  # flush
+            self.raf_fifo.clear()
+        elif off == RAF_CTRL and val & 1:
+            hi = (self.regs.get(A_BSPI + BSPI_UPPER, 0) >> 24) & 0xFF
+            a = (hi << 24) | (self.regs.get(A_RAF + RAF_START, 0) & 0xFFFFFF)
+            nw = self.regs.get(A_RAF + RAF_WORDS, 0)
+            d = self.flash.data
+            self.raf_fifo.clear()
+            for k in range(nw):
+                chunk = d[a + 4 * k:a + 4 * k + 4].ljust(4, b"\xff")
+                self.raf_fifo.append(int.from_bytes(chunk, "little"))
+            self.raf_n += 1
+            if self.raf_n <= 40:
+                self.log("RAF read addr=%08x words=%d" % (a, nw))
 
     # ---------- faults/blocks ----------
     def on_block(self, uc, addr, size, ud):
@@ -624,7 +783,7 @@ class Emu:
             L = byp.get(ph, [])
             o.append("### %s: %d regs, %d writes" % (ph, len(L), sum(w[3] for a, w in L)))
             for a, w in L[: self.a.rep_regs]:
-                o.append("- %08x first pc=%08x %s val=%08x n=%d" % (a, w[0], w[1], w[2], w[3]))
+                o.append("- %08x%s first pc=%08x %s val=%08x n=%d" % (a, self.nm(a), w[0], w[1], w[2], w[3]))
             if len(L) > self.a.rep_regs:
                 o.append("- ... %d more (see tsv)" % (len(L) - self.a.rep_regs))
         o.append("\n## Reads per phase (distinct regs)\n")
@@ -632,15 +791,15 @@ class Emu:
         for ph, n in cnt.items():
             o.append("- %s: %d regs" % (ph, n))
         o.append("\n## Auto-satisfied polls (flagged)\n")
-        for (pc, a), (fn, nv, n, old) in self.polls.items():
-            o.append("- pc=%08x %s addr=%08x stored=%08x -> %08x (x%d)" % (pc, fn, a, old, nv, n))
+        for (pc, a, ctx), (fn, nv, n, old) in self.polls.items():
+            o.append("- pc=%08x%s %s addr=%08x%s stored=%08x -> %08x (x%d)" % (pc, " caller=%08x" % ctx if ctx else "", fn, a, self.nm(a), old, nv, n))
         o.append("\n## Unmapped accesses (page, first pc)\n")
         for pg, (pc, fn, rw, a, n) in self.unmapped.items():
             o.append("- %s %08x (page %08x) first pc=%08x %s n=%d" % (rw, a, pg, pc, fn, n))
         o.append("\n## Reads of registers with no default (returned 0)\n")
         ur = sorted(self.unknown_reads.items())
         for a, (pc, fn) in ur[:60]:
-            o.append("- %08x first pc=%08x %s" % (a, pc, fn))
+            o.append("- %08x%s first pc=%08x %s" % (a, self.nm(a), pc, fn))
         if len(ur) > 60:
             o.append("- ... %d more (%d total)" % (len(ur) - 60, len(ur)))
         o.append("\n## SPI flash writes seen (not applied)\n")
@@ -650,6 +809,12 @@ class Emu:
         o.append("\n## Functions not run\n")
         miss = [f for f in self.funcs if f[0] not in covered]
         o.append(", ".join("%s@%x" % (f[1], f[0]) for f in miss))
+        with open(DDRW, "w") as f:
+            f.write("seq\tpc\tfunc\taddr\tname\tsize\tvalue\n")
+            for sq, pc, fn, a, sz, v in self.ddrw:
+                f.write("%d\t%08x\t%s\t%08x\t%s\t%d\t%08x\n" % (sq, pc, fn, a, self.nm(a).strip(" []"), sz, v))
+        o.append("\n## DDR controller/PHY writes: %d (%d distinct regs), full ordered list %s\n" % (
+            len(self.ddrw), len({x[3] for x in self.ddrw}), DDRW.relative_to(ROOT)))
         REP.write_text("\n".join(o) + "\n")
         print("\n".join(o[:6]))
         print("report: %s" % REP)
@@ -663,6 +828,9 @@ def main():
     ap.add_argument("--log-reads", type=int, default=8, help="reads logged per (pc,addr) before suppression")
     ap.add_argument("--cmd", action="append", default=[])
     ap.add_argument("--timer-step", type=int, default=20000, help="global timer ticks added per counter read (200 MHz assumed: 100 us)")
+    ap.add_argument("--timer-poll-n", type=int, default=3, help="reads before a timer-bounded poll is satisfied")
+    ap.add_argument("--overlay", action="append", default=[], metavar="FILE@OFFSET", help="overlay FILE into the flash model at OFFSET (emulator copy only)")
+    ap.add_argument("--trace-mspi", action="store_true", help="log every MSPI queue run")
     ap.add_argument("--no-key", action="store_true")
     ap.add_argument("--stop-unmapped", action="store_true")
     ap.add_argument("--uart-shift", type=int, default=0)

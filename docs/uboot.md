@@ -52,7 +52,7 @@ Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot
 | `abortboot` in `main_loop`@0x1c01dba8: `bootdelay` env (3), counts down 1 s steps of 100 × 10 ms `udelay`; **any received character** aborts (`tstc` then `getc`, no compare, no `CONFIG_AUTOBOOT_KEYED`) → prompt `u-boot> ` (string@0x1c04cc64) | | C |
 | `bootdelay` < 0 → no wait; 0 → no abort check. Env default is 3 | | C |
 | Env (`mtd1`, `0xc0000`) bad CRC → "\*\*\* Warning - bad CRC, using default environment", then the compiled-in default env (stock `bootcmd`, `bootdelay` 3) → **boots stock**, does not stop at the prompt | strings `env_common.c` @0x4cd08, @0x4cda5 (flash offsets) | C (strings), I (path) |
-| On bad CRC uboot-1 **rewrites `mtd1` with the default env**: "- saving default environment to flash..." (@0x4cd46), erase `0xc0000` + 256 page programs | `scripts/uboot1_emu.py` run, 2026-11-15 (bad CRC came from the MSPI model) | C (emulator) |
+| On bad CRC uboot-1 **rewrites `mtd1` with the default env**: "- saving default environment to flash..." (@0x4cd46), erase `0xc0000` + 256 page programs | `scripts/uboot1_emu.py` run, 2026-11-15 (bad CRC was forced by the first MSPI model; with the queue model the backup env CRC is valid and this path is not taken) | C (emulator) |
 | `bootcmd` that fails (e.g. `bootm` on a bad image CRC) returns to the hush loop → `u-boot>` prompt; the 30 s WDT is petted by getc/putc there | §2, mainline `main_loop` | I |
 | No silent console, no stdin/stdout/`silent` handling, no boot lock | strings | C |
 | Console = NS16550 UART1 `0x18000400`, FCR=7, divisor from `gd->baudrate` (env `baudrate`, default 115200) | `serial_init`@0x1c024a64/0x1c024950 | C |
