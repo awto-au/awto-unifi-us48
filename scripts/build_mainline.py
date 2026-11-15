@@ -16,6 +16,7 @@ Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs
   --save-patches   git format-patch BASE..BRANCH -> mainline/ (replaces old patches), then exit
   --checkpatch     scripts/checkpatch.pl --strict on every commit of the branch, then exit
   --dtbs-check     make dtbs_check for the new board DTS (dtschema from tmp/dtschema-venv), then exit
+  --module-only    build the out-of-tree modules only (--tree/--build-dir: private tree + build dir, no staging)
 """
 
 import argparse
@@ -68,7 +69,8 @@ def log(msg: str) -> None:
         f.write(line + "\n")
 
 
-def run(cmd, cwd=TREE, out=None, env=None, check=True) -> int:
+def run(cmd, cwd=None, out=None, env=None, check=True) -> int:
+    cwd = cwd or TREE
     log("$ " + " ".join(map(str, cmd)))
     if out is None:
         r = subprocess.run(cmd, cwd=cwd, env=env)
@@ -164,7 +166,8 @@ def make_env(venv: bool = False) -> dict:
     return env
 
 
-def kmake(*args, out=MAKE_LOG, venv=False, jobs=None) -> None:
+def kmake(*args, out=None, venv=False, jobs=None) -> None:
+    out = out or MAKE_LOG
     run(NICE + ["make", f"-j{jobs or os.cpu_count()}", f"O={BUILD}", *args], out=out, env=make_env(venv))
 
 
@@ -204,6 +207,10 @@ def stage_rootfs() -> Path:
     # Bench image: keep the PoE state stock left (cameras stay powered for link/RX tests); production keeps poe-off.
     for f in (stage / "etc/rc.d").glob("S*us48-poe-off"):
         f.unlink()
+    fw = ROOT / "tmp/a2fw/us48-a2.elf"	# scripts/build_a2fw.py; remoteproc loads /lib/firmware/us48-a2.elf
+    if fw.exists():
+        (stage / "lib/firmware").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(fw, stage / "lib/firmware" / fw.name)
     if not (stage / "init").exists():
         (stage / "init").symlink_to("sbin/init")
     lst = OUTDIR / "initramfs.list"
@@ -237,22 +244,51 @@ def configure(jobs: int) -> None:
     log(f"config: {sum(1 for l in cfg if l.endswith('=y'))} =y, {sum(1 for l in cfg if l.endswith('=m'))} =m")
 
 
-def build_us48_cmic(jobs: int) -> None:
-    """Out-of-tree us48_cmic against this tree (modules_prepare only), staged into the initramfs rootfs.
+# Build order = dependency order: us48_pci (aux parent) first, its Module.symvers feeds the others.
+MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko"]),
+           ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"])]
 
-    KBUILD_MODPOST_WARN: no Module.symvers before the kernel itself is built (exported-symbol check is warn-only here).
+
+def build_modules(jobs: int, stage: bool = True) -> None:
+    """Out-of-tree us48 modules against this tree, staged into the initramfs rootfs (stage=False: build only).
+
+    Module.symvers of the kernel is needed for a warning-free modpost: built with `vmlinux modules` once per build dir.
     """
-    mod = ROOT / "kernel/us48-cmic"
-    env = make_env()
-    env["KBUILD_MODPOST_WARN"] = "1"
     kmake("modules_prepare", jobs=jobs)
-    run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "clean"], out=MAKE_LOG, env=env, check=False)
-    run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "modules"], out=MAKE_LOG, env=env)
-    dst = OUTDIR / "rootfs/lib/us48"
-    dst.mkdir(parents=True, exist_ok=True)
-    for ko in ("us48_cmic.ko", "us48_cmic_xe.ko"):
-        shutil.copy2(mod / ko, dst / ko)
-        log(f"{ko} ({(mod / ko).stat().st_size} B) staged into the initramfs rootfs ({dst})")
+    if not (BUILD / "Module.symvers").exists():
+        kmake("vmlinux", "modules", jobs=jobs)
+    extra = []
+    for rel, kos in MODULES:
+        mod = ROOT / rel
+        env = make_env()
+        if extra:
+            env["KBUILD_EXTRA_SYMBOLS"] = " ".join(extra)
+        run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "clean"], out=MAKE_LOG, env=env, check=False)
+        run(NICE + ["make", f"-j{jobs}", f"O={BUILD}", f"M={mod}", "modules"], out=MAKE_LOG, env=env)
+        extra.append(str(mod / "Module.symvers"))
+        for ko in kos:
+            log(f"{ko} ({(mod / ko).stat().st_size} B)")
+            if stage:
+                dst = OUTDIR / "rootfs/lib/us48"
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(mod / ko, dst / ko)
+                log(f"{ko} staged into the initramfs rootfs ({dst})")
+
+
+def configure_modules_only() -> None:
+    """Private build dir for module work: allnoconfig + defconfig, no initramfs, no rootfs staging."""
+    BUILD.mkdir(parents=True, exist_ok=True)
+    frag = BUILD / "us48-modules.config"
+    # no initramfs here: its symbols (hidden without INITRAMFS_SOURCE) are left out
+    frag.write_text("".join(l for l in FRAGMENT.read_text().splitlines(True) if "INITRAMFS" not in l))
+    env = make_env()
+    env["KCONFIG_ALLCONFIG"] = str(frag)
+    run(NICE + ["make", f"O={BUILD}", "allnoconfig"], out=MAKE_LOG, env=env)
+    cfg = set((BUILD / ".config").read_text().splitlines())
+    missing = [x for x in frag.read_text().splitlines() if x.startswith("CONFIG_") and x not in cfg]
+    if missing:
+        log("abort: requested symbols not in the final .config: " + ", ".join(missing))
+        sys.exit(3)
 
 
 def pack() -> Path:
@@ -270,6 +306,7 @@ def pack() -> Path:
 
 
 def main() -> int:
+    global TREE, BUILD, MAKE_LOG
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--keep-branch", action="store_true")
@@ -277,14 +314,24 @@ def main() -> int:
     ap.add_argument("--checkpatch", action="store_true")
     ap.add_argument("--dtbs-check", action="store_true")
     ap.add_argument("--prepare-only", action="store_true")
-    ap.add_argument("--module-only", action="store_true", help="build + stage only kernel/us48-cmic (tree and .config must exist)")
+    ap.add_argument("--module-only", action="store_true",
+                    help="build the out-of-tree modules (pci, a2, cmic); staged into the rootfs unless --build-dir is given")
+    ap.add_argument("--tree", type=Path, help="kernel source tree (default tmp/linux-mainline)")
+    ap.add_argument("--build-dir", type=Path, help="private kernel build dir (default tmp/mainline/build); skips staging")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),
                     help="machine Linux store (default $US48_LINUX_STORE, else tmp/linux-store)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    if a.tree:
+        TREE = a.tree.resolve()
+    if a.build_dir:
+        BUILD = a.build_dir.resolve()
+        MAKE_LOG = ROOT / "tmp/logs/build_modules-make.log"
     if a.module_only:
-        build_us48_cmic(a.jobs)
+        if a.build_dir and not (BUILD / ".config").exists():
+            configure_modules_only()
+        build_modules(a.jobs, stage=not a.build_dir)
         return 0
     ensure_tree(a.store)
     if a.save_patches:
@@ -300,7 +347,7 @@ def main() -> int:
     if a.prepare_only:
         log("prepared")
         return 0
-    build_us48_cmic(a.jobs)
+    build_modules(a.jobs)
     # modules_prepare has just written the final kernel.release: kmodloader (insmod) needs lib/modules/<that release>
     rel = (BUILD / "include/config/kernel.release").read_text().strip()
     shutil.rmtree(OUTDIR / "rootfs/lib/modules", ignore_errors=True)

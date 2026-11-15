@@ -1,0 +1,51 @@
+From d4fe933b57580316d42f5aad794c1cc5612314f2 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Sun, 15 Nov 2026 12:54:46 +1100
+Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Reserve memory for the switch
+ chip A9
+
+The BCM53346 behind PCIe has its own Cortex-A9 that runs code and Linux
+from host DDR through the PAXB outbound window. Reserve 64 MiB for it:
+the window has a 64 MiB granule, so this is the smallest block that can
+be mapped on its own.
+
+It is the upper half of the low 128 MiB bank (host 0x04000000), the
+only DDR the chip is known to reach. The CMA area moves below it
+(cma=8M@32M-64M in the kernel command line). The node is no-map: the
+host maps it write-combined and never through the linear mapping.
+
+The offsets are where the remoteproc driver puts the a2 DTB, zImage and
+initramfs inside the block.
+
+Signed-off-by: TODO
+---
+ .../broadcom/bcm53344-ubnt-unifi-us-48-500w.dts  | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index aa3496b..6dcde2a 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -28,6 +28,22 @@
+ 		      <0x68000000 0x08000000>;
+ 	};
+ 
++	reserved-memory {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges;
++
++		/* RAM of the switch chip's Cortex-A9 (us48_a2 remoteproc), seen by it at 0x08000000 */
++		a2@4000000 {
++			compatible = "ubnt,us48-a2-carveout";
++			reg = <0x04000000 0x04000000>;
++			ubnt,dtb-offset = <0x00b00000>;
++			ubnt,kernel-offset = <0x01000000>;
++			ubnt,initrd-offset = <0x02000000>;
++			no-map;
++		};
++	};
++
+ 	reboot {
+ 		compatible = "syscon-reboot";
+ 		regmap = <&dmu>;

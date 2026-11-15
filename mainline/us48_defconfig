@@ -33,7 +33,7 @@ CONFIG_CLK_BCM_HR2=y
 # Boot: appended DTB, initramfs, cmdline from the DTB/kernel
 CONFIG_ARM_APPENDED_DTB=y
 # CONFIG_ARM_ATAG_DTB_COMPAT is not set
-CONFIG_CMDLINE="console=ttyS0,115200 earlycon keep_bootcon cma=8M@64M-128M"
+CONFIG_CMDLINE="console=ttyS0,115200 earlycon keep_bootcon cma=8M@32M-64M"
 CONFIG_BLK_DEV_INITRD=y
 CONFIG_RD_GZIP=y
 CONFIG_KERNEL_GZIP=y
@@ -94,6 +94,8 @@ CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 CONFIG_SERIAL_OF_PLATFORM=y
 CONFIG_SERIAL_EARLYCON=y
+# a2 console (same image on a1 and a2; a2 DTB bootargs select it, a1 never registers it: no DCC reader there)
+CONFIG_HVC_DCC=y
 CONFIG_HW_RANDOM=y
 CONFIG_HW_RANDOM_BCM2835=y
 CONFIG_PCI=y
@@ -103,6 +105,9 @@ CONFIG_PCIEASPM=y
 CONFIG_PCIEASPM_DEFAULT=y
 CONFIG_PCIE_IPROC_PLATFORM=y
 CONFIG_PCIE_IPROC_MSI=y
+# a2 (unit 1 A9): us48_pci aux parent + us48_a2 remoteproc, out of tree (kernel/us48-*); AUXILIARY_BUS prompt = mainline/0011
+CONFIG_AUXILIARY_BUS=y
+CONFIG_REMOTEPROC=y
 CONFIG_SPI=y
 CONFIG_SPI_MEM=y
 CONFIG_SPI_BCM_QSPI=y

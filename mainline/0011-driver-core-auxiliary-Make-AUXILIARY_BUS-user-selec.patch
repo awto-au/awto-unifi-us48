@@ -1,0 +1,27 @@
+From e39684ea61592ecbd57235d0edcfd45a443816eb Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Sun, 15 Nov 2026 12:52:00 +1100
+Subject: [PATCH] driver core: auxiliary: Make AUXILIARY_BUS user-selectable
+
+The symbol has no prompt, so a kernel without an in-tree user cannot
+enable it, and out-of-tree auxiliary drivers cannot be built or loaded.
+Add a prompt. Select it from nothing; the default stays n.
+
+Signed-off-by: TODO
+---
+ drivers/base/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/base/Kconfig b/drivers/base/Kconfig
+index a9acf45..5c2276c 100644
+--- a/drivers/base/Kconfig
++++ b/drivers/base/Kconfig
+@@ -2,7 +2,7 @@
+ menu "Generic Driver Options"
+ 
+ config AUXILIARY_BUS
+-	bool
++	bool "Auxiliary bus (for out-of-tree auxiliary drivers)"
+ 
+ config UEVENT_HELPER
+ 	bool "Support for uevent helper"
