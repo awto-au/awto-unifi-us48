@@ -14,10 +14,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import console  # noqa: E402
+import hwdb  # noqa: E402
 
 LOG = Path(__file__).resolve().parent.parent / "tmp/logs/fan_gpio_probe.log"
-GP0, GP1 = 0x48002000, 0x0A002000  # CMIC GP block: unit 0 (AXI), unit 1 (PCIe BAR of BCM53346)
-CCA_DIN, CCA_DOUT, CCA_OUTEN = 0x18000060, 0x18000064, 0x18000068
+# CMIC GP block: unit 0 (AXI), unit 1 (PCIe BAR of BCM53346); addresses from hwdb/soc (cmic.toml, periph.toml)
+GP0, GP1 = hwdb.addr("cmic0.GP_DATA_IN"), hwdb.addr("cmic1.GP_DATA_IN")
+CCA_DIN, CCA_DOUT, CCA_OUTEN = (hwdb.addr("cca.GPIO_DIN"), hwdb.addr("cca.GPIO_DOUT"), hwdb.addr("cca.GPIO_OUTEN"))
 
 
 def run(s, cmd: str) -> str:
