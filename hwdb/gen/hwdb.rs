@@ -53,15 +53,15 @@ pub const HW_A2_CARVEOUT_SIZE: u32 = 0x4000000;
 // region a2_stub (axi1) [I]
 pub const HW_A2_STUB_BASE: u32 = 0x08000000;
 pub const HW_A2_STUB_SIZE: u32 = 0x100000;
-// region a2_dtb (axi1) [I]
-pub const HW_A2_DTB_BASE: u32 = 0x08b00000;
-pub const HW_A2_DTB_SIZE: u32 = 0x100000;
 // region a2_zimage (axi1) [I]
 pub const HW_A2_ZIMAGE_BASE: u32 = 0x09000000;
-pub const HW_A2_ZIMAGE_SIZE: u32 = 0x1000000;
+pub const HW_A2_ZIMAGE_SIZE: u32 = 0xf00000;
+// region a2_dtb (axi1) [I]
+pub const HW_A2_DTB_BASE: u32 = 0x09f00000;
+pub const HW_A2_DTB_SIZE: u32 = 0x100000;
 // region a2_initrd (axi1) [I]
 pub const HW_A2_INITRD_BASE: u32 = 0x0a000000;
-pub const HW_A2_INITRD_SIZE: u32 = 0x2000000;
+pub const HW_A2_INITRD_SIZE: u32 = 0x1f00000;
 // region a2_shared (axi1) [I]
 pub const HW_A2_SHARED_BASE: u32 = 0x0bf00000;
 pub const HW_A2_SHARED_SIZE: u32 = 0x100000;

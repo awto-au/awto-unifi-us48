@@ -1,4 +1,4 @@
-From d4fe933b57580316d42f5aad794c1cc5612314f2 Mon Sep 17 00:00:00 2001
+From 09739432e611c3ec9ccb05bff37fc5cce1e1230d Mon Sep 17 00:00:00 2001
 From: Dan on Selwyn <dan@selwyn>
 Date: Sun, 15 Nov 2026 12:54:46 +1100
 Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Reserve memory for the switch
@@ -23,7 +23,7 @@ Signed-off-by: TODO
  1 file changed, 16 insertions(+)
 
 diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
-index aa3496b..6dcde2a 100644
+index aa3496b..5972b15 100644
 --- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 +++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 @@ -28,6 +28,22 @@
@@ -39,7 +39,7 @@ index aa3496b..6dcde2a 100644
 +		a2@4000000 {
 +			compatible = "ubnt,us48-a2-carveout";
 +			reg = <0x04000000 0x04000000>;
-+			ubnt,dtb-offset = <0x00b00000>;
++			ubnt,dtb-offset = <0x01f00000>;
 +			ubnt,kernel-offset = <0x01000000>;
 +			ubnt,initrd-offset = <0x02000000>;
 +			no-map;

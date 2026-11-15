@@ -174,37 +174,37 @@ base = 0x08000000
 size = 0x100000
 kind = "ram"
 unit = 1
-desc = "First MiB of the a2 RAM: ELF firmware (self-test or boot stub), resource table, trace; stub boot args at +0x40"
+desc = "First MiB of the a2 RAM: ELF firmware code (self-test or boot stub), stub boot args at +0x100; kernel RAM once Linux runs. Resource table and trace are in a2_shared"
 src = "docs/a2-design.md; a2fw/"
 conf = "I"
 
 [region.a2_dtb]
 space = "axi1"
-base = 0x08b00000
+base = 0x09f00000
 size = 0x100000
 kind = "ram"
 unit = 1
-desc = "a2 Linux: DTB (offset 0x00b00000 in the a2 RAM)"
+desc = "a2 Linux: DTB (offset 0x01f00000 in the a2 RAM, above the decompressed kernel which reaches ~+0x0f30000)"
 src = "docs/a2-design.md"
 conf = "I"
 
 [region.a2_zimage]
 space = "axi1"
 base = 0x09000000
-size = 0x1000000
+size = 0xf00000
 kind = "ram"
 unit = 1
-desc = "a2 Linux: zImage (offset 0x01000000; the kernel decompresses to RAM base + 0x8000 and must not reach it)"
+desc = "a2 Linux: zImage (offset 0x01000000, 15 MiB; the kernel decompresses to RAM base + 0x8000 and must not reach it)"
 src = "docs/a2-design.md"
 conf = "I"
 
 [region.a2_initrd]
 space = "axi1"
 base = 0x0a000000
-size = 0x2000000
+size = 0x1f00000
 kind = "ram"
 unit = 1
-desc = "a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses"
+desc = "a2 Linux: external initramfs (offset 0x02000000, up to 31 MiB, ends at a2_shared); optional, the built-in one is used today"
 src = "docs/a2-design.md"
 conf = "I"
 

@@ -51,18 +51,18 @@
 /* region a2_carveout (axi1): a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, no-map) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB [I] */
 #define HW_A2_CARVEOUT_BASE	0x08000000U
 #define HW_A2_CARVEOUT_SIZE	0x4000000U
-/* region a2_stub (axi1): First MiB of the a2 RAM: ELF firmware (self-test or boot stub), resource table, trace; stub boot args at +0x40 [I] */
+/* region a2_stub (axi1): First MiB of the a2 RAM: ELF firmware code (self-test or boot stub), stub boot args at +0x100; kernel RAM once Linux runs. Resource table and trace are in a2_shared [I] */
 #define HW_A2_STUB_BASE	0x08000000U
 #define HW_A2_STUB_SIZE	0x100000U
-/* region a2_dtb (axi1): a2 Linux: DTB (offset 0x00b00000 in the a2 RAM) [I] */
-#define HW_A2_DTB_BASE	0x08b00000U
-#define HW_A2_DTB_SIZE	0x100000U
-/* region a2_zimage (axi1): a2 Linux: zImage (offset 0x01000000; the kernel decompresses to RAM base + 0x8000 and must not reach it) [I] */
+/* region a2_zimage (axi1): a2 Linux: zImage (offset 0x01000000, 15 MiB; the kernel decompresses to RAM base + 0x8000 and must not reach it) [I] */
 #define HW_A2_ZIMAGE_BASE	0x09000000U
-#define HW_A2_ZIMAGE_SIZE	0x1000000U
-/* region a2_initrd (axi1): a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses [I] */
+#define HW_A2_ZIMAGE_SIZE	0xf00000U
+/* region a2_dtb (axi1): a2 Linux: DTB (offset 0x01f00000 in the a2 RAM, above the decompressed kernel which reaches ~+0x0f30000) [I] */
+#define HW_A2_DTB_BASE	0x09f00000U
+#define HW_A2_DTB_SIZE	0x100000U
+/* region a2_initrd (axi1): a2 Linux: external initramfs (offset 0x02000000, up to 31 MiB, ends at a2_shared); optional, the built-in one is used today [I] */
 #define HW_A2_INITRD_BASE	0x0a000000U
-#define HW_A2_INITRD_SIZE	0x2000000U
+#define HW_A2_INITRD_SIZE	0x1f00000U
 /* region a2_shared (axi1): Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there [I] */
 #define HW_A2_SHARED_BASE	0x0bf00000U
 #define HW_A2_SHARED_SIZE	0x100000U
