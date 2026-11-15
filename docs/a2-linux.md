@@ -116,3 +116,20 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
   - `us48-a2-ifb`: 64 KiB straight-line code across PCIe (one load/add/store per 32 B line), data in SRAM (4 KiB window), both L1 on.
   - `us48-a2-ifd`: same code and 64 KiB data both across PCIe: every code line fill coincides with a data line fill.
   - `us48-a2-rawtest-diag22`, `-nic`, `-diag22-nic`, `us48-a2-ifd-diag22-nic`: Diagnostic bit 22 and/or NIC PCIe0 slave issuing = 1 (`NIC_ISS=3`), header prints `diag:` and `nic:` read-back.
+
+## I-fetch/D-fill and NIC issuing probes: board results (#79, 2026-11-15, a2 1000 MHz, AXI 200, 4 runs each)
+- `us48_a2` rebuilt from 8e6edd4, loaded on a1 (cpu_mhz default 100). ELFs run with `a2_raw.py <name>.elf 1000`.
+
+| ELF | ok / 4 | notes |
+|---|---|---|
+| `rawtest` (control) | 0 | undefined vector 0xffff000c every run |
+| `ifd` (I + D both over PCIe) | 4 | m = r = 0, ~0x4cc passes; does not reproduce |
+| `rawtest-nic` (NIC PCIe0 S0 issuing = 1) | 0 | `nic:` reads back 3 (write took), fails as control |
+| `ifa` (code SRAM, data PCIe) | 4 | m = r = 0 |
+| `ifb` (code PCIe, data SRAM) | 4 | m = r = 0 |
+| `rawtest-diag22` | 0 | `diag:` reads back 0x00400000 (bit 22 sticks) |
+| `rawtest-diag22-nic` | 0 | both knobs stick, fails |
+| `ifd-diag22-nic` | 4 | clean |
+
+- NIC issuing override and Diagnostic bit 22 are not the cause. Linux-side NIC param, 5 boots and bandwidth cost not run (step 2 not clean).
+- Streaming I+D fill traffic over PCIe at full rate is clean (ifa/ifb/ifd): the failure is specific to what rawtest does, not to the I/D line-fill interaction. Next: bisect rawtest (mapping changes with caches on, aliasing).
