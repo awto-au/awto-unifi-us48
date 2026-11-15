@@ -1,0 +1,185 @@
+# Address spaces and memory/device regions. Schema: docs/hwdb.md. src = doc/page/PC/file:line; conf C|I.
+
+[space.axi0]
+desc = "Unit 0 (BCM53344, host SoC) AXI/physical map as seen by a1; PCIe-routed windows and unit-1 BAR2 also appear here"
+unit = 0
+
+[space.axi1]
+desc = "Unit 1 (BCM53346) AXI map as seen by a2; host reaches it via PAXB IMAP0_7 + BAR0+0x7000 window"
+unit = 1
+
+[space.bar0u1]
+desc = "Unit 1 PCIe BAR0 (32 KiB), offsets from BAR0 start"
+unit = 1
+
+[region.ddr]
+space = "axi0"
+base = 0x60000000
+size = 0x10000000
+kind = "ram"
+desc = "DDR3, 256 MiB, hard-coded by uboot-1; Linux sees 128M@0x0 + 128M@0x68000000"
+src = "docs/uboot.md s5 (gd->ram_size @0x1c034cc4, bi_dram @0x1c00d20c); docs/sram.md (/proc/iomem)"
+conf = "C"
+
+[region.ddr_alias]
+space = "axi0"
+base = 0x00000000
+size = 0x08000000
+kind = "alias"
+desc = "Low 128 MiB alias of DDR (cacheable in uboot-1 page table)"
+src = "docs/uboot.md s6 (dcache_enable @0x1c00dc9c)"
+conf = "I"
+note = "alias of 0x60000000 inferred from stock mem=128M@0x0 mem=128M@0x68000000; alias test pending"
+
+[region.l2_lockram]
+space = "axi0"
+base = 0x50000000
+size = 0x20000
+kind = "l2lock"
+desc = "PL310 locked-by-line as RAM, 8 ways x 16 KiB; pre-DDR stack + gd (SP 0x5001eff0)"
+src = "docs/sram.md (lowlevel_init @0x1c0004a8, lockdown @0x1c000630)"
+conf = "C"
+
+[region.sram]
+space = "axi0"
+base = 0x1b000000
+size = 0x4000
+kind = "ram"
+desc = "On-chip SRAM 16 KiB; 0x1b004000 bus-faults"
+src = "docs/sram.md (uboot-2 probes 2026-11-13)"
+conf = "C"
+
+[region.flash_xip]
+space = "axi0"
+base = 0x1c000000
+size = 0x2000000
+kind = "flash"
+desc = "BSPI XIP window of the boot flash (MX25L25635E, 32 MiB); uboot-1 linked here"
+src = "docs/sram.md (boot flow); docs/uboot.md s6"
+conf = "I"
+note = "window size = flash size assumed; uboot.md s6 page table maps 0x1e0-0x1ff cacheable and 0x080-0x1df device"
+
+[region.pflash]
+space = "axi0"
+base = 0x20000000
+size = 0x04000000
+kind = "flash"
+desc = "Parallel NOR window (status disabled, not populated)"
+src = "tmp/linux-mainline bcm-hr2.dtsi pflash@20000000"
+conf = "C"
+
+[region.pcie0_win]
+space = "axi0"
+base = 0x08000000
+size = 0x08000000
+kind = "pcie"
+desc = "RC outbound memory window; unit 1 BAR2/CMIC lives here. a2 host-RAM window (OARR_0) uses the same range in axi1"
+src = "tmp/linux-mainline bcm-hr2.dtsi pcie0 ranges; docs/a2.md"
+conf = "C"
+
+[region.pcie1_win]
+space = "axi0"
+base = 0x40000000
+size = 0x08000000
+kind = "pcie"
+desc = "Second RC window (unused on this board)"
+src = "tmp/linux-mainline bcm-hr2.dtsi pcie1 ranges"
+conf = "C"
+
+[region.iproc_axi]
+space = "axi0"
+base = 0x18000000
+size = 0x120000
+kind = "device"
+desc = "iProc CCB/AXI peripheral window (DT ranges 0x11c40c, rounded up)"
+src = "uboot-port/arch/arm/dts/us48-uboot.dts axi@18000000"
+conf = "C"
+
+[region.mpcore]
+space = "axi0"
+base = 0x19000000
+size = 0x23000
+kind = "device"
+desc = "IHOST: CCU/PLL at +0, A9 private region at +0x20000 (PERIPHBASE 0x19020000)"
+src = "uboot-port/arch/arm/dts/us48-uboot.dts mpcore@19000000"
+conf = "C"
+
+[region.coresight]
+space = "axi0"
+base = 0x19010000
+size = 0x10000
+kind = "device"
+desc = "A9 CPU0 debug 0x19010000, PMU 0x19011000, PTM 0x19012000, CTI 0x19013000"
+src = "regdb/hr2_regs.tsv (IHOST_A9CPU0/A9PMU0/A9PTM0/A9CTI0 lowest offsets)"
+conf = "C"
+
+[region.axi_ic]
+space = "axi0"
+base = 0x1a000000
+size = 0x100000
+kind = "device"
+desc = "AXI interconnect wrappers (AXIIC_*), e.g. AXIIC_ROM_S0 0x1a008008, AXIIC_SRAM_S0 0x1a015008"
+src = "regdb/hr2_regs.tsv AXIIC_*; docs/sram.md"
+conf = "I"
+note = "extent inferred from regdb address range 0x1a000000-0x1a0fffff"
+
+[region.bootrom]
+space = "axi0"
+base = 0xffff0000
+kind = "rom"
+desc = "Boot ROM high vectors; a2 idles at PC 0xffff00d8; ROM LUT word at 0xffff0400. Base/size unknown"
+src = "docs/sram.md (a2 PC sample 0xffff00d8); scripts/u2_lut_reset_test.py (LUT 0xffff0400)"
+conf = "I"
+note = "A9 resets to 0x0; the ROM location is inferred from PC samples only"
+
+[region.a2_sram]
+space = "axi1"
+base = 0x1b000000
+size = 0x4000
+kind = "ram"
+unit = 1
+desc = "Unit 1 SRAM 16 KiB (size assumed equal to unit 0; 0x1b004000 not probed). a2 stub: mailbox +0x100, payload +0x200, stack top +0x3ff0"
+src = "docs/sram.md (probe 2026-11-13, #53); docs/a2.md"
+conf = "I"
+note = "base C (probe), size I"
+
+[region.a2_host_win]
+space = "axi1"
+base = 0x08000000
+size = 0x08000000
+kind = "pcie"
+unit = 1
+desc = "a2 outbound to host RAM via PAXB OARR_0 = 0x08000001, OMAP_0 = 0 (AXI 0x08000000.. = host phys 0x0..)"
+src = "docs/a2.md; docs/pci-layer.md"
+conf = "C"
+
+[region.a2_ddr_hazard]
+space = "axi1"
+base = 0x60000000
+size = 0x10000000
+kind = "hazard"
+unit = 1
+desc = "Unused DDR controller on unit 1: any access stalls a2, cannot be halted; recover with CRU_CONTROL.ARM_RST_N"
+src = "docs/sram.md (routing pitfall, #53)"
+conf = "C"
+
+[region.bar0_axi_win]
+space = "bar0u1"
+base = 0x7000
+size = 0x1000
+kind = "window"
+unit = 1
+desc = "4 KiB AXI page of unit 1 selected by PAXB IMAP0_7 (BAR0+0x2c1c)"
+src = "docs/a2.md; rust/a2ctl/src/main.rs WIN"
+conf = "C"
+
+[region.cmic1_uboot]
+space = "axi0"
+base = 0x08040000
+size = 0x40000
+kind = "device"
+unit = 1
+desc = "Unit 1 CMIC (PCIe BAR2) as enumerated by uboot-1/uboot-2"
+src = "uboot-port/arch/arm/dts/us48-uboot.dts ethernet@8040000; scripts/phy.py BASES"
+conf = "I"
+note = "Linux logs/fan_gpio_probe.py use 0x0a000000 (block cmic1); BAR placement differs per OS enumeration"

@@ -1,0 +1,271 @@
+# CCU / ARM PLL, GENPLL, XGPLL, CRU, DMU. Sources: docs/clocks.md, docs/clock-audit.md ([DL] = D-Link GPL armpll.c/genpll.c/socregs.h, [LX] mainline clk, [RG] regdb, [E0] live reads 2026-11-14).
+
+[block.ccu]
+space = "axi0"
+base = 0x19000000
+size = 0x1000
+unit = 0
+desc = "IHOST CCU: ARM PLL, clock policy, clock gates"
+src = "docs/clocks.md Register map; docs/clock-audit.md s2"
+conf = "C"
+
+[block.ccu.reg.WR_ACCESS]
+offset = 0x0
+sdk = "IHOST_PROC_CLK_WR_ACCESS"
+desc = "write 0xa5a501 to unlock the CCU, 0 to lock"
+src = "[DL] armpll.c (docs/clocks.md)"
+
+[block.ccu.reg.POLICY_FREQ]
+offset = 0x8
+reset = 0x02020202
+sdk = "IHOST_PROC_CLK_POLICY_FREQ"
+fields = ["POLICY0_FID 2:0", "POLICY1_FID 10:8", "POLICY2_FID 18:16", "POLICY3_FID 26:24", "PRIV_ACCESS_MODE 31"]
+desc = "frequency id per policy; fid 0 = 25 MHz xtal, 2 = sys clk, 6 = ch0, 7 = ch1. Live 0x86060606 on uboot-1 (400 MHz)"
+src = "[DL] socregs.h; [RG]; [E0]"
+
+[block.ccu.reg.POLICY_CTL]
+offset = 0xc
+sdk = "IHOST_PROC_CLK_POLICY_CTL"
+fields = ["GO 0 self-clears when the switch is done", "GO_AC 1"]
+src = "[DL] armpll.c; [RG]"
+
+[block.ccu.reg.PLLARMA]
+offset = 0xc00
+reset = 0x01004010
+sdk = "IHOST_PROC_CLK_PLLARMA"
+fields = ["SOFT_RESETB 0", "SOFT_POST_RESETB 1", "PWRDWN 3", "IDLE_PWRDWN_SW_OVRRIDE 4", "FLOCK 5", "LOCK_LATCH 6", "LOCK_RAW 7", "NDIV_INT 17:8", "PDIV 26:24 3 bits (mainline masks 4)", "LOCK 28"]
+desc = "freq = 25 MHz x (NDIV_INT + frac/2^20) / PDIV / mdiv(active fid). Live 0x11004083 = ndiv 64, pdiv 1, locked"
+src = "docs/clock-audit.md s2 ([RG], [LX] clk-iproc-armpll.c, [E0])"
+
+[block.ccu.reg.PLLARMB]
+offset = 0xc04
+sdk = "IHOST_PROC_CLK_PLLARMB"
+fields = ["NDIV_FRAC 19:0"]
+src = "docs/clocks.md ([LX])"
+
+[block.ccu.reg.PLLARMC]
+offset = 0xc08
+reset = 0x4
+sdk = "IHOST_PROC_CLK_PLLARMC"
+fields = ["CH0_MDIV 7:0", "CH0_BYPASS 8"]
+desc = "fid 6 = ch0; live mdiv 4 (1600/4 = 400 MHz)"
+src = "docs/clocks.md ([LX], [E0])"
+
+[block.ccu.reg.PLLARMCTL5]
+offset = 0xc20
+reset = 0x2
+sdk = "IHOST_PROC_CLK_PLLARMCTRL5"
+fields = ["CH1_MDIV 7:0"]
+desc = "fid 7 = ch1; live mdiv 2"
+src = "docs/clocks.md ([LX], [E0])"
+
+[block.ccu.reg.PLLARM_OFFSET]
+offset = 0xc24
+reset = 0x10000000
+sdk = "IHOST_PROC_CLK_PLLARM_OFFSET"
+fields = ["SW_CTL 29 offset mode: changes ndiv when set"]
+src = "docs/clocks.md ([LX]); docs/clock-audit.md s2 ([E0] 0x10000000)"
+
+[block.ccu.reg.ARM_DIV]
+offset = 0xe00
+sdk = "IHOST_PROC_CLK_ARM_DIV"
+fields = ["ARM_PLL_SELECT 3:0", "ARM_PLL_SELECT_OVERRIDE 4 policy override", "CORE_CLOCK_OFF 13:12"]
+desc = "live 0x2012: override 1, policy 2, CORE_CLOCK_OFF 2"
+src = "docs/clock-audit.md s2 ([LX], [RG], [E0])"
+
+[block.ccu.reg.PLL_DEBUG]
+offset = 0xe10
+sdk = "IHOST_PROC_CLK_PLL_DEBUG"
+fields = ["LOCK_IGNORE 0", "LOCK_LOST 1", "TIMER_LOCK_EN 2"]
+src = "docs/clock-audit.md s2 ([RG])"
+
+[block.ccu.reg.POLICY_DBG]
+offset = 0xec0
+sdk = "IHOST_PROC_CLK_POLICY_DBG"
+fields = ["TGT_POLICY 1:0", "TGT_FREQ 10:8", "ACT_POLICY 5:4", "ACT_FREQ 14:12 active fid (wins over POLICY_FREQ)"]
+src = "docs/clock-audit.md s2 ([LX], [RG])"
+
+[block.ccu.reg.CORE0_CLKGATE]
+offset = 0x200
+reset = 0x303
+sdk = "IHOST_PROC_CLK_CORE0_CLKGATE"
+desc = "[DL] writes 0x303 to the five CLKGATE regs after a relock (= reset value)"
+src = "docs/clocks.md ([DL] armpll.c)"
+
+[block.ccu.reg.CORE1_CLKGATE]
+offset = 0x204
+reset = 0x303
+sdk = "IHOST_PROC_CLK_CORE1_CLKGATE"
+src = "docs/clocks.md ([DL])"
+
+[block.ccu.reg.ARM_SWITCH_CLKGATE]
+offset = 0x210
+reset = 0x303
+sdk = "IHOST_PROC_CLK_ARM_SWITCH_CLKGATE"
+src = "docs/clocks.md ([DL])"
+
+[block.ccu.reg.ARM_PERIPH_CLKGATE]
+offset = 0x300
+reset = 0x303
+sdk = "IHOST_PROC_CLK_ARM_PERIPH_CLKGATE"
+src = "docs/clocks.md ([DL])"
+
+[block.ccu.reg.APB0_CLKGATE]
+offset = 0x400
+reset = 0x303
+sdk = "IHOST_PROC_CLK_APB0_CLKGATE"
+src = "docs/clocks.md ([DL])"
+
+[block.ccu_rst]
+space = "axi0"
+base = 0x19000f00
+size = 0x100
+unit = 0
+desc = "IHOST reset control (A9 core reset)"
+src = "scripts/u2_lut_reset_test.py (core: 0x19000f00 key, 0x19000f08 = 2); regdb IHOST_PROC_RST_WR_ACCESS"
+conf = "I"
+note = "only WR_ACCESS is named in regdb; +8 meaning from the script, not decoded"
+
+[block.ccu_rst.reg.WR_ACCESS]
+offset = 0x0
+sdk = "IHOST_PROC_RST_WR_ACCESS"
+desc = "0xa5a501 unlocks"
+src = "scripts/u2_lut_reset_test.py; regdb"
+
+[block.genpll]
+space = "axi0"
+base = 0x1803fc00
+size = 0x20
+unit = 0
+desc = "GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz"
+src = "docs/clocks.md Clock tree; docs/clock-audit.md s5 ([DL] genpll.c, [E0])"
+conf = "C"
+
+[block.genpll.reg.CTRL0]
+offset = 0x0
+sdk = "IPROC_WRAP_GEN_PLL_CTRL0"
+fields = ["FAST_LOCK 28"]
+src = "docs/clocks.md E5 ([DL] genpll.c)"
+
+[block.genpll.reg.CTRL1]
+offset = 0x4
+sdk = "IPROC_WRAP_GEN_PLL_CTRL1"
+fields = ["NDIV 9:0 live 80 (0x14450)"]
+src = "docs/clocks.md E0, E5"
+
+[block.genpll.reg.CTRL2]
+offset = 0x8
+sdk = "IPROC_WRAP_GEN_PLL_CTRL2"
+fields = ["CH3_MDIV 15:8 5=400 7=285 8=250 10=200 20=100 MHz AXI", "CH4_MDIV 23:16"]
+desc = "live 0x00080a00: ch3 10, ch4 8"
+src = "docs/clocks.md E5 ([DL]); docs/clock-audit.md s5 ([E0])"
+
+[block.genpll.reg.CTRL3]
+offset = 0xc
+sdk = "IPROC_WRAP_GEN_PLL_CTRL3"
+fields = ["LOAD_EN 21:16", "SW_TO_GEN_PLL_LOAD 28"]
+src = "docs/clocks.md E5 ([DL])"
+
+[block.genpll.reg.STATUS]
+offset = 0x18
+sdk = "IPROC_WRAP_GEN_PLL_STATUS"
+fields = ["LOCK 0"]
+src = "docs/clocks.md E5 ([DL])"
+
+[block.xgpll]
+space = "axi0"
+base = 0x1803fc1c
+size = 0x18
+unit = 0
+desc = "XGPLL: DDR clock source. CK = 25 x NDIV_INT(CTRL_4) x 2 / CH1_MDIV(CTRL_2); live 120 / 9 = 666.7 MHz"
+src = "docs/clock-audit.md s4 (DDR) ([DL] ddr_init.c:190-198, [RG], [E0])"
+conf = "C"
+
+[block.xgpll.reg.CTRL_0]
+offset = 0x0
+reset = 0x180f641e
+sdk = "IPROC_WRAP_IPROC_XGPLL_CTRL_0"
+desc = "ch0 30, ch3 100, ch4 15, ch5 24 (reset = live)"
+src = "docs/clock-audit.md s4 ([E0])"
+
+[block.xgpll.reg.CTRL_1]
+offset = 0x4
+sdk = "IPROC_WRAP_IPROC_XGPLL_CTRL_1"
+desc = "live 0x0e60c000: pdiv 1, SW_OVWR, resets released"
+src = "docs/clock-audit.md s4 ([E0])"
+
+[block.xgpll.reg.CTRL_2]
+offset = 0x8
+sdk = "IPROC_WRAP_IPROC_XGPLL_CTRL_2"
+fields = ["CH1_MDIV 7:0 live 9"]
+src = "docs/clock-audit.md s4"
+
+[block.xgpll.reg.CTRL_3]
+offset = 0xc
+sdk = "IPROC_WRAP_IPROC_XGPLL_CTRL_3"
+src = "docs/clock-audit.md s4 ([RG])"
+
+[block.xgpll.reg.CTRL_4]
+offset = 0x10
+sdk = "IPROC_WRAP_IPROC_XGPLL_CTRL_4"
+fields = ["NDIV_INT 7:0 live 0x78 = 120"]
+src = "docs/clock-audit.md s4"
+
+[block.xgpll.reg.STATUS]
+offset = 0x14
+sdk = "IPROC_WRAP_IPROC_XGPLL_STATUS"
+fields = ["LOCK 31"]
+src = "docs/clock-audit.md s4"
+
+[block.cru]
+space = "axi0"
+base = 0x1803e000
+size = 0x20
+unit = 0
+desc = "CRU: QSPI clock select, A9 reset for the A9 of this chip (unit 1: a2 ARM_RST_N)"
+src = "docs/clocks.md; docs/a2.md; kernel/us48-pci/us48_pci.h"
+conf = "C"
+
+[block.cru.reg.CONTROL]
+offset = 0x0
+reset = 0x30
+sdk = "CRU_CONTROL"
+fields = ["QSPI_CLK_SEL 2:1 0=default, 2=50, 4=31.25, 6=62.5 MHz as written (value << 1)", "ARM_RST_N 4 pulse low then high to reset a2"]
+desc = "live 0x30 in uboot-1, 0x32 in uboot-2. QSPI_CLK_SEL option encoding per [DL] iproc_qspi.c:229-238"
+src = "docs/clocks.md Clock tree + E3; docs/a2.md (undo)"
+
+[block.cru.reg.DEBUG]
+offset = 0x10
+reset = 0x9
+sdk = "CRU_DEBUG"
+fields = ["QSPI_CLK_READY 0"]
+src = "docs/clocks.md E3 (md.l 1803e010 bit 0)"
+
+[block.dmu]
+space = "axi0"
+base = 0x1803f000
+size = 0x1000
+unit = 0
+desc = "DMU/PCU: straps, chip reset"
+src = "uboot-port/arch/arm/dts/us48-uboot.dts dmu@3f000; docs/a2.md; scripts/u2_lut_reset_test.py"
+conf = "C"
+
+[block.dmu.reg.STRAPS_CAPTURED]
+offset = 0x28
+reset = 0x402
+sdk = "DMU_PCU_IPROC_STRAPS_CAPTURED"
+src = "regdb DMU_PCU_IPROC_STRAPS_CAPTURED; docs/a2.md"
+
+[block.dmu.reg.STRAPS_SW_OVERRIDE]
+offset = 0x2c
+reset = 0x402
+sdk = "DMU_PCU_IPROC_STRAPS_SW_OVERRIDE"
+desc = "BOOT_DEV 7 selects PCIe boot; a2 did not take that path (docs/a2.md Open)"
+src = "docs/a2.md Open; regdb"
+
+[block.dmu.reg.CRU_RESET]
+offset = 0x200
+reset = 0x3
+sdk = "DMU_CRU_RESET"
+fields = ["SW_RESET_N 0", "IPROC_RESET_N 1 clear to restart the SoC (syscon-reboot)"]
+src = "us48-uboot.dts reboot node (offset 0x200 mask 0x2 value 0); scripts/u2_lut_reset_test.py"

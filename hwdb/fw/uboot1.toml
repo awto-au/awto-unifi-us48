@@ -1,0 +1,256 @@
+# uboot-1 (stock U-Boot usw-v1.1.6.122-gd2310f3e), linked at 0x1c000000. Function facts only (no bytes).
+# Restricted TOML subset (flat tables, one-line scalars/arrays): scripts/ghidra/hwdb_export.py rewrites this file.
+
+[binary.uboot1]
+desc = "stock U-Boot of the US-48-500W (uboot-1)"
+base = 0x1c000000
+arch = "armv7"
+
+[binary.uboot1.func.relocate_code]
+name = "relocate_code"
+addr = 0x1c0000a0
+role = "copy first 0x5814c B + 1278 R_ARM_RELATIVE fixups (@0x5595c) to 0x6ffa0000"
+src = "docs/uboot.md s6"
+conf = "C"
+
+[binary.uboot1.func.iproc_config_armpll]
+name = "iproc_config_armpll"
+addr = 0x1c0025e4
+role = "called with 400 (MHz) for BCM53342/3/4; re-programs ARM PLL every boot"
+regs = ["ccu.WR_ACCESS", "ccu.POLICY_FREQ", "ccu.POLICY_CTL", "ccu.PLLARMA", "ccu.PLLARMB"]
+src = "docs/uboot.md s5; docs/clocks.md"
+conf = "I"
+
+[binary.uboot1.func.wdt_arm]
+name = "wdt_arm"
+addr = 0x1c0027d8
+role = "arm A9 private watchdog 30 s (load 0x0165A0BC, control 0xFF0B); called from board_init_r"
+regs = ["twd.WDT_LOAD", "twd.WDT_CONTROL"]
+src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.wdt_pet]
+name = "wdt_pet"
+addr = 0x1c002808
+role = "reload private watchdog from saved value; called from getc/putc, udelay, memmove_wd, hush loop, CRC loops"
+regs = ["twd.WDT_LOAD"]
+src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.wdt_stop]
+name = "wdt_stop"
+addr = 0x1c00282c
+role = "disable keys 0x12345678/0x87654321, control 0; called by do_bootm_linux at 0x1c00d4fc"
+regs = ["twd.WDT_DISABLE", "twd.WDT_CONTROL"]
+src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.do_wdt]
+name = "do_wdt"
+addr = 0x1c002868
+role = "`wdt` command handler (table @0x1c0553c8)"
+regs = ["twd.WDT_LOAD", "twd.WDT_CONTROL", "twd.WDT_DISABLE"]
+src = "docs/uboot.md s2"
+conf = "I"
+
+[binary.uboot1.func.FUN_1c002abc]
+name = "FUN_1c002abc"
+addr = 0x1c002abc
+role = "replay (register,value) pairs as register writes (89 pairs from 0x1c0d0000)"
+src = "docs/sram.md Boot flow"
+conf = "C"
+
+[binary.uboot1.func.FUN_1c003548]
+name = "FUN_1c003548"
+addr = 0x1c003548
+role = "DDR init (shmoo replay from mtd2)"
+src = "docs/sram.md Boot flow"
+conf = "C"
+
+[binary.uboot1.func.FUN_1c00c2d4]
+name = "FUN_1c00c2d4"
+addr = 0x1c00c2d4
+role = "DDR tune; state block ~0x2a0 B at 0x1b000000"
+src = "docs/sram.md"
+conf = "C"
+
+[binary.uboot1.func.cleanup_before_linux]
+name = "cleanup_before_linux"
+addr = 0x1c00d0c8
+role = "cache/MMU teardown before kernel entry"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.board_init_r]
+name = "board_init_r"
+addr = 0x1c00d278
+role = "mem_malloc_init(dest-0x50000, 0x50000); arms the private watchdog"
+src = "docs/uboot.md s2, s6"
+conf = "C"
+
+[binary.uboot1.func.board_init_f]
+name = "board_init_f"
+addr = 0x1c00d358
+role = "computes relocaddr = (0x70000000 - 0x5ff8c) & ~0x3fff"
+src = "docs/uboot.md s6"
+conf = "C"
+
+[binary.uboot1.func.do_bootm_linux]
+name = "do_bootm_linux"
+addr = 0x1c00d4ac
+role = "kernel handoff; calls wdt_stop at 0x1c00d4fc before 'Starting kernel ...'"
+regs = ["twd.WDT_DISABLE"]
+src = "docs/uboot.md s2, s4"
+conf = "C"
+
+[binary.uboot1.func.boot_prep_linux]
+name = "boot_prep_linux"
+addr = 0x1c00d538
+role = "builds the ATAG list at 0x8000"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.dcache_enable]
+name = "dcache_enable"
+addr = 0x1c00dc9c
+role = "builds the page table (sections 0x000-0x07f cacheable, 0x080-0x1df device, 0x1e0-0x1ff cacheable, 0x200-0xfff device)"
+src = "docs/uboot.md s6"
+conf = "C"
+
+[binary.uboot1.func.load_image]
+name = "load_image"
+addr = 0x1c00e018
+role = "image load helper for bootm"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.find_os]
+name = "find_os"
+addr = 0x1c00e218
+role = "bootm OS lookup"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.do_bootm]
+name = "do_bootm"
+addr = 0x1c00e8d8
+role = "bootm command"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.image_check_hcrc]
+name = "image_check_hcrc"
+addr = 0x1c01c294
+role = "uImage header CRC"
+src = "docs/uboot.md s1"
+conf = "I"
+
+[binary.uboot1.func.image_check_dcrc]
+name = "image_check_dcrc"
+addr = 0x1c01c2e4
+role = "uImage data CRC"
+src = "docs/uboot.md s1"
+conf = "I"
+
+[binary.uboot1.func.getenv_yesno]
+name = "getenv_yesno"
+addr = 0x1c01c3e0
+role = "env boolean helper"
+src = "docs/uboot.md s4"
+conf = "I"
+
+[binary.uboot1.func.memmove_wd]
+name = "memmove_wd"
+addr = 0x1c01c504
+role = "memmove that pets the watchdog"
+regs = ["twd.WDT_LOAD"]
+src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.main_loop]
+name = "main_loop"
+addr = 0x1c01dba8
+role = "hush main loop"
+src = "docs/uboot.md s2"
+conf = "I"
+
+[binary.uboot1.func.ubntapp_loader]
+name = "ubntapp_loader"
+addr = 0x1c01e33c
+role = "reads 0x50000 B from flash 0x5814c to 0x67030000 every boot, magic 0x87564523, sets ubntaddr"
+src = "docs/uboot.md s6"
+conf = "C"
+
+[binary.uboot1.func.gpio_set]
+name = "gpio_set"
+addr = 0x1c01f680
+role = "CCA GPIO setter; callers use pins 6, 7 only"
+regs = ["cca.GPIO_DOUT", "cca.GPIO_OUTEN"]
+src = "docs/uboot.md s5"
+conf = "C"
+
+[binary.uboot1.func.phy_read]
+name = "phy_read"
+addr = 0x1c023c64
+role = "CCB-MDIO helper for PCIe SerDes (read/write pair at this address)"
+src = "docs/uboot.md s5"
+conf = "I"
+
+[binary.uboot1.func.serial_getc]
+name = "serial_getc"
+addr = 0x1c024a04
+role = "serial receive; pets the watchdog"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "docs/uboot.md s2"
+conf = "I"
+
+[binary.uboot1.func.serial_putc]
+name = "serial_putc"
+addr = 0x1c024a1c
+role = "serial transmit; pets the watchdog"
+regs = ["uart1.LSR", "uart1.RBR_THR_DLL"]
+src = "docs/uboot.md s2"
+conf = "I"
+
+[binary.uboot1.func.serial_init]
+name = "serial_init"
+addr = 0x1c024a64
+role = "UART1 115200 8N1, FIFO enabled"
+regs = ["uart1.LCR", "uart1.RBR_THR_DLL", "uart1.DLH_IER", "uart1.IIR_FCR"]
+src = "docs/uboot.md s5"
+conf = "C"
+
+[binary.uboot1.func.spi_setup_slave]
+name = "spi_setup_slave"
+addr = 0x1c025020
+role = "QSPI MSPI/BSPI setup for flash (spi1.0)"
+regs = ["mspi.SPCR0_LSB", "mspi.SPCR0_MSB"]
+src = "docs/uboot.md s5"
+conf = "C"
+
+[binary.uboot1.func.udelay]
+name = "udelay"
+addr = 0x1c02ad1c
+role = "delay loop; pets the watchdog"
+src = "docs/uboot.md s2"
+conf = "C"
+
+[binary.uboot1.func.cpu_eth_init]
+name = "cpu_eth_init"
+addr = 0x1c031eb4
+src = "docs/uboot.md s5"
+conf = "I"
+
+[binary.uboot1.func.eth_register]
+name = "eth_register"
+addr = 0x1c032380
+src = "docs/uboot.md s5"
+conf = "I"
+
+[binary.uboot1.func.board_eth_init]
+name = "board_eth_init"
+addr = 0x1c034dd0
+role = "prints 'Board Net Initialization Failed'; no AMAC/GMAC driver"
+src = "docs/uboot.md s5"
+conf = "I"
+

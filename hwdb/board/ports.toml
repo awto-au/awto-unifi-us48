@@ -1,0 +1,794 @@
+# Front-panel port map: one [[port]] per front port 1-52 plus internal HiGig 28/29 on both chips (front = 0).
+# Fields: front, id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
+# Sources: docs/board.md Port map, docs/driver-internals.md s13, OpenBCM p2l_mapping_24_2_2; switchdrvr FastPath table VA 0x1d8ecb4 checked by scripts/us48_portmap.py.
+
+[[port]]
+front = 1
+id = "f1"
+label = "RJ45 1"
+unit = 0
+logical = 2
+phys = 9
+phy = "gphy"
+phy_bus = "int0"
+phy_addr = 0x9
+lane = "QSGMII0 lane 7"
+sdk = "ge0"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 2
+id = "f2"
+label = "RJ45 2"
+unit = 0
+logical = 3
+phys = 8
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 6"
+sdk = "ge1"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 3
+id = "f3"
+label = "RJ45 3"
+unit = 0
+logical = 4
+phys = 7
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 5"
+sdk = "ge2"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 4
+id = "f4"
+label = "RJ45 4"
+unit = 0
+logical = 5
+phys = 6
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 4"
+sdk = "ge3"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 5
+id = "f5"
+label = "RJ45 5"
+unit = 0
+logical = 6
+phys = 5
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 3"
+sdk = "ge4"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 6
+id = "f6"
+label = "RJ45 6"
+unit = 0
+logical = 7
+phys = 4
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 2"
+sdk = "ge5"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 7
+id = "f7"
+label = "RJ45 7"
+unit = 0
+logical = 8
+phys = 3
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 1"
+sdk = "ge6"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 8
+id = "f8"
+label = "RJ45 8"
+unit = 0
+logical = 9
+phys = 2
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 0"
+sdk = "ge7"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 9
+id = "f9"
+label = "RJ45 9"
+unit = 0
+logical = 10
+phys = 10
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 0"
+sdk = "ge8"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 10
+id = "f10"
+label = "RJ45 10"
+unit = 0
+logical = 11
+phys = 11
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 1"
+sdk = "ge9"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 11
+id = "f11"
+label = "RJ45 11"
+unit = 0
+logical = 12
+phys = 12
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 2"
+sdk = "ge10"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 12
+id = "f12"
+label = "RJ45 12"
+unit = 0
+logical = 13
+phys = 13
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 3"
+sdk = "ge11"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 13
+id = "f13"
+label = "RJ45 13"
+unit = 0
+logical = 14
+phys = 14
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 4"
+sdk = "ge12"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 14
+id = "f14"
+label = "RJ45 14"
+unit = 0
+logical = 15
+phys = 15
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 5"
+sdk = "ge13"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 15
+id = "f15"
+label = "RJ45 15"
+unit = 0
+logical = 16
+phys = 16
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 6"
+sdk = "ge14"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 16
+id = "f16"
+label = "RJ45 16"
+unit = 0
+logical = 17
+phys = 17
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 7"
+sdk = "ge15"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 17
+id = "f17"
+label = "RJ45 17"
+unit = 0
+logical = 18
+phys = 18
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x14
+lane = "QSGMII2 lane 0"
+sdk = "ge16"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 18
+id = "f18"
+label = "RJ45 18"
+unit = 0
+logical = 19
+phys = 19
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x15
+lane = "QSGMII2 lane 1"
+sdk = "ge17"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 19
+id = "f19"
+label = "RJ45 19"
+unit = 0
+logical = 20
+phys = 20
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x16
+lane = "QSGMII2 lane 2"
+sdk = "ge18"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 20
+id = "f20"
+label = "RJ45 20"
+unit = 0
+logical = 21
+phys = 21
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x17
+lane = "QSGMII2 lane 3"
+sdk = "ge19"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 21
+id = "f21"
+label = "RJ45 21"
+unit = 0
+logical = 22
+phys = 22
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x18
+lane = "QSGMII2 lane 4"
+sdk = "ge20"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 22
+id = "f22"
+label = "RJ45 22"
+unit = 0
+logical = 23
+phys = 23
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x19
+lane = "QSGMII2 lane 5"
+sdk = "ge21"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 23
+id = "f23"
+label = "RJ45 23"
+unit = 0
+logical = 24
+phys = 24
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x1a
+lane = "QSGMII2 lane 6"
+sdk = "ge22"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 24
+id = "f24"
+label = "RJ45 24"
+unit = 0
+logical = 25
+phys = 25
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x1b
+lane = "QSGMII2 lane 7"
+sdk = "ge23"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 25
+id = "f25"
+label = "RJ45 25"
+unit = 1
+logical = 2
+phys = 9
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 7"
+sdk = "ge0"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 26
+id = "f26"
+label = "RJ45 26"
+unit = 1
+logical = 3
+phys = 8
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 6"
+sdk = "ge1"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 27
+id = "f27"
+label = "RJ45 27"
+unit = 1
+logical = 4
+phys = 7
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 5"
+sdk = "ge2"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 28
+id = "f28"
+label = "RJ45 28"
+unit = 1
+logical = 5
+phys = 6
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 4"
+sdk = "ge3"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 29
+id = "f29"
+label = "RJ45 29"
+unit = 1
+logical = 6
+phys = 5
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 3"
+sdk = "ge4"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 30
+id = "f30"
+label = "RJ45 30"
+unit = 1
+logical = 7
+phys = 4
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 2"
+sdk = "ge5"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 31
+id = "f31"
+label = "RJ45 31"
+unit = 1
+logical = 8
+phys = 3
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 1"
+sdk = "ge6"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 32
+id = "f32"
+label = "RJ45 32"
+unit = 1
+logical = 9
+phys = 2
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII0 lane 0"
+sdk = "ge7"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 33
+id = "f33"
+label = "RJ45 33"
+unit = 1
+logical = 10
+phys = 10
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 0"
+sdk = "ge8"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 34
+id = "f34"
+label = "RJ45 34"
+unit = 1
+logical = 11
+phys = 11
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 1"
+sdk = "ge9"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 35
+id = "f35"
+label = "RJ45 35"
+unit = 1
+logical = 12
+phys = 12
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 2"
+sdk = "ge10"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 36
+id = "f36"
+label = "RJ45 36"
+unit = 1
+logical = 13
+phys = 13
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 3"
+sdk = "ge11"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 37
+id = "f37"
+label = "RJ45 37"
+unit = 1
+logical = 14
+phys = 14
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 4"
+sdk = "ge12"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 38
+id = "f38"
+label = "RJ45 38"
+unit = 1
+logical = 15
+phys = 15
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 5"
+sdk = "ge13"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 39
+id = "f39"
+label = "RJ45 39"
+unit = 1
+logical = 16
+phys = 16
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 6"
+sdk = "ge14"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 40
+id = "f40"
+label = "RJ45 40"
+unit = 1
+logical = 17
+phys = 17
+phy = "gphy"
+phy_bus = "int0"
+lane = "QSGMII1 lane 7"
+sdk = "ge15"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 41
+id = "f41"
+label = "RJ45 41"
+unit = 1
+logical = 18
+phys = 18
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x14
+lane = "QSGMII2 lane 0"
+sdk = "ge16"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 42
+id = "f42"
+label = "RJ45 42"
+unit = 1
+logical = 19
+phys = 19
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x15
+lane = "QSGMII2 lane 1"
+sdk = "ge17"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 43
+id = "f43"
+label = "RJ45 43"
+unit = 1
+logical = 20
+phys = 20
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x16
+lane = "QSGMII2 lane 2"
+sdk = "ge18"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 44
+id = "f44"
+label = "RJ45 44"
+unit = 1
+logical = 21
+phys = 21
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x17
+lane = "QSGMII2 lane 3"
+sdk = "ge19"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 45
+id = "f45"
+label = "RJ45 45"
+unit = 1
+logical = 22
+phys = 22
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x18
+lane = "QSGMII2 lane 4"
+sdk = "ge20"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 46
+id = "f46"
+label = "RJ45 46"
+unit = 1
+logical = 23
+phys = 23
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x19
+lane = "QSGMII2 lane 5"
+sdk = "ge21"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 47
+id = "f47"
+label = "RJ45 47"
+unit = 1
+logical = 24
+phys = 24
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x1a
+lane = "QSGMII2 lane 6"
+sdk = "ge22"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 48
+id = "f48"
+label = "RJ45 48"
+unit = 1
+logical = 25
+phys = 25
+phy = "octal"
+phy_bus = "ext0"
+phy_addr = 0x1b
+lane = "QSGMII2 lane 7"
+sdk = "ge23"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+conf = "I"
+
+[[port]]
+front = 49
+id = "f49"
+label = "SFP+ 1"
+unit = 1
+logical = 26
+phys = 26
+phy = "none"
+lane = "TSC lane 0"
+sdk = "xe0"
+linux = "xe49"
+src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
+conf = "C"
+
+[[port]]
+front = 50
+id = "f50"
+label = "SFP+ 2"
+unit = 1
+logical = 27
+phys = 28
+phy = "none"
+lane = "TSC lane 2"
+sdk = "xe1"
+linux = "xe50"
+src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
+conf = "C"
+
+[[port]]
+front = 51
+id = "f51"
+label = "SFP 1"
+unit = 0
+logical = 26
+phys = 26
+phy = "none"
+lane = "TSC lane 0"
+sdk = "ge24"
+src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
+conf = "C"
+
+[[port]]
+front = 52
+id = "f52"
+label = "SFP 2"
+unit = 0
+logical = 27
+phys = 28
+phy = "none"
+lane = "TSC lane 2"
+sdk = "ge25"
+src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
+conf = "C"
+
+[[port]]
+front = 0
+id = "u0-hg28"
+label = "HiGig (internal)"
+unit = 0
+logical = 28
+phys = 30
+phy = "higig"
+lane = "TSC lane unknown"
+src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
+conf = "I"
+
+[[port]]
+front = 0
+id = "u0-hg29"
+label = "HiGig (internal)"
+unit = 0
+logical = 29
+phys = 32
+phy = "higig"
+lane = "TSC lane unknown"
+src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
+conf = "I"
+
+[[port]]
+front = 0
+id = "u1-hg28"
+label = "HiGig (internal)"
+unit = 1
+logical = 28
+phys = 30
+phy = "higig"
+lane = "TSC lane unknown"
+src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
+conf = "I"
+
+[[port]]
+front = 0
+id = "u1-hg29"
+label = "HiGig (internal)"
+unit = 1
+logical = 29
+phys = 32
+phy = "higig"
+lane = "TSC lane unknown"
+src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
+conf = "I"

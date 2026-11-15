@@ -1,0 +1,245 @@
+# Cortex-A9 MPCore private region (PERIPHBASE 0x19020000) and CoreSight. ARM TRM layouts are standard (conf I unless the repo used the register).
+
+[block.scu]
+space = "axi0"
+base = 0x19020000
+size = 0x100
+unit = 0
+desc = "Snoop control unit (PERIPHBASE + 0)"
+src = "task #72 (SCU 0x19020000); ARM Cortex-A9 MPCore TRM"
+conf = "I"
+note = "architectural: SCU at PERIPHBASE+0; not accessed by repo code"
+
+[block.scu.reg.CTRL]
+offset = 0x0
+fields = ["ENABLE 0"]
+src = "ARM Cortex-A9 MPCore TRM SCU register summary"
+
+[block.scu.reg.CONFIG]
+offset = 0x4
+access = "ro"
+src = "ARM Cortex-A9 MPCore TRM SCU register summary"
+
+[block.gic_cpu]
+space = "axi0"
+base = 0x19020100
+size = 0x100
+unit = 0
+desc = "GIC CPU interface"
+src = "us48-uboot.dts gic reg <0x20100 0x100>; bcm-hr2.dtsi"
+conf = "C"
+
+[block.gic_cpu.reg.CTLR]
+offset = 0x0
+src = "ARM GIC architecture spec (GICC_CTLR)"
+conf = "I"
+
+[block.gic_cpu.reg.PMR]
+offset = 0x4
+src = "ARM GIC architecture spec (GICC_PMR)"
+conf = "I"
+
+[block.gic_cpu.reg.IAR]
+offset = 0xc
+access = "ro"
+src = "ARM GIC architecture spec (GICC_IAR)"
+conf = "I"
+
+[block.gic_cpu.reg.EOIR]
+offset = 0x10
+access = "wo"
+src = "ARM GIC architecture spec (GICC_EOIR)"
+conf = "I"
+
+[block.gtimer]
+space = "axi0"
+base = 0x19020200
+size = 0x100
+unit = 0
+desc = "A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8"
+src = "us48-uboot.dts timer@20200; scripts/a2_bench.py TIMER; docs/clocks.md"
+conf = "C"
+
+[block.gtimer.reg.COUNTER_LO]
+offset = 0x0
+access = "ro"
+src = "ARM Cortex-A9 MPCore TRM global timer; scripts/a2_bench.py"
+conf = "I"
+
+[block.gtimer.reg.COUNTER_HI]
+offset = 0x4
+access = "ro"
+src = "ARM Cortex-A9 MPCore TRM global timer"
+conf = "I"
+
+[block.gtimer.reg.CONTROL]
+offset = 0x8
+fields = ["TIMER_ENABLE 0", "COMP_ENABLE 1", "IRQ_ENABLE 2", "AUTO_INC 3"]
+src = "scripts/a2_bench.py (control at +8, enabled by write); ARM TRM"
+conf = "C"
+
+[block.twd]
+space = "axi0"
+base = 0x19020600
+size = 0x40
+unit = 0
+desc = "A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm"
+src = "bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2"
+conf = "C"
+
+[block.twd.reg.TIMER_LOAD]
+offset = 0x0
+src = "ARM Cortex-A9 MPCore TRM private timer"
+conf = "I"
+
+[block.twd.reg.TIMER_CONTROL]
+offset = 0x8
+src = "ARM Cortex-A9 MPCore TRM private timer"
+conf = "I"
+
+[block.twd.reg.WDT_LOAD]
+offset = 0x20
+desc = "uboot-1 load 0x0165A0BC = 30 s x 781250 Hz (PERIPHCLK/256, assumes 200 MHz)"
+src = "docs/uboot.md s2 (regs 0x19020620, wdt_arm @0x1c0027d8)"
+conf = "C"
+
+[block.twd.reg.WDT_CONTROL]
+offset = 0x28
+fields = ["WD_ENABLE 0", "AUTO_RELOAD 1", "IRQ_ENABLE 2", "WD_MODE 3", "PRESCALER 15:8"]
+desc = "uboot-1 writes 0xFF0B = prescaler 255, WD mode, auto-reload, enable"
+src = "docs/uboot.md s2 (+0x628 control)"
+conf = "C"
+
+[block.twd.reg.WDT_DISABLE]
+offset = 0x34
+access = "wo"
+desc = "write 0x12345678 then 0x87654321 to disable watchdog mode (wdt_stop @0x1c00282c)"
+src = "docs/uboot.md s2 (+0x634 disable)"
+conf = "C"
+
+[block.gic_dist]
+space = "axi0"
+base = 0x19021000
+size = 0x1000
+unit = 0
+desc = "GIC distributor"
+src = "us48-uboot.dts gic reg <0x21000 0x1000>; bcm-hr2.dtsi"
+conf = "C"
+
+[block.gic_dist.reg.CTLR]
+offset = 0x0
+src = "ARM GIC architecture spec (GICD_CTLR)"
+conf = "I"
+
+[block.gic_dist.reg.TYPER]
+offset = 0x4
+access = "ro"
+src = "ARM GIC architecture spec (GICD_TYPER)"
+conf = "I"
+
+[block.pl310]
+space = "axi0"
+base = 0x19022000
+size = 0x1000
+unit = 0
+desc = "L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM"
+src = "docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5"
+conf = "C"
+
+[block.pl310.reg.CTRL]
+offset = 0x100
+fields = ["ENABLE 0"]
+src = "ARM PL310 TRM register summary"
+conf = "I"
+
+[block.pl310.reg.LOCKDOWN_BY_LINE]
+offset = 0x950
+desc = "uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM)"
+src = "docs/sram.md (L2C+0x950)"
+conf = "C"
+
+[block.cs_debug0]
+space = "axi0"
+base = 0x19010000
+size = 0x1000
+unit = 0
+desc = "CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1)"
+src = "docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_*"
+conf = "C"
+
+[block.cs_debug0.reg.DIDR]
+offset = 0x0
+access = "ro"
+reset = 0x35137030
+sdk = "IHOST_A9CPU0_DIDR"
+src = "regdb; docs/sram.md (a2 reads 0x35137041)"
+
+[block.cs_debug0.reg.DTRRX]
+offset = 0x80
+sdk = "IHOST_A9CPU0_DTRRX"
+src = "rust/a2ctl DTRRX; regdb"
+
+[block.cs_debug0.reg.ITR_PCSR]
+offset = 0x84
+desc = "write = ITR (instruction transfer), read = PCSR (PC sample); same offset (docs/pci-layer.md unknown 4)"
+sdk = "IHOST_A9CPU0_PCSR"
+src = "rust/a2ctl ITR; scripts/a2_force_pc.py; regdb"
+
+[block.cs_debug0.reg.DSCR]
+offset = 0x88
+sdk = "IHOST_A9CPU0_DSCR"
+fields = ["HALTED 0", "RESTARTED 1", "ITREN 13", "HDBGEN 14", "INSTRCOMPL 24"]
+src = "docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch)"
+
+[block.cs_debug0.reg.DRCR]
+offset = 0x90
+sdk = "IHOST_A9CPU0_DRCR"
+fields = ["REQ_HALT 0", "REQ_REST 1", "CLR_STK_EXC 2", "CLR_STK_PIPE 3"]
+src = "regdb; docs/a2.md"
+
+[block.cs_debug0.reg.LAR]
+offset = 0xfb0
+access = "wo"
+desc = "write 0xC5ACCE55 to unlock"
+sdk = "IHOST_A9CPU0_LOCKACCESS"
+src = "docs/a2.md; rust/a2ctl LAR"
+
+[block.cs_debug0.reg.AUTHSTATUS]
+offset = 0xfb8
+access = "ro"
+sdk = "IHOST_A9CPU0_AUTHSTATUS"
+desc = "0xff on a2 = debug authorised"
+src = "docs/sram.md (a2)"
+
+[block.cs_pmu0]
+space = "axi0"
+base = 0x19011000
+size = 0x1000
+unit = 0
+desc = "CoreSight PMU of A9 CPU0"
+src = "regdb IHOST_A9PMU0_* lowest offset 0x19011000"
+conf = "C"
+
+[block.cs_ptm0]
+space = "axi0"
+base = 0x19012000
+size = 0x1000
+unit = 0
+desc = "CoreSight PTM (program trace) of A9 CPU0"
+src = "regdb IHOST_A9PTM0_* lowest offset 0x19012000"
+conf = "C"
+
+[block.cs_cti0]
+space = "axi0"
+base = 0x19013000
+size = 0x1000
+unit = 0
+desc = "CoreSight CTI of A9 CPU0"
+src = "regdb IHOST_A9CTI0_* lowest offset 0x19013000"
+conf = "C"
+
+[block.cs_cti0.reg.CTICONTROL]
+offset = 0x0
+sdk = "IHOST_A9CTI0_CTICONTROL"
+fields = ["GLBEN 0"]
+src = "regdb"

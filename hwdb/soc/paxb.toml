@@ -1,0 +1,109 @@
+# PCIe PAXB. RC (unit 0) at 0x18012000; the endpoint's own PAXB is at BAR0+0x2000 (same layout). Offsets rel. to PAXB base.
+# docs/driver-internals.md s14, docs/a2.md, docs/pci-layer.md. SDK names PAXB_0_* in regdb.
+
+[block.paxb0]
+space = "axi0"
+base = 0x18012000
+size = 0x1000
+unit = 0
+desc = "Root complex PAXB of unit 0 (brcm,iproc-pcie)"
+src = "bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_*"
+conf = "C"
+
+[block.paxb0.reg.CLK_CONTROL]
+offset = 0x0
+reset = 0x4
+sdk = "PAXB_0_CLK_CONTROL"
+desc = "stock soc_pcie_init: = 3 then 1 around PERST#"
+src = "docs/driver-internals.md 14.2 (PERST# note); regdb"
+
+[block.paxb0.reg.ENDIANESS]
+offset = 0x30
+desc = "BDE writes 0x01010101 then reads back; != 1 -> write 0 (LE)"
+src = "docs/driver-internals.md 14.2 table (BAR0 0x2030)"
+
+[block.paxb0.reg.PCIE_EP_AXI_CONFIG]
+offset = 0x104
+desc = "BDE writes 0 (enable iProc DMA to external host memory)"
+src = "docs/driver-internals.md 14.2 (BAR0 0x2104)"
+
+[block.paxb0.reg.IMAP0_1]
+offset = 0xc04
+sdk = "PAXB_0_FUNC0_IMAP0_1"
+desc = "unit 1: BAR0+0x2c04, ignores writes"
+src = "docs/sram.md Unit 1; regdb"
+
+[block.paxb0.reg.IMAP0_2]
+offset = 0xc08
+sdk = "PAXB_0_FUNC0_IMAP0_2"
+fields = ["PAXB_SEL 12 set = PAXB_1 (BDE_DEV_BUS_ALT), clear = PAXB_0"]
+desc = "live 0x18012001 on unit 1: b12 clear = PAXB_0, case A"
+src = "docs/driver-internals.md 14.1, 14.4"
+
+[block.paxb0.reg.IMAP0_7]
+offset = 0xc1c
+sdk = "PAXB_0_FUNC0_IMAP0_7"
+desc = "selects the 4 KiB AXI page shown at BAR0+0x7000; host-writable; default (unit 1) 0x18032001; page address | 1"
+src = "docs/a2.md; kernel/us48-pci/us48_pci.h US48_PAXB_IMAP0_7_DEF"
+
+[block.paxb0.reg.IMAP1]
+offset = 0xc80
+sdk = "PAXB_0_FUNC0_IMAP1"
+desc = "RC side live 0x80 (stock soc_pcie_init +0xc80 = 0x80); meaning not decoded"
+src = "docs/driver-internals.md 14.3, 14.4"
+conf = "I"
+
+[block.paxb0.reg.IARR_1_LOWER]
+offset = 0xd08
+reset = 0x1
+sdk = "PAXB_0_IARR_1_LOWER"
+desc = "inbound window 1 enable, PCIe base 0 (stock soc_pcie_init writes 1); window size not decoded (>= 128 MiB)"
+src = "docs/driver-internals.md 14.3; docs/pci-layer.md"
+
+[block.paxb0.reg.OARR_0]
+offset = 0xd20
+sdk = "PAXB_0_OARR_0"
+desc = "unit 1: BAR0+0x2d20; a2 host-RAM window = 0x08000001 (inside 0x08000000-0x0fffffff only)"
+src = "docs/a2.md; docs/pci-layer.md us48_pci_a2_host_window"
+
+[block.paxb0.reg.OARR_0_UPPER]
+offset = 0xd24
+sdk = "PAXB_0_OARR_0_UPPER"
+src = "scripts/a2_bench.py (mw.l 0x08002d24 0)"
+
+[block.paxb0.reg.OMAP_0_LO]
+offset = 0xd40
+desc = "OMAP_0 low word; a2 host window uses 0 (AXI 0x08000000 = host phys 0)"
+src = "docs/a2.md (BAR0+0x2d40/44)"
+
+[block.paxb0.reg.OMAP_0_HI]
+offset = 0xd44
+src = "docs/a2.md (BAR0+0x2d40/44)"
+
+[block.paxb0.reg.OARR_FUNC0_MSI_PAGE]
+offset = 0xd34
+sdk = "PAXB_0_OARR_FUNC0_MSI_PAGE"
+desc = "BDE: |= 1 only if MSI"
+src = "docs/driver-internals.md 14.2 table"
+
+[block.paxb0.reg.OARR_2]
+offset = 0xd60
+sdk = "PAXB_0_OARR_2"
+desc = "endpoint DMA window to host memory; BDE writes 1, live 1 under Linux"
+src = "docs/driver-internals.md 14.2, 14.4"
+
+[block.paxb0.reg.OARR_2_UPPER]
+offset = 0xd64
+sdk = "PAXB_0_OARR_2_UPPER"
+desc = "dma_hi_bits: 1 on PAXB_0"
+src = "docs/driver-internals.md 14.2"
+
+[block.paxb1_ep]
+space = "bar0u1"
+base = 0x2000
+size = 0x1000
+unit = 1
+like = "paxb0"
+desc = "Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset"
+src = "docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md"
+conf = "C"

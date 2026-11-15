@@ -1,0 +1,318 @@
+# iProc CCB peripherals: UART, SP805, SP804, QSPI (MSPI/BSPI), CCA GPIO, chipcommon.
+
+[block.cca]
+space = "axi0"
+base = 0x18000000
+size = 0x100
+unit = 0
+desc = "ChipcommonA: chip id, core control, GPIO"
+src = "regdb/hr2_regs.tsv CHIPCOMMONA_*; docs/board.md GPIO map"
+conf = "C"
+
+[block.cca.reg.CHIPID]
+offset = 0x0
+reset = 0x3f00db56
+access = "ro"
+sdk = "CHIPCOMMONA_CHIPID"
+fields = ["CHIPID 15:0 0xdb56 = 56150", "REVISIONID 19:16", "PACKAGEOPTION 23:20", "CORECOUNT 27:24", "CHIPTYPE 31:28"]
+desc = "0x3f00db56 on both units"
+src = "regdb; docs/a2.md (CHIPID on both units)"
+
+[block.cca.reg.CORECTRL]
+offset = 0x8
+reset = 0x38
+sdk = "CHIPCOMMONA_CORECTRL"
+src = "regdb"
+
+[block.cca.reg.GPIO_DIN]
+offset = 0x60
+access = "ro"
+sdk = "CHIPCOMMONA_GPIOINPUT"
+desc = "CCA bit n = Linux GPIO n+4 (stock); bit 2/3 SFP presence (active low), 6/7 system LED, 9 BCM59111 reset"
+src = "docs/board.md GPIO map (0x18000060 DIN / 0x64 DOUT / 0x68 OUTEN); scripts/fan_gpio_probe.py"
+
+[block.cca.reg.GPIO_DOUT]
+offset = 0x64
+sdk = "CHIPCOMMONA_GPIOOUT"
+src = "docs/board.md GPIO map"
+
+[block.cca.reg.GPIO_OUTEN]
+offset = 0x68
+sdk = "CHIPCOMMONA_GPIOOUTEN"
+desc = "uboot-1 drives only bits 6 and 7 (setter @0x1c01f680)"
+src = "docs/board.md GPIO map; docs/uboot.md s5"
+
+[block.uart1]
+space = "axi0"
+base = 0x18000400
+size = 0x100
+unit = 0
+desc = "UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz"
+src = "docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400"
+conf = "C"
+
+[block.uart1.reg.RBR_THR_DLL]
+offset = 0x0
+width = 8
+sdk = "CHIPCOMMONA_UART1_RBR_THR_DLL"
+src = "regdb (0x18000400); 16550 layout"
+
+[block.uart1.reg.DLH_IER]
+offset = 0x1
+width = 8
+sdk = "CHIPCOMMONA_UART1_DLH_IER"
+src = "regdb"
+
+[block.uart1.reg.IIR_FCR]
+offset = 0x2
+width = 8
+sdk = "CHIPCOMMONA_UART1_IIR_FCR"
+src = "regdb"
+
+[block.uart1.reg.LCR]
+offset = 0x3
+width = 8
+sdk = "CHIPCOMMONA_UART1_LCR"
+fields = ["DLS 1:0", "STOP 2", "PEN 3", "EPS 4", "BC 6", "DLAB 7"]
+src = "regdb"
+
+[block.uart1.reg.MCR]
+offset = 0x4
+width = 8
+sdk = "CHIPCOMMONA_UART1_MCR"
+src = "regdb"
+
+[block.uart1.reg.LSR]
+offset = 0x5
+width = 8
+access = "ro"
+reset = 0x60
+sdk = "CHIPCOMMONA_UART1_LSR"
+src = "regdb"
+
+[block.uart1.reg.MSR]
+offset = 0x6
+width = 8
+access = "ro"
+sdk = "CHIPCOMMONA_UART1_MSR"
+src = "regdb"
+
+[block.uart1.reg.SCR]
+offset = 0x7
+width = 8
+sdk = "CHIPCOMMONA_UART1_SCR"
+src = "regdb"
+
+[block.uart0]
+space = "axi0"
+base = 0x18000300
+size = 0x100
+unit = 0
+like = "uart1"
+desc = "UART0 (same layout as uart1); stock firmware references both"
+src = "tmp/linux-mainline bcm-hr2.dtsi serial@300; scripts/stock_uart_order.py"
+conf = "C"
+
+[block.sp805]
+space = "axi0"
+base = 0x18039000
+size = 0x1000
+unit = 0
+desc = "SP805 watchdog on APB 50 MHz; dev.py arms load 50e6*23 (IRQ ~23 s, reset ~46 s)"
+src = "uboot-port/board/ubiquiti/us48/board.c SP805_BASE; docs/clocks.md Watchdog; scripts/dev.py:591-603"
+conf = "C"
+
+[block.sp805.reg.LOAD]
+offset = 0x0
+src = "docs/clocks.md E1 (mw.l 18039000 = load); ARM SP805 TRM"
+
+[block.sp805.reg.VALUE]
+offset = 0x4
+access = "ro"
+src = "ARM PrimeCell SP805 TRM register summary"
+conf = "I"
+
+[block.sp805.reg.CONTROL]
+offset = 0x8
+fields = ["INTEN 0", "RESEN 1"]
+desc = "3 = IRQ + reset enable (docs/clocks.md E1)"
+src = "docs/clocks.md E1 (mw.l 18039008 3)"
+conf = "C"
+
+[block.sp805.reg.INTCLR]
+offset = 0xc
+access = "wo"
+src = "ARM PrimeCell SP805 TRM register summary"
+conf = "I"
+
+[block.sp805.reg.LOCK]
+offset = 0xc00
+desc = "0x1acce551 unlocks writes; any other value locks"
+src = "docs/clocks.md E1 (mw.l 18039c00 1acce551)"
+conf = "C"
+
+[block.sp804_0]
+space = "axi0"
+base = 0x18034000
+size = 0x1000
+unit = 0
+desc = "SP804 dual timer (ccbtimer0), APB clock"
+src = "tmp/linux-mainline bcm-hr2.dtsi timer@34000"
+conf = "C"
+
+[block.sp804_0.reg.TIMER1_LOAD]
+offset = 0x0
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_0.reg.TIMER1_VALUE]
+offset = 0x4
+access = "ro"
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_0.reg.TIMER1_CONTROL]
+offset = 0x8
+fields = ["ONESHOT 0", "SIZE32 1", "PRESCALE 3:2", "INTEN 5", "PERIODIC 6", "ENABLE 7"]
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_0.reg.TIMER1_INTCLR]
+offset = 0xc
+access = "wo"
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_0.reg.TIMER2_LOAD]
+offset = 0x20
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_0.reg.TIMER2_CONTROL]
+offset = 0x28
+src = "ARM PrimeCell SP804 TRM register summary"
+conf = "I"
+
+[block.sp804_1]
+space = "axi0"
+base = 0x18035000
+size = 0x1000
+unit = 0
+like = "sp804_0"
+desc = "SP804 dual timer (ccbtimer1)"
+src = "tmp/linux-mainline bcm-hr2.dtsi timer@35000"
+conf = "C"
+
+[block.mspi]
+space = "axi0"
+base = 0x18027200
+size = 0x184
+unit = 0
+desc = "QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8"
+src = "us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI"
+conf = "C"
+
+[block.mspi.reg.SPCR0_LSB]
+offset = 0x0
+fields = ["SPBR 7:0"]
+src = "regdb MSPI_SPCR0_LSB 0x1500 minus 0x1500"
+
+[block.mspi.reg.SPCR0_MSB]
+offset = 0x4
+reset = 0x83
+fields = ["CPHA 0", "CPOL 1", "BITS 5:2", "MSTR 7"]
+src = "regdb MSPI_SPCR0_MSB"
+
+[block.mspi.reg.SPCR1_LSB]
+offset = 0x8
+fields = ["DTL 7:0"]
+src = "regdb MSPI_SPCR1_LSB"
+
+[block.mspi.reg.SPCR1_MSB]
+offset = 0xc
+fields = ["RDSCLK 7:0"]
+src = "regdb MSPI_SPCR1_MSB"
+
+[block.mspi.reg.NEWQP]
+offset = 0x10
+fields = ["NEWQP 3:0"]
+src = "regdb MSPI_NEWQP"
+
+[block.mspi.reg.ENDQP]
+offset = 0x14
+fields = ["ENDQP 3:0"]
+src = "regdb MSPI_ENDQP"
+
+[block.mspi.reg.SPCR2]
+offset = 0x18
+fields = ["HALT 0", "HIE 1", "LOOPQ 2", "WRT0 3", "WREN 4", "SPIFE 5", "SPE 6"]
+src = "regdb MSPI_SPCR2"
+
+[block.mspi.reg.STATUS]
+offset = 0x20
+access = "ro"
+fields = ["SPIF 0", "HALTA 1"]
+src = "regdb MSPI_STATUS"
+
+[block.mspi.reg.CPTQP]
+offset = 0x24
+access = "ro"
+fields = ["CPTQP 3:0"]
+src = "regdb MSPI_CPTQP"
+
+[block.mspi.reg.TXRAM]
+offset = 0x40
+count = 16
+stride = 8
+desc = "TXRAM stride 8 (docs/board.md); 16 entries"
+src = "docs/board.md MSPI (TXRAM +0x40, stride 8)"
+
+[block.mspi.reg.RXRAM]
+offset = 0xc0
+count = 32
+stride = 4
+src = "regdb MSPI_RXRAM_00 0x15c0 minus 0x1500"
+
+[block.mspi.reg.CDRAM]
+offset = 0x140
+count = 16
+stride = 4
+src = "regdb MSPI_CDRAM_00 0x1640 minus 0x1500"
+
+[block.bspi]
+space = "axi0"
+base = 0x18027000
+size = 0x124
+unit = 0
+desc = "QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL"
+src = "us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000)"
+conf = "C"
+note = "register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*)"
+
+[block.bspi_raf]
+space = "axi0"
+base = 0x18027100
+size = 0x24
+unit = 0
+desc = "BSPI RAF (read-ahead FIFO) regs, tail of the bspi window"
+src = "us48-uboot.dts comment (bspi_raf = bspi + 0x100)"
+conf = "C"
+
+[block.i2c0]
+space = "axi0"
+base = 0x18038000
+size = 0x50
+unit = 0
+desc = "iProc SMBus 0 (CCB I2C)"
+src = "docs/board.md (0x18038000, offsets 0x00..0x4c); bcm-hr2.dtsi i2c@38000"
+conf = "C"
+
+[block.i2c1]
+space = "axi0"
+base = 0x1803b000
+size = 0x50
+unit = 0
+like = "i2c0"
+desc = "iProc SMBus 1"
+src = "docs/board.md; bcm-hr2.dtsi i2c@3b000"
+conf = "C"

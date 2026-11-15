@@ -1,0 +1,180 @@
+# CMIC regions used by common/bcm-cmic and kernel/us48-cmic. Switch (S-channel) registers stay in the SDK regdb.
+# Unit 0 CMIC on AXI; unit 1 CMIC = PCIe BAR2 of 01:00.0 (cmic1 = Linux placement).
+
+[block.cmic0]
+space = "axi0"
+base = 0x48000000
+size = 0x40000
+unit = 0
+desc = "Unit 0 CMIC (CMICd), AXI"
+src = "common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000"
+conf = "C"
+
+[block.cmic0.reg.GP_DATA_IN]
+offset = 0x2000
+access = "ro"
+sdk = "CMIC_GP_DATA_IN"
+desc = "CMIC GP pins; GP0/GP1 select the MSPI board-IO chain (fans/LEDs)"
+src = "scripts/fan_gpio_probe.py GP0; scripts/fan_frame.py; docs/board.md MSPI"
+
+[block.cmic0.reg.GP_DATA_OUT]
+offset = 0x2004
+sdk = "CMIC_GP_DATA_OUT"
+desc = "us48-fand rewrites it"
+src = "scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004)"
+
+[block.cmic0.reg.GP_OUT_EN]
+offset = 0x2008
+sdk = "CMIC_GP_OUT_EN"
+src = "scripts/fan_gpio_probe.py (GP0 + 8); docs/edgeswitch.md (soc_reg 0x1860)"
+
+[block.cmic0.reg.SBUS_TIMEOUT]
+offset = 0x10094
+src = "common/bcm-cmic/bcm_cmic_hr2_init.c CMIC_SBUS_TIMEOUT"
+
+[block.cmic0.reg.SBUS_RING_MAP_16_23]
+offset = 0x100a0
+sdk = "CMIC_SBUS_RING_MAP_16_23"
+desc = "low nibble 4 routes TOP (stock/OpenMDK 0x00005004); precondition for TOP S-channel access"
+src = "docs/clock-audit.md s3"
+
+[block.cmic0.reg.DEV_REV_ID]
+offset = 0x10224
+access = "ro"
+sdk = "CMIC_DEV_REV_ID"
+desc = "0x8342..0x8344 on 53342/3/4; uboot-1 reads it for the SKU"
+src = "docs/uboot.md s5 (0x48010224); docs/clock-audit.md s4"
+
+[block.cmic0.reg.OVERRIDE_STRAP]
+offset = 0x10234
+sdk = "CMIC_OVERRIDE_STRAP"
+src = "regdb; docs/board.md MSPI (SDK claims the bus with it)"
+
+[block.cmic0.reg.RATE_ADJUST]
+offset = 0x11000
+reset = 0x10018
+sdk = "CMIC_RATE_ADJUST"
+fields = ["DIVISOR 15:0", "DIVIDEND 31:16"]
+desc = "MIIM MDC rate. Docs disagree on MDC: 5 MHz (driver-internals) vs 2.5 MHz (#22)"
+src = "docs/clocks.md MIIM MDC row; common/bcm-cmic/bcm_cmic_hr2_init.c"
+conf = "I"
+note = "MDC 5 vs 2.5 MHz conflict, resolve with a live read + scope"
+
+[block.cmic0.reg.RATE_ADJUST_INT_MDIO]
+offset = 0x11004
+reset = 0x10006
+sdk = "CMIC_RATE_ADJUST_INT_MDIO"
+fields = ["DIVISOR 15:0", "DIVIDEND 31:16"]
+src = "docs/clocks.md MIIM MDC row; bcm_cmic_hr2_init.c CMIC_RATE_ADJUST_INT"
+conf = "I"
+note = "see RATE_ADJUST"
+
+[block.cmic0.reg.SCHAN_CTRL]
+offset = 0x31000
+sdk = "CMIC_CMC0_SCHAN_CTRL"
+fields = ["START 0", "DONE 1", "ERR 22:20"]
+src = "kernel/us48-cmic/us48_cmic.h SCHAN_CTRL/START/DONE/ERRS; common/bcm-cmic/bcm_cmic.h"
+
+[block.cmic0.reg.SCHAN_MSG]
+offset = 0x3100c
+count = 22
+sdk = "CMIC_CMC0_SCHAN_MESSAGE"
+desc = "S-channel message words"
+src = "common/bcm-cmic/bcm_cmic.h BCM_CMIC_SCHAN_MSG(n), WORDS 22"
+
+[block.cmic0.reg.MIIM_PARAM]
+offset = 0x31080
+sdk = "CMIC_CMC0_MIIM_PARAM"
+fields = ["INTERNAL_SEL 25", "BUS_ID 24:22", "C45 21"]
+src = "kernel/us48-cmic/us48_cmic.h MIIM_TSC0"
+
+[block.cmic0.reg.MIIM_READ_DATA]
+offset = 0x31084
+access = "ro"
+sdk = "CMIC_CMC0_MIIM_READ_DATA"
+src = "common/bcm-cmic/bcm_cmic.h BCM_CMIC_MIIM_RDATA"
+
+[block.cmic0.reg.MIIM_ADDRESS]
+offset = 0x31088
+sdk = "CMIC_CMC0_MIIM_ADDRESS"
+src = "common/bcm-cmic/bcm_cmic.h"
+
+[block.cmic0.reg.MIIM_CTRL]
+offset = 0x3108c
+sdk = "CMIC_CMC0_MIIM_CTRL"
+src = "common/bcm-cmic/bcm_cmic.h"
+
+[block.cmic0.reg.MIIM_STAT]
+offset = 0x31090
+access = "ro"
+sdk = "CMIC_CMC0_MIIM_STAT"
+src = "common/bcm-cmic/bcm_cmic.h"
+
+[block.cmic0.reg.DMA_CTRL]
+offset = 0x31140
+count = 4
+sdk = "CMIC_CMC0_CH0_DMA_CTRL"
+fields = ["DIR_TX 0", "EN 1", "ABORT 2", "ENDIAN 5:4"]
+desc = "ch0 = TX, ch1 = RX in bcm-cmic"
+src = "kernel/us48-cmic/us48_cmic.h DMA_CTRL(ch); bcm_cmic_hr2.c"
+
+[block.cmic0.reg.DMA_STAT]
+offset = 0x31150
+sdk = "CMIC_CMC0_DMA_STAT"
+fields = ["ACTIVE_CH0 8", "ACTIVE_CH1 9", "ACTIVE_CH2 10", "ACTIVE_CH3 11"]
+src = "kernel/us48-cmic/us48_cmic.h DMA_STAT"
+
+[block.cmic0.reg.DMA_DESC]
+offset = 0x31158
+count = 4
+src = "kernel/us48-cmic/us48_cmic.h DMA_DESC(ch)"
+
+[block.cmic0.reg.COS_CTRL_RX]
+offset = 0x31168
+count = 8
+sdk = "CMIC_CMC0_CH0_COS_CTRL_RX_0"
+desc = "per channel pair: RX_0 at +8*ch, RX_1 at +8*ch+4"
+src = "kernel/us48-cmic/us48_cmic.h COS_CTRL_RX_0/1"
+
+[block.cmic0.reg.DMA_STAT_CLR]
+offset = 0x311a4
+sdk = "CMIC_CMC0_DMA_STAT_CLR"
+src = "kernel/us48-cmic/us48_cmic.h DMA_STAT_CLR"
+
+[block.cmic0.reg.CMC1_SCHAN_CTRL]
+offset = 0x32000
+sdk = "CMIC_CMC1_SCHAN_CTRL"
+desc = "CMC1 S-channel; independent use of CMC1 for PVTMON reads is I"
+src = "docs/clock-audit.md s3"
+
+[block.cmic0.reg.RXBUF_EP_RLS_CRED]
+offset = 0x1a000
+desc = "CMIC_RXBUF_EPINTF_RELEASE_ALL_CREDITS, bit 0 RELEASE_ALL_CREDITS"
+src = "common/bcm-cmic/bcm_cmic_hr2.c CMIC_RXBUF_EP_RLS_CRED"
+
+[block.cmic0.reg.LEDUP_CTRL]
+offset = 0x20000
+desc = "CMICd LED processor: control +0x20000 (bit 0 start), data RAM +0x20400, program RAM +0x20800"
+src = "docs/board.md LEDUP (0x120ed64 sequence)"
+
+[block.cmic_mspi]
+space = "axi0"
+base = 0x48001500
+size = 0x184
+unit = 0
+like = "mspi"
+desc = "CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I"
+src = "docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py"
+conf = "I"
+note = "SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md)"
+
+[block.cmic1]
+space = "axi0"
+base = 0x0a000000
+size = 0x40000
+unit = 1
+like = "cmic0"
+desc = "Unit 1 CMIC = PCIe BAR2 as placed by Linux (GP1 = 0x0a002000)"
+src = "scripts/fan_gpio_probe.py GP1; docs/clock-audit.md s3 (Linux boot logs)"
+conf = "I"
+note = "uboot-1/2 enumerate BAR2 at 0x08040000 (region cmic1_uboot); placement is not fixed by hardware"
