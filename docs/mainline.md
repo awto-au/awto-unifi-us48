@@ -104,6 +104,7 @@
 | 17 | ... Read the boot flash with 1-1-4 quad | `spi-rx-bus-width = <4>` |
 | 18 | ... Make the a2 memory a reusable CMA pool | `a2@4000000` `shared-dma-pool` + `reusable` (was `no-map`), consumer node `a2-rproc` with `memory-region` and the offsets (#84 item 11) |
 | 19 | ... Add the on-chip SRAM as mmio-sram | `sram@1b000000` 16 KiB, one `dma-desc` pool; `CONFIG_SRAM=y` (#84 item 12) |
+| 24 | PCI: iproc: Keep PERST# released at shutdown on Hurricane 2 | `CLK_CTRL` survives the chip reset; shutdown PERST# made the next boot's first unit 1 access stall until the SP805 bit (#67, #98). Keyed on `brcm,iproc-hr2-pcie`; vendor kernel never asserts it |
 | 22 | lib/stackdepot: Initialise only the hash table entries that were allocated | `init_stack_table()` ran over the requested count, not the allocated one: overwrote the `struct page` array under KASAN (#84) |
 
 Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):

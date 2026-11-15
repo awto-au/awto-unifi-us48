@@ -26,6 +26,7 @@
 #define PVT_CTRL0_STOCK	0x001d2003		/* stock switchdrvr write (docs/clocks.md PVTMON) */
 #define FAN_QUIET	1			/* 0 = pre-2026-11-15 policy: die >= 100 C or any read failure = 100 % */
 #define BOARD_HOT	800			/* LM75 >= 80 C: 100 % */
+#define PVT_POLLS	10
 #define DIE_HOT		(FAN_QUIET ? 1100 : 1000)	/* PVTMON steady-state rating 110 C (docs/clock-audit.md) */
 
 /* iProc SMBus master in the unit 0 CMIC (docs/board.md I2C); register layout = i2c-bcm-iproc.c */
@@ -109,7 +110,7 @@ static int fan_group(int group, u8 level, bool quiet)
 static int pvt_read(struct bcm_cmic_unit *u, int *tenths, int *peak)
 {
 	u32 ring = readl(u->base + RING_MAP_16_23), v = 0, code;
-	int ret, ms;
+	int ret, n;
 
 	if (ring == 0xffffffff)
 		return -ENODEV;
@@ -128,23 +129,26 @@ static int pvt_read(struct bcm_cmic_unit *u, int *tenths, int *peak)
 		w = BIT(31);
 		bcm_cmic_reg_write(u, TOP_BLK, PVT_CTRL1, &w, 1);
 	}
-	/* First conversion after PVT init: time unmeasured (I); poll 1 ms steps, 20 ms limit, expiry = read fail */
-	for (ms = 0; ms < 20; ms++) {
+	/* Code 0x3ff until the first conversion lands; no SDK wait/ready bit. 10 polls of read + 25 us, numbers in #99 */
+	for (n = 0; n < PVT_POLLS; n++) {
 		ret = bcm_cmic_reg_read(u, TOP_BLK, PVT_RESULT, &v, 1, NULL);
 		if (ret)
 			return ret;
 		code = v & 0x3ff;
-		if (code) {
+		if (code && code != 0x3ff) {
 			int t = (4180000 - 5556 * (int)code) / 1000;
 
-			if (t < -400 || t > 1500)
-				return -ERANGE;
-			*tenths = t;
-			*peak = (4180000 - 5556 * (int)((v >> 22) & 0x3ff)) / 1000;
-			return 0;
+			if (t >= -400 && t <= 1500) {
+				if (n)
+					printf("pvt: first valid sample at poll %d\n", n);
+				*tenths = t;
+				*peak = (4180000 - 5556 * (int)((v >> 22) & 0x3ff)) / 1000;
+				return 0;
+			}
 		}
-		mdelay(1);
+		udelay(25);
 	}
+	printf("pvt: no valid sample in %d polls, last RESULT 0x%08x\n", PVT_POLLS, v);
 	return -ETIMEDOUT;
 }
 

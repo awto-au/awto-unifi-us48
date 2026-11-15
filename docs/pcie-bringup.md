@@ -13,7 +13,7 @@
 - "Active" = RC header type 1 and `(LNKSTA & 0x3f0) != 0` (negotiated width; `tst r2,#0x3f0` @`0x1c0241f4`). LNKSTA = RC config `0xbe` via `CONFIG_IND_ADDR` (`0x120`) / `DATA` (`0x124`). Cap pointer walked from `0xe`; cap id `0x10` found at `0xac`.
 - Cold: PERST# held low from POR, no training, LNKSTA `0x1001` (width 0) = "not active". Not active path returns before the bridge bus numbers, mem window and the unit 1 BAR assignment.
 - After a stock reboot: CLK_CONTROL `0x1` survives the DMU soft reset (stock `soc_pcie_init` left PERST# released), the link retrains during the 100 ms IDM wait, LNKSTA `0x9012` = active, uboot-1 enumerates.
-- After a mainline reboot: `pcie-iproc` shutdown asserts PERST# (`pcie-iproc.c:752`), CLK_CONTROL `0x0`, same failure as cold.
+- After a mainline reboot (before `mainline/0024`): `pcie-iproc` shutdown asserted PERST#, CLK_CONTROL `0x0`, same failure as cold. Now the HR2 shutdown leaves PERST# released: uboot-1 prints `port 0 is active`, awto-uboot `link already up (warm)`.
 
 ## Stock kernel `soc_pcie_init` (`0xc033ea84`, vmlinux `tmp/ghidra/in/vmlinux-us48-7.5.15.elf`)
 - `CLK_CONTROL = 3` (`0xc033eae8`; clears EP_PERST_SOURCE_SELECT, sets RC_PCIE_RST_OUTPUT: PERST# released), `udelay(250)`, `= 1` (`0xc033eb10`), 250 x `udelay(1000)` (`0xc033eb14`).
@@ -65,4 +65,4 @@
   - Secondary bus reset from the a1 root port (`pci_reset_bus` = Bridge Control bit 6, config save/restore, 106 ms): link stays up (`LINK_STATUS` 0xd) but every later memory access to unit 1 bus-errors and the next config read hangs a1. Same on a healthy unit 1, so the wedge cannot be shown cleared. PCIe hot reset = the same mechanism.
   - DMU `CRU_RESET` clear of `IPROC_RESET_N` on unit 1 through the BAR0 window: unit 1 loses its BARs (bus error), a1 then hung on `reboot -f`. `SW_RESET_N` does nothing on unit 0 (#63 E2b), not tried on unit 1.
   - No board-level unit 1 reset line (GPIO/CPLD) in hwdb or the docs.
-- Open: a healthy Linux `reboot` also stalls once after Linux's PERST# (first BAR access after PERST# on a unit 1 Linux had initialised), and with CMIC pollers in flight at PERST# it can wedge unit 1 (`us48_pci` shutdown now removes the aux clients first). Cleanest fix: keep PERST# released at Linux shutdown (#67).
+- Healthy reboot: fixed by `mainline/0024` (PERST# stays released at shutdown, #67); no SP805 bite. The aux-client removal and a2 reboot notifier stay as the second line.

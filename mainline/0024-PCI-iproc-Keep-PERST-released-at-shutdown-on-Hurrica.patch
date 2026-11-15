@@ -1,0 +1,30 @@
+From b39cd2dd58be47c1ecc103f6ad960d47d58b4021 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Mon, 16 Nov 2026 07:59:24 +1100
+Subject: [PATCH 24/24] PCI: iproc: Keep PERST# released at shutdown on
+ Hurricane 2
+
+IPROC_PCIE_CLK_CTRL survives the DMU/watchdog chip reset. Asserting PERST#
+in shutdown leaves unit 1 in reset into the next boot loader, and its first
+access after the release stalls until the watchdog bites.
+
+The vendor kernel never asserts it at shutdown; match that.
+---
+ drivers/pci/controller/pcie-iproc-platform.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/pci/controller/pcie-iproc-platform.c b/drivers/pci/controller/pcie-iproc-platform.c
+index d6f654ce6..7eaf22d7a 100644
+--- a/drivers/pci/controller/pcie-iproc-platform.c
++++ b/drivers/pci/controller/pcie-iproc-platform.c
+@@ -212,6 +212,10 @@ static void iproc_pltfm_pcie_shutdown(struct platform_device *pdev)
+ {
+ 	struct iproc_pcie *pcie = platform_get_drvdata(pdev);
+ 
++	/* HR2: CLK_CTRL survives the chip reset; PERST# asserted here stalls the next boot */
++	if (of_device_is_compatible(pdev->dev.of_node, "brcm,iproc-hr2-pcie"))
++		return;
++
+ 	iproc_pcie_shutdown(pcie);
+ }
+ 

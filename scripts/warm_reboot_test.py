@@ -96,7 +96,7 @@ def rep(case: str, n: int, cycle: bool) -> str:
                    capture_output=True, text=True)
     banner = None
     while time.monotonic() - t_reboot < BANNER_S:
-        if "U-Boot" in tio_tail(off):
+        if "U-Boot usw-" in tio_tail(off):
             banner = time.monotonic() - t_reboot
             break
         time.sleep(0.2)
@@ -104,6 +104,12 @@ def rep(case: str, n: int, cycle: bool) -> str:
         v = "no-banner"
     else:
         v = "ok" if wait_ssh(BOOT_S) is not None else "banner-no-linux"
+        # SP805 bite = a second uboot-1 / awto-uboot banner before Linux is back (#67, #98)
+        txt = tio_tail(off)
+        n1, n2 = txt.count("U-Boot usw-"), txt.count("awto-uboot 20")
+        log(f"case {case} rep {n}: banners uboot-1 {n1}, awto-uboot {n2}")
+        if v == "ok" and (n1 > 1 or n2 > 1):
+            v = f"sp805-bite ({n1} uboot-1, {n2} awto-uboot banners)"
     tail = "\n".join(tio_tail(off).splitlines()[-12:])
     log(f"case {case} rep {n}: {v} (banner {'-' if banner is None else f'{banner:.1f} s'}); console tail:\n{tail}")
     return v
@@ -111,11 +117,14 @@ def rep(case: str, n: int, cycle: bool) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("case", choices=("a", "b", "c", "w"))
+    ap.add_argument("case", help="a|b|c|w, or a sequence such as abbb (one rep per letter, power cycle only before the first)")
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--no-cycle", action="store_true", help="first rep uses the board as it is (must be normal-image Linux)")
     a = ap.parse_args()
-    res = [rep(a.case, i + 1, not (a.no_cycle and i == 0)) for i in range(a.reps)]
+    if len(a.case) > 1:
+        res = [rep(c, i + 1, i == 0 and not a.no_cycle) for i, c in enumerate(a.case)]
+    else:
+        res = [rep(a.case, i + 1, not (a.no_cycle and i == 0)) for i in range(a.reps)]
     log(f"case {a.case}: {res}")
     return 0 if all(r == "ok" for r in res) else 1
 
