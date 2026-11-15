@@ -74,7 +74,12 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
 
 - Fans are bits 5:4 of byte 0 of a 7-byte write-only MSPI frame; one frame per switch chip (2 fans each, I). Full protocol: [board.md](board.md) MSPI section.
 - Write sequence for group g (0/1): GP0 of unit 0 = 1 (A), GP0 of unit 1 = g (B, via PCIe BAR `0x0a002000` of `01:00.0` after enabling it), both set as outputs; MSPI mode 3 (CPOL 1, CPHA 1); send 7 bytes: byte 0 = `level<<4`, bytes 1-6 = 0.
-- Policy (bench): 50 % (byte 0 `0x00`) until LM75 max >= 80 C, 100 % (`0x30`) until <= 50 C; full if no sensor reads. Replacement = hwmon cooling device + thermal-zone trips (#19).
+- Policy (Dan 2026-11-15), same in awto-uboot (`fan.c`, one-shot at boot, `fan <0-3>` command) and mainline Linux (`us48-fand`, staged into the mainline initramfs from `openwrt/files` by `build_mainline.py`):
+  - 50 % (byte 0 `0x00`) while all 4 LM75 (`0x48..0x4b`, mux `0x70` ch 6) < 80 C; 100 % (`0x30`) at >= 80 C until all <= 50 C.
+  - Die PVTMON (both units, S-channel TOP `0x02050800`, T = 418 - 0.5556 x code): >= 100 C forces 100 %.
+  - Any sensor unreadable: 100 %.
+  - awto-uboot reads the LM75 over the CMIC SMBus (`0x48000000`, mux select + pointer write only) and has no loop: hot or unreadable at boot stays 100 % until Linux fand or `fan 0`.
+  - Replacement = hwmon cooling device + thermal-zone trips (#19).
 - Verified by ear on all 4 fans (#12): `0x30` louder than `0x00`; byte-0 bits 7:6 and 3:0 change nothing (sweep `scripts/fan_sweep.py`).
 - No tach (stock reports 0 RPM). No fan IC on any PCA9548 channel (no `0x2e` / ADT7475), so fan control is not I2C. Fan-off needs the drive circuit identified (board photos) or a power-side switch not yet found; candidate GPIOs probed with `scripts/fan_gpio_probe.py` (#12).
 - Stock default after switchdrvr start: level 1 (70 %). Power-on state before that, and whether hardware falls back to full speed without a driver: unknown.
