@@ -17,7 +17,7 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 | a2 debug | remoteproc debugfs + our debugfs: halt, PC sample (PCSR), registers via ITR, breakpoints/watchpoints | the out-of-band watch from a1 | halt/set-PC moved into `us48-a2`; PC sample + debugfs knobs not yet |
 | unit 1 clocks | **common clock framework** provider (aux `us48_pci.clk`): CCU ARM PLL, GENPLL ch3 (AXI)/APB | `clk_set_rate` with the lock wait and timeout; consumers: remoteproc (a2 CPU), cmic | new; replaces raw PLL pokes in trials |
 | clock trials | `us48-a2` debugfs knob `cpu_mhz` / `axi_mhz`: stop a2 → `clk_set_rate` → lock → start a2 → self-test fw | probe-to-failure (#17) through the clk API | new; debug-only interface, documented |
-| unit 1 sensors | **hwmon** (PVTMON both units) + **thermal** zone; fans as a **cooling device** | temperatures and fan policy (#19) | `us48_pci.pvtmon` aux + unit 0 platform device (`kernel/us48-pvtmon`), fan `kernel/us48-fan`, DT zones: [fan.md](fan.md); fand only as fallback |
+| unit 1 sensors | **hwmon** (PVTMON both units) + **thermal** zone; fans as a **cooling device** | temperatures and fan policy (#19) | `us48_pci.pvtmon` aux + unit 0 platform device (`kernel/us48-pvtmon`), fan `kernel/us48-fan`, DT zones: [fan.md](fan.md) |
 | unit 1 switch | aux `us48_pci.cmic` → `us48_cmic_xe` netdev (later switchdev, #57) | CMIC, S-channel, packet DMA | done: `us48_cmic_xe` is the aux driver of `us48_pci.cmic` (netdev unchanged) |
 
 ## Rules

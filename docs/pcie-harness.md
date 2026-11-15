@@ -36,7 +36,7 @@ SRAM content is saved before and restored after each test. The a2 test firmware 
 - `paxb_link`, `paxb_reset`: raw PAXB `PCIE_LINK_STATUS`, `RESET_STATUS`.
 - No PAXB error/abort register is in hwdb. Stand-in: PCI_STATUS and bridge SEC_STATUS error bits (master/target abort, parity, SERR), read and cleared each poll, summed as `pci_status_err`.
 - AER: counted (read-and-clear) on endpoint and root port when the capability exists: `aer_ep_cor/unc`, `aer_rc_cor/unc`. Whether this chip exposes AER is unknown (I); the counters stay 0 otherwise.
-- `t0_mc`, `t1_mc`: PVTMON die temperature of unit 0 / unit 1 in mC (-1 unreadable), S-channel block 16 as in `us48-fand`. Unit 0 is read through CMC1, which `us48-fand` also uses: the reads are retried 3x and plausibility-checked (-20..150 C). Constants are local in the module (`docs/clock-audit.md` 3): not in hwdb yet.
+- `t0_mc`, `t1_mc`: PVTMON die temperature of unit 0 / unit 1 in mC (-1 unreadable), S-channel block 16 as in `kernel/us48-pvtmon`. Unit 0 is read through CMC1, which `us48-pvtmon` also uses: the reads are retried 3x and plausibility-checked (-20..150 C). Constants are local in the module (`docs/clock-audit.md` 3): not in hwdb yet.
 
 ## a2 firmware (`a2fw/bustest.c`)
 - Results struct `struct bt_results` (`a2fw/bustest.h`, `BT_VERSION` 1) at carveout + `BT_SHARED_OFF + 0x2000` (hwdb `a2_shared`); trace0 at `a2_shared + 0x1000`. a2 writes it through a non-cacheable alias, a1 reads it with a WC mapping (`debugfs a2`, `key=value`, all fields, ticks of a 200 MHz timer).
@@ -73,7 +73,7 @@ Options: `--a2-fw NAME`, `--no-a2` (a1 side only). Stop a soak early with Ctrl-C
 Stop = snapshot to `tmp/logs/pcie_freeze-<ts>.txt` (mismatch log, a2 struct, stats, trace0, dmesg, console tail), report, exit 2. Nothing is reloaded; a2 keeps running.
 - Data mismatch: any test `status=mismatch`, a2 `mismatch` / `y_mismatch` > 0, kernel mismatch log growth.
 - Link loss: `status=link`, `link_down` or `dl_inactive` increased, ssh unreachable twice (3 s apart) or stalled.
-- Die or LM75 >= 100 C (`us48-fand` already goes to 100 % fan on a die >= 100 C).
+- Die or LM75 >= 100 C (fans go to 100 % at die >= 110 C or LM75 >= 80 C, [fan.md](fan.md) quiet rule).
 - No temperature sensor readable for 3 cycles.
 - AER uncorrectable error.
 - a2 heartbeat not advancing for 3 cycles, or a2 struct gone.
@@ -83,5 +83,5 @@ Counted, soak continues: single test timeout (`slow:<test>`), retrain (`ep_link_
 
 ## Open
 - All of it unmeasured; first board run sets `A2_READY_S`, the 50 ms floor and the a2 numbers.
-- MMU bring-up of the firmware, IRQ-off timing in `lat`, whether unit 0 PVTMON through CMC1 collides with `us48-fand` (reads are retried; a collision at worst reads 'unreadable' once).
+- MMU bring-up of the firmware, IRQ-off timing in `lat`, whether unit 0 PVTMON through CMC1 collides with `us48-pvtmon` (reads are retried; a collision at worst reads 'unreadable' once).
 - PVTMON constants and PAXB error registers belong in hwdb.

@@ -40,7 +40,7 @@
 #define PVT_RESULT	0x02050800U
 #define PVT_CTRL0_INIT	0x001d2003U
 #define PVT_CTRL1_RUN	0x80000000U
-#define PVT_U0_CMC1	0x32000U	/* unit 0 CMC1 S-channel (hwdb HW_CMIC1_CMC1_SCHAN_CTRL offset), same as us48-fand */
+#define PVT_U0_CMC1	0x32000U	/* unit 0 CMC1 S-channel (hwdb HW_CMIC1_CMC1_SCHAN_CTRL offset), shared with us48-pvtmon */
 
 struct bt_miss {
 	u64 t_ns;
@@ -73,7 +73,7 @@ struct us48_bt {
 
 static bool u0_pvt = true;
 module_param(u0_pvt, bool, 0444);
-MODULE_PARM_DESC(u0_pvt, "read the unit 0 PVTMON through its CMC1 S-channel (shared with us48-fand, retried)");
+MODULE_PARM_DESC(u0_pvt, "read the unit 0 PVTMON through its CMC1 S-channel (shared with us48-pvtmon, retried)");
 
 static void log_miss(struct us48_bt *b, const char *what, u32 addr, u32 exp, u32 got)
 {
@@ -197,7 +197,7 @@ static int pvt_op(struct us48_bt *b, int unit, u32 op, u32 addr, u32 *d)
 	return unit ? us48_pci_schan(b->p, op, PVT_BLK, addr, d, 1, NULL) : bcm_cmic_schan_op(&b->u0, op, PVT_BLK, addr, d, 1, NULL);
 }
 
-/* mC, or -1; start the sensor if CTRL_1 says it is stopped (same sequence as us48-fand); 3 tries for the shared CMC1 */
+/* mC, or -1; start the sensor if CTRL_1 says it is stopped (same sequence as us48-pvtmon); 3 tries for the shared CMC1 */
 static int pvt_mc(struct us48_bt *b, int unit)
 {
 	int tries;

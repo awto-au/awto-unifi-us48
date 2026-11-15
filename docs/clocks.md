@@ -131,7 +131,7 @@ mw.l 1900000c 3
 mw.l 19000000 0
 ```
 
-- Linux pass criteria (#17): `sched_clock: 64 bits at 400MHz` (was `64 bits at 200MHz`, C `tmp/logs/console/us48-20261113-132714.log:3738`), `Calibrating delay` ~2x, clean initramfs unpack, 10 min CPU load + `md5sum` loop, fand temperature log (TEMP-2) flat, n = 5 power cycles then n = 20.
+- Linux pass criteria (#17): `sched_clock: 64 bits at 400MHz` (was `64 bits at 200MHz`, C `tmp/logs/console/us48-20261113-132714.log:3738`), `Calibrating delay` ~2x, clean initramfs unpack, 10 min CPU load + `md5sum` loop, temperature log (TEMP-2) flat, n = 5 power cycles then n = 20.
 - Fail modes to log: hang before `bootm` (SP805 reset in ~46 s), early oops/lock-up after `Starting kernel` (wrong rate or marginal silicon), silent corruption (md5 loop mismatch).
 
 ### E3. QSPI BSPI clock 50 -> 62.5 MHz (boot-time lever, #20 / #34)

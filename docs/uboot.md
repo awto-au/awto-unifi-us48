@@ -101,7 +101,7 @@ ubntbootid=1 ubnt_active_slot=1 ubnt_current_slot=1 ubootver=usw-v1.1.6.122-gd23
 | L2/PL310 | disabled at handoff | | C |
 | CCA GPIO | only bits 6 and 7 driven (system LED; init to 0, OUTEN set); no other GPIO writes. Bit 9 (BCM59111 reset), bits 0/1/8 (PSE IRQs), bit 11 (reset button) untouched in U-Boot proper | GPIO setter@0x1c01f680 callers: pins 6, 7 only | C |
 | PoE | not initialised by U-Boot (no I2C master code, no BCM59111 strings) | | C |
-| Fans / MSPI board IO / CPLD | not touched: no CMIC GP-pin or MSPI board-IO writes. CMIC (`0x48010000`) is only read for the device ID. Fans stay at power-on default until `us48-fand` runs in OpenWrt — watch temperature | movt `0x4801` scan | C |
+| Fans / MSPI board IO / CPLD | awto-uboot `fan.c` sets level 0 at boot (quiet rule, [fan.md](fan.md)); Linux `us48_fan` owns the level after that — watch temperature | movt `0x4801` scan | C |
 | QSPI | MSPI/BSPI `0x18027000..` used for flash; `spi1.0` | `spi_setup_slave`@0x1c025020 | C |
 | PCIe | `Done PCI initialization` path exists (`pci` command, RC init @0x1c024084); not required for boot | | I (runs at boot) |
 | Ethernet | **none**. `Net:` line prints, then "Board Net Initialization Failed" / "No ethernet found." (@0x1c032690, @0x1c0326a4). `ethaddr`, `ipaddr`, `serverip` are unused. No AMAC/GMAC driver; `phy_read/phy_write`@0x1c023c64 are CCB-MDIO helpers for PCIe SerDes | | C |
@@ -223,7 +223,7 @@ Serial 115200 8N1 on UART1 (header location: see [hardware.md](hardware.md)). Do
    4. `Starting kernel ...` (watchdog stopped here)
    5. kernel/earlycon output on UART1 (DT `bootargs` has `earlycon`)
 7. Silence after "Starting kernel ...": check load address first (ATAG overwrite), then DTB/`earlycon`/uart1 in the DTS, then that the zImage decompressor reaches `Uncompressing Linux`.
-8. Temperature: U-Boot does not control the fans; `us48-fand` does under OpenWrt. Power off if the box gets hot.
+8. Temperature: awto-uboot holds fan level 0 (100 % only on a hot boot-time reading); `us48_fan` takes over in Linux ([fan.md](fan.md)). Power off if the box gets hot.
 9. Recovery: power-cycle. Nothing is written to flash by this procedure.
 
 ## Open items

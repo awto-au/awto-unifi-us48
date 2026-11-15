@@ -14,7 +14,7 @@
   - `pcie0` enabled: BCM53346 at `01:00.0`/`01:00.1`. Local BCM53344 CMIC is AXI `0x48000000`, not PCIe (stock `/proc/iomem`). `pcie1` left disabled: no evidence of use.
   - `i2c@48000000` = CMIC SMBus (`brcm,iproc-i2c`, polled, 100 kHz) → PCA9548 `0x70`. DT `i2c0`/`i2c1` stay disabled (unused by stock). [board.md](board.md#i2c-master-issue-7).
 - Debug profile (`DEBUG_APPLETS` / `DEBUG_PACKAGES` in `scripts/build_openwrt.py`): busybox i2c/devmem/etc. + strace, gdbserver, perf, tcpdump, ethtool, i2c-tools, `kmod-i2c-core`; kernel debug set in `hr2/config-6.18`. Initramfs must stay < kernel0 (15 MiB).
-- Overlay `openwrt/files/`: `us48-poe-off` (S13, BCM59111 op-mode reg `0x12` = 0 on all 12 chips, readback logged, #24) and `us48-fand` (S15, fans 50 % until LM75 max >= 80 C, full until <= 50 C; bench-only, #12 #19).
+- Overlay `openwrt/files/`: `us48-poe-off` (S13, BCM59111 op-mode reg `0x12` = 0 on all 12 chips, readback logged, #24); fan policy is the kernel `us48-fan` driver + DT thermal zones ([fan.md](fan.md) quiet rule, #19).
 - Image: `zImage + appended DTB` in a legacy uImage (`uImage none`), load/entry `0x00018000` (as stock;
   `0x8000` collides with U-Boot's ATAG list — [uboot.md](uboot.md)).
   - `ARM_ATAG_DTB_COMPAT` off → DT `bootargs` win over U-Boot's `mem=`/`mtdparts=`.
@@ -53,7 +53,7 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 3. **No Ethernet in U-Boot** (`tftpboot` fails) → `scripts/dev.py boot-ram` / `flash-kernel0`: `loady 0x01000000` ymodem at 460800 ([uboot.md](uboot.md) §8). Over the LAN instead: `flash-net`.
 4. `bootm 0x01000000`: header + data CRC only, no RSA (RSA lives in the uncalled ubnt-app path). U-Boot arms the A9
    watchdog (30 s) and stops it inside `bootm`. Handoff: ATAGs, machine ID 0xBB8, caches/MMU off.
-5. Fans: U-Boot doesn't touch the board-IO chains — power-on default speed unknown; `us48-fand` takes over in userspace; watch temperature.
+5. Fans: awto-uboot sets level 0 at boot ([fan.md](fan.md) quiet rule); the `us48_fan` kernel driver owns the level after that; watch temperature.
 
 ## Milestones
 
@@ -63,7 +63,7 @@ Full procedure + evidence: [uboot.md](uboot.md). Summary:
 | 2 | QSPI flash read (mtd), `i2cdetect -r` on the CMIC bus shows `0x70`, PCIe enumerates `14e4:8346` | **done 2026-10-14**: PCIe via patches 950+951 |
 | 3 | management Ethernet (not started) | stock has **no** Ethernet MAC in use: `eth0` is a `tun` device fed by switchdrvr via CMIC packet DMA ([hardware.md](hardware.md#stock-control-path)). Needs switch init (ports, SerDes, PHYs, CPU port) + CMIC DMA driver = milestone 4 work |
 | 4 | switch fabric: 48 ports, VLAN, STP | in progress (#4): MIIM scan + first PHY link from our code done; S-channel + MAC + CPU DMA next. No upstream Linux driver for XGS CMIC; SDK options: [prior-art.md](prior-art.md) |
-| 5 | fans / PoE / sensors | LM75 hwmon, fan presets (`us48-fand`) and PoE-off at boot **done**. Open: temperature-driven fan policy (#19), BCM59111 PSE driver + per-port control (#26, #24), fan-off (drive circuit unknown, #12) |
+| 5 | fans / PoE / sensors | LM75 hwmon, fan driver (`us48-fan`, DT thermal zones) and PoE-off at boot **done**. Open: fan policy on the board (#19), BCM59111 PSE driver + per-port control (#26, #24), fan-off (drive circuit unknown, #12) |
 | 6 | flash install + sysupgrade | proven backup restore path; layout using kernel0/kernel1 |
 
 ## Prior art

@@ -36,7 +36,7 @@ DEFAULT_FW = "us48-a2-bustest.elf"
 STALL_S = 60.0
 OVERALL_X = 3.0
 KERNEL_X = 1.25
-KERNEL_FLOOR_MS = 50	# smallest bound: IRQ + scheduler jitter on a loaded A9 (xe traffic, fand) is of this order
+KERNEL_FLOOR_MS = 50	# smallest bound: IRQ + scheduler jitter on a loaded A9 (xe traffic, fan driver) is of this order
 FIRST_RUN_LIMIT_MS = 2000	# smoke has no measurement yet: kernel default backstop
 SSH_FIRST_BOUND_S = 30.0	# first ssh calls of smoke (connect + insmod + one cycle), no measurement yet
 # a2 first pass: remoteproc start (~ms) + 1 MiB cached + 64 KiB uncached word tests + sweep, arithmetic ~0.5 s. Backstop

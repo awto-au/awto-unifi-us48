@@ -20,7 +20,7 @@
 #define FRAME_LEN	7	/* byte 0 = level << 4; bytes 1..6 are PoE mode bits and must stay 0 */
 #define LEVEL_SHIFT	4
 #define NGROUP		2	/* chain (A=1,B=0) = unit 0 fans, (A=1,B=1) = unit 1 fans */
-/* Sensor check: the old us48-fand poll period (2 s); LM75 and die temperatures move by degrees per minute. */
+/* Sensor check period (WATCH_MS): LM75 and die temperatures move by degrees per minute. */
 #define WATCH_MS	2000
 
 /* quiet=0 restores the old fail-safe: level 3 on probe, sensor loss and write errors (docs/fan.md) */

@@ -216,7 +216,7 @@ Same registers as `uart1`.
 | `0x40` | `TXRAM[16]` | 32 | rw |  |  | C | TXRAM stride 8 (docs/board.md); 16 entries | docs/board.md MSPI (TXRAM +0x40, stride 8) |
 | `0xc0` | `RXRAM[32]` | 32 | rw |  |  | C |  | regdb MSPI_RXRAM_00 0x15c0 minus 0x1500 |
 | `0x140` | `CDRAM[16]` | 32 | rw |  | PCS[3:0], DSCK[4], DT[5], BITSE[6], CONT[7] | C |  | regdb MSPI_CDRAM_00 0x1640 minus 0x1500 (PCS 1:0 + RESERVED 3:2 there); drivers/spi/spi-bcm-qspi.c MSPI_CDRAM_PCS 0xf |
-| `0x180` | `WRITE_LOCK` | 32 | rw |  | LOCK[0] | I | iProc QSPI: MSPI_WRITE_LOCK. CMICm alias CMICM_BSPI_MAST_N_BOOT (0x1680): 1 = MSPI owns the bus | drivers/spi/spi-bcm-qspi.c MSPI_WRITE_LOCK 0x180; regdb CMICM_BSPI_MAST_N_BOOT 0x1680 minus 0x1500; openwrt/files/usr/sbin/us48-fand (MSPI + 0x180 = 1) |
+| `0x180` | `WRITE_LOCK` | 32 | rw |  | LOCK[0] | I | iProc QSPI: MSPI_WRITE_LOCK. CMICm alias CMICM_BSPI_MAST_N_BOOT (0x1680): 1 = MSPI owns the bus | drivers/spi/spi-bcm-qspi.c MSPI_WRITE_LOCK 0x180; regdb CMICM_BSPI_MAST_N_BOOT 0x1680 minus 0x1500; kernel/us48-cmic-mspi WRITE_LOCK = 1 |
 
 ### sp804_0 (`0x18034000`)
 
@@ -403,7 +403,7 @@ Same registers as `sp804_0`.
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
 | `0x2000` | `GP_DATA_IN` | 32 | ro |  |  | C | CMIC GP pins; GP0/GP1 select the MSPI board-IO chain (fans/LEDs) | scripts/fan_gpio_probe.py GP0; scripts/fan_frame.py; docs/board.md MSPI |
-| `0x2004` | `GP_DATA_OUT` | 32 | rw |  |  | C | us48-fand rewrites it | scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004) |
+| `0x2004` | `GP_DATA_OUT` | 32 | rw |  |  | C | fan select pins; written by kernel/us48-fan frames via us48-cmic-gpio | scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004) |
 | `0x2008` | `GP_OUT_EN` | 32 | rw |  |  | C |  | scripts/fan_gpio_probe.py (GP0 + 8); docs/edgeswitch.md (soc_reg 0x1860) |
 | `0x10094` | `SBUS_TIMEOUT` | 32 | rw |  |  | C |  | common/bcm-cmic/bcm_cmic_hr2_init.c CMIC_SBUS_TIMEOUT |
 | `0x100a0` | `SBUS_RING_MAP_16_23` | 32 | rw |  |  | C | low nibble 4 routes TOP (stock/OpenMDK 0x00005004); precondition for TOP S-channel access | docs/clock-audit.md s3 |

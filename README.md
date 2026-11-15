@@ -9,7 +9,7 @@ Broadcom Hurricane 2 BCM53344 (Cortex-A9 + switch) with a BCM53346 on PCIe, 48×
 | Area | State |
 |---|---|
 | Stock firmware | 7.5.15.17146 installed (official updater), full 32 MiB flash backups verified |
-| OpenWrt | `bcm53xx/hr2` subtarget + device; initramfs (Linux 6.18, legacy uImage, debug profile) boots to a shell from kernel0; PCIe enumerates the BCM53346; temperatures via LM75 hwmon; PoE off + fans 50 % at boot (`us48-poe-off`, `us48-fand`) |
+| OpenWrt | `bcm53xx/hr2` subtarget + device; initramfs (Linux 6.18, legacy uImage, debug profile) boots to a shell from kernel0; PCIe enumerates the BCM53346; temperatures via LM75 hwmon; PoE off (`us48-poe-off`); fans at level 0 (quiet rule, [docs/fan.md](docs/fan.md)) |
 | Mainline | 7-patch series on v7.4-rc1, builds, never booted ([docs/mainline.md](docs/mainline.md), #15) |
 | Device tree | none from Ubiquiti (stock kernel is machine-ID); ours derives from upstream Switch 8 DTS + reversed stock facts |
 | Serial console | front RJ45 (RS-232), adapter on `lizard` (`US48_HOST=lizard`); `scripts/dev.py console` |
@@ -22,7 +22,7 @@ Test unit, but in service: powers 5 PoE cameras and uplinks the house LAN on por
 ## Layout
 
 ```
-openwrt/   patch against OpenWrt main (pinned in scripts/build_openwrt.py) + files/ overlay (us48-fand, us48-poe-off)
+openwrt/   patch against OpenWrt main (pinned in scripts/build_openwrt.py) + files/ overlay (us48-poe-off, us48-selftest)
 mainline/  patch series for upstream Linux (build_mainline.py, BASE v7.4-rc1)
 scripts/   dev.py (entry point: `describe`), build_openwrt.py, build_mainline.py, backup.py, RE tools
 docs/      hardware, openwrt-port, mainline, fan, board, edgeswitch, kernel-pse, uboot, REGISTERS, prior-art, sources (.md)
@@ -46,5 +46,5 @@ python3 scripts/build_mainline.py         # -> tmp/mainline/us48-mainline.bin
 
 - Test images go in backup slot `kernel0` (`dev.py flash-net` / `flash-kernel0` / `boot-flash`) or RAM (`dev.py boot-ram`).
 - Never write `kernel1` (stock), the bootsel record (`0x1ee0000`), `u-boot`, `EEPROM`; never `saveenv`.
-- Fans: OpenWrt has presets only (50 % at boot, 100 % above 80 C via `us48-fand`) - watch temperature on every boot test.
+- Fans: presets only, no tach, no off. Level 0 (50 %) by default; `us48_fan` (Linux) and awto-uboot go to 100 % at LM75 >= 80 C or die >= 110 C ([docs/fan.md](docs/fan.md) quiet rule) - watch temperature on every boot test.
 - Do not connect two forwarding uplinks to the same L2 segment without STP.

@@ -137,7 +137,7 @@ def overlay() -> None:
     run(["git", "clean", "-fdq", "--", TARGET_DIR])
     for p in sorted(PATCHES.glob("*.patch")):
         run(["git", "apply", str(p)])
-    # openwrt/files/ → OpenWrt's image overlay (bench tools, e.g. us48-fand)
+    # openwrt/files/ → OpenWrt's image overlay (bench tools, e.g. us48-poe-off)
     files = TREE / "files"
     if files.exists():
         shutil.rmtree(files)

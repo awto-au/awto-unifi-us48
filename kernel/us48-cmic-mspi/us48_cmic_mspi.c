@@ -18,7 +18,7 @@
 #define NSLOT		16		/* TXRAM/CDRAM slots = bytes per chain */
 #define SPBR_MIN	8		/* hwdb block mspi: SPBR >= 8 */
 #define SPBR_MAX	255
-#define SPCR1_DTL	1		/* stock/fand value (docs/fan.md capture) */
+#define SPCR1_DTL	1		/* stock value (docs/fan.md capture) */
 #define SPCR1_RDSCLK	1
 #define CDRAM_CONT	HW_CMIC_MSPI_CDRAM_CONT_MASK
 

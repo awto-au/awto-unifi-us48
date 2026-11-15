@@ -2,7 +2,8 @@
 """fan_gpio_probe — drive candidate GPIO pins for 'fan power' from the OpenWrt shell, one announced step at a time.
 
 Usage: scripts/fan_gpio_probe.py [--hold S]
-- Needs OpenWrt on the console (busybox devmem). Stops us48-fand first (it rewrites CMIC_GP_DATA_OUT), restarts it at the end.
+- Needs OpenWrt on the console (busybox devmem). Sets us48_fan pwm1_enable=1 (manual) first, restores the old value at the end.
+  Manual pins the level: the driver writes a frame (and CMIC GP pins) only on a level change or a fail-level event.
 - Candidates: CMIC_GP1 of unit 0 / unit 1 / both -> 1; CCA GPIO 4, 5, 10 -> opposite of their current level.
 - Each step restores the registers. GP2/GP3 (SFP TX-disable) are not touched. Log: tmp/logs/fan_gpio_probe.log
 """
@@ -20,6 +21,8 @@ LOG = Path(__file__).resolve().parent.parent / "tmp/logs/fan_gpio_probe.log"
 # CMIC GP block: unit 0 (AXI), unit 1 (PCIe BAR of BCM53346); addresses from hwdb/soc (cmic.toml, periph.toml)
 GP0, GP1 = hwdb.addr("cmic0.GP_DATA_IN"), hwdb.addr("cmic1.GP_DATA_IN")
 CCA_DIN, CCA_DOUT, CCA_OUTEN = (hwdb.addr("cca.GPIO_DIN"), hwdb.addr("cca.GPIO_DOUT"), hwdb.addr("cca.GPIO_OUTEN"))
+# us48_fan hwmon pwm1_enable: 1 = manual, 2 = thermal (kernel/us48-fan)
+PWM_ENABLE = "$(dirname $(grep -l '^us48_fan$' /sys/class/hwmon/hwmon*/name))/pwm1_enable"
 
 
 def run(s, cmd: str) -> str:
@@ -42,6 +45,14 @@ def wr(s, addr: int, val: int) -> None:
     run(s, f"devmem 0x{addr:x} 32 0x{val:x}")
 
 
+def pwm_enable(s) -> int:
+    out = run(s, f"echo V=$(cat {PWM_ENABLE})")
+    m = re.search(r"^V=(\d+)\s*$", out.replace("\r", ""), re.M)
+    if not m:
+        raise RuntimeError(f"no pwm1_enable value: {out!r}")
+    return int(m.group(1))
+
+
 def say(msg: str) -> None:
     print(msg, flush=True)
     LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -55,7 +66,7 @@ def main() -> int:
     ap.add_argument("--hold", type=float, default=8.0)
     a = ap.parse_args()
     with console.Session() as s:
-        run(s, "/etc/init.d/us48-fand stop")
+        pwm_prev = pwm_enable(s)
         base = {GP0 + 4: rd(s, GP0 + 4), GP0 + 8: rd(s, GP0 + 8), GP1 + 4: rd(s, GP1 + 4), GP1 + 8: rd(s, GP1 + 8),
                 CCA_DOUT: rd(s, CCA_DOUT), CCA_OUTEN: rd(s, CCA_OUTEN)}
         din = rd(s, CCA_DIN)
@@ -79,6 +90,7 @@ def main() -> int:
             dout = (base[CCA_DOUT] & ~(1 << bit)) | ((1 - lvl) << bit)
             steps.append((f"CCA GPIO bit {bit} -> output {1 - lvl} (was in={lvl})",
                           [(CCA_DOUT, dout), (CCA_OUTEN, base[CCA_OUTEN] | (1 << bit))]))
+        run(s, f"echo 1 > {PWM_ENABLE}")
         try:
             for i, (name, writes) in enumerate(steps, 1):
                 say(f"STEP {i}/{len(steps)} {name}")
@@ -88,8 +100,8 @@ def main() -> int:
                 restore()
         finally:
             restore()
-            run(s, "/etc/init.d/us48-fand start")
-    say("PROBE DONE (registers restored, us48-fand restarted)")
+            run(s, f"echo {pwm_prev} > {PWM_ENABLE}")
+    say("PROBE DONE (registers restored, pwm1_enable restored)")
     return 0
 
 

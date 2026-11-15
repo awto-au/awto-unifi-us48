@@ -3,7 +3,7 @@
 # Facts + thresholds: docs/selftest.md (awto-unifi-us48#35). Never scans i2c-0/1 (hangs), never touches 0x28-0x30.
 
 LOG=/tmp/us48-selftest.log
-WARN_MC=70000; FAIL_MC=80000   # LM75 millidegrees; FAIL = fand full-fan alert point
+WARN_MC=70000; FAIL_MC=80000   # LM75 millidegrees; FAIL = 80 C quiet-rule emergency trip (docs/fan.md)
 FAILS=0
 
 : > "$LOG"
@@ -33,7 +33,7 @@ else
 	res FAIL mem "MemTotal ${kb:-0} kB"
 fi
 
-# Thermal: LM75 hwmon (i2c-9 0x48..0x4b); fail at fand's full-fan alert point
+# Thermal: LM75 hwmon (i2c-9 0x48..0x4b); fail at the 80 C emergency trip
 seen=0; maxc=-1
 for h in /sys/class/hwmon/hwmon*; do
 	[ "$(cat "$h/name" 2>/dev/null)" = lm75 ] || continue
@@ -53,11 +53,20 @@ else
 	res PASS thermal "max ${maxc} mC over $seen sensors"
 fi
 
-# Fan daemon (no tach, presets only: docs/fan.md)
-if pidof us48-fand >/dev/null 2>&1 || ps w | grep -q '[u]s48-fand'; then
-	res PASS fand "us48-fand running"
+# Fan: us48-fan cooling device (thermal) or hwmon pwm1 (kernel/us48-fan, docs/fan.md)
+fan=""
+for c in /sys/class/thermal/cooling_device*; do
+	[ "$(cat "$c/type" 2>/dev/null)" = us48-fan ] && fan=$c
+done
+if [ -z "$fan" ]; then
+	for h in /sys/class/hwmon/hwmon*; do
+		[ -e "$h/pwm1" ] && fan=$h/pwm1
+	done
+fi
+if [ -n "$fan" ]; then
+	res PASS fan "$fan"
 else
-	res FAIL fand "us48-fand not running (fans stay at last preset)"
+	res FAIL fan "no us48-fan cooling device, no hwmon pwm1 (us48_fan not bound?)"
 fi
 
 # I2C tree: i2c-2 = CMIC master, i2c-3..10 = PCA9548 0x70 children (docs/board.md)

@@ -20,7 +20,7 @@ src = "scripts/fan_gpio_probe.py GP0; scripts/fan_frame.py; docs/board.md MSPI"
 [block.cmic0.reg.GP_DATA_OUT]
 offset = 0x2004
 sdk = "CMIC_GP_DATA_OUT"
-desc = "us48-fand rewrites it"
+desc = "fan select pins; written by kernel/us48-fan frames via us48-cmic-gpio"
 src = "scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004)"
 
 [block.cmic0.reg.GP_OUT_EN]
