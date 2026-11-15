@@ -289,6 +289,7 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		[ADEV_BUSTEST] = US48_PCI_AUX_BUSTEST, [ADEV_PVTMON] = US48_PCI_AUX_PVTMON,
 		[ADEV_GPIO] = US48_PCI_AUX_GPIO,
 	};
+	struct regmap_config axi_cfg;
 	struct us48_pci *p;
 	int i, ret;
 
@@ -315,7 +316,9 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!p->bar0 || !p->bar2 || pci_resource_len(pdev, US48_PCI_BAR0) < AXI_WIN + HW_BAR0_AXI_WIN_SIZE)
 		return -ENOMEM;
 	p->cmic.base = p->bar2;
-	p->map = devm_regmap_init(&pdev->dev, &us48_axi_bus, p, &us48_axi_cfg);
+	axi_cfg = us48_axi_cfg;
+	axi_cfg.lock_arg = p;	/* custom lock() gets lock_arg, not the bus context: NULL oopsed in a2_reset */
+	p->map = devm_regmap_init(&pdev->dev, &us48_axi_bus, p, &axi_cfg);
 	if (IS_ERR(p->map))
 		return PTR_ERR(p->map);
 	p->alive = true;
