@@ -13,6 +13,7 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 | messaging | **rpmsg** over virtio vrings in the carveout + **mailbox** doorbell | a1 ↔ a2 commands and streams; userspace through `rpmsg_char` | stub mailbox (cmd 1 call, 2 read32, 3 write32): replaced |
 | doorbell a2 → a1 | mailbox controller: PCIe MSI raised by a2 if PAXB allows it (I, to check), else hrtimer poll of a doorbell word | wake a1 | new |
 | a2 log | remoteproc **trace** resource (ring in carveout) → debugfs `trace0` | out-of-band log, including the uboot-1 replay (#69 2b) | done: `trace0` resource in `us48-a2.elf` (text, heartbeat rewritten in place) |
+| a2 console (DCC) | `us48-a2` remoteproc: **tty** (`ttyA2DCC0`, tty_port + hrtimer poll) over regmap | a2 Linux console `hvc0`/`earlycon=dcc`: poll `cs_debug0.DSCR` (TXfull, bit 29), read `DTRTX` (+0x8c), push to the tty; write `DTRRX` (+0x80) when RXfull (bit 30) is clear; also fed into debugfs `console` ring | `scripts/a2_dcc_console.py` (RE tool, via uboot-2) |
 | a2 debug | remoteproc debugfs + our debugfs: halt, PC sample (PCSR), registers via ITR, breakpoints/watchpoints | the out-of-band watch from a1 | halt/set-PC moved into `us48-a2`; PC sample + debugfs knobs not yet |
 | unit 1 clocks | **common clock framework** provider (aux `us48_pci.clk`): CCU ARM PLL, GENPLL ch3 (AXI)/APB | `clk_set_rate` with the lock wait and timeout; consumers: remoteproc (a2 CPU), cmic | new; replaces raw PLL pokes in trials |
 | clock trials | `us48-a2` debugfs knob `cpu_mhz` / `axi_mhz`: stop a2 → `clk_set_rate` → lock → start a2 → self-test fw | probe-to-failure (#17) through the clk API | new; debug-only interface, documented |
@@ -54,6 +55,17 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 - Initramfs: the driver does not edit the DTB. The a2 DTS `chosen` node carries `linux,initrd-start/end` = a2 view `0x0a000000` + size (the DTS build owns the size).
 - a2 boots the same kernel build as a1 (plain zImage, no appended DTB); modules are shared by kernel.release. Same remoteproc stop/start reloads everything: `echo stop`, replace the files, `echo start`.
 - Start/stop/recovery/coredump are the standard remoteproc paths; the payload only changes what `load` copies.
+
+## Linux on a2: kernel side (#79, docs/a2-linux.md)
+
+- Same kernel image and initramfs as a1 (`scripts/build_mainline.py`); a2 differs only by DTB (`mainline/a2/us48-a2.dts`, r2, nothing appended) and its bootargs. `/init` picks the role from the DT root compatible (`ubnt,us48-a2`).
+- a2 RAM base = hwdb `a2_carveout` (HW_A2_CARVEOUT_BASE, a2 AXI 0x08000000, 64 MiB). The DTS gets it from hwdb through `scripts/build_a2_linux.py` (cpp -D macros), never as a literal.
+- Linux RAM = carveout minus the last MiB. Last MiB = hwdb `a2_shared` (resource table, trace ring, vrings), `no-map` in the a2 DTB.
+- **Layout requests to the loader side (the kernel decompresses to base + 0x8000 and reaches ~base + 0x0f30000, bss included):**
+  - DTB must sit above that: move `a2_dtb` from +0x0b00000 (inside the decompressed kernel, overwritten before it is read) to +0x1f00000 (a2_zimage shrinks to 15 MiB); `ubnt,dtb-offset` in mainline/0010 follows.
+  - First MiB (`a2_stub`) is kernel RAM once Linux runs: resource table/trace da must live in `a2_shared`, not at the carveout start.
+  - zImage (10.3 MB with the built-in initramfs) at +0x1000000 is fine; no `us48-a2-initrd` is needed (initrd offset unused).
+- DCC console reader (a1 side, in `us48-a2`): started before a2 is released; poll period <= 10 ms (the kernel's `hvc_dcc_check` gives up after 100 ms and never registers hvc0; earlycon blocks per character until drained). Regmap reads of `cs_debug0` through the unit 1 access table (the block is in the table or add it). Link down -> `-ENODEV`, a2 stays blocked in DCC until the reader returns.
 
 ## Order
 

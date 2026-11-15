@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * a2: Cortex-A9 inside the BCM53346 (unit 1) of the US-48-500W, Linux in AMP next to a1.
+ * Same kernel image as a1; only this DTB (r2, nothing appended) and its bootargs differ.
+ * Addresses come from hwdb via scripts/build_a2_linux.py (-D macros): never edited here.
+ * Deliberately absent (a2 must not touch): DDR controller 0x60000000 (stalls a2), QSPI/flash, PCIe,
+ * L2 PL310 (left off as the boot ROM leaves it), anything on the CCB/APB buses (docs/a2.md, #53).
+ * Clock rates: conf I, a2 PERIPHCLK is not measured on unit 1 (docs/a2-linux.md).
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+#if !defined(A2_RAM_BASE) || !defined(A2_RAM_SIZE) || !defined(A2_SHARED_BASE) || !defined(A2_SHARED_SIZE) || \
+	!defined(A2_GIC_DIST_BASE_H) || !defined(A2_GIC_DIST_BASE) || !defined(A2_GIC_CPU_BASE) || !defined(A2_GTIMER_BASE) || !defined(A2_TWD_BASE)
+#error "A2_* macros (value and _H unit-address digits) come from hwdb via scripts/build_a2_linux.py"
+#endif
+
+/ {
+	compatible = "ubnt,us48-a2", "brcm,hr2";
+	model = "UniFi US-48-500W unit 1 Cortex-A9 (a2)";
+	interrupt-parent = <&gic>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	chosen {
+		/* DCC console: a1 drains DBGDTRTX over PCIe (docs/a2-linux.md). No ttyS: unit 1 UART is not wired. */
+		bootargs = "console=hvc0 earlycon=dcc";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a9";
+			reg = <0x0>;
+		};
+	};
+
+	/* a2 view of host DDR through PAXB OARR_0/OMAP_0; the last MiB is rproc shared state, not Linux RAM */
+	memory@A2_RAM_BASE_H {
+		device_type = "memory";
+		reg = <A2_RAM_BASE A2_RAM_SIZE>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* resource table, trace ring, vrings: written by a1 (remoteproc), never mapped by Linux */
+		a2-shared@A2_SHARED_BASE_H {
+			reg = <A2_SHARED_BASE A2_SHARED_SIZE>;
+			no-map;
+		};
+	};
+
+	clocks {
+		/* conf I: PERIPHCLK = ARM/2, ARM at what unit 1's CCU leaves (400 MHz assumed as unit 0); a2 rate TBD (#70) */
+		periph_clk: periph_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <200000000>;
+		};
+	};
+
+	timer@A2_GTIMER_BASE_H {
+		compatible = "arm,cortex-a9-global-timer";
+		reg = <A2_GTIMER_BASE 0x100>;
+		interrupts = <GIC_PPI 11 IRQ_TYPE_EDGE_RISING>;
+		clocks = <&periph_clk>;
+	};
+
+	twd-timer@A2_TWD_BASE_H {
+		compatible = "arm,cortex-a9-twd-timer";
+		reg = <A2_TWD_BASE 0x20>;
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(1) | IRQ_TYPE_EDGE_RISING)>;
+		clocks = <&periph_clk>;
+	};
+
+	gic: interrupt-controller@A2_GIC_DIST_BASE_H {
+		compatible = "arm,cortex-a9-gic";
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+		interrupt-controller;
+		reg = <A2_GIC_DIST_BASE 0x1000>, <A2_GIC_CPU_BASE 0x100>;
+	};
+};
