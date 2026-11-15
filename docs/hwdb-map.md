@@ -76,7 +76,7 @@
 | `i2c1` | axi0 | `0x1803b000` | `0x50` | 0 | 0 | C | iProc SMBus 1 | docs/board.md; bcm-hr2.dtsi i2c@3b000 |
 | `cru` | axi0 | `0x1803e000` | `0x20` | 0 | 2 | C | CRU: QSPI clock select, A9 reset for the A9 of this chip (unit 1: a2 ARM_RST_N) | docs/clocks.md; docs/a2.md; kernel/us48-pci/us48_pci.h |
 | `dmu` | axi0 | `0x1803f000` | `0x1000` | 0 | 3 | C | DMU/PCU: straps, chip reset | uboot-port/arch/arm/dts/us48-uboot.dts dmu@3f000; docs/a2.md; scripts/u2_lut_reset_test.py |
-| `genpll` | axi0 | `0x1803fc00` | `0x20` | 0 | 5 | C | GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz | docs/clocks.md Clock tree; docs/clock-audit.md s5 ([DL] genpll.c, [E0]) |
+| `genpll` | axi0 | `0x1803fc00` | `0x20` | 0 | 5 | C | GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz. Unit 1 power-on: AXI 400 / APB 100, locked, FAST_LOCK 0, CTRL3 0xa7 | docs/clocks.md Clock tree; docs/clock-audit.md s5 ([DL] genpll.c, [E0]) |
 | `xgpll` | axi0 | `0x1803fc1c` | `0x18` | 0 | 6 | C | XGPLL: DDR clock source. CK = 25 x NDIV_INT(CTRL_4) x 2 / CH1_MDIV(CTRL_2); live 120 / 9 = 666.7 MHz | docs/clock-audit.md s4 (DDR) ([DL] ddr_init.c:190-198, [RG], [E0]) |
 | `idm_pcie_m0` | axi0 | `0x18101000` | `0x1000` | 0 | 1 | C | AXI_PCIE_M0 IDM wrapper (PAXB AXI master) | regdb AXI_PCIE_M0_IDM_* |
 | `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
@@ -440,7 +440,7 @@ Same registers as `sp804_0`.
 |---|---|---|---|---|---|---|---|---|
 | `0x0` | `CTRL0` | 32 | rw |  | FAST_LOCK[28] | C |  | docs/clocks.md E5 ([DL] genpll.c) |
 | `0x4` | `CTRL1` | 32 | rw |  | NDIV[9:0] | C |  | docs/clocks.md E0, E5 |
-| `0x8` | `CTRL2` | 32 | rw |  | CH3_MDIV[15:8], CH4_MDIV[23:16] | C | live 0x00080a00: ch3 10, ch4 8 | docs/clocks.md E5 ([DL]); docs/clock-audit.md s5 ([E0]) |
+| `0x8` | `CTRL2` | 32 | rw |  | CH3_MDIV[15:8], CH4_MDIV[23:16] | C | unit 0 live 0x00080a00 (ch3 10 = 200 MHz AXI, ch4 8); unit 1 power-on 0x00080500 (ch3 5 = 400 MHz AXI), us48_a2 axi_mhz sets 10 (#79) | docs/clocks.md E5 ([DL]); docs/clock-audit.md s5 ([E0]) |
 | `0xc` | `CTRL3` | 32 | rw |  | LOAD_EN[21:16], SW_TO_GEN_PLL_LOAD[28] | C |  | docs/clocks.md E5 ([DL]) |
 | `0x18` | `STATUS` | 32 | rw |  | LOCK[0] | C |  | docs/clocks.md E5 ([DL]) |
 

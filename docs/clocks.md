@@ -181,6 +181,7 @@ mw.l 19000000 0
 ### E5. AXI / APB (document only)
 
 - GENPLL row (`[DL]` genpll.c): ndiv 80 (`CTRL1` [9:0]), ch3 mdiv in `CTRL2` [15:8]: 5 = 400, 7 = 285, 8 = 250, 10 = 200 (now), 20 = 100 MHz AXI; ch4 mdiv `CTRL2` [23:16] = 8. Sequence in `[DL]`: clear `CTRL3` [21:16] load-enables, set `CTRL0` bit 28 FAST_LOCK, write NDIV and MDIV, set `CTRL3` bit 28 (`SW_TO_GEN_PLL_LOAD`), write load-enable `0x18` to `CTRL3` [21:16], poll `STATUS` (`0x1803fc18`) bit 0 lock.
+- Unit 1 power-on = ch3 mdiv 5 (AXI 400 / APB 100), locked; unit 0 after uboot-1 = mdiv 10. `us48_a2 axi_mhz` applies this sequence to unit 1 (#79; docs/a2-linux.md "AXI / GENPLL and cache probes").
 - Not worth doing before a benchmark shows AXI-bound work. Side effects listed in the table; also changes the console baud and SP805 period.
 - Ask first: DDR AXI port clock interplay (see [ddr.md](ddr.md)).
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """a2_raw — run an a2 ELF on the board (debugfs mounted, us48_a2.ko in /lib/modules) and print trace0 + pcsr (#79).
 
-Usage: a2_raw.py ELF_NAME [cpu_mhz] [wait_s]   (ELF in /lib/firmware; cpu_mhz 0 = leave PLL; log tmp/logs/a2_raw.log)
+Usage: a2_raw.py ELF_NAME [cpu_mhz] [wait_s] [axi_mhz]   (ELF in /lib/firmware; cpu_mhz 0 = leave PLL; axi_mhz = unit 1 GENPLL ch3, default
+keeps the module param (200); log tmp/logs/a2_raw.log). Last line: verdict (pcsr at the undefined vector 0xffff000c or r/m != 0 = FAIL).
 Wait: trace0 re-read every 0.2 s until it stops growing for 1 s; wait_s (default 5) is the cap. rawtest runs < 1 s at 1000 MHz.
 """
+import re
 import subprocess
 import sys
 import time
@@ -16,6 +18,7 @@ D=/sys/class/remoteproc/remoteproc0; T=/sys/kernel/debug/remoteproc/remoteproc0
 lsmod | grep -q us48_a2 || insmod /lib/modules/*/us48_a2.ko
 [ "$(cat $D/state)" = offline ] || echo stop > $D/state
 echo @MHZ@ > /sys/module/us48_a2/parameters/cpu_mhz
+[ -n "@AXI@" ] && echo @AXI@ > /sys/module/us48_a2/parameters/axi_mhz
 echo @ELF@ > $D/firmware
 echo start > $D/state
 n=0; last=""; same=0
@@ -31,12 +34,16 @@ echo "$cur"; echo "poll=$n"; cat $T/pcsr | tail -1; tail -2 $T/ccu
 def main() -> int:
     a = sys.argv[1:]
     elf, mhz, wait = a[0], a[1] if len(a) > 1 else "0", float(a[2]) if len(a) > 2 else 5.0
+    axi = a[3] if len(a) > 3 else ""
     r = subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"),
-                        REMOTE.replace("@ELF@", elf).replace("@MHZ@", mhz).replace("@N@", str(int(wait / 0.2)))],
+                        REMOTE.replace("@ELF@", elf).replace("@MHZ@", mhz).replace("@AXI@", axi).replace("@N@", str(int(wait / 0.2)))],
                        capture_output=True, text=True)
     out = r.stdout + r.stderr
     print(out)
-    (ROOT / "tmp/logs/a2_raw.log").open("a").write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {a}\n{out}\n")
+    bad = "pass=" not in out or "pcsr 0xffff000c" in out or re.search(r"[mr]=(?!0{8})[0-9a-f]{8}", out) is not None
+    verdict = f"verdict cpu {mhz} axi {axi or 'param'}: {'FAIL' if bad else 'ok'}"
+    print(verdict)
+    (ROOT / "tmp/logs/a2_raw.log").open("a").write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {a}\n{out}\n{verdict}\n")
     return r.returncode
 
 

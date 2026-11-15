@@ -137,7 +137,7 @@ space = "axi0"
 base = 0x1803fc00
 size = 0x20
 unit = 0
-desc = "GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz"
+desc = "GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz. Unit 1 power-on: AXI 400 / APB 100, locked, FAST_LOCK 0, CTRL3 0xa7"
 src = "docs/clocks.md Clock tree; docs/clock-audit.md s5 ([DL] genpll.c, [E0])"
 conf = "C"
 
@@ -157,7 +157,7 @@ src = "docs/clocks.md E0, E5"
 offset = 0x8
 sdk = "IPROC_WRAP_GEN_PLL_CTRL2"
 fields = ["CH3_MDIV 15:8 5=400 7=285 8=250 10=200 20=100 MHz AXI", "CH4_MDIV 23:16"]
-desc = "live 0x00080a00: ch3 10, ch4 8"
+desc = "unit 0 live 0x00080a00 (ch3 10 = 200 MHz AXI, ch4 8); unit 1 power-on 0x00080500 (ch3 5 = 400 MHz AXI), us48_a2 axi_mhz sets 10 (#79)"
 src = "docs/clocks.md E5 ([DL]); docs/clock-audit.md s5 ([E0])"
 
 [block.genpll.reg.CTRL3]

@@ -86,7 +86,13 @@ static void mmu_on(void)
 	__asm__ volatile("mcr p15, 0, %0, c3, c0, 0" : : "r"(3));		/* DACR: domain 0 manager */
 	__asm__ volatile("isb");
 	__asm__ volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(sctlr));
-	sctlr |= 1U | 4U | 0x1000U;	/* M, C, I */
+	sctlr |= 1U;	/* M */
+#ifndef NO_DCACHE
+	sctlr |= 4U;	/* C */
+#endif
+#ifndef NO_ICACHE
+	sctlr |= 0x1000U;	/* I */
+#endif
 	__asm__ volatile("mcr p15, 0, %0, c1, c0, 0\n\tisb" : : "r"(sctlr));
 }
 

@@ -313,6 +313,40 @@ static int paxb_show(struct seq_file *m, void *unused)
 }
 DEFINE_SHOW_ATTRIBUTE(paxb);
 
+/* --- debugfs genpll: read-only GENPLL (AXI/APB source) + CCU ARM_DIV/policy of both units (#79) --- */
+
+static const struct { const char *n; u32 a; } genpll_regs[] = {
+	{ "GENPLL_CTRL0", HW_GENPLL_BASE + HW_GENPLL_CTRL0 }, { "GENPLL_CTRL1", HW_GENPLL_BASE + HW_GENPLL_CTRL1 },
+	{ "GENPLL_CTRL2", HW_GENPLL_BASE + HW_GENPLL_CTRL2 }, { "GENPLL_CTRL3", HW_GENPLL_BASE + HW_GENPLL_CTRL3 },
+	{ "GENPLL_STATUS", HW_GENPLL_BASE + HW_GENPLL_STATUS },
+	{ "CCU_ARM_DIV", HW_CCU_BASE + HW_CCU_ARM_DIV }, { "CCU_POLICY_FREQ", HW_CCU_BASE + HW_CCU_POLICY_FREQ },
+	{ "CCU_POLICY_DBG", HW_CCU_BASE + HW_CCU_POLICY_DBG },
+};
+
+static int genpll_show(struct seq_file *m, void *unused)
+{
+	struct us48_pci *p = m->private;
+	void __iomem *va;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(genpll_regs); i++) {
+		u32 a = genpll_regs[i].a;
+
+		va = ioremap(a & ~0xfffU, 0x1000);
+		if (va) {
+			seq_printf(m, "unit0 0x%08x %-16s %08x\n", a, genpll_regs[i].n, readl(va + (a & 0xfff)));
+			iounmap(va);
+		}
+		va = us48_pci_win_get(p, a);
+		if (IS_ERR(va))
+			return PTR_ERR(va);
+		seq_printf(m, "unit1 0x%08x %-16s %08x\n", a, genpll_regs[i].n, readl(va));
+		us48_pci_win_put(p);
+	}
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(genpll);
+
 /* write-only test poke "<unit 0|1> <0x18012100..0x1801210c> <value>"; only that PAXB block, board experiments (#79) */
 static ssize_t poke_write(struct file *file, const char __user *ubuf, size_t len, loff_t *ppos)
 {
@@ -393,6 +427,7 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	pci_set_drvdata(pdev, p);
 	p->dbg = debugfs_create_dir("us48_pci", NULL);
 	debugfs_create_file("paxb", 0444, p->dbg, p, &paxb_fops);
+	debugfs_create_file("genpll", 0444, p->dbg, p, &genpll_fops);
 	debugfs_create_file("poke", 0200, p->dbg, p, &poke_fops);
 
 	for (i = 0; i < ADEV_NUM; i++) {

@@ -94,3 +94,13 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - `init_default_cache_policy()` overrides the `mmu.c:57` default from the CPU section flags (`proc-v7-2level.S` PMD_FLAGS_UP): the one-line `cachepolicy` default has no effect. Test patch `mainline/a2/0001-ARM-v7-UP-section-flags-write-allocate-a2-test.patch` (kernel prints `Memory policy: Data cache writealloc`): 5 boots at 1000 MHz = 1 clean, 4 oops/panic (slab corruption, NULL deref). Write-allocate is not the fix.
 - RO + no-snoop off (DevCtl 0x2c10 -> 0x2400 on root port and EP): rawtest 1 of 6 runs complete (control 4 of 6): no gain.
 - Pokes (rawtest, 8 runs each, restored after): unit 0 RX_DEBUG 0x1c (serialise reads): 5 of 8 abort/corrupt; unit 1 EP_AXI_CONFIG 0: 4 of 8 abort; unit 0 RC_AXI_CONFIG 0x3e1f: 7 of 8 abort. No change.
+
+## AXI / GENPLL and cache probes (#79, 2026-11-15, unit 1 at 1000 MHz unless stated)
+- `us48_pci` debugfs `genpll` (read-only): GENPLL CTRL0..3 + STATUS, CCU ARM_DIV / POLICY_FREQ / POLICY_DBG of both units.
+- Power-on: unit 0 (uboot-1 mode 4) CTRL2 `0x00080a00` = AXI 200 / APB 50; unit 1 CTRL2 `0x00080500` = **AXI 400 / APB 100**. Both locked (STATUS `0x205`), NDIV 80, ARM_DIV `0x2012`. Unit 1 is not unlocked or bypassed.
+- `us48_a2` `axi_mhz` (default 200; 100/200/250/285/400; 0 = leave): genpll.c sequence (docs/clocks.md E5) before the halt, lock poll 190 us. Persists across a2 resets (GENPLL is not in the a2 reset).
+- rawtest at AXI 200 / 400 / 100, 4 runs each: 600 and 1000 MHz fail every run (`a2_raw.py` verdict: undefined-vector PCSR or `r`/`m` != 0); 800 MHz 1 of 2 ok. **AXI clock is not the cause.**
+- Linux (normal-profile Image, 1000 MHz, AXI 200, 5 boots each): L2 off 0/5 reach the shell, L2 on 1/5.
+- Cache probes (`us48-a2-rawtest-noic.elf` = SCTLR.I off, `-nodc.elf` = SCTLR.C off; `build_a2fw.py`), AXI 200, 1000 MHz, 25 s run each:
+  - I-cache off: 5 passes, all m = r = 0, no abort. D-cache off: 16 passes, all m = r = 0, no abort. Cached build: abort within ~1 s, every run.
+  - The fault needs I-cache and D-cache both on. Slower fetch/data rate in the probes lowers traffic; a rate effect is not separated from an I+D fill interaction.

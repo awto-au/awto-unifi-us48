@@ -66,7 +66,9 @@ SECTIONS {{
     for name, srcs, extra in (("us48-a2", ("start.S", "main.c"), []), ("us48-a2-boot", ("boot.S", "bootrsc.c"), []),
                               ("us48-a2-bustest", ("start.S", "bustest.c"), []),
                               ("us48-a2-bustest-nommu", ("start.S", "bustest.c"), ["-DNO_MMU"]),
-                              ("us48-a2-rawtest", ("start.S", "rawtest.c"), [])):  # read-after-write ordering (#79)
+                              ("us48-a2-rawtest", ("start.S", "rawtest.c"), []),  # read-after-write ordering (#79)
+                              ("us48-a2-rawtest-noic", ("start.S", "rawtest.c"), ["-DNO_ICACHE"]),  # cache probes (#79)
+                              ("us48-a2-rawtest-nodc", ("start.S", "rawtest.c"), ["-DNO_DCACHE"])):
         objs = []
         for src in srcs:
             obj = OUT / f"{name}-{src}.o"

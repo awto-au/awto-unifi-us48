@@ -9,7 +9,9 @@ _start:
         mcr     p15, 0, r0, c7, c5, 0     @ ICIALLU
         mcr     p15, 0, r0, c7, c5, 6     @ BPIALL
         mrc     p15, 0, r0, c1, c0, 0
+#ifndef NO_ICACHE
         orr     r0, r0, #0x1000           @ SCTLR.I
+#endif
         mcr     p15, 0, r0, c1, c0, 0
         isb
         ldr     sp, =__stack_top

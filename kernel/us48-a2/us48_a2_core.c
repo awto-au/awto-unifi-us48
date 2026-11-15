@@ -45,6 +45,19 @@
 static uint cpu_mhz = 1000;
 module_param(cpu_mhz, uint, 0644);
 MODULE_PARM_DESC(cpu_mhz, "a2 ARM clock set at start: 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO a multiple of 25 MHz; 0 = leave");
+/*
+ * unit 1 AXI (GENPLL ch3, APB = AXI/4): power-on mdiv 5 = 400 MHz, uboot-1 runs unit 0 at 200 (mode 4) (#79).
+ * Sequence = D-Link genpll.c iproc_config_genpll (docs/clocks.md E5). 0 = leave.
+ */
+static uint axi_mhz = 200;
+module_param(axi_mhz, uint, 0644);
+MODULE_PARM_DESC(axi_mhz, "unit 1 AXI clock set at start: 100, 200, 250, 285 or 400 (GENPLL table of genpll.c); 0 = leave");
+/*
+ * GENPLL lock after a ch3 load. Waits for: STATUS bit 0. VCO is unchanged (NDIV same), so lock stays set;
+ * expected = one PCIe read. Limit 190 us = 1.25 x 149 us, the only PLL lock measured here (ARM PLL, GO + lock).
+ * Expiry: log STATUS + limit, -ETIMEDOUT, a2 not started.
+ */
+#define GENPLL_WAIT_US	190
 #define CCU(r)		(HW_CCU_BASE + HW_CCU_##r)
 #define CCU_UNLOCK	0xa5a501
 #define CCU_LOCKED	(HW_CCU_PLLARMA_LOCK_MASK | HW_CCU_PLLARMA_LOCK_RAW_MASK)
@@ -365,6 +378,46 @@ out:
 	return ret;
 }
 
+static int a2_set_axi(struct us48_a2 *a, uint mhz)
+{
+	static const u16 mdiv_of[][2] = { { 100, 20 }, { 200, 10 }, { 250, 8 }, { 285, 7 }, { 400, 5 } };
+	u32 c0, c1, c2, c3, st;
+	int i, ret;
+
+	if (!mhz)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(mdiv_of) && mdiv_of[i][0] != mhz; i++)
+		;
+	if (i == ARRAY_SIZE(mdiv_of))
+		return dev_err_probe(a->dev, -EINVAL, "axi_mhz %u: want 100, 200, 250, 285 or 400\n", mhz);
+	ret = regmap_read(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL1, &c1);
+	ret = ret ?: regmap_read(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL2, &c2);
+	if (ret)
+		return ret;
+	if ((c1 & HW_GENPLL_CTRL1_NDIV_MASK) != 80)
+		return dev_err_probe(a->dev, -EINVAL, "genpll gate: NDIV %u (want 80)\n", c1 & HW_GENPLL_CTRL1_NDIV_MASK);
+	if (((c2 & HW_GENPLL_CTRL2_CH3_MDIV_MASK) >> HW_GENPLL_CTRL2_CH3_MDIV_SHIFT) == mdiv_of[i][1])
+		return 0;
+	/* genpll.c: clear ch3/ch4 load-enables, FAST_LOCK, MDIV, SW_TO_GEN_PLL_LOAD, load-enable 0x18, poll lock */
+	ret = regmap_read(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL3, &c3);
+	ret = ret ?: regmap_write(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL3, c3 & ~HW_GENPLL_CTRL3_LOAD_EN_MASK);
+	ret = ret ?: regmap_read(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL0, &c0);
+	ret = ret ?: regmap_write(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL0, c0 | HW_GENPLL_CTRL0_FAST_LOCK_MASK);
+	c2 = (c2 & ~HW_GENPLL_CTRL2_CH3_MDIV_MASK) | mdiv_of[i][1] << HW_GENPLL_CTRL2_CH3_MDIV_SHIFT;
+	ret = ret ?: regmap_write(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL2, c2);
+	c3 = (c3 & ~HW_GENPLL_CTRL3_LOAD_EN_MASK) | HW_GENPLL_CTRL3_SW_TO_GEN_PLL_LOAD_MASK;
+	ret = ret ?: regmap_write(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL3, c3);
+	c3 |= 0x18 << HW_GENPLL_CTRL3_LOAD_EN_SHIFT;
+	ret = ret ?: regmap_write(a->map, HW_GENPLL_BASE + HW_GENPLL_CTRL3, c3);
+	ret = ret ?: regmap_read_poll_timeout(a->map, HW_GENPLL_BASE + HW_GENPLL_STATUS, st,
+					      st & HW_GENPLL_STATUS_LOCK_MASK, 0, GENPLL_WAIT_US);
+	if (ret)
+		dev_err(a->dev, "genpll lock: STATUS %#x, limit %d us, ret %d\n", st, GENPLL_WAIT_US, ret);
+	else
+		dev_info(a->dev, "unit 1 AXI %u MHz (ch3 mdiv %u), APB %u MHz\n", mhz, mdiv_of[i][1], mhz / 4);
+	return ret;
+}
+
 static int a2_ccu_show(struct seq_file *m, void *unused)
 {
 	static const struct { const char *n; u32 r; } regs[] = {
@@ -434,6 +487,7 @@ static int us48_a2_start(struct rproc *rproc)
 	struct us48_a2 *a = rproc->priv;
 	int ret = a2_reset(a);
 
+	ret = ret ?: a2_set_axi(a, axi_mhz);
 	ret = ret ?: a2_set_cpu(a, cpu_mhz);
 	ret = ret ?: a2_halt(a);
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);

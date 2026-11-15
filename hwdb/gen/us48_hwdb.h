@@ -1806,7 +1806,7 @@
 #define HW_DMU_CRU_RESET_IPROC_RESET_N_SHIFT	1
 #define HW_DMU_CRU_RESET_IPROC_RESET_N_MASK	0x2U
 
-/* block genpll (axi0): GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz [C] */
+/* block genpll (axi0): GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz. Unit 1 power-on: AXI 400 / APB 100, locked, FAST_LOCK 0, CTRL3 0xa7 [C] */
 #define HW_GENPLL_BASE	0x1803fc00U
 #define HW_GENPLL_SIZE	0x20U
 #define HW_GENPLL_CTRL0	0x0U
