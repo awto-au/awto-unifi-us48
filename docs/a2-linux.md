@@ -133,3 +133,21 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 - NIC issuing override and Diagnostic bit 22 are not the cause. Linux-side NIC param, 5 boots and bandwidth cost not run (step 2 not clean).
 - Streaming I+D fill traffic over PCIe at full rate is clean (ifa/ifb/ifd): the failure is specific to what rawtest does, not to the I/D line-fill interaction. Next: bisect rawtest (mapping changes with caches on, aliasing).
+
+## rawtest bisect and page-table-walk hypothesis (#79, 2026-11-15, a2 1000 MHz, AXI 200)
+- rawtest never edits a PTE after the MMU is on: the table (4 aliases of the carveout, built with MMU off) is fixed. The "posted PTE write vs walk" race has nothing to act on in rawtest; Linux PTE updates are not exercised by it.
+- Bisect (`a2_raw_batch.py RUNS 1000 <elf>...`, ok/runs; ELFs `us48-a2-rawtest-<x>`, `TESTMASK` in rawtest.c):
+
+| ELF | ok / runs |
+|---|---|
+| setup only (`TESTMASK=0`) | 4/4 |
+| A (A_wb, A_nwa, A_wt, A_nc) | 2/4 |
+| A0 / A1 (nwa) / A2 / A3 | 4/4, 2/4 + 7/8, 4/4, 4/4 |
+| B, C, D | 4/4 each |
+| PT read-back with MMU off (`PT_RB`, all tests; `ptbad` = 0) | 2/4 |
+| table in a2 SRAM, walks on-chip (`PT_SRAM`), A1 | 6/8 (A1 same code, table over PCIe: 7/8) |
+| WB tests only, aliases mapped / no aliases (`NO_ALIAS`) | 12/12, 12/12 |
+
+- Failures are early (undefined vector right after the header text, before any test body) or whole-pass `r` (every word wrong). Adding the `rfirst` diagnostics to the same source made the unmodified test pass 8/8 (and `PT_SRAM` 8/8): the fault moves with code layout / timing, it does not track a test or a mapping.
+- Verdict: PTE write ordering and mismatched-attribute aliasing are not the cause (walks on-chip: same failures; alias-free: no failures but the alias build is also clean, so no separation). No Linux patch written.
+- Open: layout-dependent early corruption on cold I/D fills at 1000 MHz.

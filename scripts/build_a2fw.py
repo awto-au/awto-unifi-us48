@@ -70,6 +70,21 @@ SECTIONS {{
                               ("us48-a2-rawtest", ("start.S", "rawtest.c"), []),  # read-after-write ordering (#79)
                               ("us48-a2-rawtest-noic", ("start.S", "rawtest.c"), ["-DNO_ICACHE"]),  # cache probes (#79)
                               ("us48-a2-rawtest-nodc", ("start.S", "rawtest.c"), ["-DNO_DCACHE"]),
+                              # rawtest bisect (#79): one test group per ELF, setup only, PT read-back
+                              ("us48-a2-rawtest-A", ("start.S", "rawtest.c"), ["-DTESTMASK=0x0fU"]),
+                              ("us48-a2-rawtest-B", ("start.S", "rawtest.c"), ["-DTESTMASK=0xf0U"]),
+                              ("us48-a2-rawtest-C", ("start.S", "rawtest.c"), ["-DTESTMASK=0x100U"]),
+                              ("us48-a2-rawtest-D", ("start.S", "rawtest.c"), ["-DTESTMASK=0x200U"]),
+                              ("us48-a2-rawtest-A0", ("start.S", "rawtest.c"), ["-DTESTMASK=0x01U"]),
+                              ("us48-a2-rawtest-A1", ("start.S", "rawtest.c"), ["-DTESTMASK=0x02U"]),
+                              ("us48-a2-rawtest-A2", ("start.S", "rawtest.c"), ["-DTESTMASK=0x04U"]),
+                              ("us48-a2-rawtest-A3", ("start.S", "rawtest.c"), ["-DTESTMASK=0x08U"]),
+                              ("us48-a2-rawtest-A1-ptsram", ("start.S", "rawtest.c"), ["-DTESTMASK=0x02U", "-DPT_SRAM"]),
+                              ("us48-a2-rawtest-ptsram", ("start.S", "rawtest.c"), ["-DPT_SRAM"]),
+                              ("us48-a2-rawtest-wbonly-alias", ("start.S", "rawtest.c"), ["-DTESTMASK=0x311U"]),
+                              ("us48-a2-rawtest-wbonly-noalias", ("start.S", "rawtest.c"), ["-DTESTMASK=0x311U", "-DNO_ALIAS"]),
+                              ("us48-a2-rawtest-setup", ("start.S", "rawtest.c"), ["-DTESTMASK=0"]),
+                              ("us48-a2-rawtest-rb", ("start.S", "rawtest.c"), ["-DPT_RB"]),
                               # I-fetch / D-fill probes (#79): ifa code in SRAM, ifb data in SRAM, ifd both over PCIe
                               ("us48-a2-ifa", ("start.S", "iftest.c", "iftest_asm.S"), ["-DIF_A", *BIG, "-DWRAP_DATA=0"]),
                               ("us48-a2-ifb", ("start.S", "iftest.c", "iftest_asm.S"), ["-DIF_B", *BIG, "-DWRAP_DATA=1"]),

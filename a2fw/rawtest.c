@@ -15,7 +15,11 @@
 #define LINE		32U
 #define NVA		4
 #define VA_WB(pa)	(pa)				/* TEX=001 C=1 B=1: write-back write-allocate (bustest) */
+#ifdef NO_ALIAS	/* one mapping per physical page: carveout WB, a2_shared MiB (trace, stack, table) NC; no aliases */
+#define VA_NC(pa)	(pa)
+#else
 #define VA_NC(pa)	((pa) - BASE + 0x20000000U)	/* TEX=001 C=0 B=0: normal non-cacheable */
+#endif
 #define VA_NWA(pa)	((pa) - BASE + 0x28000000U)	/* TEX=000 C=1 B=1: write-back no write-allocate (Linux UP default) */
 #define VA_WT(pa)	((pa) - BASE + 0x30000000U)	/* TEX=000 C=1 B=0: write-through */
 #define SEC_WB		0x1c0eU
@@ -24,6 +28,10 @@
 #define SEC_WT		0x0c0aU
 #define SEC_DEV		0x0c16U
 
+#ifndef TESTMASK
+#define TESTMASK 0x3ffU	/* bit t = run test t (bisect, #79); 0 = setup only */
+#endif
+
 char trace[TRACE_SZ] __attribute__((aligned(4096), section(".trace")));
 static volatile char *const TR = (volatile char *)VA_NC((uint32_t)trace);
 
@@ -31,6 +39,7 @@ enum { A_WB, A_NWA, A_WT, A_NC, B_WB, B_NWA, B_WT, B_NC, C_EVICT, D_CONF, NT };
 static const char *const names[NT] = { "A_wb ", "A_nwa", "A_wt ", "A_nc ", "B_wb ", "B_nwa", "B_wt ", "B_nc ", "C_evi", "D_con" };
 static uint32_t off_m[NT], off_r[NT], off_pass, off_first;
 static volatile uint32_t sink;
+static uint32_t pt_bad, off_rfirst, rfirst_n;
 static uint32_t cnt_m[NT], cnt_r[NT], way_bytes, first_n;
 
 static inline void dsb(void)
@@ -63,27 +72,58 @@ static void dcache_setway(int op)	/* 0 invalidate, 2 clean+invalidate */
 
 static void mmu_on(void)
 {
+#ifdef PT_SRAM	/* table walks stay on-chip: TTBCR.N = 2 -> 1 GiB of VA, 1024 entries, 4 KiB aligned */
+	volatile uint32_t *pt = (volatile uint32_t *)(HW_A2_SRAM_BASE + 0x2000U);
+#define PT_PA		(HW_A2_SRAM_BASE + 0x2000U)
+#define PT_N		2
+#define PT_ENTRIES	1024
+#else
 	volatile uint32_t *pt = (volatile uint32_t *)(BASE + PT_OFF);	/* MMU still off: direct physical writes */
+#define PT_PA		(BASE + PT_OFF)
+#define PT_N		0
+#define PT_ENTRIES	4096
+#endif
 	uint32_t i, sctlr;
 
-	for (i = 0; i < 4096; i++)
+	for (i = 0; i < PT_ENTRIES; i++)
 		pt[i] = 0;
 	for (i = 0; i < HW_A2_CARVEOUT_SIZE >> 20; i++) {
 		uint32_t pa = BASE + (i << 20);
 
+#ifdef NO_ALIAS
+		pt[pa >> 20] = pa | (pa >= HW_A2_SHARED_BASE ? SEC_NC : SEC_WB);
+#else
 		pt[pa >> 20] = pa | SEC_WB;
 		pt[VA_NC(pa) >> 20] = pa | SEC_NC;
 		pt[VA_NWA(pa) >> 20] = pa | SEC_NWA;
 		pt[VA_WT(pa) >> 20] = pa | SEC_WT;
+#endif
 	}
 	for (i = 0x180; i < 0x1c0; i++)
 		pt[i] = (i << 20) | SEC_DEV;
 	dsb();
+#if defined(PT_RB) && !defined(NO_ALIAS)
+	/* MMU off: every load crosses PCIe, so it cannot pass the posted table writes (read-after-write, as 3dd7608) */
+	{
+		uint32_t bad = 0;
+
+		for (i = 0; i < HW_A2_CARVEOUT_SIZE >> 20; i++) {
+			uint32_t pa = BASE + (i << 20);
+
+			bad += pt[pa >> 20] != (pa | SEC_WB);
+			bad += pt[VA_NC(pa) >> 20] != (pa | SEC_NC);
+			bad += pt[VA_NWA(pa) >> 20] != (pa | SEC_NWA);
+			bad += pt[VA_WT(pa) >> 20] != (pa | SEC_WT);
+		}
+		pt_bad = bad;
+		dsb();
+	}
+#endif
 	dcache_setway(0);
 	__asm__ volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));		/* TLBIALL */
 	__asm__ volatile("mcr p15, 0, %0, c7, c5, 6" : : "r"(0));		/* BPIALL */
-	__asm__ volatile("mcr p15, 0, %0, c2, c0, 2" : : "r"(0));		/* TTBCR = 0 */
-	__asm__ volatile("mcr p15, 0, %0, c2, c0, 0" : : "r"(BASE + PT_OFF));	/* TTBR0, walks non-cacheable */
+	__asm__ volatile("mcr p15, 0, %0, c2, c0, 2" : : "r"(PT_N));	/* TTBCR.N */
+	__asm__ volatile("mcr p15, 0, %0, c2, c0, 0" : : "r"(PT_PA));	/* TTBR0, walks non-cacheable */
 	__asm__ volatile("mcr p15, 0, %0, c3, c0, 0" : : "r"(3));		/* DACR: domain 0 manager */
 	__asm__ volatile("isb");
 	__asm__ volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(sctlr));
@@ -136,13 +176,31 @@ static inline uint32_t val(uint32_t pass, uint32_t i)
 /* memory truth: write back everything, then read the stored words through the non-cacheable alias */
 static void check_mem(int t, uint32_t pass, uint32_t step)
 {
-	volatile uint32_t *m = (volatile uint32_t *)VA_NC(BASE + TBUF_OFF);
+	volatile uint32_t *m = (volatile uint32_t *)VA_NC(BASE + TBUF_OFF);	/* NO_ALIAS: WB view, lines were just invalidated */
 	uint32_t i;
 
 	dcache_setway(2);
-	for (i = 0; i < TBYTES / 4; i += step)
-		if (m[i] != val(pass, i))
+	for (i = 0; i < TBYTES / 4; i += step) {
+		uint32_t g = m[i];
+
+		if (g != val(pass, i)) {
 			cnt_r[t]++;
+			if (rfirst_n < 4) {	/* re-read: transient (return-data mix-up) or stable (wrong page / lost write)? */
+				uint32_t o = off_rfirst + rfirst_n * 54, g2;
+				volatile uint32_t *pte = (volatile uint32_t *)VA_NC(BASE + PT_OFF);
+
+				dsb();
+				g2 = m[i];
+				hex32(o, t);
+				hex32(o + 9, i);
+				hex32(o + 18, val(pass, i));
+				hex32(o + 27, g);
+				hex32(o + 36, g2);
+				hex32(o + 45, pte[VA_NC(BASE + TBUF_OFF) >> 20]);
+				rfirst_n++;
+			}
+		}
+	}
 }
 
 /* A: store word, load it back at once */
@@ -254,6 +312,8 @@ int main(void)
 #else
 	hex32(off, 0);
 #endif
+	off = put(off + 8, " ptbad:");
+	hex32(off, pt_bad);
 	off = put(off + 8, "\npass=");
 	off_pass = off;
 	off = put(off + 8, " (m = wrong loads, r = wrong words in memory)\n");
@@ -269,8 +329,14 @@ int main(void)
 	off_first = off;
 	for (t = 0; t < 4; t++)
 		off = put(off, "00000000 00000000 00000000 00000000\n");
+	off = put(off, "rfirst (test idx exp got reread pte_nc):\n");
+	off_rfirst = off;
+	for (t = 0; t < 4; t++)
+		off = put(off, "00000000 00000000 00000000 00000000 00000000 00000000\n");
 	for (;;) {
 		for (t = 0; t < NT; t++) {
+			if (!(TESTMASK >> t & 1))
+				continue;
 			run(t, pass);
 			hex32(off_m[t], cnt_m[t]);
 			hex32(off_r[t], cnt_r[t]);
