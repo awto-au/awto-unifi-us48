@@ -4,6 +4,7 @@
  * RESET_CONTROL bit 0 = 1 holds the DMAC in reset (reset value); pl330 deasserts it through DT `resets`.
  * Sequence and sources: docs/core-bringup.md "PL330 release sequence".
  */
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -11,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/reset-controller.h>
+#include <linux/seq_file.h>
 #include "us48_hwdb.h"
 
 #define RST_REG		HW_DMAC_IDM_RESET_CONTROL
@@ -80,9 +82,25 @@ static const struct reset_control_ops idm_ops = {
 	.status = idm_status,
 };
 
+/* Read-only register view (/sys/kernel/debug/us48_idm_reset/regs): no /dev/mem needed */
+static int idm_regs_show(struct seq_file *m, void *unused)
+{
+	struct idm_rst *p = m->private;
+
+	seq_printf(m, "RESET_CONTROL=0x%08x IO_CONTROL_DIRECT=0x%08x\n", readl(p->base + RST_REG), readl(p->base + IOC_REG));
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(idm_regs);
+
+static void idm_dbg_remove(void *dir)
+{
+	debugfs_remove(dir);
+}
+
 static int idm_probe(struct platform_device *pdev)
 {
 	struct idm_rst *p = devm_kzalloc(&pdev->dev, sizeof(*p), GFP_KERNEL);
+	struct dentry *dir;
 
 	if (!p)
 		return -ENOMEM;
@@ -96,6 +114,9 @@ static int idm_probe(struct platform_device *pdev)
 	p->rcdev.nr_resets = 1;
 	dev_info(&pdev->dev, "RESET_CONTROL=0x%08x IO_CONTROL_DIRECT=0x%08x (no write at probe)\n",
 		 readl(p->base + RST_REG), readl(p->base + IOC_REG));
+	dir = debugfs_create_dir("us48_idm_reset", NULL);
+	debugfs_create_file("regs", 0444, dir, p, &idm_regs_fops);
+	devm_add_action_or_reset(&pdev->dev, idm_dbg_remove, dir);
 	return devm_reset_controller_register(&pdev->dev, &p->rcdev);
 }
 

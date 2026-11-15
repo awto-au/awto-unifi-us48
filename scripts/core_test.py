@@ -186,16 +186,26 @@ def t_irq(u, a):
     return ("OK" if deltas else "FAIL"), "irq_per_1s[" + "; ".join(f"{k}={d}" for d, k in deltas) + "] msi=n/a(#54)"
 
 
+def idm_regs(u: Unit) -> int:
+    """RESET_CONTROL via the read-only debugfs file of us48_idm_reset (no /dev/mem)."""
+    _, out = u.run("mount -t debugfs d /sys/kernel/debug 2>/dev/null; cat /sys/kernel/debug/us48_idm_reset/regs")
+    m = re.search(r"RESET_CONTROL=(0x[0-9a-fA-F]+)", out)
+    if DRY:
+        return 0
+    if not m:
+        raise Fail(f"us48_idm_reset debugfs regs unreadable: {out.strip()[:60]}")
+    return int(m[1], 16)
+
+
 def t_dma(u, a):
-    idm = DB.addr("dmac_idm") + 0x800
-    before = devmem(u, idm)
     rel = "$(uname -r)"
     mod = f"/lib/modules/{rel}"
     clk = " clk_en=1" if a.idm_clk_en else ""
     # us48_idm_reset logs its release lines to the console; a hang is then located by the last one
-    _, out = u.run(f"insmod {mod}/us48_idm_reset.ko{clk}; insmod {mod}/pl330.ko; dmesg | grep -E 'us48_idm|pl330' | tail -n 6",
-                   limit=A1_LIMIT_S)
-    after = devmem(u, idm)
+    u.run(f"insmod {mod}/us48_idm_reset.ko{clk}")
+    before = idm_regs(u)
+    _, out = u.run(f"insmod {mod}/pl330.ko; dmesg | grep -E 'us48_idm|pl330' | tail -n 6", limit=A1_LIMIT_S)
+    after = idm_regs(u)
     if not DRY and after & 1:
         u.run("rmmod pl330; rmmod us48_idm_reset")
         return "FAIL", f"idm_reset before=0x{before:x} after=0x{after:x} still held: {out.strip()[-160:]!r}"

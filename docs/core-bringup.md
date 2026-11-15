@@ -65,6 +65,8 @@
   - D-Link HR2 GPL `arch/arm/mach-iproc/board_bu.c`: SDIO `setup_sdio()` writes 0 to `IDM_RESET_CONTROL` only; SATA `config_AHCI()` sets `IO_CONTROL_DIRECT` |= 1, `udelay(1000)`, writes `RESET_CONTROL` 0, `udelay(1000)`. Its PL330 platform device has no IDM write at all (boot stage releases it).
   - Upstream: no iProc IDM reset driver. `reset-simple` would fit the register (bit 0, active high) but has no settle and no compatible for it; NSP/HR2 `dma@20000` has no `resets`. pl330 already takes an optional `dma` reset (`drivers/dma/pl330.c`).
   - regdb names `IO_CONTROL_DIRECT` bit 0 `CLK_GATING_EN`, not a clock enable: the clock-enable cause from the first run is NOT confirmed by any source; BISDN releases the DMAC without touching it.
+- Board run 2026-11-15 (debug image from HEAD, RAM boot; awto-uboot as flashed, not the 3a0d49c build): `us48_idm_reset` probes (`RESET_CONTROL=0x1`, `IO_CONTROL_DIRECT=0xc003f003`, bit 0 already set before any write). `insmod pl330` panics at `devm_request_threaded_irq` in `pl330_probe`: the IRQ fires at once and `pl330_irq_handler` takes `pl330->lock` before `pl330_add()` initialises it (lockdep splat, then NULL deref, `Fatal exception in interrupt`). No `release:` console line appeared: the deassert callback was not reached before the IRQ request. Same with `clk_en=1`. DT has `resets = <&dmac_idm 0>` (dtc of the built DTB, live `/proc/device-tree`). Cause of the missing `release:` open (#84).
+- Read path without /dev/mem: debugfs `/sys/kernel/debug/us48_idm_reset/regs` (read only), used by `core_test dma`.
 - Not established: the hang cause. Candidates left: PL330 AXI attributes (`AXUSER_CONFIG`, `CC_n.*_CACHE_CTRL`), DMAC access before the settle, pl330 probe reading registers. The module logs `IO_CONTROL_DIRECT`/`RESET_CONTROL` before and after the release so the last console line locates a hang.
 
 ## Flash read path (#20, #84 item 9)
@@ -72,6 +74,7 @@
 - Linux `spi-bcm-qspi` already reads through BSPI: DT has the `bspi` reg (`has_bspi`), aligned reads of 4 bytes or more use the RAF FIFO in 256-byte chunks (`BSPI_READ_LENGTH`) with one interrupt each; commands, SFDP and short/unaligned reads use MSPI (PIO). `spi-max-frequency = <12500000>` only sets the MSPI SCK (SPBR minimum 8, = 3.125 MHz at the 50 MHz APB): not a read-speed lever.
 - BSPI SCK = CRU `QSPI_CLK_SEL` (hwdb `cru.CONTROL`), set by the boot stage; Linux has no driver for it. `core_test flash` should read `devmem 0x1803e000` first.
 - Change (patch 17): `spi-rx-bus-width = <4>` on `flash@0`: spi-nor picks 1-1-4 (0x6b, 8 dummy), the BSPI flex mode sends data on 4 lines; programming stays 1-1-1. QE is already set (#20), so `spi-nor` does not write SR. MX25L25635E has no 4-byte opcodes: Linux still enters EN4B as before (hazard in #20 unchanged, flash stays read-only).
+- Board run 2026-11-15 (debug image, `core_test flash`): spi-nor params `read 0x6c, 8 dummy, 1S-1S-4S`, `4B_OPCODES` flag set (id `c2 20 19`; the 4-byte-opcode statement above is wrong for this part), program `0x12`, erase `0x21`; 1 MiB read of `/dev/mtd0ro` 2.92 MB/s vs 2.22 MB/s 1-lane; `CRU_CONTROL` 0x32 (QSPI_CLK_SEL bits 2:1 = 1). No `INVALID COMBINATION` / BSPI timeout in dmesg. Read only: no write or erase issued. Md5 against a 1-lane read not done.
 - Expected, model not measured: per 256-byte chunk 2088 SCK (1-lane) vs 552 (quad) plus a fixed ~35 us of interrupt/FIFO time (inferred from 2.22 MB/s at 25 MHz). Quad at 25 / 50 / 62.5 MHz: about 4.5 / 5.5 / 5.8 MB/s; 1-lane at 50 MHz about 3.4 MB/s. Beyond that needs fewer interrupts per byte (larger RAF chunk), a driver change.
 
 ## a2 (unit 1) nodes
@@ -84,6 +87,7 @@
 
 - `scripts/build_rootfs.py --tools` (called for `--profile debug`): into `/usr/bin` of the debug initramfs: `memtester` 4.7.1, `cyclictest` (rt-tests 2.11, `tools/numa-stub` stands in for libnuma, `tools/rt-tests-musl.patch` maps `sched_{get,set}{scheduler,param}` to raw syscalls: musl returns ENOSYS), `tinymembench` (ssvb master a2cf6d7), `us48bench` (`tools/us48bench.c`: lat, bw, spin, tick, rd), `rngtest` (`tools/rngtest.c`, FIPS 140-2; replaces rng-tools which needs autotools + libgcrypt). About 310 KB stripped.
 - In the image, not a side archive: a2 has no network to take an scp, and one image serves both units. The normal profile has none (13 MiB slot).
+- Board run 2026-11-15 (debug image: lockdep etc., a1, idle, `cyclictest -t1 -p80 -i1000 -l1000 -m`): min 4248 / avg 9192 / max 10477 us, tick drift 200 ppm (+-1000 ms/s window jitter), clocksource `arm_global_timer`. Latency far above the 1000 us interval: not a PREEMPT figure, re-run on the normal profile.
 - `tinymembench` runs about a minute: not part of `core_test`; run by hand when Dan approves.
 - Sources pinned by sha256 in the script (`/mnt/1tnvme/toolchains/dl`); built tools cached in `tmp/rootfs/tools-bin`.
 
@@ -101,7 +105,7 @@
 | DDR copy | 431 MB/s | | read-bound |
 | DDR latency, 8 MiB / 16 MiB | 187 / 202 ns | | L2 (256 KiB) hit 137 ns at 256K, L1 4.9 ns |
 | L1/L2-resident (16 KiB) rd/wr/cp | 1652 / 1662 / 1185 MB/s | | CPU-bound |
-| PL330 memcpy DDR->DDR | not measured | | dmatest blocked: IDM release then `insmod pl330` hung the board (item 5) |
+| PL330 memcpy DDR->DDR | not measured | | `insmod pl330` panics in the probe IRQ (#84 item 5, PL330 release sequence section) |
 | CMIC packet-DMA RX pps / MB/s | not measured | | no quick test exists (needs a traffic generator + RX loop, no script) |
 | a2 -> host DDR over PCIe (a2 at 1000, #80, 2026-11-15) | cached rd 113 / wr 1061, uncached rd 14 / wr 123 MB/s, 298 ns | PCIe x1 gen2 ~400 MB/s | from #80, not rerun |
 | a2 own DDR path at 100 MHz (this run) | L2 off rd/wr/cp 22/254/23 MB/s, 1520 ns; L2 on 55/259/59 MB/s, 1499 ns | | a2 RAM is host DDR over PCIe: every miss crosses it |
