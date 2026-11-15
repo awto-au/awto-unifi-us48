@@ -66,6 +66,7 @@ src = "docs/driver-internals.md 14.3; docs/pci-layer.md"
 [block.paxb0.reg.OARR_0]
 offset = 0xd20
 sdk = "PAXB_0_OARR_0"
+fields = ["VALID 0", "ADDR 31:26 outbound base, 64 MiB granule (regdb)"]
 desc = "unit 1: BAR0+0x2d20; a2 host-RAM window = 0x08000001 (inside 0x08000000-0x0fffffff only)"
 src = "docs/a2.md; docs/pci-layer.md us48_pci_a2_host_window"
 
@@ -76,6 +77,7 @@ src = "scripts/a2_bench.py (mw.l 0x08002d24 0)"
 
 [block.paxb0.reg.OMAP_0_LO]
 offset = 0xd40
+fields = ["ADDR 31:26 host address the window maps to, 64 MiB aligned (regdb)"]
 desc = "OMAP_0 low word; a2 host window uses 0 (AXI 0x08000000 = host phys 0)"
 src = "docs/a2.md (BAR0+0x2d40/44)"
 

@@ -48,6 +48,21 @@
 /* region a2_host_win (axi1): a2 outbound to host RAM via PAXB OARR_0 = 0x08000001, OMAP_0 = 0 (AXI 0x08000000.. = host phys 0x0..) [C] */
 #define HW_A2_HOST_WIN_BASE	0x08000000U
 #define HW_A2_HOST_WIN_SIZE	0x8000000U
+/* region a2_carveout (axi1): a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, no-map) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB [I] */
+#define HW_A2_CARVEOUT_BASE	0x08000000U
+#define HW_A2_CARVEOUT_SIZE	0x4000000U
+/* region a2_stub (axi1): First MiB of the a2 RAM: ELF firmware (self-test or boot stub), resource table, trace; stub boot args at +0x40 [I] */
+#define HW_A2_STUB_BASE	0x08000000U
+#define HW_A2_STUB_SIZE	0x100000U
+/* region a2_dtb (axi1): a2 Linux: DTB (offset 0x00b00000 in the a2 RAM) [I] */
+#define HW_A2_DTB_BASE	0x08b00000U
+#define HW_A2_DTB_SIZE	0x100000U
+/* region a2_zimage (axi1): a2 Linux: zImage (offset 0x01000000; the kernel decompresses to RAM base + 0x8000 and must not reach it) [I] */
+#define HW_A2_ZIMAGE_BASE	0x09000000U
+#define HW_A2_ZIMAGE_SIZE	0x1000000U
+/* region a2_initrd (axi1): a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses [I] */
+#define HW_A2_INITRD_BASE	0x0a000000U
+#define HW_A2_INITRD_SIZE	0x2000000U
 /* region a2_sram (axi1): Unit 1 SRAM 16 KiB (size assumed equal to unit 0; 0x1b004000 not probed). a2 stub: mailbox +0x100, payload +0x200, stack top +0x3ff0 [I] */
 #define HW_A2_SRAM_BASE	0x1b000000U
 #define HW_A2_SRAM_SIZE	0x4000U
@@ -250,6 +265,10 @@
 #define HW_PAXB0_IARR_1_LOWER	0xd08U
 #define HW_PAXB0_IARR_1_UPPER	0xd0cU
 #define HW_PAXB0_OARR_0	0xd20U
+#define HW_PAXB0_OARR_0_VALID_SHIFT	0
+#define HW_PAXB0_OARR_0_VALID_MASK	0x1U
+#define HW_PAXB0_OARR_0_ADDR_SHIFT	26
+#define HW_PAXB0_OARR_0_ADDR_MASK	0xfc000000U
 #define HW_PAXB0_OARR_0_UPPER	0xd24U
 #define HW_PAXB0_OARR_1	0xd28U
 #define HW_PAXB0_OARR_1_VALID_SHIFT	0
@@ -259,6 +278,8 @@
 #define HW_PAXB0_OARR_1_UPPER	0xd2cU
 #define HW_PAXB0_OARR_FUNC0_MSI_PAGE	0xd34U
 #define HW_PAXB0_OMAP_0_LO	0xd40U
+#define HW_PAXB0_OMAP_0_LO_ADDR_SHIFT	26
+#define HW_PAXB0_OMAP_0_LO_ADDR_MASK	0xfc000000U
 #define HW_PAXB0_OMAP_0_HI	0xd44U
 #define HW_PAXB0_OMAP_1_LO	0xd48U
 #define HW_PAXB0_OARR_2	0xd60U
@@ -879,6 +900,10 @@
 #define HW_PAXB1_EP_IARR_1_LOWER	0xd08U
 #define HW_PAXB1_EP_IARR_1_UPPER	0xd0cU
 #define HW_PAXB1_EP_OARR_0	0xd20U
+#define HW_PAXB1_EP_OARR_0_VALID_SHIFT	0
+#define HW_PAXB1_EP_OARR_0_VALID_MASK	0x1U
+#define HW_PAXB1_EP_OARR_0_ADDR_SHIFT	26
+#define HW_PAXB1_EP_OARR_0_ADDR_MASK	0xfc000000U
 #define HW_PAXB1_EP_OARR_0_UPPER	0xd24U
 #define HW_PAXB1_EP_OARR_1	0xd28U
 #define HW_PAXB1_EP_OARR_1_VALID_SHIFT	0
@@ -888,6 +913,8 @@
 #define HW_PAXB1_EP_OARR_1_UPPER	0xd2cU
 #define HW_PAXB1_EP_OARR_FUNC0_MSI_PAGE	0xd34U
 #define HW_PAXB1_EP_OMAP_0_LO	0xd40U
+#define HW_PAXB1_EP_OMAP_0_LO_ADDR_SHIFT	26
+#define HW_PAXB1_EP_OMAP_0_LO_ADDR_MASK	0xfc000000U
 #define HW_PAXB1_EP_OMAP_0_HI	0xd44U
 #define HW_PAXB1_EP_OMAP_1_LO	0xd48U
 #define HW_PAXB1_EP_OARR_2	0xd60U

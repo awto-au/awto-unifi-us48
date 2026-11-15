@@ -33,6 +33,11 @@
 | `ddr` | axi0 | `0x60000000` | `0x10000000` | ram | C | DDR3, 256 MiB, hard-coded by uboot-1; Linux sees 128M@0x0 + 128M@0x68000000 | docs/uboot.md s5 (gd->ram_size @0x1c034cc4, bi_dram @0x1c00d20c); docs/sram.md (/proc/iomem) |
 | `bootrom` | axi0 | `0xffff0000` | ? | rom | I | Boot ROM high vectors; a2 idles at PC 0xffff00d8; ROM LUT word at 0xffff0400. Base/size unknown Note: A9 resets to 0x0; the ROM location is inferred from PC samples only | docs/sram.md (a2 PC sample 0xffff00d8); scripts/u2_lut_reset_test.py (LUT 0xffff0400) |
 | `a2_host_win` | axi1 | `0x08000000` | `0x8000000` | pcie | C | a2 outbound to host RAM via PAXB OARR_0 = 0x08000001, OMAP_0 = 0 (AXI 0x08000000.. = host phys 0x0..) | docs/a2.md; docs/pci-layer.md |
+| `a2_carveout` | axi1 | `0x08000000` | `0x4000000` | ram | I | a2 RAM = host DDR low alias 0x04000000-0x07ffffff (DT reserved-memory a2@4000000, no-map) through OARR_0 = 0x08000001, OMAP_0 = 0x04000000. a2 physical memory base for Linux on a2: 0x08000000, 64 MiB Note: 64 MiB = one OARR granule; upper bank (host 0x68000000) needs unit 0 RC inbound IARR_1/IMAP1 decoded, docs/a2-design.md | mainline/0010 reserved-memory node; docs/a2-design.md (single source for the a2 view); regdb PAXB_0_OARR_0/OMAP_0 (ADDR 31:26, 64 MiB granule) |
+| `a2_stub` | axi1 | `0x08000000` | `0x100000` | ram | I | First MiB of the a2 RAM: ELF firmware (self-test or boot stub), resource table, trace; stub boot args at +0x40 | docs/a2-design.md; a2fw/ |
+| `a2_dtb` | axi1 | `0x08b00000` | `0x100000` | ram | I | a2 Linux: DTB (offset 0x00b00000 in the a2 RAM) | docs/a2-design.md |
+| `a2_zimage` | axi1 | `0x09000000` | `0x1000000` | ram | I | a2 Linux: zImage (offset 0x01000000; the kernel decompresses to RAM base + 0x8000 and must not reach it) | docs/a2-design.md |
+| `a2_initrd` | axi1 | `0x0a000000` | `0x2000000` | ram | I | a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses | docs/a2-design.md |
 | `a2_sram` | axi1 | `0x1b000000` | `0x4000` | ram | I | Unit 1 SRAM 16 KiB (size assumed equal to unit 0; 0x1b004000 not probed). a2 stub: mailbox +0x100, payload +0x200, stack top +0x3ff0 Note: base C (probe), size I | docs/sram.md (probe 2026-11-13, #53); docs/a2.md |
 | `a2_ddr_hazard` | axi1 | `0x60000000` | `0x10000000` | hazard | C | Unused DDR controller on unit 1: any access stalls a2, cannot be halted; recover with CRU_CONTROL.ARM_RST_N | docs/sram.md (routing pitfall, #53) |
 | `bar0_axi_win` | bar0u1 | `0x00007000` | `0x1000` | window | C | 4 KiB AXI page of unit 1 selected by PAXB IMAP0_7 (BAR0+0x2c1c) | docs/a2.md; rust/a2ctl/src/main.rs WIN |
@@ -129,12 +134,12 @@ Same registers as `uart1`.
 | `0xc80` | `IMAP1` | 32 | rw |  |  | I | RC side live 0x80 (stock soc_pcie_init +0xc80 = 0x80); meaning not decoded | docs/driver-internals.md 14.3, 14.4 |
 | `0xd08` | `IARR_1_LOWER` | 32 | rw | `0x1` |  | C | inbound window 1 enable, PCIe base 0 (stock soc_pcie_init writes 1); window size not decoded (>= 128 MiB) | docs/driver-internals.md 14.3; docs/pci-layer.md |
 | `0xd0c` | `IARR_1_UPPER` | 32 | rw |  |  | C | inbound window 1 PCIe address high | regdb PAXB_0_IARR_1_UPPER |
-| `0xd20` | `OARR_0` | 32 | rw |  |  | C | unit 1: BAR0+0x2d20; a2 host-RAM window = 0x08000001 (inside 0x08000000-0x0fffffff only) | docs/a2.md; docs/pci-layer.md us48_pci_a2_host_window |
+| `0xd20` | `OARR_0` | 32 | rw |  | VALID[0], ADDR[31:26] | C | unit 1: BAR0+0x2d20; a2 host-RAM window = 0x08000001 (inside 0x08000000-0x0fffffff only) | docs/a2.md; docs/pci-layer.md us48_pci_a2_host_window |
 | `0xd24` | `OARR_0_UPPER` | 32 | rw |  |  | C |  | scripts/a2_bench.py (mw.l 0x08002d24 0) |
 | `0xd28` | `OARR_1` | 32 | rw |  | VALID[0], ADDR[31:26] | C | outbound window 1; stock writes (membase + 64 MiB) \| 1 | regdb PAXB_0_OARR_1; stock soc_pcie_init 0xc033eb84 (str [r1,#0xd28]) |
 | `0xd2c` | `OARR_1_UPPER` | 32 | rw |  |  | C | outbound window 1, AXI address bits 35:32 | regdb PAXB_0_OARR_1_UPPER |
 | `0xd34` | `OARR_FUNC0_MSI_PAGE` | 32 | rw |  |  | C | BDE: \|= 1 only if MSI | docs/driver-internals.md 14.2 table |
-| `0xd40` | `OMAP_0_LO` | 32 | rw |  |  | C | OMAP_0 low word; a2 host window uses 0 (AXI 0x08000000 = host phys 0) | docs/a2.md (BAR0+0x2d40/44) |
+| `0xd40` | `OMAP_0_LO` | 32 | rw |  | ADDR[31:26] | C | OMAP_0 low word; a2 host window uses 0 (AXI 0x08000000 = host phys 0) | docs/a2.md (BAR0+0x2d40/44) |
 | `0xd44` | `OMAP_0_HI` | 32 | rw |  |  | C |  | docs/a2.md (BAR0+0x2d40/44) |
 | `0xd48` | `OMAP_1_LO` | 32 | rw |  |  | C | outbound window 1 PCIe address low; stock writes membase + 64 MiB | regdb PAXB_0_OMAP_1_LOWER; stock soc_pcie_init 0xc033eb7c (str [r1,#0xd48]) |
 | `0xd60` | `OARR_2` | 32 | rw |  |  | C | endpoint DMA window to host memory; BDE writes 1, live 1 under Linux | docs/driver-internals.md 14.2, 14.4 |
@@ -379,7 +384,7 @@ Same registers as `paxb0`.
 | `0xb0` | `DEVCAP` | 32 | rw |  |  | C |  | stock log reg[0xb0]=0x8000 |
 | `0xb4` | `DEVCTL` | 16 | rw |  |  | C |  | stock log reg[0xb4]=0x2c10 |
 | `0xb8` | `LNKCAP` | 32 | rw |  |  | C |  | stock log reg[0xb8]=0x5c12: 5 GT/s x1 |
-| `0xbc` | `LNKCTL` | 16 | rw |  |  | I | link control | uboot-1 struct fill @0x1c0245f4-0x1c024644 (reg[0xbc] in the Linux dump is the 0xbc config word) |
+| `0xbc` | `LNKCTL` | 16 | rw |  |  | I | link control | PCIe cap layout (0xac + 0x10); not written by uboot-1 |
 | `0xbe` | `LNKSTA` | 16 | ro |  | CLS[3:0], NLW[9:4], TRAIN[11], SLOT_CLK[12], DLLLA[13] | C | uboot-1 'LINKSTA reg 0xbe': port active iff (LNKSTA & 0x3f0) != 0 (NLW). Cold 0x1001 = no width = not active. Warm 0x9012 = x1, 5 GT/s, DLLLA | uboot-1 FUN_1c024084 @0x1c0241dc-0x1c024200 (tst r2,#0x3f0); docs/stock-bootlog-facts.md:15-19 |
 | `0xdc` | `LNKCTL2` | 32 | rw |  |  | I | link control 2 (target link speed bits 3:0); mainline drops gen2 to gen1 if NLW = 0 | pcie-iproc.c:820-826 (IPROC_PCI_EXP_CAP + PCI_EXP_LNKCTL2 = 0xac + 0x30) |
 | `0x43c` | `CLASS_CTRL` | 32 | rw |  |  | C | class code override: mainline forces 0x060400 (PCI-PCI bridge) | pcie-iproc.c:795-800 |

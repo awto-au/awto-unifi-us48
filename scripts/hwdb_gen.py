@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate artifacts from hwdb/*.toml (hand facts only; the SDK regdb is not emitted).
 
-Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [--check]   (no target = all)
+Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [regmap] [--check]   (no target = all)
 Outputs: hwdb/gen/us48_hwdb.h, hwdb/gen/hwdb.rs, docs/hwdb-map.md, hwdb/gen/ghidra_import_hwdb.py,
-         hwdb/gen/ghidra_export_hwdb.py (copy of scripts/ghidra/hwdb_export.py), port table in docs/port-map.md.
+         hwdb/gen/us48_unit1_regmap.h (regmap access tables of unit 1 AXI), hwdb/gen/ghidra_export_hwdb.py (copy of scripts/ghidra/hwdb_export.py), port table in docs/port-map.md.
 --check: fail if a generated file differs from disk (no write). Log: tmp/logs/hwdb_gen.log.
 """
 import logging
@@ -61,6 +61,54 @@ def gen_c(db):
         o.append("")
     o.append("#endif /* US48_HWDB_H */")
     put(GEN / "us48_hwdb.h", "\n".join(o) + "\n")
+
+
+# Unit 1 AXI as the host sees it through IMAP0_7: iProc peripheral map, same blocks as unit 0 (docs/a2.md).
+AXI_PERIPH_LO, AXI_PERIPH_HI = 0x18000000, 0x1c000000
+
+
+def merge(ranges):
+    out = []
+    for lo, hi in sorted(ranges):
+        if out and lo <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], hi)
+        else:
+            out.append([lo, hi])
+    return out
+
+
+def gen_regmap(db):
+    rd, wr, vol = [], [], []
+    for b in iter_blocks(db):
+        if b.space != "axi0" or not (AXI_PERIPH_LO <= b.base < AXI_PERIPH_HI):
+            continue
+        size = b.size or max([r.offset + 4 * max(r.count, 1) for r in b.regs.values()] or [4])
+        rng = (b.base, b.base + size - 1)
+        rd.append(rng)
+        vol.append(rng)
+        if any(r.access != "ro" for r in b.regs.values()):
+            wr.append(rng)
+    for g in db.regions.values():
+        # on-chip RAM of unit 1 only: PCIe-routed windows and the DDR hazard are never reachable through the regmap
+        if g.kind == "ram" and g.size and AXI_PERIPH_LO <= g.base < AXI_PERIPH_HI:
+            rd.append((g.base, g.base + g.size - 1))
+            wr.append((g.base, g.base + g.size - 1))
+    rd, wr, vol = merge(rd), merge(wr), merge(vol)
+
+    def table(name, rs):
+        o = ["static const struct regmap_range us48_unit1_%s_ranges[] = {" % name]
+        o += ["\tregmap_reg_range(0x%08x, 0x%08x)," % (lo, hi) for lo, hi in rs]
+        o += ["};", "static const struct regmap_access_table us48_unit1_%s_table = {" % name,
+              "\t.yes_ranges = us48_unit1_%s_ranges," % name,
+              "\t.n_yes_ranges = ARRAY_SIZE(us48_unit1_%s_ranges)," % name, "};", ""]
+        return o
+    o = ["/* %s */" % HDR, "#ifndef US48_UNIT1_REGMAP_H", "#define US48_UNIT1_REGMAP_H", "",
+         "#include <linux/regmap.h>", "#include <linux/kernel.h>", "",
+         "/* Unit 1 AXI access tables (blocks in hwdb/soc, peripheral map 0x18000000-0x1bffffff). Anything else: -EIO, no AXI access. */",
+         "#define US48_UNIT1_MAX_REGISTER\t0x%08xU" % max(h for _, h in rd), ""]
+    o += table("rd", rd) + table("wr", wr) + table("volatile", vol)
+    o.append("#endif /* US48_UNIT1_REGMAP_H */")
+    put(GEN / "us48_unit1_regmap.h", "\n".join(o) + "\n")
 
 
 def gen_rust(db):
@@ -301,7 +349,7 @@ def main(argv):
     logging.basicConfig(level=logging.INFO, format="%(message)s",
                         handlers=[logging.FileHandler(log), logging.StreamHandler(sys.stdout)])
     check = "--check" in argv
-    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports"]
+    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports", "regmap"]
     db = hwdb.load()
     err = db.validate()
     if err:
@@ -309,7 +357,7 @@ def main(argv):
             logging.info("ERR %s", e)
         return 1
     for t in targets:
-        {"c": gen_c, "rust": gen_rust, "md": gen_md, "ghidra": gen_ghidra, "ports": gen_ports}[t](db)
+        {"c": gen_c, "rust": gen_rust, "md": gen_md, "ghidra": gen_ghidra, "ports": gen_ports, "regmap": gen_regmap}[t](db)
     bad = 0
     for p, text in sorted(WRITES.items()):
         if check:

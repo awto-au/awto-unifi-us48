@@ -47,6 +47,21 @@ pub const HW_BOOTROM_BASE: u32 = 0xffff0000;
 // region a2_host_win (axi1) [C]
 pub const HW_A2_HOST_WIN_BASE: u32 = 0x08000000;
 pub const HW_A2_HOST_WIN_SIZE: u32 = 0x8000000;
+// region a2_carveout (axi1) [I]
+pub const HW_A2_CARVEOUT_BASE: u32 = 0x08000000;
+pub const HW_A2_CARVEOUT_SIZE: u32 = 0x4000000;
+// region a2_stub (axi1) [I]
+pub const HW_A2_STUB_BASE: u32 = 0x08000000;
+pub const HW_A2_STUB_SIZE: u32 = 0x100000;
+// region a2_dtb (axi1) [I]
+pub const HW_A2_DTB_BASE: u32 = 0x08b00000;
+pub const HW_A2_DTB_SIZE: u32 = 0x100000;
+// region a2_zimage (axi1) [I]
+pub const HW_A2_ZIMAGE_BASE: u32 = 0x09000000;
+pub const HW_A2_ZIMAGE_SIZE: u32 = 0x1000000;
+// region a2_initrd (axi1) [I]
+pub const HW_A2_INITRD_BASE: u32 = 0x0a000000;
+pub const HW_A2_INITRD_SIZE: u32 = 0x2000000;
 // region a2_sram (axi1) [I]
 pub const HW_A2_SRAM_BASE: u32 = 0x1b000000;
 pub const HW_A2_SRAM_SIZE: u32 = 0x4000;
@@ -249,6 +264,10 @@ pub const HW_PAXB0_IMAP1: u32 = 0xc80;
 pub const HW_PAXB0_IARR_1_LOWER: u32 = 0xd08;
 pub const HW_PAXB0_IARR_1_UPPER: u32 = 0xd0c;
 pub const HW_PAXB0_OARR_0: u32 = 0xd20;
+pub const HW_PAXB0_OARR_0_VALID_SHIFT: u32 = 0;
+pub const HW_PAXB0_OARR_0_VALID_MASK: u32 = 0x1;
+pub const HW_PAXB0_OARR_0_ADDR_SHIFT: u32 = 26;
+pub const HW_PAXB0_OARR_0_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB0_OARR_0_UPPER: u32 = 0xd24;
 pub const HW_PAXB0_OARR_1: u32 = 0xd28;
 pub const HW_PAXB0_OARR_1_VALID_SHIFT: u32 = 0;
@@ -258,6 +277,8 @@ pub const HW_PAXB0_OARR_1_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB0_OARR_1_UPPER: u32 = 0xd2c;
 pub const HW_PAXB0_OARR_FUNC0_MSI_PAGE: u32 = 0xd34;
 pub const HW_PAXB0_OMAP_0_LO: u32 = 0xd40;
+pub const HW_PAXB0_OMAP_0_LO_ADDR_SHIFT: u32 = 26;
+pub const HW_PAXB0_OMAP_0_LO_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB0_OMAP_0_HI: u32 = 0xd44;
 pub const HW_PAXB0_OMAP_1_LO: u32 = 0xd48;
 pub const HW_PAXB0_OARR_2: u32 = 0xd60;
@@ -878,6 +899,10 @@ pub const HW_PAXB1_EP_IMAP1: u32 = 0xc80;
 pub const HW_PAXB1_EP_IARR_1_LOWER: u32 = 0xd08;
 pub const HW_PAXB1_EP_IARR_1_UPPER: u32 = 0xd0c;
 pub const HW_PAXB1_EP_OARR_0: u32 = 0xd20;
+pub const HW_PAXB1_EP_OARR_0_VALID_SHIFT: u32 = 0;
+pub const HW_PAXB1_EP_OARR_0_VALID_MASK: u32 = 0x1;
+pub const HW_PAXB1_EP_OARR_0_ADDR_SHIFT: u32 = 26;
+pub const HW_PAXB1_EP_OARR_0_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB1_EP_OARR_0_UPPER: u32 = 0xd24;
 pub const HW_PAXB1_EP_OARR_1: u32 = 0xd28;
 pub const HW_PAXB1_EP_OARR_1_VALID_SHIFT: u32 = 0;
@@ -887,6 +912,8 @@ pub const HW_PAXB1_EP_OARR_1_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB1_EP_OARR_1_UPPER: u32 = 0xd2c;
 pub const HW_PAXB1_EP_OARR_FUNC0_MSI_PAGE: u32 = 0xd34;
 pub const HW_PAXB1_EP_OMAP_0_LO: u32 = 0xd40;
+pub const HW_PAXB1_EP_OMAP_0_LO_ADDR_SHIFT: u32 = 26;
+pub const HW_PAXB1_EP_OMAP_0_LO_ADDR_MASK: u32 = 0xfc000000;
 pub const HW_PAXB1_EP_OMAP_0_HI: u32 = 0xd44;
 pub const HW_PAXB1_EP_OMAP_1_LO: u32 = 0xd48;
 pub const HW_PAXB1_EP_OARR_2: u32 = 0xd60;
