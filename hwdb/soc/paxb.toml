@@ -30,6 +30,24 @@ offset = 0x104
 desc = "BDE writes 0 (enable iProc DMA to external host memory)"
 src = "docs/driver-internals.md 14.2 (BAR0 0x2104)"
 
+[block.paxb0.reg.TX_DEBUG_CFG]
+offset = 0xf20
+reset = 0x8
+sdk = "PAXB_0_PAXB_TX_DEBUG_CFG"
+fields = ["EP_TX_WR_CMD_BUF_DEPTH_1 0 EP TX write command buffer depth 1", "EP_TX_RD_CMD_BUF_DEPTH_1 1 EP TX read command buffer depth 1", "EP_TX_WR_RD_ORDER 2 EP TX: reads wait for earlier writes (reset 0 = a read may pass a write)", "RC_TX_WR_RD_ORDER 3 RC TX: reads wait for earlier writes (reset 1)"]
+desc = "AXI -> PCIe direction: unit 1 (EP) carries a2 outbound traffic to host DDR; read-behind-write order is off at reset (#79)"
+src = "regdb PAXB_0_PAXB_TX_DEBUG_CFG (regdb/hr2_regs.tsv)"
+conf = "C"
+
+[block.paxb0.reg.RX_DEBUG_CONTROL_0]
+offset = 0x10c
+reset = 0x1f
+sdk = "PAXB_0_PCIE_PAXB_RX_DEBUG_CONTROL_0"
+fields = ["RX_FREE_ARID_COUNT 1:0 inbound (PCIe -> AXI) outstanding reads, reset 3; 0 = one at a time", "RX_PAXB_FREE_CMPL_BUF_COUNT 4:2 reset 7", "RX_IGNORE_BRESP 5 reset 0"]
+desc = "inbound read concurrency: a2 line fills from host DDR arrive here on unit 0 (#79)"
+src = "regdb PAXB_0_PCIE_PAXB_RX_DEBUG_CONTROL_0 (regdb/hr2_regs.tsv)"
+conf = "C"
+
 [block.paxb0.reg.IMAP0_1]
 offset = 0xc04
 sdk = "PAXB_0_FUNC0_IMAP0_1"

@@ -210,8 +210,30 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Capacity: a2 SRAM 16 KiB; L2-as-RAM lockdown (128 KiB) not tested. Only small bare-metal code fits; Linux cannot run from SRAM.
 
 ### debugfs `capture`: first vector fetch (#79, driver only, no a2 code)
-- `remoteproc0/capture`: write `arm [vc] [ms]` / `disarm`; read = state + dump. Needs `dcc_poll=0` and a2 running; default limit 30000 ms (expiry logs limit + elapsed).
+- `remoteproc0/capture`: write `arm [vc] [skip] [ms]` / `disarm`; read = state + dump. Needs `dcc_poll=0`; default limit 30000 ms (expiry logs limit + elapsed). Armed while a2 is offline: DBGVCR (secure + non-secure copies, 0x1a00001a) is written before the release, the thread starts after it. Debug a1 image only (debugfs). Runner: `scripts/a2_cap.py LINUX|<elf> <cpu_mhz> [--skip] [--plain] [--runs N]`.
 - `arm`: back-to-back PCSR reads, hit when PCSR is in 0xffff0000..0xffff002f (vector page, PCSR = address + 8). PCIe latency means a2 may be past the vector stub at halt.
-- `arm vc`: DBGVCR (offset 0x1c) catches undef / prefetch abort / data abort: a2 halts at the vector fetch itself; also catches legitimate Linux aborts, so use with bare-metal ELFs.
+- `arm vc`: DBGVCR (offset 0x1c) catches undef / prefetch abort / data abort: a2 halts at the vector fetch itself. Linux takes normal page faults: `skip` resumes past user-mode origin aborts and kernel accesses to user addresses 0x1000..0xbfffffff (DBGVCR cleared for the restart, set again right after), counts them, and captures the first other abort.
+- rawtest: its vector page is unmapped, so a vector catch never fires (the vector fetch itself aborts); plain `arm` sees a prefetch-abort loop at 0xffff000c. Use Linux.
 - Dump: r0-r14, CPSR, DFSR/DFAR/IFSR/IFAR/SCTLR/TTBR0, banked sp/lr/spsr of und/abt/svc/sys; 8 words at LR-8 as a2 sees them (ldr through its caches) vs the carveout in a1's WC mapping, VA -> PA by ATS1CPR/PAR.
 - Ends with ITRen cleared, DBGVCR cleared and a2 reset (not resumed).
+
+## Fault capture and the AXI -> PCIe write-before-read fix (#79, 2026-11-16)
+- Setup: debug a1 image (RAM boot), a2 Linux = normal-profile zImage, DTB `quiet` (no earlycon), `dcc_poll=0`, AXI 200, `a2_cap.py LINUX <MHz> --skip`, limit 6 s. Fault = first non-normal abort. Temps: die0 88-89 C, die1 80-81 C.
+- Baseline (no fix), runs with a fault / runs: 400 MHz 0/4, 600 0/4, 700 0/4, 800 3/4, 1000 5/6 (+4/4, 3/4 in earlier set-ups). First failing clock about 800 MHz.
+- Same site every time: kernel-mode `str` in `mas_wr_node_store` (maple tree), DFAR 0x4, DFSR 0x805 (translation fault, write), code at the PC identical on a2 and in DDR. The parent word of a node reads 0.
+- Capture compares 256 B around every kernel-pointer register: a2 view (ldr through its caches) vs a1's WC mapping of the pool; differing words get a DCCMVAC, and after that memory is re-read. Result in every failing run: one clean 32 B line (first line of a maple node) holds zeros on a2 while DDR holds the correct node data (`c06a0ea5 0 1 2 3 4 5 6`). Memory is unchanged 50 us, 1 ms and after a second clean; a2 re-fetch after DCIMVAC returns the DDR value. Dirty lines elsewhere write back normally.
+- Verdict: stale read (a line fill returned older data than the earlier write-back of that line), not a lost write. a1 side is not involved: the pool is WC (`dma_alloc_wc`), a1 never writes it while a2 runs, DDR reads are stable.
+- Cause: `PAXB_0_PAXB_TX_DEBUG_CFG` (0x18012f20, regdb) reset 0x8: `EP_TX_WR_RD_ORDER` (bit 2) = 0, so unit 1 may issue a read before an earlier write (eviction write-back, then refill of the same line). `RC_TX_WR_RD_ORDER` (bit 3) is already 1.
+- Inbound side of unit 0 (a2 reads of DDR): with a1 DDR write load (`dd` to tmpfs) the order bit alone is not enough; unit 0 `RX_DEBUG_CONTROL_0.RX_FREE_ARID_COUNT` = 0 (one inbound read at a time) is needed as well.
+
+| a2 1000 MHz, AXI 200, 6 s | a1 idle | a1 DDR write load |
+|---|---|---|
+| none | 5/6 fault | 5/6 bad (3 fault, 2 hang) |
+| EP_TX_WR_RD_ORDER only | 0/6 fault (1 of 3 hangs in a boot test) | 2/6 fault |
+| RX_FREE_ARID_COUNT 0 only | - | 2/6 bad (1 fault, 1 hang) |
+| both | 0/6, 3/3 boots | 0/13 (7 + 6), faults skipped 215-238 = userspace reached like the 100 MHz control |
+
+- Both set, no capture: Linux shell 3.3-3.6 s after start, 3/3 at 1000 MHz and 6/6 with the module params; 1600 MHz 2/2 (capture: 0/4 faults at 800, 1200, 1400, 1600). 1650 and 1700 MHz: kernel pointers go wild (garbage DFAR / PC 0x1c000010), a2 hangs; SRAM-only code is clean to 1700 (above).
+- Unfixed a1 load at 600 MHz (order off): 1/6 fault (+ 0/4 idle), same stale-line signature.
+- Fix in `us48_a2`: `paxb_order` (default 1) sets EP_TX_WR_RD_ORDER before the release; `rx_arid` (default -1 = leave 3; 0 = serialise) sets unit 0 RX_FREE_ARID_COUNT while a2 runs and restores 3 in stop. debugfs `remoteproc0/paxb_tx` reads/writes the unit 1 register. `cpu_mhz` default stays 100.
+- Open: RX_FREE_ARID_COUNT 0 costs inbound read concurrency of unit 0 (cmic DMA reads of DDR too): not measured; 1 and 2 untried. The 1650 MHz failure is not stale lines (not captured with the dump).

@@ -63,7 +63,7 @@
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
 | `ddr_ctl` | axi0 | `0x18010000` | `0x400` | 0 | 1 | C | DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride | D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md |
 | `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 137 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
-| `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
+| `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 31 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
 | `dmac` | axi0 | `0x18020000` | `0x1000` | 0 | 4 | C | ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 53-60 events (event N on SPI 53+N, board-measured), 69 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I) Note: stays in IDM reset (dmac_idm.RESET_CONTROL = 1) until released; reading it before that stalls the bus. AXI cache/coherency attributes: CC_n.*_CACHE_CTRL | regdb DMAC_PL330_*; tmp/linux-mainline bcm-hr2.dtsi dma@20000 |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 20 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
 | `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 9 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
@@ -101,7 +101,7 @@
 | `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 33 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 13 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
-| `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
+| `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 31 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
 | `rccfg0` | rccfg0 | `0x00000000` | `0x1000` | 0 | 15 | C | Config space of unit 0's root port (bus 0 dev 0 fn 0), reached through PAXB CONFIG_IND_ADDR/DATA | uboot-1 soc_pcie_hw_init 0x1c0244b0-0x1c0248a0; stock log C083748:569; pcie-iproc.c:776-860 |
 | `top_pvtmon` | sbus | `0x02050000` | `0xc00` | - | 3 | C | TOP block (SBUS block id 16) PVTMON: die temperature, units 0 and 1 | docs/clock-audit.md s3; OpenBCM openhurricane2.c pvtmon (TOP_PVTMON_*r), regdb TOP_PVTMON_* |
 
@@ -294,6 +294,7 @@ Same registers as `uart1`.
 | `0x30` | `ENDIANESS` | 32 | rw |  |  | C | BDE writes 0x01010101 then reads back; != 1 -> write 0 (LE) | docs/driver-internals.md 14.2 table (BAR0 0x2030) |
 | `0x100` | `PCIE_RC_AXI_CONFIG` | 32 | rw |  |  | C | RC AXI master AxUSER/AxCACHE config; not written by uboot-1 or stock | regdb PAXB_0_PCIE_RC_AXI_CONFIG |
 | `0x104` | `PCIE_EP_AXI_CONFIG` | 32 | rw |  |  | C | BDE writes 0 (enable iProc DMA to external host memory) | docs/driver-internals.md 14.2 (BAR0 0x2104) |
+| `0x10c` | `RX_DEBUG_CONTROL_0` | 32 | rw | `0x1f` | RX_FREE_ARID_COUNT[1:0], RX_PAXB_FREE_CMPL_BUF_COUNT[4:2], RX_IGNORE_BRESP[5] | C | inbound read concurrency: a2 line fills from host DDR arrive here on unit 0 (#79) | regdb PAXB_0_PCIE_PAXB_RX_DEBUG_CONTROL_0 (regdb/hr2_regs.tsv) |
 | `0x120` | `CONFIG_IND_ADDR` | 32 | rw |  | ADDRESS[10:0], PROTOCOL_LAYER[12:11], FUNCTION_NUM[15:13] | C | IPROC_PCIE_CFG_IND_ADDR: indirect access to the root port's own config space (bus 0, dev 0); data in CONFIG_IND_DATA | regdb PAXB_0_CONFIG_IND_ADDR; pcie-iproc.c:310 (0x120); uboot-1 FUN_1c023f88/fb4 @0x1c023f88 (writes offset & 0xffc, reads +0x124 >> (off & 3) * 8) |
 | `0x124` | `CONFIG_IND_DATA` | 32 | rw |  |  | C | IPROC_PCIE_CFG_IND_DATA: data of the RC config dword selected by CONFIG_IND_ADDR | regdb PAXB_0_CONFIG_IND_DATA; pcie-iproc.c:311 |
 | `0x1f8` | `CFG_ADDR` | 32 | rw |  | CFG_TYPE[1:0], REG_NUMBER[7:2], EXTREG_NUMBER[11:8], FUNC_NUMBER[14:12], DEV_NUMBER[19:15], BUS_NUMBER[27:20] | C | IPROC_PCIE_CFG_ADDR: ECAM-style address of an endpoint config access (bus >= 1); data in CFG_DATA | regdb PAXB_0_CFG_ADDR; pcie-iproc.c:469-472 (ECAM offset \| CFG_TYPE_1); uboot-1 FUN_1c024258 @0x1c024258 (bus<<20 \| dev<<15 \| fn<<12 \| reg) |
@@ -319,6 +320,7 @@ Same registers as `uart1`.
 | `0xf10` | `STRAP_STATUS` | 32 | ro |  |  | C | PCIe straps (iproc PCIe IF enable, force 1 lane, force gen1, ...) | regdb PAXB_0_STRAP_STATUS |
 | `0xf14` | `RESET_STATUS` | 32 | ro |  | EP_PERST_B[1], HARD_RST_B[4], PCIE_RC_MODE_PERST_B[8], PCIE_PHY_PIPE_RESETMDIO_N[9], PAXB_RST_N[10] | I | Reset line levels; bit 8 follows CLK_CONTROL bit 0 (printed by awto-uboot) | regdb PAXB_0_RESET_STATUS (bit meaning of 8 inferred from its name) |
 | `0xf18` | `RESET_ENABLE_IN_PCIE_LINK_DOWN` | 32 | rw |  | EN_IPROC_RESET[0], EN_PAXB_RESET[1], EN_CHIP_RESET[2] | C | Reset-on-link-down enables; reset 0, not written by uboot-1 or stock | regdb PAXB_0_RESET_ENABLE_IN_PCIE_LINK_DOWN |
+| `0xf20` | `TX_DEBUG_CFG` | 32 | rw | `0x8` | EP_TX_WR_CMD_BUF_DEPTH_1[0], EP_TX_RD_CMD_BUF_DEPTH_1[1], EP_TX_WR_RD_ORDER[2], RC_TX_WR_RD_ORDER[3] | C | AXI -> PCIe direction: unit 1 (EP) carries a2 outbound traffic to host DDR; read-behind-write order is off at reset (#79) | regdb PAXB_0_PAXB_TX_DEBUG_CFG (regdb/hr2_regs.tsv) |
 
 ### dmac (`0x18020000`)
 
