@@ -45,6 +45,9 @@
   2. `python3 scripts/a2_up.py tmp/mainline/us48-mainline-cold.bin` (power cycle, RAM boot), then per pass `python3 scripts/hwdb_probe.py build [--suspect NAME]` + `run cold`. Passes: main, then each suspect range (`SUSPECT` in the script) and `cmic` in its own run: a hang costs one power cycle, the range goes to `u1-blocked.toml`.
   3. `insmod us48_cmic_xe.ko` (+ `us48_pvtmon.ko` for die temps), same passes with `run warm`. `python3 scripts/hwdb_probe.py report`, `python3 scripts/hwdb_gen.py`.
 - a2 side: `a2fw/regprobe.c` (MMU off, strongly ordered, own vectors via VBAR): a data abort is flagged by `rp_dabt`, the load is skipped, the record shows `A` + DFSR. Results in trace0 (192 KiB). Word reads only at aligned addresses; byte reads for unaligned offsets and ChipcommonA UARTs.
+- Gap probe (phase 2, `scripts/hwdb_gaps.py`, same a2 firmware): unnamed 4-byte words of the named pages of blocks whose IDM `RESET_CONTROL` reads 0, in 256 B windows, nearest to a named register first. `plan` / `step` (exit 3 = a window hung a2, marked blocked, power cycle, `step` again) / `report`.
+  - Output: `hwdb/validation/u1-gaps.tsv` (unnamed addresses that answered non-zero: "undocumented"), `u1-gap-windows.tsv` (every window), hung windows as `gap_*` in `u1-blocked.toml`. Coverage table: `docs/hwdb-map.md`.
+  - Blocked entries carry `state` = `in reset` (IDM `RESET_CONTROL` = 1) or `hang`.
 - Skipped on purpose: write-only (regdb flag 0x20), FIFO pops, semaphores, interrupt-acknowledge, clear-on-read UART status (`SKIP_NAME` in `scripts/hwdb_probe.py`).
 
 ## Lint

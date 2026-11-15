@@ -576,90 +576,90 @@
 "PAXB_0_PAXB_INTR_EN" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "PAXB_0_PAXB_INTR_CLEAR" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "PAXB_0_PAXB_INTR_STATUS" = {seen = true, reset_ok = false, date = "2026-11-16", unit = 1}
-"DMAC_PL330_DS" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DPC" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_INTEN" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_INT_EVENT_RIS" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_INTSTATUS" = {seen = false, why = "blocked: dmac"}
+"DMAC_PL330_DS" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DPC" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_INTEN" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_INT_EVENT_RIS" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_INTSTATUS" = {seen = false, why = "blocked (in reset): dmac"}
 "DMAC_PL330_INTCLR" = {seen = false, why = "write-only (regdb flag 0x20)"}
-"DMAC_PL330_FSM" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FSC" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTM" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_FTC7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CS7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CPC7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_5" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_6" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_SA_7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DA_7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CC_7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC0_7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_LC1_7" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_DBGSTATUS" = {seen = false, why = "blocked: dmac"}
+"DMAC_PL330_FSM" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FSC" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTM" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_FTC7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CS7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CPC7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_5" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_6" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_SA_7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DA_7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CC_7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC0_7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_LC1_7" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_DBGSTATUS" = {seen = false, why = "blocked (in reset): dmac"}
 "DMAC_PL330_DBGCMD" = {seen = false, why = "write-only (regdb flag 0x20)"}
-"DMAC_PL330_DBGINST0" = {seen = false, why = "blocked: dmac"}
+"DMAC_PL330_DBGINST0" = {seen = false, why = "blocked (in reset): dmac"}
 "DMAC_PL330_DBGINST1" = {seen = false, why = "write-only (regdb flag 0x20)"}
-"DMAC_PL330_CR0" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CR1" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CR2" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CR3" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CR4" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_CRDN" = {seen = false, why = "blocked: dmac"}
-"DMAC_PL330_WD" = {seen = false, why = "blocked: dmac"}
+"DMAC_PL330_CR0" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CR1" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CR2" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CR3" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CR4" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_CRDN" = {seen = false, why = "blocked (in reset): dmac"}
+"DMAC_PL330_WD" = {seen = false, why = "blocked (in reset): dmac"}
 "PNOR_MEMC_STATUS" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "PNOR_MEMIF_CFG" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
 "PNOR_MEM_CFG_SET" = {seen = false, why = "write-only (regdb flag 0x20)"}
@@ -684,147 +684,147 @@
 "PNOR_PCELL_ID_1" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "PNOR_PCELL_ID_2" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "PNOR_PCELL_ID_3" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
-"GMAC0_DEVCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_DEVSTATUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_BISTSTATUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_INTSTATUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_INTMASK" = {seen = false, why = "blocked: amac"}
-"GMAC0_GPTIMER" = {seen = false, why = "blocked: amac"}
-"GMAC0_INTRCVLAZY" = {seen = false, why = "blocked: amac"}
-"GMAC0_FLOWCNTL_TH" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXARB_WRR_TH" = {seen = false, why = "blocked: amac"}
-"GMAC0_GMACIDLE_CNT_TH" = {seen = false, why = "blocked: amac"}
-"GMAC0_FIFOACCESSADDR" = {seen = false, why = "blocked: amac"}
-"GMAC0_FIFOACCESSBYTE" = {seen = false, why = "blocked: amac"}
+"GMAC0_DEVCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_DEVSTATUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_BISTSTATUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_INTSTATUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_INTMASK" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_GPTIMER" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_INTRCVLAZY" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_FLOWCNTL_TH" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXARB_WRR_TH" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_GMACIDLE_CNT_TH" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_FIFOACCESSADDR" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_FIFOACCESSBYTE" = {seen = false, why = "blocked (in reset): amac"}
 "GMAC0_FIFOACCESSDATA" = {seen = false, why = "GMAC FIFO access port: read advances the access"}
-"GMAC0_PHYACCESS" = {seen = false, why = "blocked: amac"}
-"GMAC0_PHYCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_RXQCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_GPIOSELECT" = {seen = false, why = "blocked: amac"}
-"GMAC0_GPIOOUTPUTEN" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQRXQMEMORYCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_MEMORYECCSTATUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_SERDESCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_SERDESSTATUS0" = {seen = false, why = "blocked: amac"}
-"GMAC0_SERDESSTATUS1" = {seen = false, why = "blocked: amac"}
-"GMAC0_CLOCKCONTROLSTATUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_POWERCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTCONTROL_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTPTR_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTADDR_LOW_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTADDR_HIGH_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTSTATUS0_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_XMTSTATUS1_0" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVCONTROL" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVPTR" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVADDR_LOW" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVADDR_HIGH" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVSTATUS0" = {seen = false, why = "blocked: amac"}
-"GMAC0_RCVSTATUS1" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_GD_OCTETS_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_GD_OCTETS_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_GD_PKTS" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_ALL_OCTETS_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_ALL_OCTETS_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_ALL_PKTS" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_BRDCAST" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_MULT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_64" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_65_127" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_128_255" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_256_511" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_512_1023" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_1024_1522" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_1523_2047" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_2048_4095" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_4096_8191" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_8192_MAX" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_JAB" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_OVER" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_FRAG" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_UNDERRUN" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_COL" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_1_COL" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_M_COL" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_EX_COL" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_LATE" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_DEF" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_CRS" = {seen = false, why = "blocked: amac"}
-"GMAC0_TX_PAUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXUNICASTPKT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ0PKT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ0OCTET_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ0OCTET_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ1PKT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ1OCTET_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ1OCTET_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ2PKT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ2OCTET_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ2OCTET_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ3PKT" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ3OCTET_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_TXQOSQ3OCTET_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_GD_OCTETS_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_GD_OCTETS_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_GD_PKTS" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_ALL_OCTETS_LO" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_ALL_OCTETS_HI" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_ALL_PKTS" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_BRDCAST" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_MULT" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_64" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_65_127" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_128_255" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_256_511" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_512_1023" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_1024_1522" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_1523_2047" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_2048_4095" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_4096_8191" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_8192_MAX" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_JAB" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_OVR" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_FRAG" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_DROP" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_CRC_ALIGN" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_UND" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_CRC" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_ALIGN" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_SYM" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_PAUS" = {seen = false, why = "blocked: amac"}
-"GMAC0_RX_CNTRL" = {seen = false, why = "blocked: amac"}
-"GMAC0_RXSACHANGES" = {seen = false, why = "blocked: amac"}
-"GMAC0_RXUNICASTPKTS" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_IPG_HD_BKP_CNTL" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_COMMAND_CONFIG" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_MAC_0" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_MAC_1" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_FRM_LENGTH" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_PAUSE_QUANT" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TX_TS_SEQ_ID" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_MAC_MODE" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TAG_0" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TAG_1" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_RX_PAUSE_QUANTA_SCALE" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TX_PREAMBLE" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TX_IPG_LENGTH" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_PFC_XOFF_TIMER" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_UMAC_EEE_CTRL" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_MII_EEE_DELAY_ENTRY_TIMER" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_GMII_EEE_DELAY_ENTRY_TIMER" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_UMAC_EEE_REF_COUNT" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_UMAC_RX_PKT_DROP_STATUS" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_UMAC_SYMMETRIC_IDLE_THRESHOLD" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_MII_EEE_WAKE_TIMER" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_GMII_EEE_WAKE_TIMER" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_UMAC_REV_ID" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TS_STATUS_CNTRL" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TX_TS_DATA" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_PAUSE_CONTROL" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_FLUSH_CONTROL" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_RXFIFO_STAT" = {seen = false, why = "blocked: amac"}
-"UNIMAC0_TXFIFO_STAT" = {seen = false, why = "blocked: amac"}
+"GMAC0_PHYACCESS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_PHYCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RXQCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_GPIOSELECT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_GPIOOUTPUTEN" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQRXQMEMORYCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_MEMORYECCSTATUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_SERDESCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_SERDESSTATUS0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_SERDESSTATUS1" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_CLOCKCONTROLSTATUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_POWERCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTCONTROL_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTPTR_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTADDR_LOW_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTADDR_HIGH_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTSTATUS0_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_XMTSTATUS1_0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVCONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVPTR" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVADDR_LOW" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVADDR_HIGH" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVSTATUS0" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RCVSTATUS1" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_GD_OCTETS_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_GD_OCTETS_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_GD_PKTS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_ALL_OCTETS_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_ALL_OCTETS_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_ALL_PKTS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_BRDCAST" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_MULT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_64" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_65_127" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_128_255" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_256_511" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_512_1023" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_1024_1522" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_1523_2047" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_2048_4095" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_4096_8191" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_8192_MAX" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_JAB" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_OVER" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_FRAG" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_UNDERRUN" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_COL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_1_COL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_M_COL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_EX_COL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_LATE" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_DEF" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_CRS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TX_PAUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXUNICASTPKT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ0PKT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ0OCTET_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ0OCTET_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ1PKT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ1OCTET_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ1OCTET_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ2PKT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ2OCTET_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ2OCTET_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ3PKT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ3OCTET_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_TXQOSQ3OCTET_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_GD_OCTETS_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_GD_OCTETS_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_GD_PKTS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_ALL_OCTETS_LO" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_ALL_OCTETS_HI" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_ALL_PKTS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_BRDCAST" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_MULT" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_64" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_65_127" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_128_255" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_256_511" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_512_1023" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_1024_1522" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_1523_2047" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_2048_4095" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_4096_8191" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_8192_MAX" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_JAB" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_OVR" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_FRAG" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_DROP" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_CRC_ALIGN" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_UND" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_CRC" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_ALIGN" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_SYM" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_PAUS" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RX_CNTRL" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RXSACHANGES" = {seen = false, why = "blocked (in reset): amac"}
+"GMAC0_RXUNICASTPKTS" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_IPG_HD_BKP_CNTL" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_COMMAND_CONFIG" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_MAC_0" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_MAC_1" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_FRM_LENGTH" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_PAUSE_QUANT" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TX_TS_SEQ_ID" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_MAC_MODE" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TAG_0" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TAG_1" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_RX_PAUSE_QUANTA_SCALE" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TX_PREAMBLE" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TX_IPG_LENGTH" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_PFC_XOFF_TIMER" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_UMAC_EEE_CTRL" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_MII_EEE_DELAY_ENTRY_TIMER" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_GMII_EEE_DELAY_ENTRY_TIMER" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_UMAC_EEE_REF_COUNT" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_UMAC_RX_PKT_DROP_STATUS" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_UMAC_SYMMETRIC_IDLE_THRESHOLD" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_MII_EEE_WAKE_TIMER" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_GMII_EEE_WAKE_TIMER" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_UMAC_REV_ID" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TS_STATUS_CNTRL" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TX_TS_DATA" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_PAUSE_CONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_FLUSH_CONTROL" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_RXFIFO_STAT" = {seen = false, why = "blocked (in reset): amac"}
+"UNIMAC0_TXFIFO_STAT" = {seen = false, why = "blocked (in reset): amac"}
 "NAND_NAND_FLASH_REVISION" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "NAND_NAND_FLASH_CMD_START" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
 "NAND_NAND_FLASH_CMD_EXT_ADDRESS" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
@@ -4333,99 +4333,99 @@
 "CMIC_SEMAPHORE_31_SHADOW" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_SEMAPHORE_32" = {seen = false, why = "semaphore: read = test-and-set (acquire)"}
 "CMIC_SEMAPHORE_32_SHADOW" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
-"CMIC_TIMESYNC_COUNTER_CONFIG_SELECT" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS0_COUNTER_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS0_FREQ_CTRL_FRAC" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS0_FREQ_CTRL_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS0_FREQ_CTRL_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS1_COUNTER_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS1_FREQ_CTRL_FRAC" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS1_FREQ_CTRL_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TS1_FREQ_CTRL_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TIME_CAPTURE_MODE" = {seen = false, why = "blocked: cmic_timesync"}
+"CMIC_TIMESYNC_COUNTER_CONFIG_SELECT" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS0_COUNTER_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS0_FREQ_CTRL_FRAC" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS0_FREQ_CTRL_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS0_FREQ_CTRL_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS1_COUNTER_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS1_FREQ_CTRL_FRAC" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS1_FREQ_CTRL_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TS1_FREQ_CTRL_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TIME_CAPTURE_MODE" = {seen = false, why = "blocked (hang): cmic_timesync"}
 "CMIC_TIMESYNC_INPUT_TIME_FIFO_TS_LOWER" = {seen = false, why = "timesync capture FIFO: read pops"}
 "CMIC_TIMESYNC_INPUT_TIME_FIFO_TS_UPPER" = {seen = false, why = "timesync capture FIFO: read pops"}
-"CMIC_TIMESYNC_FIFO_STATUS" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_0_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_1_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_2_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_3_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_4_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_OUTPUT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_UP_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_DOWN_EVENT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_GPIO_5_INPUT_DIVISOR" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_SYNCE_CLK1_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_SYNCE_CLK2_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_SYNCE_CLK3_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_SYNCE_CLK4_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_SYNCE_CLK5_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BROADSYNC_REF_CLK_GEN_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_CONFIG" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_CLK_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_HEARTBEAT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_HEARTBEAT_UP_DURATION" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_HEARTBEAT_DOWN_DURATION" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_OUTPUT_TIME_0" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_OUTPUT_TIME_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_OUTPUT_TIME_2" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_INPUT_TIME_0" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_INPUT_TIME_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_INPUT_TIME_2" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS0_INITIAL_CRC" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_CONFIG" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_CLK_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_HEARTBEAT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_HEARTBEAT_UP_DURATION" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_HEARTBEAT_DOWN_DURATION" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_OUTPUT_TIME_0" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_OUTPUT_TIME_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_OUTPUT_TIME_2" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_INPUT_TIME_0" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_INPUT_TIME_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_INPUT_TIME_2" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_BS1_INITIAL_CRC" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_BROADSYNC0_CLK_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_BROADSYNC1_CLK_COUNT_CTRL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_TIME_CAPTURE_CONTROL" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_CAPTURE_STATUS_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_CAPTURE_STATUS_CLR_1" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_INTERRUPT_ENABLE" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_INTERRUPT_STATUS" = {seen = false, why = "blocked: cmic_timesync"}
-"CMIC_TIMESYNC_INTERRUPT_CLR" = {seen = false, why = "blocked: cmic_timesync"}
+"CMIC_TIMESYNC_FIFO_STATUS" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_0_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_1_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_2_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_3_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_4_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_OUTPUT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_UP_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_DOWN_EVENT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_PHASE_ADJUST_LOWER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_PHASE_ADJUST_UPPER" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_GPIO_5_INPUT_DIVISOR" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_SYNCE_CLK1_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_SYNCE_CLK2_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_SYNCE_CLK3_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_SYNCE_CLK4_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_SYNCE_CLK5_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BROADSYNC_REF_CLK_GEN_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_CONFIG" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_CLK_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_HEARTBEAT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_HEARTBEAT_UP_DURATION" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_HEARTBEAT_DOWN_DURATION" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_OUTPUT_TIME_0" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_OUTPUT_TIME_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_OUTPUT_TIME_2" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_INPUT_TIME_0" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_INPUT_TIME_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_INPUT_TIME_2" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS0_INITIAL_CRC" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_CONFIG" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_CLK_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_HEARTBEAT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_HEARTBEAT_UP_DURATION" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_HEARTBEAT_DOWN_DURATION" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_OUTPUT_TIME_0" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_OUTPUT_TIME_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_OUTPUT_TIME_2" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_INPUT_TIME_0" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_INPUT_TIME_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_INPUT_TIME_2" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_BS1_INITIAL_CRC" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_BROADSYNC0_CLK_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_BROADSYNC1_CLK_COUNT_CTRL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_TIME_CAPTURE_CONTROL" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_CAPTURE_STATUS_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_CAPTURE_STATUS_CLR_1" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_INTERRUPT_ENABLE" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_INTERRUPT_STATUS" = {seen = false, why = "blocked (hang): cmic_timesync"}
+"CMIC_TIMESYNC_INTERRUPT_CLR" = {seen = false, why = "blocked (hang): cmic_timesync"}
 "CMIC_RATE_ADJUST" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_RATE_ADJUST_INT_MDIO" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_MIIM_SCAN_CTRL" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
@@ -5929,8 +5929,8 @@
 "CMIC_PKT_REASON_MINI_2_TYPE[13]" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_PKT_REASON_MINI_2_TYPE[14]" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_PKT_REASON_MINI_2_TYPE[15]" = {seen = true, reset_ok = true, ro_ok = true, date = "2026-11-16", unit = 1}
-"CMIC_MMU_COSLC_COUNT_ADDR" = {seen = false, why = "blocked: cmic_mmu_coslc"}
-"CMIC_MMU_COSLC_COUNT_DATA" = {seen = false, why = "blocked: cmic_mmu_coslc"}
+"CMIC_MMU_COSLC_COUNT_ADDR" = {seen = false, why = "blocked (hang): cmic_mmu_coslc"}
+"CMIC_MMU_COSLC_COUNT_DATA" = {seen = false, why = "blocked (hang): cmic_mmu_coslc"}
 "CMIC_TIM0_TIMER1LOAD" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_TIM0_TIMER1VALUE" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}
 "CMIC_TIM0_TIMER1CONTROL" = {seen = true, reset_ok = true, date = "2026-11-16", unit = 1}

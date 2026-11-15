@@ -103,7 +103,7 @@ def rows(suspect=None):
     for x in out:
         for b in bl:
             if b["lo"] <= x["addr"] <= b["hi"] and not x["skip"]:
-                x["skip"] = f"blocked: {b['name']}"
+                x["skip"] = f"blocked ({b.get('state', 'hang')}): {b['name']}"
     for x in out:
         sus = [n for n, (lo, hi) in SUSPECT.items() if x["kind"] == "sdk_iproc" and lo <= x["addr"] <= hi]
         if x["kind"] == "sdk_cmic":

@@ -197,10 +197,24 @@
 
 Blocked ranges:
 
-- `dmac` `0x18020000`-`0x18020fff`: PL330 DMAC held in IDM reset (dmac_idm RESET_CONTROL = 1): read stalls the bus, first read DMAC_PL330_DS hung
-- `amac` `0x18022000`-`0x18025fff`: AMAC (GMAC0/UNIMAC0) held in IDM reset (docs/a2.md stock note: AMAC_IDM0 RESET_CONTROL = 1): first read GMAC0_DEVCONTROL hangs a2
-- `cmic_timesync` `0x48010600`-`0x4801091f`: CMIC TIMESYNC block (CMIC_TIMESYNC_*, offsets 0x10600-0x1091c): first read CMIC_TIMESYNC_COUNTER_CONFIG_SELECT hangs a2
-- `cmic_mmu_coslc` `0x48023000`-`0x48023007`: CMIC_MMU_COSLC_COUNT_ADDR/DATA (indirect MMU counter access, 0x23000): first read CMIC_MMU_COSLC_COUNT_ADDR hangs a2
+- `dmac` `0x18020000`-`0x18020fff` (in reset): PL330 DMAC in IDM reset: DMAC_M0_IDM_RESET_CONTROL (0x18114800) = 1 cold and warm, IO_CONTROL_DIRECT = 0xc003f003; first read DMAC_PL330_DS stalls
+- `amac` `0x18022000`-`0x18025fff` (in reset): AMAC (GMAC0/UNIMAC0) in IDM reset: AMAC_IDM0_IDM_RESET_CONTROL (0x18110800) = 1 cold and warm, IO_CONTROL_DIRECT = 0x3fff07c5; first read GMAC0_DEVCONTROL stalls
+- `cmic_timesync` `0x48010600`-`0x4801091f` (hang): CMIC TIMESYNC/BroadSync (offsets 0x10600-0x1091c): cold hang; SDK releases TOP_SOFT_RESET_REG.TS_RST_L + TOP_SOFT_RESET_REG_2 TS_PLL_RST_L/POST_RST_L and programs TOP_TS_PLL_CTRL_*, our init drops TS/BS PLL writes (I, not read out)
+- `cmic_mmu_coslc` `0x48023000`-`0x48023007` (hang): CMIC_MMU_COSLC_COUNT_ADDR/DATA (indirect MMU counter access, 0x23000): hangs cold and warm (MMU released by init); warm hang also wedged a1 (power cycle)
+
+Gap probe (unit 1, read-only from a2, #86 phase 2): 256 B windows over the unnamed words of the pages of blocks whose IDM reset reads released.
+
+- answered = read completed (`zero` = value 0); undocumented = answered with a non-zero value, address not named in regdb: `hwdb/validation/u1-gaps.tsv`; windows: `hwdb/validation/u1-gap-windows.tsv`; hung windows: `u1-blocked.toml`.
+
+| Group | Windows | Reads | Answered | Undocumented (non-zero) | Aborted | Hung windows |
+|---|---|---|---|---|---|---|
+| `cmic_common` | 76 | 4632 | 1685 | 2 | 2947 | 0 |
+| `cmic_other` | 218 | 13036 | 9177 | 1311 | 3859 | 0 |
+| `ccb` | 272 | 17519 | 15935 | 93 | 1584 | 0 |
+| `idm` | 400 | 25356 | 25356 | 290 | 0 | 0 |
+| `periph` | 78 | 4584 | 3654 | 171 | 930 | 0 |
+| `ihost_axiic` | 582 | 36586 | 29980 | 20 | 6606 | 0 |
+| **all** | 1626 | 101713 | 85787 | 1887 | 15926 | 0 |
 
 ## Registers
 

@@ -158,6 +158,31 @@ def vgroup(key):
     return "_".join(t[:2]) if key.startswith("sdk_cmic") else t[0]
 
 
+def gaps_md():
+    """Gap probe (#86 phase 2): per group, windows/reads/answered/non-zero (undocumented)/aborted/blocked, from hwdb/validation/u1-gap-windows.tsv."""
+    p = pathlib.Path(__file__).resolve().parent.parent / "hwdb/validation/u1-gap-windows.tsv"
+    if not p.exists():
+        return []
+    agg = {}
+    for ln in p.read_text().splitlines():
+        f = ln.split("\t")
+        if ln.startswith("#") or f[0] == "window":
+            continue
+        a = agg.setdefault(f[1], [0, 0, 0, 0, 0, 0])
+        a[0] += 1
+        for i in range(1, 5):
+            a[i] += int(f[i + 1])
+        a[5] += f[6] == "blocked"
+    t = [sum(a[i] for a in agg.values()) for i in range(6)]
+    o = ["", "Gap probe (unit 1, read-only from a2, #86 phase 2): 256 B windows over the unnamed words of the pages of blocks whose IDM reset reads released.", "",
+         "- answered = read completed (`zero` = value 0); undocumented = answered with a non-zero value, address not named in regdb: `hwdb/validation/u1-gaps.tsv`; windows: `hwdb/validation/u1-gap-windows.tsv`; hung windows: `u1-blocked.toml`.", "",
+         "| Group | Windows | Reads | Answered | Undocumented (non-zero) | Aborted | Hung windows |", "|---|---|---|---|---|---|---|"]
+    for g, a in agg.items():
+        o.append("| `%s` | %d | %d | %d | %d | %d | %d |" % (g, a[0], a[1], a[2], a[3], a[4], a[5]))
+    o.append("| **all** | %d | %d | %d | %d | %d | %d |" % tuple(t))
+    return o
+
+
 def validation_md(db):
     """Coverage of hwdb/validation (a2 read-only runs on unit 1, #86). Counts are per register element (arrays expanded)."""
     if not db.hw:
@@ -190,7 +215,8 @@ def validation_md(db):
     if db.blocked:
         o += ["", "Blocked ranges:", ""]
         for b in db.blocked:
-            o.append("- `%s` `0x%08x`-`0x%08x`: %s" % (b["name"], b["lo"], b["hi"], md_cell(b["why"])))
+            o.append("- `%s` `0x%08x`-`0x%08x` (%s): %s" % (b["name"], b["lo"], b["hi"], b.get("state", "hang"), md_cell(b["why"])))
+    o += gaps_md()
     return o
 
 
