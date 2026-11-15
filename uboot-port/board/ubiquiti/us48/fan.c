@@ -13,6 +13,7 @@
 #include <asm/io.h>
 #include "bcm_cmic.h"
 #include "us48_fan.h"
+#include "us48_pcie.h"
 
 #define MSPI		0x1500			/* CMIC MSPI block, unit 0 only */
 #define GP		0x2000			/* CMIC GP block: DATA_OUT +4, OUT_EN +8 */
@@ -238,7 +239,7 @@ static int fan_all(u8 level)
 {
 	int r = 0;
 
-	if (!unit1_ok) {
+	if (!unit1_ok || !us48_pcie_up()) {
 		printf("fan: unit 1 not reachable, no frame sent (select line B undriven)\n");
 		return -ENODEV;
 	}
@@ -252,8 +253,12 @@ void us48_fan_boot(void)
 {
 	int hot = 0;
 
-	printf("fan: probing unit 1 BAR at 0x%08x\n", CONFIG_BCM_CMIC_UNIT1_BASE);
-	unit1_ok = readl(unit1.base + RING_MAP_16_23) != 0xffffffff;
+	if (us48_pcie_up()) {
+		printf("fan: probing unit 1 BAR at 0x%08x\n", CONFIG_BCM_CMIC_UNIT1_BASE);
+		unit1_ok = readl(unit1.base + RING_MAP_16_23) != 0xffffffff;
+	} else {
+		printf("fan: PCIe link to unit 1 down, no unit 1 access; fans left at their power-on state (default speed unknown, docs/fan.md)\n");
+	}
 	fan_all(0);
 	lm75_show(&hot);
 	pvt_show("unit 0", &unit0, &hot);

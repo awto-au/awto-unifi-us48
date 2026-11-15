@@ -16,6 +16,9 @@
 #include <linux/delay.h>
 #include "bcm_cmic.h"
 
+/* board pcie.c: unit 1 reachable (link up, BARs in place); any access to 0x08xxxxxx with a dead link hangs (#76) */
+bool us48_pcie_up(void);
+
 /* Low RAM only: the chip's inbound window ends at 0x08000000, relocated U-Boot is far above. */
 #define DMA_REGION	0x03000000
 #define RX_DCB_OFF	0x0000
@@ -66,6 +69,10 @@ static int us48_eth_start(struct udevice *dev)
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	int ret;
 
+	if (!p->ge && !us48_pcie_up()) {
+		printf("us48_cmic_eth: PCIe link to unit 1 down, xe1 not started\n");
+		return -ENODEV;
+	}
 	bcm_hr2_dma_init(&p->unit);
 	if (!p->up && p->ge) {
 		int ops, errs;

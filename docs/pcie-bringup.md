@@ -38,6 +38,12 @@
 - Not copied from uboot-1: bridge `0x3c` interrupt word, `0x28/0x2a` zeroing (no CPU-side effect expected).
 - Unknowns for the board: cold link-up time of the BCM53346 after PERST# release; whether the SerDes needs more than uboot-1's MDIO init after a cold PERST#.
 
+## Link-down guard (coordinator request, #63 blocker)
+- `us48_pcie_up()` (`pcie.c`) = init succeeded and `LINK_STATUS` up, checked live.
+- `fan.c`: no unit 1 BAR read, no frame on either group while down (select line B is unit 1 GP0, undriven); console says fans stay at the power-on state, default speed unknown (docs/fan.md). `fan <n>` re-checks live.
+- `us48_cmic_eth` xe1 `start()` returns -ENODEV with a message; ge1 (unit 0) unaffected.
+- A failed bring-up prints and continues to the prompt, so the SP805 never expires on this path.
+
 ## Board test (1-2 s, board agent)
 - Cold power-up with the env auto-chain (#63). Expect on the awto-uboot console before the `fan:` lines:
   - `pcie: entry CLK_CTRL 0x4 LINK_STATUS 0x0 ...`, `pcie: PERST# cycled`, `pcie: link up <us> us after PERST# release`

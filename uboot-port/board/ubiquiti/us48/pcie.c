@@ -106,7 +106,14 @@ static void windows(void)
 			writel(w[i].val, PAXB(w[i].off));
 }
 
-int us48_pcie_init(void)
+static bool pcie_ok;
+
+bool us48_pcie_up(void)
+{
+	return pcie_ok && link_up();
+}
+
+static int pcie_init(void)
 {
 	ulong t0, t;
 	u32 v;
@@ -174,4 +181,14 @@ int us48_pcie_init(void)
 	printf("pcie: unit 1 %#x BAR0 %#x BAR2 %#x BAR4 %#x\n", ep_r(0), ep_r(0x10) & ~0xfU, ep_r(0x18) & ~0xfU,
 	       ep_r(0x20) & ~0xfU);
 	return 0;
+}
+
+int us48_pcie_init(void)
+{
+	int ret = pcie_init();
+
+	pcie_ok = !ret;
+	if (ret)
+		printf("pcie: unit 1 unreachable, all unit 1 access skipped (fans, xe1)\n");
+	return ret;
 }
