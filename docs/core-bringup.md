@@ -2,23 +2,23 @@
 
 - Order: each item on a2, then a1. Tests are 1-2 s (`scripts/core_test.py <item> [--unit a1|a2]`), one result line each into `tmp/logs/core_test.log`.
 - Results go in the table: number + conditions + date. Empty = not run yet.
-- Build only so far: nothing below has run on the board.
+- First board run 2026-11-15: debug image `7.4.0-rc1-dbg+`, RAM-booted. a1 = ARM 1000 MHz. a2 = ARM 100 MHz (a2 corrupts memory above 100 MHz, #79), awto-uboot then `bootz`, DTB with `--periph`; L2 off unless stated.
 
 ## Table
 
 | # | Item | Driver | Module | Test | a1 result | a2 result |
 |---|---|---|---|---|---|---|
-| 1 | Caches L1/L2 | `CACHE_L2X0` (PL310, errata), A9 L1 | built in | `core_test caches`: PL310 id/ctrl/aux + `us48bench lat/bw` | | |
-| 2 | CPU clock | `CLK_BCM_HR2` | built in | `core_test clock`: `us48bench spin` vs `--mhz` | | |
-| 3 | Timers | `ARM_GLOBAL_TIMER`, TWD, `ARM_TIMER_SP804` | built in | `core_test timers`: tick drift (a1), cyclictest 1 s | | |
-| 4 | Interrupts | `ARM_GIC` | built in | `core_test irq`: `/proc/interrupts` delta 1 s; MSI is #54 | | |
-| 5 | DMA | `PL330_DMA` | `pl330.ko` | `core_test dma`: IDM reset check, `dmatest.ko` 20 iterations | | |
-| 6 | Memory | - | - | `core_test memory`: `memtester 1M 1` (a2 512K), meminfo split | | |
-| 7 | RNG | `HW_RANDOM_BCM2835` (nsp layout) | built in | `core_test rng`: `rngtest` on 20000 bits | | |
-| 8 | Watchdog | `ARM_SP805_WATCHDOG` | built in | `core_test wdt`: sysfs + VALUE reads, no reset test | | |
-| 9 | Flash | `SPI_BCM_QSPI` | built in | `core_test flash`: 1 MiB `/dev/mtd0ro` read (a1 only) | | |
-| 10 | Buses | `I2C_BCM_IPROC`, `PINCTRL_IPROC_GPIO` | built in | `core_test buses`: adapter + gpiochip listing only | | |
-| - | Self-tests | `TEST_BITMAP`, `LOCK_TORTURE_TEST`, `RCU_TORTURE_TEST`, `TEST_UDELAY` | `test_bitmap`, `locktorture`, `rcutorture`, `torture`, `udelay_test` | `core_test selftest` (debug image) | | |
+| 1 | Caches L1/L2 | `CACHE_L2X0` (PL310, errata), A9 L1 | built in | `core_test caches`: PL310 id/ctrl/aux + `us48bench lat/bw` | L2 PL310 on (id 0x410000c9, aux 0x4e120001); lat ns 4K 4.9, 32K 9.6, 256K 137, 8M 187; bw MB/s 16K rd/wr/cp 1652/1662/1185, 8M 495/1521/431 | L2 off: lat ns 4K 52, 32K 161, 2M 1520; bw 8M rd/wr/cp 22/254/23. L2 on (`--l2`): lat 2M 1499, bw 8M 55/259/59 (1 of 2 L2-on boots oopsed in the first bw run, #79) |
+| 2 | CPU clock | `CLK_BCM_HR2` | built in | `core_test clock`: `us48bench spin` vs `--mhz` | `spin` 976 MHz vs 1000 (0.98) | `spin` 92 MHz vs 100 (0.92) |
+| 3 | Timers | `ARM_GLOBAL_TIMER`, TWD, `ARM_TIMER_SP804` | built in | `core_test timers`: tick drift (a1), cyclictest 1 s | clocksource `arm_global_timer`; tick drift -873 ppm (+-1000 ppm jitter, 2 s window: not a drift number); cyclictest n/a: musl `sched_getscheduler` is ENOSYS ("unable to get scheduler parameters") | `arm_global_timer`; cyclictest n/a (musl); drift not measured (DCC poll too coarse) |
+| 4 | Interrupts | `ARM_GIC` | built in | `core_test irq`: `/proc/interrupts` delta 1 s; MSI is #54 | `gt` (GIC 27) 103 irq in 1 s (HZ 100 + load) | `gt` 144 irq in 1 s (parse window ~1.4 s) |
+| 5 | DMA | `PL330_DMA` | `pl330.ko` | `core_test dma`: IDM reset check, `dmatest.ko` 20 iterations | BLOCKED then FAIL: `RESET_CONTROL` read 0x1 (held in reset); after `--idm-release` the `insmod pl330` + dmatest run hung the board (power-cycled). Not re-run: a manual devmem write was denied by the permission check | not run (`--dmac` DTB needs a1's release of unit 1 IDM) |
+| 6 | Memory | - | - | `core_test memory`: `memtester 1M 1` (a2 512K), meminfo split | `memtester 1M x1` rc 0; MemTotal 178260 kB (Low 47188, High 131072) | `memtester 512K x1` rc 0; MemTotal 47732 kB (L2 on: 47728) |
+| 7 | RNG | `HW_RANDOM_BCM2835` (nsp layout) | built in | `core_test rng`: `rngtest` on 20000 bits | `18033000.rng`, `rngtest` 8 blocks, 0 fail | `rngtest` 8 blocks, 0 fail |
+| 8 | Watchdog | `ARM_SP805_WATCHDOG` | built in | `core_test wdt`: sysfs + VALUE reads, no reset test | `sp805-wdt` registered, `/dev/watchdog0`; VALUE reads 0x1dacc411 -> 0x1ba5ba87 (counting) | VALUE reads 0xffffffff both (not armed: nothing arms SP805 on a2 in Linux boot; awto-uboot a2 also leaves it off) |
+| 9 | Flash | `SPI_BCM_QSPI` | built in | `core_test flash`: 1 MiB `/dev/mtd0ro` read (a1 only) | `mtd0` 1 MiB read 2.22 MB/s | n/a (QSPI unit 0 only) |
+| 10 | Buses | `I2C_BCM_IPROC`, `PINCTRL_IPROC_GPIO` | built in | `core_test buses`: adapter + gpiochip listing only | 11 I2C adapters, 3 gpiochips | no nodes in the a2 DTS (0 listed) |
+| - | Self-tests | `TEST_BITMAP`, `LOCK_TORTURE_TEST`, `RCU_TORTURE_TEST`, `TEST_UDELAY` | `test_bitmap`, `locktorture`, `rcutorture`, `torture`, `udelay_test` | `core_test selftest` (debug image) | `test_bitmap`, `locktorture`, `rcutorture` ok (~2 s each) | not run: the one-line command is ~300 chars, a1 -> ttyA20 DCC input stalled the console (a2 reset to recover) |
 
 ## Drivers and DT
 
@@ -48,3 +48,17 @@
 
 - Reader on a1: `cat /dev/ttyA20 > /tmp/a2.out &` before `echo start` (docs/a2-linux.md). The runner types the command into `/dev/ttyA20` and polls `/tmp/a2.out` for a marker; tick drift (`timers`) is a1 only.
 - Limits (`A1_LIMIT_S` 13, `A2_LIMIT_S` 40, memory 20/60) are estimates until the first board run.
+
+## Bandwidth budget (#84 item 0, a1 ARM 1000 MHz, L2 on, 2026-11-15, debug image, `us48bench`, DDR 667)
+
+| Stage | Measured | Theoretical | Gap / why |
+|---|---|---|---|
+| DDR read, 8 MiB working set | 495 MB/s | not measured (#55) | single A9 stream, no prefetch tuning |
+| DDR write | 1521 MB/s | | write buffer + L2 merge |
+| DDR copy | 431 MB/s | | read-bound |
+| DDR latency, 8 MiB / 16 MiB | 187 / 202 ns | | L2 (256 KiB) hit 137 ns at 256K, L1 4.9 ns |
+| L1/L2-resident (16 KiB) rd/wr/cp | 1652 / 1662 / 1185 MB/s | | CPU-bound |
+| PL330 memcpy DDR->DDR | not measured | | dmatest blocked: IDM release then `insmod pl330` hung the board (item 5) |
+| CMIC packet-DMA RX pps / MB/s | not measured | | no quick test exists (needs a traffic generator + RX loop, no script) |
+| a2 -> host DDR over PCIe (a2 at 1000, #80, 2026-11-15) | cached rd 113 / wr 1061, uncached rd 14 / wr 123 MB/s, 298 ns | PCIe x1 gen2 ~400 MB/s | from #80, not rerun |
+| a2 own DDR path at 100 MHz (this run) | L2 off rd/wr/cp 22/254/23 MB/s, 1520 ns; L2 on 55/259/59 MB/s, 1499 ns | | a2 RAM is host DDR over PCIe: every miss crosses it |

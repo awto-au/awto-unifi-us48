@@ -148,7 +148,7 @@ int board_early_init_f(void)
 {
 	int mhz = CONFIG_US48_CPU_MHZ;
 
-	if (mhz == 400) {
+	if (mhz == 400 || mhz == 100) {	/* 400 = unit 0 as entered, 100 = unit 1 power-on rate: no change */
 		us48_cpu_status = 1;
 		return 0;
 	}

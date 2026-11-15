@@ -14,9 +14,9 @@
 #define CFG_SYS_PL310_BASE		HW_PL310_BASE
 
 /* Relock values: 1000..1999 in 12.5 MHz steps (ndiv = MHz x 2 / 25), see US48_RELOCK_OK */
-#if CONFIG_US48_CPU_MHZ != 400 && CONFIG_US48_CPU_MHZ != 800 && \
+#if CONFIG_US48_CPU_MHZ != 100 && CONFIG_US48_CPU_MHZ != 400 && CONFIG_US48_CPU_MHZ != 800 && \
 	(CONFIG_US48_CPU_MHZ < 1000 || CONFIG_US48_CPU_MHZ >= 2000 || CONFIG_US48_CPU_MHZ * 2 % 25)
-#error "US48_CPU_MHZ must be 400, 800 or 1000..1999 with MHz x 2 a multiple of 25"
+#error "US48_CPU_MHZ must be 100, 400, 800 or 1000..1999 with MHz x 2 a multiple of 25"
 #endif
 
 /* Fallback only: the live rate (ARM/2) comes from periph_clk in board.c */
