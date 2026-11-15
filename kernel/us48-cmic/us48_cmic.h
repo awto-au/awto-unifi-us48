@@ -91,7 +91,8 @@ struct us48_port {
 };
 
 struct us48_cmic {
-	struct device *dev;
+	struct device *dev;			/* devres owner, log, netdev parent */
+	struct device *dma_dev;		/* DMA mask and mappings (the PCI device for unit 1) */
 	const struct port_cfg *cfgs;
 	int nports;
 	u8 modid;			/* PORT_TAB.MY_MODID: unit 0 = 0, unit 1 = 1 */
@@ -120,8 +121,8 @@ struct us48_cmic {
 extern const struct port_cfg us48_unit1_cfgs[];
 extern const int us48_unit1_nports;
 
-int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_cfg *cfgs, int nports,
-		      u8 modid, struct us48_cmic **out);
+int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
+		      int nports, u8 modid, struct us48_cmic **out);
 /* Stop link polling and DMA, park the ports in VLAN 1 (shutdown and unbind). */
 void us48_quiesce(struct us48_cmic *u);
 /* Read-only TSC / XLMAC status of every xe port, logged (write-only 'tsc' param of the front-end). */

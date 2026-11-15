@@ -18,6 +18,8 @@ start() {
 	echo "us48-net: insmod" > /dev/kmsg
 	# Core + unit 0 (ge1, management) first; the unit 1 front-end is a separate module (rmmod us48_cmic_xe leaves ge1 up).
 	insmod /lib/us48/us48_cmic.ko unit0=1 || { echo "us48-net: insmod failed rc=$?" > /dev/kmsg; return 1; }
+	# us48_pci creates the aux devices (a2, cmic, clk); the xe driver binds to us48_pci.cmic
+	insmod /lib/us48/us48_pci.ko || echo "us48-net: insmod us48_pci failed rc=$?" > /dev/kmsg
 	insmod /lib/us48/us48_cmic_xe.ko || echo "us48-net: insmod xe failed rc=$?" > /dev/kmsg
 	for i in ge1 xe49 xe50; do
 		echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6

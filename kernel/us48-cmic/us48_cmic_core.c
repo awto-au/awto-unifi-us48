@@ -633,7 +633,7 @@ static void us48_free_buf(void *data)
 }
 
 /* Cached DMA pages below 128 MiB (the CMIC inbound window); freed with the device. */
-static void *us48_alloc_buf(struct device *dev, size_t size, dma_addr_t *dma, enum dma_data_direction dir)
+static void *us48_alloc_buf(struct device *dev, struct device *dma_dev, size_t size, dma_addr_t *dma, enum dma_data_direction dir)
 {
 	struct us48_buf *b = devm_kzalloc(dev, sizeof(*b), GFP_KERNEL);
 	struct page *pg;
@@ -641,10 +641,10 @@ static void *us48_alloc_buf(struct device *dev, size_t size, dma_addr_t *dma, en
 	if (!b)
 		return NULL;
 	size = PAGE_ALIGN(size);
-	pg = dma_alloc_pages(dev, size, dma, dir, GFP_KERNEL);
+	pg = dma_alloc_pages(dma_dev, size, dma, dir, GFP_KERNEL);
 	if (!pg)
 		return NULL;
-	b->dev = dev;
+	b->dev = dma_dev;
 	b->size = size;
 	b->cpu = page_address(pg);
 	b->dma = *dma;
@@ -652,6 +652,38 @@ static void *us48_alloc_buf(struct device *dev, size_t size, dma_addr_t *dma, en
 	if (devm_add_action_or_reset(dev, us48_free_buf, b))
 		return NULL;
 	return b->cpu;
+}
+
+struct us48_coh {
+	struct device *dev;
+	size_t size;
+	void *cpu;
+	dma_addr_t dma;
+};
+
+static void us48_free_coh(void *data)
+{
+	struct us48_coh *c = data;
+
+	dma_free_coherent(c->dev, c->size, c->cpu, c->dma);
+}
+
+/* dmam_alloc_coherent() with the DMA device apart from the devres owner (aux device vs PCI device). */
+static void *us48_alloc_coh(struct device *dev, struct device *dma_dev, size_t size, dma_addr_t *dma)
+{
+	struct us48_coh *c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
+
+	if (!c)
+		return NULL;
+	c->cpu = dma_alloc_coherent(dma_dev, size, dma, GFP_KERNEL);
+	if (!c->cpu)
+		return NULL;
+	c->dev = dma_dev;
+	c->size = size;
+	c->dma = *dma;
+	if (devm_add_action_or_reset(dev, us48_free_coh, c))
+		return NULL;
+	return c->cpu;
 }
 
 static void rx_arm(struct us48_cmic *u)
@@ -667,7 +699,7 @@ static void rx_arm(struct us48_cmic *u)
 	u->rx_dcb[16 * RX_RING] = cpu_to_le32(u->rx_dcb_dma);
 	u->rx_dcb[16 * RX_RING + 1] = cpu_to_le32(DCB_W1_CHAIN | DCB_W1_RELOAD);
 	u->rx_next = 0;
-	dma_sync_single_for_device(u->dev, u->rx_buf_dma, RX_RING * BUF_SZ, DMA_FROM_DEVICE);
+	dma_sync_single_for_device(u->dma_dev, u->rx_buf_dma, RX_RING * BUF_SZ, DMA_FROM_DEVICE);
 	wmb();
 	wr(u, DMA_CTRL(RX_CH), rd(u, DMA_CTRL(RX_CH)) & ~DMA_EN);
 	wr(u, DMA_STAT_CLR, BIT(RX_CH));
@@ -696,7 +728,7 @@ static void rx_one(struct us48_cmic *u, int i)
 	struct net_device *nd;
 	struct sk_buff *skb;
 
-	dma_sync_single_for_cpu(u->dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
+	dma_sync_single_for_cpu(u->dma_dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
 	if (rx_dump) {
 		rx_dump--;
 		dev_info(u->dev, "RX dcb%d len %u src %u w15 %08x da %pM et %04x\n", i, len, w12 & 0xff, w15, d,
@@ -764,7 +796,7 @@ static int us48_poll(struct napi_struct *napi, int budget)
 			break;
 		dma_rmb();
 		rx_one(u, i);
-		dma_sync_single_for_device(u->dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
+		dma_sync_single_for_device(u->dma_dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
 		u->rx_dcb[16 * i + 15] = 0;	/* hand the slot back */
 		if (i == RX_RING - 1)		/* the RELOAD DCB also gets DONE; a stale DONE halts the engine (#46) */
 			u->rx_dcb[16 * RX_RING + 15] = 0;
@@ -823,7 +855,7 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 			u->tx_len = i << 16 | len;
 	for (i = 0; i < u->nports; i++)
 		netif_stop_queue(u->port[i]->ndev);
-	dma_sync_single_for_device(u->dev, u->tx_buf_dma, len + 16, DMA_TO_DEVICE);
+	dma_sync_single_for_device(u->dma_dev, u->tx_buf_dma, len + 16, DMA_TO_DEVICE);
 	wmb();
 	wr(u, DMA_DESC(TX_CH), u->tx_dcb_dma);
 	wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) | DMA_EN);
@@ -915,8 +947,8 @@ static void us48_free_napi_dev(void *data)
 	free_netdev(u->napi_dev);
 }
 
-int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_cfg *cfgs, int nports,
-			     u8 modid, struct us48_cmic **out)
+int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
+		      int nports, u8 modid, struct us48_cmic **out)
 {
 	struct us48_cmic *u;
 	u32 link[2];
@@ -926,6 +958,7 @@ int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_
 	if (!u)
 		return -ENOMEM;
 	u->dev = dev;
+	u->dma_dev = dma_dev;
 	u->cfgs = cfgs;
 	u->nports = nports;
 	u->modid = modid;
@@ -933,7 +966,7 @@ int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_
 	mutex_init(&u->mdio);
 	spin_lock_init(&u->tx_lock);
 	INIT_DELAYED_WORK(&u->link_work, link_work_fn);
-	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	ret = dma_set_mask_and_coherent(dma_dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
 	*out = u;
@@ -950,11 +983,11 @@ int us48_probe_common(struct device *dev, void __iomem *cmic, const struct port_
 	wr(u, COS_CTRL_RX_0(RX_CH), 0xffffffff);
 	wr(u, COS_CTRL_RX_1(RX_CH), 0xffff);
 
-	u->rx_dcb = dmam_alloc_coherent(dev, (RX_RING + 1) * 64, &u->rx_dcb_dma, GFP_KERNEL);
+	u->rx_dcb = us48_alloc_coh(dev, dma_dev, (RX_RING + 1) * 64, &u->rx_dcb_dma);
 	/* Data buffers are cached pages + streaming syncs: CPU copies out of uncached coherent memory cost ~1.4 us/byte (#46). */
-	u->rx_buf = us48_alloc_buf(dev, RX_RING * BUF_SZ, &u->rx_buf_dma, DMA_FROM_DEVICE);
-	u->tx_dcb = dmam_alloc_coherent(dev, 128, &u->tx_dcb_dma, GFP_KERNEL);
-	u->tx_buf = us48_alloc_buf(dev, BUF_SZ, &u->tx_buf_dma, DMA_TO_DEVICE);
+	u->rx_buf = us48_alloc_buf(dev, dma_dev, RX_RING * BUF_SZ, &u->rx_buf_dma, DMA_FROM_DEVICE);
+	u->tx_dcb = us48_alloc_coh(dev, dma_dev, 128, &u->tx_dcb_dma);
+	u->tx_buf = us48_alloc_buf(dev, dma_dev, BUF_SZ, &u->tx_buf_dma, DMA_TO_DEVICE);
 	if (!u->rx_dcb || !u->rx_buf || !u->tx_dcb || !u->tx_buf)
 		return -ENOMEM;
 	/* Endpoint inbound window covers bus < 0x08000000 only (section 14.3). */
@@ -1056,7 +1089,7 @@ static int us48_cmic_plat_probe(struct platform_device *pdev)
 
 	if (!cmic)
 		return -ENOMEM;
-	return us48_probe_common(&pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, &u);
+	return us48_probe_common(&pdev->dev, &pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, &u);
 }
 
 static struct platform_driver us48_cmic_plat_driver = {
