@@ -1,0 +1,117 @@
+From f3501e78c9de2f3f2c6cd48fdf27df9846d32e45 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Mon, 16 Nov 2026 04:44:02 +1100
+Subject: [PATCH 23/23] PCI: iproc: Do not clear RW1C bits on sub-dword config
+ writes
+
+The config data port is 32 bits wide, so pci_generic_config_write32()
+turns a 8/16-bit write into a dword read-modify-write that writes back
+a set RW1C bit of the neighbouring bytes (PCI_STATUS, DEVSTA, LNKSTA,
+SLTSTA) and clears it, and warns about it.
+
+Write those bits as 0 unless the access covers them.
+---
+ drivers/pci/controller/pcie-iproc.c | 85 ++++++++++++++++++++++++++++-
+ 1 file changed, 83 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/controller/pcie-iproc.c b/drivers/pci/controller/pcie-iproc.c
+index 4a2a2cfba..421fb34f9 100644
+--- a/drivers/pci/controller/pcie-iproc.c
++++ b/drivers/pci/controller/pcie-iproc.c
+@@ -710,13 +710,94 @@ static int iproc_pcie_config_read32(struct pci_bus *bus, unsigned int devfn,
+ 	return ret;
+ }
+ 
++/* Read a dword of config space of a function that is already enumerated */
++static u32 iproc_pcie_cfg_read_dword(struct iproc_pcie *pcie, int busno,
++				     unsigned int devfn, int where)
++{
++	void __iomem *addr = iproc_pcie_map_cfg_bus(pcie, busno, devfn, where);
++
++	return addr ? readl(addr) : 0;
++}
++
++/*
++ * RW1C bits of the dword at @where that sit in the upper 16 bits (status
++ * next to command/control). PCIe cap at @exp, 0 if the function has none.
++ */
++static u32 iproc_pcie_rw1c_mask(int where, int exp)
++{
++	if (where == PCI_COMMAND)
++		return PCI_STATUS_PARITY << 16 | (PCI_STATUS_SIG_TARGET_ABORT |
++			PCI_STATUS_REC_TARGET_ABORT | PCI_STATUS_REC_MASTER_ABORT |
++			PCI_STATUS_SIG_SYSTEM_ERROR | PCI_STATUS_DETECTED_PARITY) << 16;
++	if (!exp)
++		return 0;
++	if (where == exp + PCI_EXP_DEVCTL)
++		return (PCI_EXP_DEVSTA_CED | PCI_EXP_DEVSTA_NFED |
++			PCI_EXP_DEVSTA_FED | PCI_EXP_DEVSTA_URD) << 16;
++	if (where == exp + PCI_EXP_LNKCTL)
++		return (PCI_EXP_LNKSTA_LBMS | PCI_EXP_LNKSTA_LABS) << 16;
++	if (where == exp + PCI_EXP_SLTCTL)
++		return (PCI_EXP_SLTSTA_ABP | PCI_EXP_SLTSTA_PFD |
++			PCI_EXP_SLTSTA_MRLSC | PCI_EXP_SLTSTA_PDC |
++			PCI_EXP_SLTSTA_CC | PCI_EXP_SLTSTA_DLLSC) << 16;
++	return 0;
++}
++
++static int iproc_pcie_find_exp_cap(struct iproc_pcie *pcie, int busno,
++				   unsigned int devfn)
++{
++	int ttl = 48, pos;
++	u32 val;
++
++	val = iproc_pcie_cfg_read_dword(pcie, busno, devfn, PCI_COMMAND);
++	if (!(val >> 16 & PCI_STATUS_CAP_LIST))
++		return 0;
++	pos = iproc_pcie_cfg_read_dword(pcie, busno, devfn,
++					PCI_CAPABILITY_LIST & ~3) & 0xfc;
++	while (pos >= 0x40 && ttl--) {
++		val = iproc_pcie_cfg_read_dword(pcie, busno, devfn, pos);
++		if ((val & 0xff) == PCI_CAP_ID_EXP)
++			return pos;
++		pos = val >> 8 & 0xfc;
++	}
++	return 0;
++}
++
++/*
++ * The config data port is 32 bits wide. A 8/16-bit write is a dword
++ * read-modify-write that would write back a set RW1C bit of the neighbouring
++ * bytes (PCI_STATUS, DEVSTA, LNKSTA, SLTSTA) and clear it. Write those bits
++ * as 0 unless the access covers them.
++ */
+ static int iproc_pcie_config_write32(struct pci_bus *bus, unsigned int devfn,
+ 				     int where, int size, u32 val)
+ {
+-	int ret;
++	struct iproc_pcie *pcie = iproc_data(bus);
++	int busno = bus->number;
++	void __iomem *addr;
++	u32 mask, tmp, rw1c;
++	int ret = PCIBIOS_SUCCESSFUL;
+ 
+ 	iproc_pcie_apb_err_disable(bus, true);
+-	ret = pci_generic_config_write32(bus, devfn, where, size, val);
++	if (size == 4) {
++		ret = pci_generic_config_write32(bus, devfn, where, size, val);
++		goto out;
++	}
++
++	rw1c = iproc_pcie_rw1c_mask(where & ~3,
++				    iproc_pcie_find_exp_cap(pcie, busno, devfn));
++	addr = iproc_pcie_map_cfg_bus(pcie, busno, devfn, where & ~3);
++	if (!addr) {
++		ret = PCIBIOS_DEVICE_NOT_FOUND;
++		goto out;
++	}
++
++	mask = ~(((1 << (size * 8)) - 1) << ((where & 3) * 8));
++	tmp = readl(addr) & mask;
++	tmp &= ~(rw1c & mask);
++	tmp |= val << ((where & 3) * 8);
++	writel(tmp, addr);
++out:
+ 	iproc_pcie_apb_err_disable(bus, false);
+ 
+ 	return ret;
