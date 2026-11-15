@@ -49,6 +49,9 @@
 #define RX_CH			1
 #define BUF_SZ			2048
 #define RX_RING			256	/* 1 ms poll x 83 frames/ms at 1G line rate = 83 min */
+#define TX_RING			64	/* frames in flight; power of 2 (index mask) */
+#define SKB_POOL		128	/* preallocated RX skbs, refilled from process context */
+#define SKB_POOL_LEN		1600	/* data bytes per pooled skb: fits a 2 KiB slab with headroom + shinfo */
 #define DCB_W1_CHAIN		BIT(16)
 #define DCB_W1_RELOAD		BIT(18)
 #define DCB_W1_SG		BIT(17)
@@ -110,11 +113,16 @@ struct us48_cmic {
 	void *rx_buf;			/* RX_RING x BUF_SZ */
 	dma_addr_t rx_buf_dma;
 	int rx_next;
-	__le32 *tx_dcb;			/* 2 x 16 words */
+	struct sk_buff_head skb_pool;	/* ready RX skbs; consumed in NAPI, topped up by pool_work */
+	struct work_struct pool_work;
+	__le32 *tx_dcb;			/* TX_RING x 2 DCBs x 16 words */
 	dma_addr_t tx_dcb_dma;
-	void *tx_buf;
+	void *tx_buf;			/* TX_RING x BUF_SZ */
 	dma_addr_t tx_buf_dma;
-	unsigned int tx_len;		/* 0 = idle */
+	u32 tx_meta[TX_RING];		/* port index << 16 | frame length, for the stats at reap */
+	unsigned int tx_head;		/* next free slot (free-running) */
+	unsigned int tx_run;		/* end of the chain the engine runs; tx_tail..tx_run in flight */
+	unsigned int tx_tail;		/* oldest unreaped slot */
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */

@@ -742,8 +742,10 @@ static void rx_one(struct us48_cmic *u, int i)
 		return;
 	}
 	len -= ETH_FCS_LEN;
-	skb = napi_alloc_skb(&u->napi, len);
-	if (!skb) {
+	skb = len <= SKB_POOL_LEN ? skb_dequeue(&u->skb_pool) : NULL;
+	if (!skb)
+		skb = napi_alloc_skb(&u->napi, len);
+	if (!skb) {		/* slot is recycled by the caller either way */
 		nd->stats.rx_dropped++;
 		return;
 	}
@@ -767,20 +769,73 @@ static void tx_wake_all(struct us48_cmic *u)
 		netif_wake_queue(u->port[i]->ndev);
 }
 
+static __le32 *tx_slot_dcb(struct us48_cmic *u, unsigned int n)
+{
+	return u->tx_dcb + 32 * (n % TX_RING);
+}
+
+/* Start the next chain of queued frames (contiguous slots) if the engine is idle; tx_lock held. */
+static void tx_launch(struct us48_cmic *u)
+{
+	unsigned int s = u->tx_run, end, i;
+
+	if (u->tx_tail != u->tx_run || s == u->tx_head)
+		return;
+	end = min(u->tx_head, s + TX_RING - s % TX_RING);
+	for (i = s; i < end - 1; i++)
+		tx_slot_dcb(u, i)[17] |= cpu_to_le32(DCB_W1_CHAIN);
+	wmb();
+	wr(u, DMA_DESC(TX_CH), u->tx_dcb_dma + 128 * (s % TX_RING));
+	wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) | DMA_EN);
+	u->tx_run = end;
+}
+
+/* Complete finished frames in order, then launch what is queued; tx_lock held. */
+static void __tx_reap(struct us48_cmic *u)
+{
+	bool reaped = false;
+
+	while (u->tx_tail != u->tx_run) {
+		unsigned int n = u->tx_tail;
+		struct net_device *nd = u->port[u->tx_meta[n % TX_RING] >> 16]->ndev;
+
+		if (!(le32_to_cpu(READ_ONCE(tx_slot_dcb(u, n)[31])) & DCB_W15_DONE))
+			break;
+		nd->stats.tx_packets++;
+		nd->stats.tx_bytes += u->tx_meta[n % TX_RING] & 0xffff;
+		u->tx_tail++;
+		reaped = true;
+	}
+	if (!reaped)
+		return;
+	if (u->tx_tail == u->tx_run) {		/* chain finished: stop the channel before the next one */
+		wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) & ~DMA_EN);
+		wr(u, DMA_STAT_CLR, BIT(TX_CH));
+		tx_launch(u);
+	}
+	tx_wake_all(u);
+}
+
 static void tx_reap(struct us48_cmic *u)
 {
 	spin_lock(&u->tx_lock);
-	if (u->tx_len && (le32_to_cpu(READ_ONCE(u->tx_dcb[16 + 15])) & DCB_W15_DONE)) {
-		struct net_device *nd = u->port[u->tx_len >> 16]->ndev;
-
-		wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) & ~DMA_EN);
-		wr(u, DMA_STAT_CLR, BIT(TX_CH));
-		nd->stats.tx_packets++;
-		nd->stats.tx_bytes += u->tx_len & 0xffff;
-		u->tx_len = 0;
-		tx_wake_all(u);
-	}
+	__tx_reap(u);
 	spin_unlock(&u->tx_lock);
+}
+
+/* Top up the RX skb pool with sleeping allocations: NAPI-context atomic allocs failed under load (#56). */
+static void us48_pool_fill(struct work_struct *w)
+{
+	struct us48_cmic *u = container_of(w, struct us48_cmic, pool_work);
+
+	while (skb_queue_len(&u->skb_pool) < SKB_POOL) {
+		struct sk_buff *skb = __netdev_alloc_skb(NULL, SKB_POOL_LEN, GFP_KERNEL);
+
+		if (!skb)
+			return;
+		skb_queue_tail(&u->skb_pool, skb);
+		cond_resched();
+	}
 }
 
 static int us48_poll(struct napi_struct *napi, int budget)
@@ -798,7 +853,7 @@ static int us48_poll(struct napi_struct *napi, int budget)
 		rx_one(u, i);
 		dma_sync_single_for_device(u->dma_dev, u->rx_buf_dma + i * BUF_SZ, BUF_SZ, DMA_FROM_DEVICE);
 		u->rx_dcb[16 * i + 15] = 0;	/* hand the slot back */
-		if (i == RX_RING - 1)		/* the RELOAD DCB also gets DONE; a stale DONE halts the engine (#46) */
+		if (i == 0)	/* RELOAD DONE is written before slot 0 fills; clearing at slot 255 raced it (#56) */
 			u->rx_dcb[16 * RX_RING + 15] = 0;
 		wmb();
 		u->rx_next = (i + 1) % RX_RING;
@@ -808,6 +863,8 @@ static int us48_poll(struct napi_struct *napi, int budget)
 	if (!done && !(le32_to_cpu(READ_ONCE(u->rx_dcb[16 * u->rx_next + 15])) & DCB_W15_DONE) &&
 	    !(rd(u, DMA_STAT) & DMA_ACTIVE(RX_CH)))
 		rx_arm(u);
+	if (skb_queue_len(&u->skb_pool) < SKB_POOL / 2)
+		schedule_work(&u->pool_work);
 	if (done < budget)
 		napi_complete_done(napi, done);
 	return done;
@@ -828,37 +885,49 @@ static netdev_tx_t us48_xmit(struct sk_buff *skb, struct net_device *nd)
 	struct us48_port *p = netdev_priv(nd);
 	struct us48_cmic *u = p->u;
 	unsigned int len = max_t(unsigned int, skb->len, ETH_ZLEN);
+	unsigned int n;
+	__le32 *dcb;
+	u8 *buf;
 	int i;
 
-	spin_lock(&u->tx_lock);
-	if (u->tx_len || len + 16 > BUF_SZ) {
-		spin_unlock(&u->tx_lock);
+	if (len + 16 > BUF_SZ || skb->len < 12) {
 		nd->stats.tx_dropped++;
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
-	memset(u->tx_buf, 0, len + 16);		/* DCB1 reads buf[16, len + 8) */
-	skb_copy_bits(skb, 0, u->tx_buf, 12);
-	skb_copy_bits(skb, 12, u->tx_buf + 16, skb->len - 12);
-	memset(u->tx_dcb, 0, 128);
-	u->tx_dcb[0] = cpu_to_le32(u->tx_buf_dma);
-	u->tx_dcb[1] = cpu_to_le32(12 | DCB_W1_CHAIN | DCB_W1_SG | DCB_W1_STAT | DCB_W1_HG);
-	u->tx_dcb[2] = cpu_to_le32(0x81000000);
-	u->tx_dcb[3] = cpu_to_le32(p->cfg->lport);
-	u->tx_dcb[4] = cpu_to_le32(0x00040000);		/* txq 0 */
-	u->tx_dcb[16] = cpu_to_le32(u->tx_buf_dma + 16);
+	spin_lock(&u->tx_lock);
+	__tx_reap(u);
+	if (u->tx_head - u->tx_tail >= TX_RING) {
+		for (i = 0; i < u->nports; i++)
+			netif_stop_queue(u->port[i]->ndev);
+		spin_unlock(&u->tx_lock);
+		return NETDEV_TX_BUSY;
+	}
+	n = u->tx_head % TX_RING;
+	buf = u->tx_buf + n * BUF_SZ;
+	dcb = tx_slot_dcb(u, n);
+	memset(buf, 0, len + 16);		/* DCB1 reads buf[16, len + 8) */
+	skb_copy_bits(skb, 0, buf, 12);
+	skb_copy_bits(skb, 12, buf + 16, skb->len - 12);
+	memset(dcb, 0, 128);
+	dcb[0] = cpu_to_le32(u->tx_buf_dma + n * BUF_SZ);
+	dcb[1] = cpu_to_le32(12 | DCB_W1_CHAIN | DCB_W1_SG | DCB_W1_STAT | DCB_W1_HG);
+	dcb[2] = cpu_to_le32(0x81000000);
+	dcb[3] = cpu_to_le32(p->cfg->lport);
+	dcb[4] = cpu_to_le32(0x00040000);		/* txq 0 */
+	dcb[16] = cpu_to_le32(u->tx_buf_dma + n * BUF_SZ + 16);
 	/* +4: XLMAC_TX_CTRL CRC_MODE is 'replace' (stock): the last 4 bytes are overwritten with the FCS, not added. */
-	u->tx_dcb[17] = cpu_to_le32((len + ETH_FCS_LEN - 12) | DCB_W1_STAT | DCB_W1_HG);
-	memcpy(&u->tx_dcb[18], &u->tx_dcb[2], 16);	/* OM _dcb_init: header on both DCBs */
+	dcb[17] = cpu_to_le32((len + ETH_FCS_LEN - 12) | DCB_W1_STAT | DCB_W1_HG);
+	memcpy(&dcb[18], &dcb[2], 16);		/* OM _dcb_init: header on both DCBs */
 	for (i = 0; i < u->nports; i++)
 		if (u->port[i] == p)
-			u->tx_len = i << 16 | len;
-	for (i = 0; i < u->nports; i++)
-		netif_stop_queue(u->port[i]->ndev);
-	dma_sync_single_for_device(u->dma_dev, u->tx_buf_dma, len + 16, DMA_TO_DEVICE);
-	wmb();
-	wr(u, DMA_DESC(TX_CH), u->tx_dcb_dma);
-	wr(u, DMA_CTRL(TX_CH), rd(u, DMA_CTRL(TX_CH)) | DMA_EN);
+			u->tx_meta[n] = i << 16 | len;
+	dma_sync_single_for_device(u->dma_dev, u->tx_buf_dma + n * BUF_SZ, len + 16, DMA_TO_DEVICE);
+	u->tx_head++;
+	if (u->tx_head - u->tx_tail >= TX_RING)	/* stopped only when the ring is full; __tx_reap wakes */
+		for (i = 0; i < u->nports; i++)
+			netif_stop_queue(u->port[i]->ndev);
+	tx_launch(u);
 	spin_unlock(&u->tx_lock);
 	dev_consume_skb_any(skb);
 	return NETDEV_TX_OK;
@@ -870,11 +939,11 @@ static void us48_tx_timeout(struct net_device *nd, unsigned int txq)
 	struct us48_cmic *u = p->u;
 
 	netdev_err(nd, "TX stuck: DMA_STAT %08x CTRL %08x dcb1 w15 %08x\n", rd(u, DMA_STAT),
-		   rd(u, DMA_CTRL(TX_CH)), le32_to_cpu(u->tx_dcb[31]));
+		   rd(u, DMA_CTRL(TX_CH)), le32_to_cpu(tx_slot_dcb(u, u->tx_tail)[31]));
 	spin_lock_bh(&u->tx_lock);
 	dma_abort(u, TX_CH);
-	nd->stats.tx_errors++;
-	u->tx_len = 0;
+	nd->stats.tx_errors += u->tx_head - u->tx_tail;
+	u->tx_tail = u->tx_run = u->tx_head;
 	tx_wake_all(u);
 	spin_unlock_bh(&u->tx_lock);
 }
@@ -901,6 +970,7 @@ static int us48_open(struct net_device *nd)
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
 	p->open = true;
 	if (u->nopen++ == 0) {
+		us48_pool_fill(&u->pool_work);
 		rx_arm(u);
 		napi_enable(&u->napi);
 		hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
@@ -923,8 +993,10 @@ static int us48_stop(struct net_device *nd)
 		dma_abort(u, RX_CH);
 		spin_lock_bh(&u->tx_lock);
 		dma_abort(u, TX_CH);
-		u->tx_len = 0;
+		u->tx_tail = u->tx_run = u->tx_head;
 		spin_unlock_bh(&u->tx_lock);
+		cancel_work_sync(&u->pool_work);
+		skb_queue_purge(&u->skb_pool);
 	}
 	return 0;
 }
@@ -965,6 +1037,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->cmic = cmic;
 	mutex_init(&u->mdio);
 	spin_lock_init(&u->tx_lock);
+	skb_queue_head_init(&u->skb_pool);
+	INIT_WORK(&u->pool_work, us48_pool_fill);
 	INIT_DELAYED_WORK(&u->link_work, link_work_fn);
 	ret = dma_set_mask_and_coherent(dma_dev, DMA_BIT_MASK(32));
 	if (ret)
@@ -986,13 +1060,13 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->rx_dcb = us48_alloc_coh(dev, dma_dev, (RX_RING + 1) * 64, &u->rx_dcb_dma);
 	/* Data buffers are cached pages + streaming syncs: CPU copies out of uncached coherent memory cost ~1.4 us/byte (#46). */
 	u->rx_buf = us48_alloc_buf(dev, dma_dev, RX_RING * BUF_SZ, &u->rx_buf_dma, DMA_FROM_DEVICE);
-	u->tx_dcb = us48_alloc_coh(dev, dma_dev, 128, &u->tx_dcb_dma);
-	u->tx_buf = us48_alloc_buf(dev, dma_dev, BUF_SZ, &u->tx_buf_dma, DMA_TO_DEVICE);
+	u->tx_dcb = us48_alloc_coh(dev, dma_dev, TX_RING * 128, &u->tx_dcb_dma);
+	u->tx_buf = us48_alloc_buf(dev, dma_dev, TX_RING * BUF_SZ, &u->tx_buf_dma, DMA_TO_DEVICE);
 	if (!u->rx_dcb || !u->rx_buf || !u->tx_dcb || !u->tx_buf)
 		return -ENOMEM;
 	/* Endpoint inbound window covers bus < 0x08000000 only (section 14.3). */
-	if (u->rx_buf_dma + RX_RING * BUF_SZ > SZ_128M || u->tx_buf_dma + BUF_SZ > SZ_128M ||
-	    u->rx_dcb_dma > SZ_128M || u->tx_dcb_dma > SZ_128M) {
+	if (u->rx_buf_dma + RX_RING * BUF_SZ > SZ_128M || u->tx_buf_dma + TX_RING * BUF_SZ > SZ_128M ||
+	    u->rx_dcb_dma > SZ_128M || u->tx_dcb_dma + TX_RING * 128 > SZ_128M) {
 		dev_err(dev, "DMA memory above 128 MiB (rx %pad tx %pad)\n", &u->rx_buf_dma, &u->tx_buf_dma);
 		return -ENOMEM;
 	}
