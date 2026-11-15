@@ -133,6 +133,7 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
  * TOP reset release, pipe reset, port maps, TDM, MMU, defaults; CPU port and front 1 only).
  * Returns 0 if the chip was already initialised (SBUS ring map set) or init ran; *errs = failed S-channel ops.
  */
+extern unsigned int bcm_hr2_init_gaps;	/* 1 = also sleep the stock trace gaps (cat 0xfe), default 0 */
 int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs);
 /* Dropped stock writes (bcm_cmic_hr2_init_x.h), groups = bits of xmask (see gen_bcm_hr2_init.py XGROUPS). */
 int bcm_hr2_u0_extra(struct bcm_cmic_unit *u, unsigned int xmask, int *ops, int *errs);

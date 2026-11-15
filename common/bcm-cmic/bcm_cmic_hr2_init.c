@@ -23,6 +23,18 @@ static void wr(struct bcm_cmic_unit *u, u32 off, u32 v) { writel(v, u->base + of
 #define CMIC_SBUS_RING_MAP(n)	(0x10098 + 4 * (n))	/* 0_7, 8_15, 16_23, 24_31 */
 #define CMIC_RATE_ADJUST	0x11000
 #define CMIC_RATE_ADJUST_INT	0x11004
+/*
+ * Delay entries in the tables: cat 0xff = hardware wait (always), 0xfe = stock trace gap (software pacing in stock,
+ * skipped unless gaps=1: env us48_init_gaps in awto-uboot, module param gaps in Linux). Profile and rationale: #34.
+ */
+unsigned int bcm_hr2_init_gaps;
+#define ENTRY_IS_DELAY(h)	(((h) >> 24) >= 0xfe)
+static void init_delay(u32 h)
+{
+	if ((h >> 24) == 0xff || bcm_hr2_init_gaps)
+		mdelay(h & 0xffff);
+}
+
 static const u32 hr2_init[] = {
 #include "bcm_cmic_hr2_init_data.h"
 };
@@ -109,7 +121,7 @@ static size_t replay_entries(const u32 *tab, size_t len)
 	size_t i = 0, n = 0;
 
 	while (i < len) {
-		i += (tab[i] >> 24) == 0xff ? 1 : 2 + (tab[i] & 0xff);
+		i += ENTRY_IS_DELAY(tab[i]) ? 1 : 2 + (tab[i] & 0xff);
 		n++;
 	}
 	return n;
@@ -130,9 +142,9 @@ static int replay(struct bcm_cmic_unit *u, const u32 *tab, size_t len, unsigned 
 		u32 cat = h >> 24, words = h & 0xff, data[BCM_CMIC_SCHAN_MSG_WORDS];
 		size_t cur = ord++;
 
-		if (cat == 0xff) {
+		if (ENTRY_IS_DELAY(h)) {
 			if (cur >= first)
-				mdelay(h & 0xffff);
+				init_delay(h);
 			i++;
 			continue;
 		}
@@ -169,6 +181,7 @@ int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, i
 	*ops = *errs = 0;
 	if (rd(u, CMIC_SBUS_RING_MAP(0)) == ring[0])
 		return 0;			/* already initialised (stock or an earlier run) */
+	bcm_hr2_init_gaps = env_get_hex("us48_init_gaps", bcm_hr2_init_gaps);
 	for (k = 0; k < 4; k++)
 		wr(u, CMIC_SBUS_RING_MAP(k), ring[k]);
 	wr(u, CMIC_SBUS_TIMEOUT, 0x7d0);
@@ -177,8 +190,8 @@ int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, i
 	while (i < ARRAY_SIZE(hr2_init)) {
 		u32 h = hr2_init[i];
 
-		if ((h >> 24) == 0xff) {
-			mdelay(h & 0xffff);
+		if (ENTRY_IS_DELAY(h)) {
+			init_delay(h);
 			i++;
 			continue;
 		}
