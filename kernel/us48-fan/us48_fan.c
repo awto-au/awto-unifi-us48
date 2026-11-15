@@ -2,11 +2,12 @@
 /*
  * us48_fan: US-48-500W fans as SPI client of us48_cmic_mspi: hwmon pwm1 (4 discrete levels) + thermal cooling device.
  * Frame, select lines and levels: docs/fan.md, docs/board.md MSPI. Policy lives in the DT thermal zones (#19).
- * Fail-safe: level 3 (100 %) until every watched zone reads, whenever one stops reading, and after any write error.
+ * Quiet rule (param quiet, default on, docs/fan.md): level 0 on probe/failure; only DT emergency trips raise it.
  */
 #include <linux/gpio/consumer.h>
 #include <linux/hwmon.h>
 #include <linux/math.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -22,6 +23,14 @@
 /* Sensor check: the old us48-fand poll period (2 s); LM75 and die temperatures move by degrees per minute. */
 #define WATCH_MS	2000
 
+/* quiet=0 restores the old fail-safe: level 3 on probe, sensor loss and write errors (docs/fan.md) */
+static bool quiet = true;
+module_param(quiet, bool, 0644);
+MODULE_PARM_DESC(quiet, "Dan 2026-11-15 lab noise: level 0 unless a DT emergency trip fires (default 1)");
+
+/* Failure log once per minute: a dead sensor is noted, not spammed */
+#define LOG_MS		60000
+
 static const u8 duty_pct[NLEVEL] = { 50, 70, 90, 100 };	/* firmware labels, docs/fan.md */
 
 struct fan {
@@ -31,6 +40,7 @@ struct fan {
 	unsigned int req;		/* level asked by the thermal core */
 	unsigned int manual;		/* level asked through pwm1 */
 	bool manual_mode;		/* pwm1_enable == 1 */
+	unsigned long last_log;		/* jiffies of the last failure message, 0 = none yet */
 	bool sensors_ok;		/* every watched zone read OK on the last check */
 	bool wr_err;			/* a frame failed: hold 3 until a write works again */
 	int hw;				/* level on the wire, -1 unknown */
@@ -38,6 +48,11 @@ struct fan {
 	int nzones;
 	struct delayed_work watch;
 };
+
+static unsigned int fail_level(void)
+{
+	return quiet ? 0 : LEVEL_FULL;
+}
 
 static int fan_frame(struct fan *f, unsigned int level)
 {
@@ -59,7 +74,7 @@ static int fan_apply(struct fan *f)
 	int ret;
 
 	if (!f->sensors_ok || f->wr_err)
-		want = LEVEL_FULL;
+		want = fail_level();
 	if (f->hw == want)
 		return 0;
 	ret = fan_frame(f, want);
@@ -68,11 +83,12 @@ static int fan_apply(struct fan *f)
 		f->wr_err = false;
 		return 0;
 	}
-	dev_err_ratelimited(&f->spi->dev, "frame for level %u failed: %d, holding level 3\n", want, ret);
+	dev_err_ratelimited(&f->spi->dev, "frame for level %u failed: %d, holding level %u\n", want, ret,
+			    fail_level());
 	f->hw = -1;
 	f->wr_err = true;
-	if (want != LEVEL_FULL && !fan_frame(f, LEVEL_FULL))
-		f->hw = LEVEL_FULL;
+	if (want != fail_level() && !fan_frame(f, fail_level()))
+		f->hw = fail_level();
 	return ret;
 }
 
@@ -80,15 +96,18 @@ static void fan_watch(struct work_struct *work)
 {
 	struct fan *f = container_of(work, struct fan, watch.work);
 	bool ok = true;
-	int i, t, ret;
+	int i, t = 0, ret;
 
 	for (i = 0; i < f->nzones; i++) {
 		struct thermal_zone_device *tz = thermal_zone_get_zone_by_name(f->zones[i]);
 
 		ret = IS_ERR(tz) ? PTR_ERR(tz) : thermal_zone_get_temp(tz, &t);
-		if (ret) {
-			if (f->sensors_ok || f->hw < 0)
-				dev_warn(&f->spi->dev, "zone %s unreadable (%d): level 3\n", f->zones[i], ret);
+		if (ret || t < -40000 || t > 150000) {
+			if (!f->last_log || time_after(jiffies, f->last_log + msecs_to_jiffies(LOG_MS))) {
+				dev_warn(&f->spi->dev, "zone %s unreadable or bogus (%d, %d mC): level %u\n",
+					 f->zones[i], ret, t, fail_level());
+				f->last_log = jiffies;
+			}
 			ok = false;
 			break;
 		}
@@ -207,7 +226,7 @@ static const struct hwmon_channel_info * const fan_info[] = {
 
 static const struct hwmon_chip_info fan_chip = { .ops = &fan_hwmon_ops, .info = fan_info };
 
-/* Unbind: stop the watcher and leave the fans at 100 % (nothing watches the sensors afterwards). */
+/* Unbind: stop the watcher, fans to the fail level (0 quiet, else 100 %): nothing watches afterwards. */
 static void fan_stop(void *data)
 {
 	struct fan *f = data;
@@ -257,7 +276,7 @@ static int fan_probe(struct spi_device *spi)
 	if (ret)
 		return dev_err_probe(dev, ret, "spi_setup\n");
 
-	/* Up at 100 % until the sensors read; the first watch pass moves to the requested level */
+	/* Fail level (0 quiet) until the sensors read; the first watch pass moves to the requested level */
 	mutex_lock(&f->lock);
 	ret = fan_apply(f);
 	mutex_unlock(&f->lock);

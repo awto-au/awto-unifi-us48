@@ -1,12 +1,11 @@
 #!/bin/sh /etc/rc.common
 # Fan + temperature drivers (kernel/us48-{cmic-gpio,cmic-mspi,pvtmon,fan}); policy is in the DT thermal zones (#19).
-# Skipped when /etc/us48-fand.force exists: then us48-fand runs (docs/fan.md "Switching").
+# Quiet rule + switch: docs/fan.md. Without this service Linux has no fan writer (fans keep awto-uboot's level).
 
 START=14
 # no USE_PROCD: rc.common tests it non-empty
 
 start() {
-	[ -e /etc/us48-fand.force ] && return 0
 	exec 2>/dev/kmsg
 	# us48_pci (aux parent) is loaded by us48-net at S04
 	for m in us48_cmic_gpio us48_cmic_mspi us48_pvtmon us48_fan; do

@@ -67,22 +67,32 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
 
 - Fan frame = 7 bytes: byte 0 = `level << 4` (C), bytes 1–6 = `0xaa` = every 2-bit port field = 2 (I: PoE mode select 802.3, see PoE report — not LEDs).
 - 6-byte all-zero frame = PoE card chain with PoE off (I).
-- `0x48002000–0x200c` (CMIC GP block: DATA_OUT `+4`, OUT_EN `+8` as written by `us48-fand`) unchanged between levels: select pins don't depend on the level.
+- `0x48002000–0x200c` (CMIC GP block: DATA_OUT `+4`, OUT_EN `+8` as written by the old fand) unchanged between levels: select pins don't depend on the level.
 - SPCR0 `0x1500` = `0x8d`, `0x1504` = `0x83` (mode/baud, decode vs OpenBCM `mspi.c`).
 
-## OpenWrt: `us48-fand` (openwrt/files, #12, #19)
+## Quiet rule (Dan 2026-11-15)
+
+- Why: lab noise; fans stay at level 0 (50 %, quietest preset, no off) until everything works.
+- Default and start-up: level 0, never 100 %.
+- Sensor read failure or bogus value (outside -40..150 C): stay at level 0, log (once per minute in Linux).
+- Emergency: any die (PVTMON) >= 110 C (steady-state rating, [clock-audit.md](clock-audit.md)) or any LM75 >= 80 C -> 100 %. Back to level 0 at die <= 100 C and LM75 <= 70 C.
+- Where it lives (one switch each):
+  - awto-uboot `fan.c`: `#define FAN_QUIET 1`. Boot-time only, no loop: a hot reading at boot gives 100 % until Linux or `fan 0`.
+  - `kernel/us48-fan`: module param `quiet` (default 1; `us48_fan.quiet=0` or `/sys/module/us48_fan/parameters/quiet`).
+  - DT thermal zones (`mainline/0013`): LM75 trip 80 C hysteresis 10 C; die trip 110 C hysteresis 10 C.
+- Switching back to the old policy (100 % on probe/failure): set the switch to 0 and set the DT trips to LM75 80 C / hysteresis 30 C, die 100 C / hysteresis 10 C.
+- `us48-fand` is deleted. Until `us48-fan` is proven on the board Linux has no fan writer: fans keep awto-uboot's level 0.
+- Emergency escalation exists only in awto-uboot (boot time) and in `us48-fan` once loaded.
+
+## Fan protocol and measurements (#12, #19)
 
 - Fans are bits 5:4 of byte 0 of a 7-byte write-only MSPI frame; one frame per switch chip (2 fans each, I). Full protocol: [board.md](board.md) MSPI section.
-- Write sequence for group g (0/1): GP0 of unit 0 = 1 (A), GP0 of unit 1 = g (B, via PCIe BAR `0x0a002000` of `01:00.0` after enabling it), both set as outputs; MSPI mode 3 (CPOL 1, CPHA 1); send 7 bytes: byte 0 = `level<<4`, bytes 1-6 = 0.
-- Policy (Dan 2026-11-15), same in awto-uboot (`fan.c`, one-shot at boot, `fan <0-3>` command) and mainline Linux (`us48-fand`, staged into the mainline initramfs from `openwrt/files` by `build_mainline.py`):
-  - 50 % (byte 0 `0x00`) while all 4 LM75 (`0x48..0x4b`, mux `0x70` ch 6) < 80 C; 100 % (`0x30`) at >= 80 C until all <= 50 C.
-  - Die PVTMON (both units, S-channel TOP `0x02050800`, T = 418 - 0.5556 x code): >= 100 C forces 100 %.
-  - Any sensor unreadable: 100 %.
-  - awto-uboot reads the LM75 over the CMIC SMBus (`0x48000000`, mux select + pointer write only) and has no loop: hot or unreadable at boot stays 100 % until Linux fand or `fan 0`.
-  - Replacement = the Linux drivers below (#19); fand stays in the image, disabled while the driver is present.
+- Write sequence for group g (0/1): GP0 of unit 0 = 1 (A), GP0 of unit 1 = g (B), both set as outputs; MSPI mode 3 (CPOL 1, CPHA 1); send 7 bytes: byte 0 = `level<<4`, bytes 1-6 = 0.
+- LM75: 4x (`0x48..0x4b`, mux `0x70` ch 6). Die PVTMON (both units, S-channel TOP `0x02050800`, T = 418 - 0.5556 x code).
+- awto-uboot reads the LM75 over the CMIC SMBus (`0x48000000`, mux select + pointer write only).
 - Verified by ear on all 4 fans (#12): `0x30` louder than `0x00`; byte-0 bits 7:6 and 3:0 change nothing (sweep `scripts/fan_sweep.py`).
 - No tach (stock reports 0 RPM). No fan IC on any PCA9548 channel (no `0x2e` / ADT7475), so fan control is not I2C. Fan-off needs the drive circuit identified (board photos) or a power-side switch not yet found; candidate GPIOs probed with `scripts/fan_gpio_probe.py` (#12).
-- Stock default after switchdrvr start: level 1 (70 %). Power-on state before that, and whether hardware falls back to full speed without a driver: unknown.
+- Stock default after switchdrvr start: level 1 (70 %). Power-on state before that: unknown.
 
 ## Linux drivers (#19, mainline only)
 
@@ -95,7 +105,7 @@ Policy is in the DT thermal zones, no daemon. Modules are loaded by `us48-therma
 | MSPI | `kernel/us48-cmic-mspi` | write-only SPI controller, polled |
 | GP pins | `kernel/us48-cmic-gpio` | 4-pin gpio-chip per unit (unit 0 platform MMIO, unit 1 aux over BAR2, link-checked) |
 | Fan | `kernel/us48-fan` | SPI client: hwmon `pwm1` (127/179/230/255 = 50/70/90/100 %) + `pwm1_enable` (1 manual, 2 thermal), cooling device `us48-fan` states 0-3 |
-| DT | `mainline/0013` | `thermal-zones`: LM75 trip 80 C active, hysteresis 30 C (back at 50 C); die trip 100 C, hysteresis 10 C; maps `<&fan 3 3>`; step_wise |
+| DT | `mainline/0013` | `thermal-zones`: LM75 trip 80 C active, hysteresis 10 C; die trip 110 C, hysteresis 10 C (quiet rule); maps `<&fan 3 3>`; step_wise |
 
 MSPI verdict (spi-bcm-qspi vs CMIC MSPI at `0x48001500`):
 - Registers match: SPCR0/1, NEWQP/ENDQP, SPCR2, STATUS, CPTQP, TXRAM `+0x40` stride 8, RXRAM `+0xc0`, CDRAM `+0x140` (hwdb `mspi` = `cmic_mspi`; `drivers/spi/spi-bcm-qspi.c` offsets and bit fields identical, CDRAM PCS/CONT/BITSE/DT).
@@ -104,11 +114,9 @@ MSPI verdict (spi-bcm-qspi vs CMIC MSPI at `0x48001500`):
 - Result: minimal driver `us48-cmic-mspi` (write-only, polled, 1-16 byte chains, SPBR from the DT clock, PCS 0, CONT on all but the last slot, DTL = RDSCLK = 1 as fand).
 
 Fail-safe (the thermal core alone does not: an unreadable zone gives `THERMAL_TEMP_INVALID` and the governor is skipped):
-- `us48-fan` re-reads every zone in `us48,watch-zones` each 2 s; a missing or unreadable zone sets level 3.
-- Level 3 on probe until all zones read OK, on unbind, and after any frame error (retried every 2 s).
+- `us48-fan` re-reads every zone in `us48,watch-zones` each 2 s; a missing, unreadable or bogus zone sets the fail level (0 with `quiet`, else 3), logged once per minute.
+- Fail level on probe until all zones read OK, on unbind, and after any frame error (retried every 2 s).
 - Rmmod order: `us48_fan` before `us48_pvtmon` (the watcher holds no zone reference).
 
-Switching:
-- Drivers (default): `us48-thermal` loads the modules; `us48-fand` init exits when `/sys/class/thermal/cooling_device*/type` has `us48-fan`.
-- fand: `touch /etc/us48-fand.force`, reboot (or `/etc/init.d/us48-thermal stop; /etc/init.d/us48-fand restart`).
-- Die sensors also appear as hwmon devices (`temp1_input`): fand's LM75 loop would count them, so never run both.
+Loading:
+- `us48-thermal` (init S14) loads the modules; die sensors also appear as hwmon devices (`temp1_input`).

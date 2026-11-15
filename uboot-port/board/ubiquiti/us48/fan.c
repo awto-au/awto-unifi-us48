@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * US-48 fans: 7-byte MSPI board-IO frame per switch chip (docs/fan.md, docs/board.md MSPI section).
- * Presets only (level 0..3 = 50/70/90/100 %), no off, no tach. Boot policy = 50 % unless a die reads >= 80 C
- * or a read fails (as openwrt/files/usr/sbin/us48-fand).
+ * Presets only (level 0..3 = 50/70/90/100 %), no off, no tach. Quiet rule (docs/fan.md): level 0 at boot, 100 %
+ * only for a die >= 110 C or an LM75 >= 80 C; read failures stay at level 0 and log. FAN_QUIET 0 = old policy.
  */
 
 #include <command.h>
@@ -24,8 +24,9 @@
 #define PVT_CTRL1	0x02050400
 #define PVT_RESULT	0x02050800
 #define PVT_CTRL0_STOCK	0x001d2003		/* stock switchdrvr write (docs/clocks.md PVTMON) */
+#define FAN_QUIET	1			/* 0 = pre-2026-11-15 policy: die >= 100 C or any read failure = 100 % */
 #define BOARD_HOT	800			/* LM75 >= 80 C: 100 % */
-#define DIE_HOT		1000			/* PVTMON >= 100 C (10 C under the 110 C rating): 100 % */
+#define DIE_HOT		(FAN_QUIET ? 1100 : 1000)	/* PVTMON steady-state rating 110 C (docs/clock-audit.md) */
 
 /* iProc SMBus master in the unit 0 CMIC (docs/board.md I2C); register layout = i2c-bcm-iproc.c */
 #define SMB_CFG		0x00
@@ -152,8 +153,8 @@ static void pvt_show(const char *name, struct bcm_cmic_unit *u, int *hot)
 	int t = 0, pk = 0, r = pvt_read(u, &t, &pk);
 
 	if (r) {
-		printf("fan: %s PVTMON read failed (%d)\n", name, r);
-		*hot = 1;
+		printf("fan: %s PVTMON read failed or bogus (%d)%s\n", name, r, FAN_QUIET ? ": staying at level 0" : "");
+		*hot |= !FAN_QUIET;
 		return;
 	}
 	printf("fan: %s PVTMON %d.%d C (peak %d.%d C)\n", name, t / 10, (int)abs(t % 10), pk / 10, (int)abs(pk % 10));
@@ -224,8 +225,8 @@ static void lm75_show(int *hot)
 	for (a = 0x48; a <= 0x4b; a++) {
 		r = lm75_read(a, &t);
 		if (r) {
-			printf("fan: LM75 0x%02x read failed (%d)\n", a, r);
-			*hot = 1;
+			printf("fan: LM75 0x%02x read failed (%d)%s\n", a, r, FAN_QUIET ? ": staying at level 0" : "");
+			*hot |= !FAN_QUIET;
 			continue;
 		}
 		printf("fan: LM75 0x%02x %d.%d C\n", a, t / 10, (int)abs(t % 10));
@@ -248,7 +249,7 @@ static int fan_all(u8 level)
 	return r;
 }
 
-/* Called once from board_init (console up): probe unit 1, 50 % on both groups, temps, 100 % if hot or unread */
+/* Called once from board_init (console up): probe unit 1, level 0 on both groups, temps, 100 % only on an emergency */
 void us48_fan_boot(void)
 {
 	int hot = 0;
@@ -265,12 +266,12 @@ void us48_fan_boot(void)
 	if (unit1_ok)
 		pvt_show("unit 1", &unit1, &hot);
 	else
-		hot = 1;
+		hot |= !FAN_QUIET;
 	if (hot) {
-		printf("fan: LM75 >= 80 C, die >= 100 C or a read failed: 100 %%\n");
+		printf("fan: emergency (LM75 >= 80 C or die >= %d C): 100 %%\n", DIE_HOT / 10);
 		fan_all(3);
 	} else {
-		printf("fan: temperatures ok, staying at 50 %%\n");
+		printf("fan: no emergency, staying at level 0 (50 %%)\n");
 	}
 }
 

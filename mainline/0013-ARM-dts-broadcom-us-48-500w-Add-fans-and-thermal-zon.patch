@@ -6,7 +6,7 @@ Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Add fans and thermal zones
 Describe the CMIC of the first chip (MSPI for the board IO chains, the GP
 pins that select a chain, the die temperature sensor), the second chip's
 sensor and GP pins under its PCI node, the fan as an SPI client, and the
-thermal zones: 80 C on any LM75 (back at 50 C) or 100 C on a die drives
+thermal zones: 80 C on any LM75 (back at 70 C) or 110 C on a die drives
 the fan to 100 %.
 
 Signed-off-by: TODO
@@ -68,7 +68,7 @@ index 5972b15..1e696c2 100644
 +		#thermal-sensor-cells = <0>;
 +	};
 +
-+	/* Fans: 50 % (level 0) below 80 C on every LM75, 100 % from 80 C until all are back at 50 C, 100 % at a die >= 100 C */
++	/* Quiet rule (docs/fan.md): level 0; 100 % at an LM75 >= 80 C or a die >= 110 C, back at 70 C / 100 C */
 +	thermal-zones {
 +		lm75-48 {
 +			polling-delay = <2000>;
@@ -78,7 +78,7 @@ index 5972b15..1e696c2 100644
 +			trips {
 +				lm75_48_hot: hot {
 +					temperature = <80000>;
-+					hysteresis = <30000>;
++					hysteresis = <10000>;
 +					type = "active";
 +				};
 +			};
@@ -99,7 +99,7 @@ index 5972b15..1e696c2 100644
 +			trips {
 +				lm75_49_hot: hot {
 +					temperature = <80000>;
-+					hysteresis = <30000>;
++					hysteresis = <10000>;
 +					type = "active";
 +				};
 +			};
@@ -120,7 +120,7 @@ index 5972b15..1e696c2 100644
 +			trips {
 +				lm75_4a_hot: hot {
 +					temperature = <80000>;
-+					hysteresis = <30000>;
++					hysteresis = <10000>;
 +					type = "active";
 +				};
 +			};
@@ -141,7 +141,7 @@ index 5972b15..1e696c2 100644
 +			trips {
 +				lm75_4b_hot: hot {
 +					temperature = <80000>;
-+					hysteresis = <30000>;
++					hysteresis = <10000>;
 +					type = "active";
 +				};
 +			};
@@ -161,7 +161,7 @@ index 5972b15..1e696c2 100644
 +
 +			trips {
 +				die0_hot: hot {
-+					temperature = <100000>;
++					temperature = <110000>;
 +					hysteresis = <10000>;
 +					type = "active";
 +				};
@@ -182,7 +182,7 @@ index 5972b15..1e696c2 100644
 +
 +			trips {
 +				die1_hot: hot {
-+					temperature = <100000>;
++					temperature = <110000>;
 +					hysteresis = <10000>;
 +					type = "active";
 +				};
