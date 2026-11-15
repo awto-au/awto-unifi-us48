@@ -11,7 +11,7 @@
   wrapping u-boot-dtb.bin, for stock `loady 0x01000000; bootm 0x01000000`.
 - Logs: tmp/logs/build_uboot.log.
 
-Usage: build_uboot.py [--clean] [--save-patches] [--jobs N]
+Usage: build_uboot.py [--clean] [--save-patches] [--jobs N] [--cpu-mhz N]
   --save-patches   write the tree's tracked-file diffs to uboot-port/patches/000N-*.patch (PATCH_SETS), then exit
   --clean          remove the build dir first
 """
@@ -54,6 +54,7 @@ STAGING = OUTDIR / "staging"
 MKUIMAGE = ROOT / "scripts/mkuimage.py"
 LOADADDR = 0x04000000  # = CONFIG_TEXT_BASE in us48_defconfig, checked after the build
 DEFCONFIG = "us48_defconfig"
+CFG_OPTS: list = []  # extra scripts/config args applied after the defconfig (--cpu-mhz)
 ENV_READ = 0x200000  # `sf read` size in the flashed env bootcmd = the 2 MiB uboot slot (docs/autochain.md)
 MAX_IMAGE = ENV_READ  # no serial loads any more; the slot is the limit
 # worktree add: ~9k files, seconds; store git calls are local
@@ -266,6 +267,9 @@ def build(jobs: int) -> int:
     for key, val in NET_OVERRIDES:
         if run([str(TREE / "scripts/config"), "--file", str(BUILD / ".config"), "--set-str", key, val]):
             return 1
+    for opt in CFG_OPTS:
+        if run([str(TREE / "scripts/config"), "--file", str(BUILD / ".config")] + opt):
+            return 1
     if run(NICE + ["make", o, "olddefconfig"]):
         return 1
     cfg = (BUILD / ".config").read_text().splitlines()
@@ -304,7 +308,14 @@ def main() -> int:
     ap.add_argument("--save-patches", action="store_true")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_UBOOT_STORE", STORE_LINK)),
                     help="machine U-Boot store (default $US48_UBOOT_STORE, else tmp/u-boot-store)")
+    ap.add_argument("--cpu-mhz", type=int, help="RAM-boot variant: CONFIG_US48_CPU_MHZ=N + CPU_REENTRY, out tmp/uboot/us48-uboot-cpuN.bin (docs/cpu-sweep.md)")
     a = ap.parse_args()
+    global BUILD, OUT
+    if a.cpu_mhz:
+        BUILD = ROOT / f"tmp/uboot-build-cpu{a.cpu_mhz}"
+        OUT = OUTDIR / f"us48-uboot-cpu{a.cpu_mhz}.bin"
+        CFG_OPTS.append(["--set-val", "US48_CPU_MHZ", str(a.cpu_mhz)])
+        CFG_OPTS.append(["--enable", "US48_CPU_REENTRY"])
     LOG.parent.mkdir(parents=True, exist_ok=True)
     ensure_tree(a.store)
     if a.save_patches:

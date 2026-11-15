@@ -19,6 +19,13 @@ config US48_CPU_MHZ
 	  Above 1200 (VCO 2400) no Broadcom table row exists: docs/clock-audit.md.
 	  Refuses and stays at 400 if the E0 gate fails. Other values: build error.
 
+config US48_CPU_REENTRY
+	bool "Entered with the A9 already switched up (RAM-boot variants chained from a fast awto-uboot)"
+	default n
+	help
+	  Relaxes the E0 gate (fid 6/7, any start rate); needs US48_CPU_MHZ 1000..1999 (relock).
+	  For clock sweeps: docs/cpu-sweep.md. Never for the flash image (cold entry is at 400).
+
 config US48_SRAM_CLK
 	bool "Run the CPU clock switch from SRAM with rollback (docs/sram-clock-switch.md)"
 	default n

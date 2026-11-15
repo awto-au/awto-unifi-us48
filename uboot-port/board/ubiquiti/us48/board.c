@@ -81,9 +81,16 @@ static int us48_cpu_switch(int mhz)
 	u32 b;
 
 	/* E0 gate: ch1 mdiv 2 (else fid 7 = 1600), fid 6, and we really are at 400 */
+#ifdef CONFIG_US48_CPU_REENTRY
+	/* chained from a fast awto-uboot: fid 6/7 at any rate; E2 goes via fid 2 so the start rate is irrelevant */
+	if ((readl(CCU_PLLARMCTL5) & 0xff) != 2 || (((readl(CCU_POLICY_DBG) >> 12) & 7) != 6 &&
+	    ((readl(CCU_POLICY_DBG) >> 12) & 7) != 7))
+		return -EINVAL;
+#else
 	if ((readl(CCU_PLLARMCTL5) & 0xff) != 2 || ((readl(CCU_POLICY_DBG) >> 12) & 7) != 6 ||
 	    us48_arm_hz() / 1000000 != 400)	/* ndiv_frac 1 (stock) adds ~0.4 ppm */
 		return -EINVAL;
+#endif
 
 	/* SP805 normally armed by dev.py before bootm; arm 10 s if not (APB clock, unchanged by this) */
 	if ((readl(SP805_BASE + 8) & 3) != 3) {
