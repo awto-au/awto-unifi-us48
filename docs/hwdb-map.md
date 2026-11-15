@@ -471,8 +471,8 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  |  | C |  | regdb |
-| `0x800` | `RESET_CONTROL` | 32 | rw | `0x1` | RESET[0] | C | 1 = DMAC held in reset (reset value); 0 releases it. No upstream owner: scripts/core_test.py dma --idm-release Note: which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84) | regdb |
+| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  | CLK_GATING_EN[0], AXUSER_CONFIG_1_0[13:12], AXUSER_CONFIG_3_2[17:16], AXUSER_CONFIG_4[30] | C | reset value 0. Release sequence used by us48_idm_reset: leave untouched (BISDN xgs_iproc_idm_dmac_reset, D-Link SDIO); module param clk_en=1 sets bit 0 first (D-Link SATA order) | regdb DMAC_M0_IDM_IO_CONTROL_DIRECT; D-Link GPL linux-3.6.5 arch/arm/mach-iproc/board_bu.c config_AHCI/setup_sdio; bisdn xgs-iproc-idm.c |
+| `0x800` | `RESET_CONTROL` | 32 | rw | `0x1` | RESET[0] | C | 1 = DMAC held in reset (reset value); 0 releases it. Owner: kernel/us48-idm-reset (reset controller, pl330 `resets`). Sequence: RMW clear bit 0, read back (limit 2 us), settle 900 us Note: which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84). D-Link's own Linux never touches the DMAC wrapper (boot stage releases it) | regdb; bisdn xgs-iproc-idm.c xgs_iproc_idm_dmac_reset (HR2 offset 0x14800, RMW clear bit 0, run before the DMAC is populated); D-Link board_bu.c config_AHCI (udelay(1000) after each IDM write) |
 
 ### idm_sram_s0 (`0x18120000`)
 

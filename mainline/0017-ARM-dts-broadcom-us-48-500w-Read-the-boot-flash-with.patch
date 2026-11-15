@@ -1,0 +1,27 @@
+From 83b3590f4ed11a1f844f62a15b46d30d0a3d862c Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Sun, 15 Nov 2026 21:00:29 +1100
+Subject: [PATCH 17/17] ARM: dts: broadcom: us-48-500w: Read the boot flash
+ with 1-1-4 quad
+
+MX25L25635E has IO2/IO3 wired and QE already set; the BSPI flex mode
+sends 0x6b with the data phase on four lines. Writes stay on one line.
+spi-max-frequency only sets the MSPI SCK (SPBR minimum), not BSPI reads.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 091b3d576f2b..c42b7c58edd2 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -296,6 +296,7 @@ flash@0 {
+ 		compatible = "jedec,spi-nor";
+ 		reg = <0>;
+ 		spi-max-frequency = <12500000>;
++		spi-rx-bus-width = <4>;
+ 		spi-cpol;
+ 		spi-cpha;
+ 

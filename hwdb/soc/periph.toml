@@ -197,17 +197,19 @@ conf = "C"
 [block.dmac_idm.reg.IO_CONTROL_DIRECT]
 offset = 0x408
 sdk = "DMAC_M0_IDM_IO_CONTROL_DIRECT"
-src = "regdb"
+fields = ["CLK_GATING_EN 0 regdb name; D-Link SATA/NSP code calls bit 0 of this register the clock enable (board_bu.c config_AHCI)", "AXUSER_CONFIG_1_0 13:12 AXI user bits", "AXUSER_CONFIG_3_2 17:16 AXI user bits", "AXUSER_CONFIG_4 30 AXI user bit"]
+desc = "reset value 0. Release sequence used by us48_idm_reset: leave untouched (BISDN xgs_iproc_idm_dmac_reset, D-Link SDIO); module param clk_en=1 sets bit 0 first (D-Link SATA order)"
+src = "regdb DMAC_M0_IDM_IO_CONTROL_DIRECT; D-Link GPL linux-3.6.5 arch/arm/mach-iproc/board_bu.c config_AHCI/setup_sdio; bisdn xgs-iproc-idm.c"
 
 [block.dmac_idm.reg.RESET_CONTROL]
 offset = 0x800
 reset = 0x1
 sdk = "DMAC_M0_IDM_RESET_CONTROL"
 fields = ["RESET 0"]
-desc = "1 = DMAC held in reset (reset value); 0 releases it. No upstream owner: scripts/core_test.py dma --idm-release"
-src = "regdb"
+desc = "1 = DMAC held in reset (reset value); 0 releases it. Owner: kernel/us48-idm-reset (reset controller, pl330 `resets`). Sequence: RMW clear bit 0, read back (limit 2 us), settle 900 us"
+src = "regdb; bisdn xgs-iproc-idm.c xgs_iproc_idm_dmac_reset (HR2 offset 0x14800, RMW clear bit 0, run before the DMAC is populated); D-Link board_bu.c config_AHCI (udelay(1000) after each IDM write)"
 conf = "C"
-note = "which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84)"
+note = "which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84). D-Link's own Linux never touches the DMAC wrapper (boot stage releases it)"
 
 [block.rng]
 space = "axi0"

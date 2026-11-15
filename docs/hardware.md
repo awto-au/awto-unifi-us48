@@ -24,7 +24,7 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 ## Interface rates: rated | board | run | gap (rule: run at rated max)
 | Interface | Rated max | Board allows | We run | Gap reason |
 |---|---|---|---|---|
-| QSPI flash MX25L25635E (read) | 1 I/O 80 MHz (fast read, 8 dummy), 2 I/O 70 MHz, 4 I/O 70 MHz (datasheet v1.3, `/vendors/macronix/mx25l25635e/`) | quad works: IO2/IO3 wired, QE already set, data identical to 1-lane (uboot-2 RAM build, #20) | stock: 50 MHz, 1 lane, 3-byte address (`qspi_iproc: 1-lane output, 3-byte address`); uboot-2 same | inherited default, no recorded reason; uboot-2 DT quad read via BSPI, reads then CPU-bound not flash-bound (#20) |
+| QSPI flash MX25L25635E (read) | 1 I/O 80 MHz (fast read, 8 dummy), 2 I/O 70 MHz, 4 I/O 70 MHz (datasheet v1.3, `/vendors/macronix/mx25l25635e/`) | quad works: IO2/IO3 wired, QE already set, data identical to 1-lane (uboot-2 RAM build, #20) | stock: 50 MHz, 1 lane, 3-byte address (`qspi_iproc: 1-lane output, 3-byte address`); uboot-2 same | inherited default, no recorded reason; uboot-2 DT quad read via BSPI, reads then CPU-bound not flash-bound (#20). Linux: BSPI RAF reads, 2.22 MB/s 1-lane (#84); DT `spi-rx-bus-width = <4>` added, BSPI SCK set by boot stage (docs/core-bringup.md Flash read path) |
 | CPU | see #17 | | 400 MHz (`arm_clk=400MHz`) | #17 |
 | DDR3 | see #55 | | 667 MHz | #55 |
 

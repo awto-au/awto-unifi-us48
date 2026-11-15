@@ -1,0 +1,43 @@
+From 03fdaf1c98bb5ba781b69c74f46ad9437291f93e Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Sun, 15 Nov 2026 21:00:28 +1100
+Subject: [PATCH 16/17] ARM: dts: broadcom: us-48-500w: Release the PL330 IDM
+ reset through a reset controller
+
+RESET_CONTROL of the DMAC IDM wrapper resets to 1 (held in reset) and
+nothing upstream owns it. Describe it as a reset controller (out-of-tree
+driver us48_idm_reset) and let pl330 deassert it through its resets.
+
+Signed-off-by: TODO
+---
+ .../dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts   | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 5a0903e342cb..091b3d576f2b 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -276,6 +276,15 @@ dmu: syscon@3f000 {
+ 	};
+ };
+ 
++/* Out-of-tree driver us48_idm_reset (kernel/us48-idm-reset): IDM wrapper reset of the PL330 */
++&{/axi@18000000} {
++	dmac_idm: reset-controller@114000 {
++		compatible = "awto,hr2-dmac-idm-reset";
++		reg = <0x114000 0x1000>;
++		#reset-cells = <1>;
++	};
++};
++
+ &uart1 {
+ 	status = "okay";
+ };
+@@ -371,5 +380,7 @@ gp1: gpio {
+ };
+ 
+ &dma {
++	resets = <&dmac_idm 0>;
++	reset-names = "dma";
+ 	status = "okay";
+ };

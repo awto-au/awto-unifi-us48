@@ -8,7 +8,7 @@ One subcommand per #84 item; each prints and logs ONE result line (tmp/logs/core
   clock    dependent-add loop MHz (us48bench spin) against --mhz
   timers   clocksource, tick drift vs this host (a1 only), cyclictest latency (1 s)
   irq      /proc/interrupts deltas over 1 s
-  dma      IDM reset check, pl330 + dmatest (--idm-release to deassert dmac_idm.RESET_CONTROL)
+  dma      us48_idm_reset + pl330 (release via DT resets) + dmatest (--idm-clk-en: set IO_CONTROL_DIRECT bit 0 first)
   memory   memtester + meminfo split
   rng      rngtest on 20000 bits of /dev/hwrng
   wdt      SP805 sysfs state and counter reads (no reset test)
@@ -16,7 +16,7 @@ One subcommand per #84 item; each prints and logs ONE result line (tmp/logs/core
   buses    I2C adapters and GPIO chips (listing only, no bus probe)
   selftest test_bitmap + locktorture + rcutorture, ~2 s each (debug image)
   all      every item above
-Options: --unit a1|a2 (default a1), --dry-run (print the board commands only), --idm-release, --mhz N, --secs N.
+Options: --unit a1|a2 (default a1), --dry-run (print the board commands only), --idm-clk-en, --mhz N, --secs N.
 
 Access: a1 = ssh root@us48-boot (scripts/lx.py settings). a2 = a1's /dev/ttyA20 (docs/a2-linux.md): the reader
 `cat /dev/ttyA20 > /tmp/a2.out &` must be running on a1; commands go in with printf, results are read from /tmp/a2.out
@@ -162,7 +162,7 @@ def t_timers(u, a):
     m = re.search(r"Min:\s*(\d+)\s+Act:\s*(\d+)\s+Avg:\s*(\d+)\s+Max:\s*(\d+)", out)
     if DRY:
         return "OK", ""
-    if not m:  # musl sched_getscheduler is ENOSYS: cyclictest cannot start ("unable to get scheduler parameters")
+    if not m:  # cyclictest did not report (rt-tests-musl.patch maps sched_* to raw syscalls)
         return "OK", f"clocksource={cs.strip()} tick_drift_ppm={ppm} cyclictest=n/a({out.strip()[:40]})"
     return "OK", f"clocksource={cs.strip()} tick_drift_ppm={ppm} cyclictest_us min={m[1]} avg={m[3]} max={m[4]}"
 
@@ -188,23 +188,25 @@ def t_irq(u, a):
 
 def t_dma(u, a):
     idm = DB.addr("dmac_idm") + 0x800
-    rst = devmem(u, idm)
-    if rst & 1:
-        if not a.idm_release:
-            return "BLOCKED", "dmac in IDM reset (RESET_CONTROL=0x1): rerun with --idm-release (conf C reset value; releasing it is untested)"
-        u.run(f"devmem 0x{idm:x} 32 0")
-        rst = devmem(u, idm)
+    before = devmem(u, idm)
     rel = "$(uname -r)"
     mod = f"/lib/modules/{rel}"
-    _, out = u.run(f"insmod {mod}/pl330.ko; insmod {mod}/dmatest.ko max_channels=1 threads_per_chan=1 iterations=20 "
-                   f"test_buf_size=16384 timeout=1000 wait=1 run=1; dmesg | grep -E 'dmatest: .*summary|pl330' | tail -n 4; "
-                   f"rmmod dmatest; rmmod pl330", limit=A1_LIMIT_S + 10)
+    clk = " clk_en=1" if a.idm_clk_en else ""
+    # us48_idm_reset logs its release lines to the console; a hang is then located by the last one
+    _, out = u.run(f"insmod {mod}/us48_idm_reset.ko{clk}; insmod {mod}/pl330.ko; dmesg | grep -E 'us48_idm|pl330' | tail -n 6",
+                   limit=A1_LIMIT_S)
+    after = devmem(u, idm)
+    if not DRY and after & 1:
+        u.run("rmmod pl330; rmmod us48_idm_reset")
+        return "FAIL", f"idm_reset before=0x{before:x} after=0x{after:x} still held: {out.strip()[-160:]!r}"
+    _, out = u.run(f"insmod {mod}/dmatest.ko max_channels=1 threads_per_chan=1 iterations=20 test_buf_size=16384 timeout=1000 wait=1 run=1; "
+                   f"dmesg | grep -E 'dmatest: .*summary' | tail -n 1; rmmod dmatest; rmmod pl330; rmmod us48_idm_reset", limit=A1_LIMIT_S + 10)
     if DRY:
         return "OK", ""
     m = re.search(r"summary (\d+) tests, (\d+) failures (\d+)\.(\d+) iops (\d+) KB/s", out)
     if not m:
-        return "FAIL", f"idm_reset=0x{rst:x} no dmatest summary: {out.strip()[-120:]!r}"
-    return ("OK" if m[2] == "0" else "FAIL"), f"idm_reset=0x{rst:x} tests={m[1]} failures={m[2]} iops={m[3]} KBps={m[5]}"
+        return "FAIL", f"idm_reset before=0x{before:x} after=0x{after:x} no dmatest summary: {out.strip()[-120:]!r}"
+    return ("OK" if m[2] == "0" else "FAIL"), f"idm_reset before=0x{before:x} after=0x{after:x} tests={m[1]} failures={m[2]} iops={m[3]} KBps={m[5]}"
 
 
 def t_memory(u, a):
@@ -243,11 +245,13 @@ def t_wdt(u, a):
 def t_flash(u, a):
     if u.name == "a2":
         return "N/A", "unit 1 has no flash on QSPI (docs/a2.md)"
-    _, out = u.run("head -n 3 /proc/mtd; us48bench rd /dev/mtd0ro 1048576")
+    cru = DB.addr("cru.CONTROL")
+    _, out = u.run(f"head -n 3 /proc/mtd; devmem 0x{cru:x} 32; us48bench rd /dev/mtd0ro 1048576")
     if DRY:
         return "OK", ""
     m = re.search(r"MBps=([\d.]+)", out)
-    return ("OK" if m else "FAIL"), f"mtd0 1MiB MBps={m[1] if m else '?'}"
+    c = re.search(r"^(0x[0-9a-fA-F]+)\s*$", out, re.M)  # QSPI_CLK_SEL bits 2:1
+    return ("OK" if m else "FAIL"), f"mtd0 1MiB MBps={m[1] if m else '?'} cru_control={c[1] if c else '?'}"
 
 
 def t_buses(u, a):
@@ -303,7 +307,7 @@ def main() -> int:
     ap.add_argument("item", choices=[*TESTS, "all"])
     ap.add_argument("--unit", choices=("a1", "a2"), default="a1")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--idm-release", action="store_true", help="dma: write 0 to dmac_idm.RESET_CONTROL if it reads 1")
+    ap.add_argument("--idm-clk-en", action="store_true", help="dma: load us48_idm_reset with clk_en=1 (set IO_CONTROL_DIRECT bit 0 before the release)")
     ap.add_argument("--mhz", type=int, default=1000, help="clock: reference ARM MHz (1000 accepted on both units)")
     ap.add_argument("--secs", type=int, default=2, help="timers: tick window")
     ap.add_argument("--mem-limit", type=float, default=None, help="memory: limit in s (default a1 20, a2 60; unmeasured, first run sets it)")

@@ -262,11 +262,12 @@ def build_tools(jobs: int, stage: Path) -> None:
         run([f"{CROSS}gcc", *ARCH_FLAGS, "-c", str(stub / "numa.c"), "-o", str(obj / "numa.o")])
         run([f"{CROSS}ar", "rcs", str(obj / "libnuma.a"), str(obj / "numa.o")])
         src = unpack(RTTESTS, WORK / "src")
+        run(["patch", "-p1", "-i", str(ROOT / "tools/rt-tests-musl.patch")], cwd=src)  # raw sched_* syscalls (musl ENOSYS)
         cyc = src / "src/cyclictest/cyclictest.c"  # musl already defines sigev_notify_thread_id
         cyc.write_text(cyc.read_text().replace("#define sigev_notify_thread_id _sigev_un._tid",
                                                "#ifndef sigev_notify_thread_id\n#define sigev_notify_thread_id _sigev_un._tid\n#endif"))
         run(["make", f"-j{jobs}", f"CC={CROSS}gcc", f"AR={CROSS}ar", "no_libcpupower=1", "PYLIB=x",
-             f"CFLAGS={' '.join(ARCH_FLAGS)} -I{stub}", f"LDFLAGS=-static -L{obj}", "cyclictest"], cwd=src)
+             f"CFLAGS={' '.join(ARCH_FLAGS)} -I{stub} -I{src}/src/include -include musl-sched.h", f"LDFLAGS=-static -L{obj}", "cyclictest"], cwd=src)
         run([f"{CROSS}strip", str(src / "cyclictest")])
         shutil.copy2(src / "cyclictest", TOOLS_BIN / "cyclictest")
     for name in ("us48bench", "rngtest"):  # our own, rebuilt every time (a second)
