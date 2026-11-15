@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push a file to the OpenWrt shell over the serial console with XMODEM-CRC (busybox `rx`), verify sha256.
+"""Push a file to the board shell over the serial console with XMODEM-CRC (busybox `rx`), verify sha256.
 
 Usage: console_push.py LOCAL REMOTE      e.g. kernel/us48-cmic/us48_cmic.ko /tmp/us48_cmic.ko
 Serial 115200 8N1 = ~11.5 kB/s wire, 1 KiB blocks + 5 B framing: a 110 kB module takes ~10 s. Per-block ACK timeout and

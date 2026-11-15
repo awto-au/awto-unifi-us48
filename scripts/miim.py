@@ -1,8 +1,8 @@
 #!/usr/bin/python3
-"""miim — read clause-22 PHY registers through the unit-0 CMIC MIIM controller, from the OpenWrt shell (devmem).
+"""miim — read clause-22 PHY registers through the unit-0 CMIC MIIM controller, from the board shell (devmem).
 
 Usage: scripts/miim.py [--phy 0x09] [--bus 0] [--internal] [--regs 0,1,2,3]
-- Unit 0 CMIC at AXI 0x48000000; offsets from regdb (CMIC_CMC0_MIIM_*). Run under OpenWrt: stock's link-scan
+- Unit 0 CMIC at AXI 0x48000000; offsets from regdb (CMIC_CMC0_MIIM_*). Run under Linux: stock's link-scan
   drives the same controller. Read-only on the PHY. Log: tmp/logs/miim.log
 """
 import argparse

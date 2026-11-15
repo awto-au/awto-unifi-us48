@@ -1,6 +1,6 @@
 # Mainline Linux port (issue #15)
 
-- Develop on latest mainline, then backport to OpenWrt 6.18 (`openwrt/`, patches-6.18/950+951).
+- Develop on latest mainline. OpenWrt (`openwrt/`, 6.18) is parked and not used by the image build.
 - Base: torvalds/linux tag `v7.4-rc1` (`BASE` in `scripts/build_mainline.py`); branch `awto/us48/mainline-v7.4-rc1` (local, not pushed). Rebased from v7.3-rc7, all 7 patches apply clean.
 - Tree: `tmp/linux-mainline` = `git worktree` of the machine-shared Linux store (#45), not a clone.
   - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
@@ -8,20 +8,54 @@
 - Series: `mainline/0001..0009-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
 - Config: `mainline/us48_defconfig` on `allnoconfig` (explicit list, ~520 `=y`; debug profile as OpenWrt `hr2/config-6.18`, #4, #64). gzip kernel + initramfs.
   - `build_mainline.py` aborts if any listed symbol is missing from the final `.config` (unmet dependency).
-  - Slot limit: `kernel0` openwrt slot = 0xE00000 B (14 MiB, `SLOTS` in `dev.py`).
+  - Slot limit: `kernel0` linux slot = 0xD00000 B (13 MiB, `SLOTS["linux"]` in `dev.py`).
 
 ## Build
 
-- `python3 scripts/build_mainline.py` — rebuilds the branch from `mainline/*.patch` (`git am`), configures, builds, packs.
-- Config: `allnoconfig` + `mainline/us48_defconfig` + initramfs from `tmp/openwrt-build/.../root-bcm53xx`
-  (staged copy + `/init -> sbin/init` + `/dev/console` node, root-owned).
-- Toolchain: OpenWrt gcc 14.4 musl (`tmp/openwrt-build/staging_dir`). mkimage from the OpenWrt host dir. Own empty `STAGING_DIR` (7.4 `-Werror=missing-include-dirs` rejects the OpenWrt wrapper's missing include dir).
-- Output: `tmp/mainline/us48-mainline.bin` = legacy uImage, load/entry `0x00018000`, zImage + appended DTB.
-  Same format as `tmp/tftp/us48-initramfs.bin`; boots via stock U-Boot `loady 0x01000000; bootm`.
+- `python3 scripts/build_mainline.py [--profile normal|debug]` (default debug) — rebuilds the branch from `mainline/*.patch` (`git am`), configures, builds, packs.
+- Config: `allnoconfig` + `mainline/us48_defconfig` + `mainline/us48_<profile>.config` + initramfs = `tmp/mainline/rootfs` (stage of `mainline/rootfs/`, below) + modules + firmware + `/dev/console` node, root-owned.
+- Kernel + modules toolchain: Fedora `arm-linux-gnu-gcc` (dnf `gcc-arm-linux-gnu binutils-arm-linux-gnu`). No mkimage: `build_mainline.py` writes the legacy uImage header itself.
+- Userspace toolchain: musl-cross-make (gcc 14.3, musl 1.2.6, soft-float, Cortex-A9; Fedora's cross gcc is hard-float only, the HR2 A9 has no VFP). Built once by `build_rootfs.py` into `/mnt/1tnvme/toolchains/musl-14.3.0-arm-cortex-a9-soft` (symlink `tmp/musl-arm`, `$US48_MUSL_TC`); mcm clone in `/mnt/1tnvme/git-mirrors/richfelker/musl-cross-make`, tarballs in `/mnt/1tnvme/toolchains/dl`.
+- Output: `tmp/mainline/us48-mainline-<profile>.bin` (build dir `build-<profile>`, stage `rootfs-<profile>`) = legacy uImage, load/entry `0x00018000`, zImage + appended DTB; boots via stock U-Boot `loady 0x01000000; bootm` or awto-uboot TFTP (`dev.py u2-boot --from tftp`).
 - `CONFIG_ARM_ATAG_DTB_COMPAT` off; DT has no bootargs, so `CONFIG_CMDLINE="console=ttyS0,115200 earlycon"` applies.
 - Flags: `--keep-branch` (build tree as is), `--save-patches` (branch -> `mainline/`), `--checkpatch`, `--dtbs-check`, `--prepare-only`.
 - Logs: `tmp/logs/build_mainline.log`, `build_mainline-make.log`, `build_mainline-dtbs_check.log`.
 - Edit flow: change `tmp/linux-mainline` on the branch, commit, `--save-patches`, commit `mainline/`.
+
+## Rootfs (`mainline/rootfs/`, `scripts/build_rootfs.py`)
+
+- Contents: busybox 1.37.0 static (`busybox.config`, regenerate with `build_rootfs.py --regen-busybox-config`), dropbear 2026.94 static multi-binary (ssh server, key only), `overlay/` copied as is.
+- Pinned tarballs (sha256 in the script) in `/mnt/1tnvme/toolchains/dl`.
+- `/init`: a2 role (DT compatible `ubnt,us48-a2`) = banner + console shell; a1 = `exec /sbin/init` (busybox, `/etc/inittab`: `sysinit` = `/etc/rc.sh`, `askfirst` shell on the console).
+- `/etc/rc.sh`: mounts, hostname `us48`, `watchdog` (feeds the SP805 awto-uboot arms, ~46 s), `syslogd -O /tmp/messages` (no SysV IPC in the kernel: no `logread`), then `/etc/rc.d/S*` in order:
+  - `S04us48-net`: insmod `us48_cmic unit0=1`, `us48_pci`, `us48_cmic_xe`; ge1/xe49/xe50 up, ge1 `192.168.25.207/24` (ip-registry `us48-boot`).
+  - `S14us48-thermal`: insmod `us48_cmic_gpio`, `us48_cmic_mspi`, `us48_pvtmon`, `us48_fan` (fans: `docs/fan.md`).
+  - `S20dropbear`: `dropbear -R -s -g -p 22`; `/root/.ssh/authorized_keys` = `mainline/rootfs/authorized_keys` (public keys).
+  - `S90us48-selftest`: `us48-selftest` in the background (`docs/selftest.md`).
+- `/usr/sbin/us48-poe`, `us48-poe-off`: present, not run at boot (bench image keeps the PoE state stock left; run `us48-poe-off` by hand).
+- Modules: `/lib/modules/<release>/*.ko` (loaded by explicit insmod order in the rc scripts; `us48_a2` and `us48_bustest` are loaded by hand). Firmware: `/lib/firmware/us48-a2*.elf` (from `tmp/a2fw`).
+- initramfs = a gen_init_cpio list of the stage (all uid/gid 0), written by `build_mainline.py`; modules are stripped of debug info.
+- Stage is rebuilt on every `build_mainline.py` run (`tmp/mainline/rootfs`); the busybox/dropbear builds are a few seconds each.
+
+## Profiles
+
+| | `normal` | `debug` (default) |
+|---|---|---|
+| Use | final performance tests | general work |
+| Fragment | `us48_normal.config` (`LOCALVERSION=-norm`, no debug options) | `us48_debug.config` (`-dbg`) |
+| Image | `tmp/mainline/us48-mainline-normal.bin` | `tmp/mainline/us48-mainline-debug.bin` |
+| Fits 13 MiB slot | must (build aborts otherwise) | not required: RAM-boots via TFTP (`dev.py u2-boot --from tftp --image ...`) |
+
+- Base `us48_defconfig` = hardware + userspace needs; CPU-speed mitigations (Spectre) stay off in both.
+- Release string differs per profile (`7.4.0-rc1-norm+` / `7.4.0-rc1-dbg+`); modules are built per build dir and staged under that release.
+- Debug fragment: memory (KFENCE, SLUB_DEBUG_ON, DEBUG_PAGEALLOC, PAGE_POISONING, INIT_ON_ALLOC/FREE, DEBUG_VM, KMEMLEAK, DEBUG_SG/LIST/PLIST/NOTIFIERS, HARDENED_USERCOPY, FORTIFY, STACKPROTECTOR_STRONG), locking (PROVE_LOCKING, PROVE_RCU, DEBUG_OBJECTS*, mutex/rwsem/spinlock/ww checks), DMA_API_DEBUG, DEBUG_SHIRQ/DEVRES, softlockup panic, hung task, WQ_WATCHDOG, UBSAN (bounds, shift, unreachable), KALLSYMS_ALL, DWARF5, ftrace, kprobes, perf, dynamic debug, debugfs, IKCONFIG, PANIC_ON_OOPS. `DEBUG_DRIVER` off (noisy).
+- Lockdep tables sized down (`LOCKDEP_*_BITS`): lowmem is 64 MiB (a2 carveout at `0x04000000` splits bank 0).
+- Not enabled:
+  - KASAN: inline panics at memmap allocation (64 MiB lowmem exhausted: kernel 35 MiB + 8 MiB shadow + 8 MiB CMA + 14 MiB memmap); outline hangs before earlycon output. Tracked in the issue.
+  - KCSAN, KMSAN, KASAN_SW_TAGS/HW_TAGS: no ARM32 support.
+  - RCU stall detector: `TINY_RCU` (SMP off) has none.
+  - `DMA_API_DEBUG_SG`, `DEBUG_TIMEKEEPING`: no longer exist in 7.4.
+  - BTF: not enabled (DWARF5 only; vmlinux debug info is not loaded to the board).
 
 ## Patches
 

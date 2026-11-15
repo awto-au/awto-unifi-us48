@@ -6,7 +6,7 @@
 - Shared core: common/bcm-cmic/ staged read-only into lib/bcm-cmic by scripts/sync_bcm_cmic.py every build.
 - Scaffold: uboot-port/ (tracked) is copied into the tree every build; uboot-port/patches/*.patch are
   applied with git apply after the tree is reset to pristine, then PATCH_MARKERS are verified.
-- Build: out of tree in tmp/uboot-build, OpenWrt cross toolchain, STAGING_DIR = empty dir.
+- Build: out of tree in tmp/uboot-build, Fedora cross gcc (arm-linux-gnu-), STAGING_DIR = empty dir.
 - Output: tmp/uboot/us48-uboot-chain.bin = legacy uImage (ARM/Linux/kernel, load = entry = TEXT_BASE)
   wrapping u-boot-dtb.bin, for stock `loady 0x01000000; bootm 0x01000000`.
 - Logs: tmp/logs/build_uboot.log.
@@ -48,8 +48,7 @@ BUILD = ROOT / "tmp/uboot-build"
 OUTDIR = ROOT / "tmp/uboot"
 OUT = OUTDIR / "us48-uboot-chain.bin"
 LOG = ROOT / "tmp/logs/build_uboot.log"
-OWRT = ROOT / "tmp/openwrt-build"
-CROSS = OWRT / "staging_dir/toolchain-arm_cortex-a9_gcc-14.4.0_musl_eabi/bin/arm-openwrt-linux-muslgnueabi-"
+CROSS = "arm-linux-gnu-"  # dnf: gcc-arm-linux-gnu binutils-arm-linux-gnu
 STAGING = OUTDIR / "staging"
 MKUIMAGE = ROOT / "scripts/mkuimage.py"
 LOADADDR = 0x04000000  # = CONFIG_TEXT_BASE in us48_defconfig, checked after the build

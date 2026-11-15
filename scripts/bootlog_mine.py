@@ -43,7 +43,7 @@ TS = re.compile(r"^\[\s*(\d+\.\d+)\]\s?")
 BANNER = re.compile(r"U-Boot usw-")
 KVER = re.compile(r"Linux version (\S+)")
 ITS = re.compile(r"soc_pcie_hw_init.*its value = (0x[0-9a-f]+)")
-CUTOFF = re.compile(r"Please press Enter|Welcome to UniFi|root@OpenWrt|built-in shell|login:|US-48-500W-US\.\S+#")
+CUTOFF = re.compile(r"Please press Enter|Welcome to UniFi|root@us48|built-in shell|login:|US-48-500W-US\.\S+#")
 ERR = re.compile(
     r"\b(error|errors|warn|warning|fail|failed|failure|abort|aborted|timeout|timed out|retry|retries|"
     r"not found|can't|cannot|unable|bug|no such|invalid|denied|ignored|nak|bad|corrupt|unsupported|"
@@ -363,12 +363,12 @@ def watch_timing(boots_cap):
     rows = []
     for b in wb:
         ev, t0 = b["ev"], b["t0"]
-        kind = "stock" if "stock-kernel" in ev else "ours" if "openwrt-kernel" in ev else "uboot-only"
+        kind = "stock" if "stock-kernel" in ev else "ours" if "linux-kernel" in ev else "uboot-only"
         d = {k: (v - t0).total_seconds() for k, v in ev.items()}
         if kind == "ours":
-            kind = "ours-flash" if d["openwrt-kernel"] < 60 else "ours-ymodem"
-            d["ours kernel->userspace"] = d.get("openwrt-userspace", 0) - d["openwrt-kernel"]
-            d["ours kernel->shell"] = d.get("openwrt-shell", 0) - d["openwrt-kernel"]
+            kind = "ours-flash" if d["linux-kernel"] < 60 else "ours-ymodem"
+            d["ours kernel->userspace"] = d.get("linux-userspace", 0) - d["linux-kernel"]
+            d["ours kernel->shell"] = d.get("linux-shell", 0) - d["linux-kernel"]
         rows.append([t0, kind, d, "unknown"])
     # align 2026-10-14 watch boots (until 11:40) to the 083748 capture by stock/ours order
     cap = [b for b in boots_cap if b.src.endswith("083748.log") and b.reset != "restart" and b.kind in ("stock", "ours")]
@@ -382,7 +382,7 @@ def watch_timing(boots_cap):
     for t0, kind, d, rt in rows:
         log(f"{t0.isoformat()} {kind} reset={rt}: " + " ".join(f"{k}={v:.0f}" for k, v in d.items()))
     keys = ["uboot-countdown", "stock-loading", "stock-kernel", "stock-init", "console-enter", "stock-login", "stock-shell",
-            "uboot-prompt", "openwrt-kernel", "openwrt-userspace", "openwrt-shell", "ours kernel->userspace", "ours kernel->shell"]
+            "uboot-prompt", "linux-kernel", "linux-userspace", "linux-shell", "ours kernel->userspace", "ours kernel->shell"]
     groups = defaultdict(list)
     for t0, kind, d, rt in rows:
         groups[(kind, rt)].append(d)

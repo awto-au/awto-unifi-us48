@@ -10,7 +10,7 @@
 | Name | Check | Verdict |
 |---|---|---|
 | `cpu` | 1 processor, implementer `0x41`, part `0xc09` (MIDR `0x414fc091`, [hardware.md](hardware.md)) | FAIL otherwise |
-| `mem` | `MemTotal` | PASS >= 200000 kB; WARN >= 100000 kB (one 128 MiB bank); else FAIL |
+| `mem` | `MemTotal` | PASS >= 150000 kB (mainline: 256 MiB minus the 64 MiB a2 carveout); WARN >= 100000 kB (one 128 MiB bank); else FAIL |
 | `thermal` | max of lm75 hwmon `temp1_input` (i2c-9 `0x48`..`0x4b`) | FAIL >= 80 C, WARN >= 70 C or < 4 sensors, FAIL if none |
 | `fan` | `us48-fan` cooling device in `/sys/class/thermal`, else hwmon `pwm1` ([fan.md](fan.md)) | FAIL if neither |
 | `i2c-tree` | `i2c-2` (CMIC master), `i2c-3..10` (PCA9548 `0x70` children) | FAIL if any missing |

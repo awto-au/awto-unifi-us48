@@ -3,7 +3,7 @@
 
 Usage: scripts/push_file.py <local> <remote> [--chunk 256]
 - Sends base64 in short `echo` lines (the console cuts lines over ~400 chars), decodes with busybox base64.
-- Needs a shell prompt on the console (OpenWrt or stock). Log: tmp/logs/push_file.log
+- Needs a shell prompt on the console (Linux or stock). Log: tmp/logs/push_file.log
 """
 import argparse
 import base64

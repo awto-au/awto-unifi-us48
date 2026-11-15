@@ -5,9 +5,10 @@
   symlink tmp/linux-store (or $US48_LINUX_STORE / --store). Created on first run; tag BASE fetched from
   the store's `origin` (mainline) if missing. Never --depth, never gc in the store.
 - Branch BRANCH (awto/us48/mainline-BASE) = BASE + mainline/*.patch; local to the store, not pushed.
-- Config: allnoconfig + mainline/us48_defconfig (explicit, every symbol checked); initramfs from the OpenWrt bcm53xx rootfs (+ /init, /dev/console).
-- Output: tmp/mainline/us48-mainline.bin = legacy uImage, load/entry 0x00018000, zImage + appended DTB
-  (same format as tmp/tftp/us48-initramfs.bin: stock U-Boot `loady 0x01000000; bootm`).
+- Config: allnoconfig + mainline/us48_defconfig + us48_<profile>.config (explicit, every symbol checked); initramfs = mainline/rootfs (scripts/build_rootfs.py: busybox + dropbear, static musl) + our modules + firmware.
+- Toolchain: Fedora cross gcc `arm-linux-gnu-` (kernel + modules); userspace toolchain is build_rootfs.py's.
+- Output: tmp/mainline/us48-mainline.bin = legacy uImage (header written here, no mkimage), load/entry 0x00018000,
+  zImage + appended DTB.
 - Logs: tmp/logs/build_mainline.log; make output tmp/logs/build_mainline-make.log.
 
 Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs-check] [--prepare-only] [--jobs N]
@@ -21,11 +22,16 @@ Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs
 
 import argparse
 import os
+import struct
+import zlib
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_rootfs  # noqa: E402
 
 
 def repo_root() -> Path:
@@ -42,9 +48,11 @@ def repo_root() -> Path:
 ROOT = repo_root()
 TREE = ROOT / "tmp/linux-mainline"
 OUTDIR = ROOT / "tmp/mainline"
-BUILD = OUTDIR / "build"
+PROFILE = "debug"  # --profile; set_profile() derives the per-profile paths
+BUILD = OUTDIR / f"build-{PROFILE}"
+STAGE = OUTDIR / f"rootfs-{PROFILE}"
 PATCHES = ROOT / "mainline"
-FRAGMENT = PATCHES / "us48_defconfig"
+BASE_FRAGMENT = PATCHES / "us48_defconfig"
 LOG = ROOT / "tmp/logs/build_mainline.log"
 MAKE_LOG = ROOT / "tmp/logs/build_mainline-make.log"
 STORE_LINK = ROOT / "tmp/linux-store"  # symlink -> machine Linux store; no host path in this repo
@@ -53,13 +61,21 @@ BRANCH = f"awto/us48/mainline-{BASE}"
 # tag fetch: objects mostly in the store already, ~300 MB worst case at >=1 MB/s; checkout of ~96k files ~60 s
 FETCH_TIMEOUT, WORKTREE_TIMEOUT = 600, 300
 DTB = "broadcom/bcm53344-ubnt-unifi-us-48-500w.dtb"
-OWRT = ROOT / "tmp/openwrt-build"
-CROSS = OWRT / "staging_dir/toolchain-arm_cortex-a9_gcc-14.4.0_musl_eabi/bin/arm-openwrt-linux-muslgnueabi-"
-MKIMAGE = OWRT / "staging_dir/host/bin/mkimage"
-ROOTFS = OWRT / "build_dir/target-arm_cortex-a9_musl_eabi/root-bcm53xx"
+CROSS = "arm-linux-gnu-"  # dnf: gcc-arm-linux-gnu binutils-arm-linux-gnu
 VENV_BIN = ROOT / "tmp/dtschema-venv/bin"
+SLOT_BYTES = 0xD00000  # dev.py SLOTS["linux"]: 13 MiB
 LOADADDR = "0x00018000"  # stock U-Boot writes ATAGs at 0x8000 after copying the image (docs/uboot.md)
 NICE = ["nice", "-n", "19", "ionice", "-c3"]
+
+
+def set_profile(p: str) -> None:
+    global PROFILE, BUILD, STAGE
+    PROFILE, BUILD, STAGE = p, OUTDIR / f"build-{p}", OUTDIR / f"rootfs-{p}"
+
+
+def fragment_text() -> str:
+    """Base defconfig + the profile fragment (mainline/us48_<profile>.config)."""
+    return BASE_FRAGMENT.read_text() + (PATCHES / f"us48_{PROFILE}.config").read_text()
 
 
 def log(msg: str) -> None:
@@ -156,11 +172,7 @@ def checkpatch() -> int:
 
 
 def make_env(venv: bool = False) -> dict:
-    # Own empty staging dir: the OpenWrt wrapper adds $STAGING_DIR/usr/include, and 7.4's -Werror=missing-include-dirs
-    # rejects it when absent (OpenWrt's staging_dir has none).
-    staging = ROOT / "tmp/mainline/staging"
-    (staging / "usr/include").mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, ARCH="arm", CROSS_COMPILE=str(CROSS), STAGING_DIR=str(staging))
+    env = dict(os.environ, ARCH="arm", CROSS_COMPILE=CROSS)
     if venv:
         env["PATH"] = f"{VENV_BIN}:{env['PATH']}"
     return env
@@ -183,51 +195,41 @@ def dtbs_check(jobs: int) -> int:
     return rc or (1 if findings else 0)
 
 
-def stage_rootfs() -> Path:
-    """OpenWrt rootfs + /init -> sbin/init + a /dev/console node; returns the INITRAMFS_SOURCE value."""
-    stage = OUTDIR / "rootfs"
-    if stage.exists():
-        shutil.rmtree(stage)
-    shutil.copytree(ROOTFS, stage, symlinks=True)
-    ov = ROOT / "openwrt/files"	# our overlay (init scripts, tools): regular files only, stage keeps its rc.d links
-    for f in ov.rglob("*"):
-        if f.is_file() and not f.is_symlink():
-            dst = stage / f.relative_to(ov)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.unlink(missing_ok=True)
-            shutil.copy2(f, dst)
-    link = stage / "etc/rc.d/S14us48-thermal"	# fan drivers (#19); not in the OpenWrt package's enabled list
-    link.unlink(missing_ok=True)
-    link.symlink_to("../init.d/us48-thermal")
-    # OpenWrt's 6.18 kmods cannot load into this kernel; dropping them keeps the image inside the 14 MiB slot.
-    shutil.rmtree(stage / "lib/modules", ignore_errors=True)
-    rel = BUILD / "include/config/kernel.release"
-    if rel.exists():	# empty module dir: OpenWrt's insmod/kmodloader refuses to run without lib/modules/<release>
-        (stage / "lib/modules" / rel.read_text().strip()).mkdir(parents=True, exist_ok=True)
-    for pat in ("libbfd*", "libopcodes*", "libctf*", "libsframe*"):	# binutils libs of the debug set: ~800 kB xz
-        for f in (stage / "usr/lib").glob(pat):
-            f.unlink()
-    # Bench image: keep the PoE state stock left (cameras stay powered for link/RX tests); production keeps poe-off.
-    for f in (stage / "etc/rc.d").glob("S*us48-poe-off"):
-        f.unlink()
+def stage_rootfs() -> str:
+    """mainline/rootfs (busybox + dropbear + overlay) + firmware + a /dev/console node; returns the INITRAMFS_SOURCE value."""
+    stage = STAGE
+    build_rootfs.build(stage, os.cpu_count() or 4)
     for name in ("us48-a2.elf", "us48-a2-bustest.elf", "us48-a2-bustest-nommu.elf"):	# scripts/build_a2fw.py; remoteproc loads /lib/firmware/<name>
         fw = ROOT / "tmp/a2fw" / name
         if fw.exists():
-            (stage / "lib/firmware").mkdir(parents=True, exist_ok=True)
             shutil.copy2(fw, stage / "lib/firmware" / fw.name)
-    if not (stage / "init").exists():
-        (stage / "init").symlink_to("sbin/init")
-    lst = OUTDIR / "initramfs.list"
-    lst.write_text("nod /dev/console 0600 0 0 c 5 1\n")
-    return f"{stage} {lst}"
+    return str(write_initramfs_list(stage))
+
+
+def write_initramfs_list(stage: Path) -> Path:
+    """gen_init_cpio list of the stage, everything uid/gid 0 (the dir source keeps the host owner) + /dev/console."""
+    lst = OUTDIR / f"initramfs-{PROFILE}.list"
+    out = []
+    for f in sorted(stage.rglob("*")):
+        rel = "/" + str(f.relative_to(stage))
+        mode = f"{f.lstat().st_mode & 0o7777:04o}"
+        if f.is_symlink():
+            out.append(f"slink {rel} {os.readlink(f)} {mode} 0 0")
+        elif f.is_dir():
+            out.append(f"dir {rel} {mode} 0 0")
+        else:
+            out.append(f"file {rel} {f} {mode} 0 0")
+    out.append("nod /dev/console 0600 0 0 c 5 1")  # after its parent dir
+    lst.write_text("\n".join(out) + "\n")
+    return lst
 
 
 def configure(jobs: int) -> None:
     """allnoconfig + mainline/us48_defconfig (+ initramfs); aborts if any requested symbol is missing from the result."""
     BUILD.mkdir(parents=True, exist_ok=True)
-    frag = OUTDIR / "us48-full.config"
+    frag = OUTDIR / f"us48-full-{PROFILE}.config"
     src = stage_rootfs()
-    frag.write_text(FRAGMENT.read_text() + f'CONFIG_INITRAMFS_SOURCE="{src}"\n'
+    frag.write_text(fragment_text() + f'CONFIG_INITRAMFS_SOURCE="{src}"\n'
                     "CONFIG_INITRAMFS_ROOT_UID=0\nCONFIG_INITRAMFS_ROOT_GID=0\n")
     env = make_env()
     env["KCONFIG_ALLCONFIG"] = str(frag)
@@ -276,9 +278,10 @@ def build_modules(jobs: int, stage: bool = True) -> None:
         for ko in kos:
             log(f"{ko} ({(mod / ko).stat().st_size} B)")
             if stage:
-                dst = OUTDIR / "rootfs/lib/us48"
+                dst = STAGE / "lib/modules" / (BUILD / "include/config/kernel.release").read_text().strip()
                 dst.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(mod / ko, dst / ko)
+                run([f"{CROSS}strip", "--strip-debug", str(dst / ko)])  # DWARF would bloat the initramfs
                 log(f"{ko} staged into the initramfs rootfs ({dst})")
 
 
@@ -287,7 +290,7 @@ def configure_modules_only() -> None:
     BUILD.mkdir(parents=True, exist_ok=True)
     frag = BUILD / "us48-modules.config"
     # no initramfs here: its symbols (hidden without INITRAMFS_SOURCE) are left out
-    frag.write_text("".join(l for l in FRAGMENT.read_text().splitlines(True) if "INITRAMFS" not in l))
+    frag.write_text("".join(l for l in fragment_text().splitlines(True) if "INITRAMFS" not in l))
     env = make_env()
     env["KCONFIG_ALLCONFIG"] = str(frag)
     run(NICE + ["make", f"O={BUILD}", "allnoconfig"], out=MAKE_LOG, env=env)
@@ -298,17 +301,34 @@ def configure_modules_only() -> None:
         sys.exit(3)
 
 
+def uimage(data: bytes, name: str) -> bytes:
+    """Legacy U-Boot uImage (IH_OS_LINUX, IH_ARCH_ARM, IH_TYPE_KERNEL, no compression), load = entry = LOADADDR."""
+    addr = int(LOADADDR, 16)
+    stamp = int(time.time())
+
+    def header(hcrc: int) -> bytes:
+        return struct.pack(">IIIIIIIBBBB32s", 0x27051956, hcrc, stamp, len(data), addr, addr, zlib.crc32(data),
+                           5, 2, 2, 0, name.encode()[:31])
+
+    return header(zlib.crc32(header(0))) + data
+
+
 def pack() -> Path:
     boot = BUILD / "arch/arm/boot"
     zimage, dtb = boot / "zImage", boot / "dts" / DTB
     OUTDIR.mkdir(parents=True, exist_ok=True)
-    cat = OUTDIR / "zImage-dtb"
+    cat = OUTDIR / f"zImage-dtb-{PROFILE}"
     cat.write_bytes(zimage.read_bytes() + dtb.read_bytes())
-    out = OUTDIR / "us48-mainline.bin"
+    out = OUTDIR / f"us48-mainline-{PROFILE}.bin"
     ver = (BUILD / "include/config/kernel.release").read_text().strip()
-    run([str(MKIMAGE), "-A", "arm", "-O", "linux", "-T", "kernel", "-C", "none", "-a", LOADADDR, "-e", LOADADDR,
-         "-n", f"US-48 mainline {ver}", "-d", str(cat), str(out)], out=MAKE_LOG)
+    out.write_bytes(uimage(cat.read_bytes(), f"US-48 mainline {ver}"))
     log(f"output: {out.relative_to(ROOT)} ({out.stat().st_size} bytes), zImage {zimage.stat().st_size}, dtb {dtb.stat().st_size}")
+    if out.stat().st_size > SLOT_BYTES:
+        msg = f"{out.name} {out.stat().st_size} B exceeds the {SLOT_BYTES} B kernel0 linux slot"
+        if PROFILE == "normal":
+            log("abort: " + msg)
+            sys.exit(4)
+        log("note: " + msg + " (debug image is RAM-booted via TFTP only)")
     return out
 
 
@@ -316,6 +336,8 @@ def main() -> int:
     global TREE, BUILD, MAKE_LOG
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
+    ap.add_argument("--profile", choices=("normal", "debug"), default="debug",
+                    help="debug (default): every check; normal: no debug options, must fit the slot")
     ap.add_argument("--keep-branch", action="store_true")
     ap.add_argument("--save-patches", action="store_true")
     ap.add_argument("--checkpatch", action="store_true")
@@ -324,10 +346,11 @@ def main() -> int:
     ap.add_argument("--module-only", action="store_true",
                     help="build the out-of-tree modules (pci, a2, cmic, gpio, mspi, pvtmon, fan); staged into the rootfs unless --build-dir is given")
     ap.add_argument("--tree", type=Path, help="kernel source tree (default tmp/linux-mainline)")
-    ap.add_argument("--build-dir", type=Path, help="private kernel build dir (default tmp/mainline/build); skips staging")
+    ap.add_argument("--build-dir", type=Path, help="private kernel build dir (default tmp/mainline/build-<profile>); skips staging")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),
                     help="machine Linux store (default $US48_LINUX_STORE, else tmp/linux-store)")
     a = ap.parse_args()
+    set_profile(a.profile)
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUTDIR.mkdir(parents=True, exist_ok=True)
     if a.tree:
@@ -355,15 +378,12 @@ def main() -> int:
         log("prepared")
         return 0
     build_modules(a.jobs)
-    # modules_prepare has just written the final kernel.release: kmodloader (insmod) needs lib/modules/<that release>
-    rel = (BUILD / "include/config/kernel.release").read_text().strip()
-    shutil.rmtree(OUTDIR / "rootfs/lib/modules", ignore_errors=True)
-    (OUTDIR / "rootfs/lib/modules" / rel).mkdir(parents=True)
+    write_initramfs_list(STAGE)  # now includes the modules
     t0 = time.monotonic()
     kmake("zImage", DTB, jobs=a.jobs)
     log(f"make done in {time.monotonic() - t0:.0f} s")
     rel = (BUILD / "include/config/kernel.release").read_text().strip()
-    if not (OUTDIR / "rootfs/lib/modules" / rel).is_dir():  # kmodloader (insmod) needs /lib/modules/<running release>
+    if not (STAGE / "lib/modules" / rel).is_dir():  # rc scripts insmod from /lib/modules/<running release>
         log(f"abort: staged module dir lib/modules/{rel} missing: release changed after staging")
         sys.exit(4)
     pack()

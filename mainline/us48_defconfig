@@ -38,7 +38,7 @@ CONFIG_BLK_DEV_INITRD=y
 CONFIG_RD_GZIP=y
 CONFIG_KERNEL_GZIP=y
 CONFIG_INITRAMFS_COMPRESSION_GZIP=y
-# Core / OpenWrt userspace (procd, ubus, netifd, dropbear, dnsmasq, odhcpd, sysntpd, urngd)
+# Core + userspace (busybox init, dropbear: mainline/rootfs)
 CONFIG_EXPERT=y
 CONFIG_PRINTK=y
 CONFIG_BUG=y
@@ -135,28 +135,7 @@ CONFIG_PINCTRL_IPROC_GPIO=y
 CONFIG_MFD_SYSCON=y
 CONFIG_POWER_RESET=y
 CONFIG_POWER_RESET_SYSCON=y
-# Debug profile for the switch-driver work (#4), same set as OpenWrt hr2/config-6.18
-CONFIG_DEBUG_KERNEL=y
-CONFIG_DEBUG_FS=y
-CONFIG_DEBUG_FS_ALLOW_ALL=y
-CONFIG_DYNAMIC_DEBUG=y
-CONFIG_DEBUG_ATOMIC_SLEEP=y
-CONFIG_DEBUG_LIST=y
-CONFIG_DEBUG_MUTEXES=y
-CONFIG_DEBUG_SPINLOCK=y
-CONFIG_DETECT_HUNG_TASK=y
-CONFIG_SCHED_STACK_END_CHECK=y
-CONFIG_FTRACE=y
-CONFIG_EVENT_TRACING=y
-CONFIG_KPROBES=y
-CONFIG_KPROBE_EVENTS=y
-CONFIG_PERF_EVENTS=y
-CONFIG_KALLSYMS=y
-CONFIG_KALLSYMS_ALL=y
-CONFIG_IKCONFIG=y
-CONFIG_IKCONFIG_PROC=y
-CONFIG_MAGIC_SYSRQ=y
-CONFIG_MAGIC_SYSRQ_SERIAL=y
+# Debug options live in us48_debug.config; us48_normal.config has none (docs/mainline.md profiles)
 CONFIG_PRINTK_TIME=y
-# Fixed kernel.release: the initramfs module dir must not change with each commit (#64)
+# Fixed kernel.release per profile: LOCALVERSION from the profile fragment, no git hash (#64)
 # CONFIG_LOCALVERSION_AUTO is not set

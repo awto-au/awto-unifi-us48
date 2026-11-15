@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only SFP identity + DDM of a cage over ssh (mainline/OpenWrt, i2c-tools on the board).
+"""Read-only SFP identity + DDM of a cage over ssh (mainline, i2c-tools on the board).
 
 Usage: sfp_ddm.py [BUS ...]    Linux i2c bus numbers of the mux channels, default 4 (SFP+ 2); 3 = SFP+ 1 (DAC: no 0x51)
 Host: $US48_SSH (default root@192.168.25.207). Reads A0h vendor/PN/SN (bytes 20-35, 40-55, 68-83) and A2h 96-105 (SFF-8472, external calibration).

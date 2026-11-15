@@ -387,7 +387,7 @@ def ymodem_send(sess: Session, path: Path, progress=None) -> None:
 
 
 def xmodem_send(sess: Session, path: Path, progress=None) -> None:
-    """XMODEM-CRC (1K blocks, no header block): receiver is busybox `rx FILE` on the OpenWrt shell."""
+    """XMODEM-CRC (1K blocks, no header block): receiver is busybox `rx FILE` on the board shell."""
     data = path.read_bytes()
     i = sess.buf.rfind(bytes([CRC_REQ]))
     sess.buf = sess.buf[i:] if i >= 0 else b""

@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""build_rootfs — minimal initramfs rootfs for the mainline image (busybox + dropbear, static musl, no OpenWrt).
+
+- Toolchain: musl-cross-make (clone in /mnt/1tnvme/git-mirrors/richfelker) builds gcc + musl, soft-float EABI,
+  Cortex-A9, once into /mnt/1tnvme/toolchains/ (symlink tmp/musl-arm, or $US48_MUSL_TC). Kernel + modules use the
+  Fedora `arm-linux-gnu-gcc` (build_mainline.py). Fedora's cross gcc is hard-float only (VFP libgcc): unusable here.
+- Sources: busybox/dropbear tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
+- Our files: mainline/rootfs/{busybox.config,authorized_keys,overlay/}; overlay is copied over the stage as is.
+- Stage: tmp/mainline/rootfs (build_mainline.py adds modules + firmware, then packs it as the initramfs).
+- Log: tmp/logs/build_rootfs.log.
+
+Usage: build_rootfs.py [--toolchain-only] [--stage DIR] [--regen-busybox-config] [--jobs N]
+"""
+
+import argparse
+import hashlib
+import os
+import select
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+
+def repo_root() -> Path:
+    env = os.environ.get("AWTO_UNIFI_US48_REPO")
+    if env:
+        return Path(env)
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                       cwd=Path(__file__).resolve().parent)
+    if r.returncode == 0 and r.stdout.strip():
+        return Path(r.stdout.strip())
+    return Path(__file__).resolve().parent.parent
+
+
+ROOT = repo_root()
+SRC = ROOT / "mainline/rootfs"
+WORK = ROOT / "tmp/rootfs"
+LOG = ROOT / "tmp/logs/build_rootfs.log"
+TC = Path(os.environ.get("US48_MUSL_TC", ROOT / "tmp/musl-arm"))  # symlink -> /mnt/1tnvme/toolchains/musl-<ver>-arm
+TC_STORE = Path("/mnt/1tnvme/toolchains")
+MCM_STORE = Path("/mnt/1tnvme/git-mirrors/richfelker/musl-cross-make")
+MCM_TARGET = "arm-linux-musleabi"
+MCM_GCC = "14.3.0"  # in mcm's hashes/; 9.4.0 default does not build with a current host gcc
+CROSS = str(TC / "bin" / (MCM_TARGET + "-"))
+ARCH_FLAGS = ["-mcpu=cortex-a9", "-mfloat-abi=soft", "-Os"]  # HR2 A9: no VFP
+STALL_S = 60.0     # host-process rule: no output line for 60 s = hung
+TOOLCHAIN_STALL_S = 300.0  # gcc/binutils configure + patching are silent for minutes under load
+TOOLCHAIN_OVERALL_S = 3600.0  # gcc + binutils + musl build, a guess until measured (no 60 s stall expected)
+OVERALL_S = 900.0  # backstop per command; no measured cold worst case yet (musl ~1 min, busybox ~2 min expected)
+
+BUSYBOX = ("busybox-1.37.0", "https://busybox.net/downloads/busybox-1.37.0.tar.bz2",
+           "3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4")
+DROPBEAR = ("dropbear-2026.94", "https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2",
+            "e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81")
+
+# busybox: defconfig + these (symbol -> y/n/value); applied by --regen-busybox-config, result is committed
+BUSYBOX_OPTS = {
+    "STATIC": "y", "PIE": "n", "BUILD_LIBBUSYBOX": "n", "FEATURE_SHARED_BUSYBOX": "n",
+    "EXTRA_COMPAT": "n", "DEBUG": "n", "SELINUX": "n", "FEATURE_PREFER_APPLETS": "n",
+    "TC": "n",  # needs linux/pkt_sched.h CBQ, gone from 6.8+ uapi
+    "I2CGET": "y", "I2CSET": "y", "I2CDUMP": "y", "I2CDETECT": "y", "I2CTRANSFER": "y",
+    "DEVMEM": "y", "SYSLOGD": "y", "LOGREAD": "n", "FEATURE_IPC_SYSLOG": "n",  # no SysV IPC in the kernel: syslogd writes /tmp/messages
+     "LOGGER": "y",
+    "FEATURE_SYSLOGD_CFG": "n", "KLOGD": "n", "TASKSET": "y", "FEATURE_TASKSET_FANCY": "y",
+    "NC": "y", "TIMEOUT": "y", "LSPCI": "y", "MICROCOM": "n", "IFCONFIG": "y", "IP": "y", "IPADDR": "y",
+    "IPLINK": "y", "IPROUTE": "y", "FEATURE_IP_ADDRESS": "y", "FEATURE_IP_LINK": "y", "FEATURE_IP_ROUTE": "y",
+    "RX": "y", "WATCHDOG": "y", "SHA1_HWACCEL": "n", "SHA256_HWACCEL": "n", "INSMOD": "y", "RMMOD": "y", "LSMOD": "y", "MODPROBE": "n", "DEPMOD": "n", "MODINFO": "n",
+    "HWCLOCK": "n", "UDHCPC": "n", "UDHCPD": "n", "DHCPRELAY": "n", "DUMPLEASES": "n",
+    "INETD": "n", "TELNETD": "n", "TELNET": "n", "FTPD": "n", "HTTPD": "n", "NTPD": "n",
+    "SH_IS_ASH": "y", "ASH": "y", "ASH_JOB_CONTROL": "y", "FEATURE_EDITING": "y",
+    "INIT": "y", "FEATURE_USE_INITTAB": "y", "FEATURE_INIT_SYSLOG": "n", "HALT": "y", "POWEROFF": "y", "REBOOT": "y",
+    "FEATURE_SYSTEMD": "n", "FEATURE_INSTALLER": "n", "PING": "y", "TRACEROUTE": "n", "WGET": "n",
+}
+
+
+def log(msg: str) -> None:
+    line = f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {msg}"
+    print(line, flush=True)
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(line + "\n")
+
+
+def run(cmd, cwd=None, env=None, check=True, overall_s=None, stall_s=None) -> int:
+    """Run with output to the log; killed after STALL_S without an output line or OVERALL_S in total."""
+    log("$ " + " ".join(map(str, cmd)))
+    t0 = last = time.monotonic()
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT)
+    tail = b""
+    with LOG.open("ab") as f:
+        while True:
+            r, _, _ = select.select([p.stdout], [], [], 1.0)
+            now = time.monotonic()
+            if r:
+                line = p.stdout.readline()
+                if not line:
+                    break
+                last = now
+                f.write(line)
+                tail = line
+                continue
+            if p.poll() is not None:
+                break
+            if now - last > (stall_s or STALL_S) or now - t0 > (overall_s or OVERALL_S):
+                p.kill()
+                why = f"silent {now - last:.0f} s (limit {stall_s or STALL_S:.0f})" if now - last > (stall_s or STALL_S) else \
+                    f"over {now - t0:.0f} s (limit {overall_s or OVERALL_S:.0f})"
+                log(f"abort: {cmd[0]} {why}, loadavg {os.getloadavg()}, last line {tail[-200:]!r}")
+                sys.exit(5)
+    rc = p.wait()
+    if check and rc:
+        log(f"FAILED rc={rc}: {cmd[0]} (see {LOG.relative_to(ROOT)}, last line {tail[-200:]!r})")
+        sys.exit(rc)
+    return rc
+
+
+def fetch(spec) -> Path:
+    name, url, sha = spec
+    dl = TC_STORE / "dl"
+    dl.mkdir(parents=True, exist_ok=True)
+    f = dl / url.rsplit("/", 1)[1]
+    if not f.exists():
+        log(f"download {url}")
+        with urllib.request.urlopen(url, timeout=60) as r:  # 60 s: no data = server dead
+            f.write_bytes(r.read())
+    if hashlib.sha256(f.read_bytes()).hexdigest() != sha:
+        log(f"abort: sha256 of {f} != {sha}")
+        sys.exit(6)
+    return f
+
+
+def unpack(spec, dst: Path) -> Path:
+    """Fresh source dir WORK/<name> from the tarball."""
+    f = fetch(spec)
+    d = dst / spec[0]
+    if d.exists():
+        shutil.rmtree(d)
+    dst.mkdir(parents=True, exist_ok=True)
+    run(["tar", "-xf", str(f), "-C", str(dst)])
+    return d
+
+
+def cc_cmd() -> list:
+    return [f"{CROSS}gcc", "-static", *ARCH_FLAGS]
+
+
+def ensure_toolchain(jobs: int) -> None:
+    """gcc + musl cross toolchain via musl-cross-make into TC, once (about 20 min)."""
+    if Path(f"{CROSS}gcc").exists():
+        return
+    real = TC_STORE / f"musl-{MCM_GCC}-arm-cortex-a9-soft"
+    if TC.is_symlink() or not TC.exists():
+        TC.parent.mkdir(parents=True, exist_ok=True)
+        if TC.is_symlink():
+            TC.unlink()
+        TC.symlink_to(real)
+    work = WORK / "mcm"  # build in a copy: the store stays clean
+    if work.exists():
+        shutil.rmtree(work)
+    run(["git", "clone", "-q", str(MCM_STORE), str(work)])
+    cache = TC_STORE / "dl/mcm"  # tarballs: seeded into the copy's sources/ (mcm only downloads into its own), kept after
+    cache.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(cache, work / "sources", dirs_exist_ok=True)
+    run(["make", f"-j{jobs}", f"TARGET={MCM_TARGET}", f"GCC_VER={MCM_GCC}", "DL_CMD=curl -fsSL -o",
+         f"OUTPUT={real}", "GCC_CONFIG=--enable-languages=c --with-cpu=cortex-a9 --with-float=soft "
+         "--disable-libsanitizer --disable-libquadmath --disable-libgomp --disable-libatomic",
+         "install"], cwd=work, overall_s=TOOLCHAIN_OVERALL_S, stall_s=TOOLCHAIN_STALL_S,
+        env=dict(os.environ, CC="gcc -std=gnu17", CXX="g++ -std=gnu++17"))  # gcc 14 sources vs host gcc 16 defaults (C++20 char8_t, C23)
+    shutil.copytree(work / "sources", cache, dirs_exist_ok=True)
+    shutil.rmtree(work)
+    log(f"toolchain installed in {real}")
+
+
+def busybox_config(src: Path, regen: bool) -> None:
+    cfg = SRC / "busybox.config"
+    env = dict(os.environ)
+    if regen:
+        run(["make", "defconfig"], cwd=src, env=env)
+        lines = (src / ".config").read_text().splitlines()
+        out = []
+        for l in lines:
+            key = l.split("=")[0].removeprefix("# ").split(" ")[0]
+            if key.startswith("CONFIG_") and key[7:] in BUSYBOX_OPTS:
+                continue
+            out.append(l)
+        for k, v in BUSYBOX_OPTS.items():
+            out.append(f"CONFIG_{k}=y" if v == "y" else f"# CONFIG_{k} is not set" if v == "n" else f'CONFIG_{k}={v}')
+        (src / ".config").write_text("\n".join(out) + "\n")
+        run(["make", "oldconfig"], cwd=src, env=env)  # stdin=DEVNULL: any unanswered new symbol aborts here
+        cfg.write_text((src / ".config").read_text())
+        log(f"wrote {cfg.relative_to(ROOT)}")
+    else:
+        shutil.copy2(cfg, src / ".config")
+        run(["make", "oldconfig"], cwd=src, env=env)
+
+
+def build_busybox(jobs: int, stage: Path, regen: bool = False) -> None:
+    src = unpack(BUSYBOX, WORK / "src")
+    busybox_config(src, regen)
+    cc = " ".join(cc_cmd())
+    run(["make", f"-j{jobs}", f"CC={cc}", f"HOSTCC=gcc", f"AR={CROSS}ar", f"STRIP={CROSS}strip",
+         f"CONFIG_PREFIX={stage}", f"CROSS_COMPILE={CROSS}", "busybox", "install"], cwd=src)
+    # applet links: bin/sbin/usr/bin/usr/sbin all point at /bin/busybox (CONFIG_PREFIX install)
+    run([f"{CROSS}strip", str(stage / "bin/busybox")])
+
+
+def build_dropbear(jobs: int, stage: Path) -> None:
+    src = unpack(DROPBEAR, WORK / "src")
+    cc = " ".join(cc_cmd())
+    run(["./configure", "--host=arm-linux-gnueabi", "--disable-zlib", "--disable-pam", "--disable-lastlog",
+         "--disable-utmp", "--disable-utmpx", "--disable-wtmp", "--disable-wtmpx", "--disable-loginfunc",
+         "--disable-pututline", "--disable-pututxline", "--enable-static", f"CC={cc}"], cwd=src)
+    run(["make", f"-j{jobs}", "PROGRAMS=dropbear dropbearkey scp dbclient", "MULTI=1", "STATIC=1"], cwd=src)
+    run([f"{CROSS}strip", str(src / "dropbearmulti")])
+    dst = stage / "usr/sbin"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src / "dropbearmulti", dst / "dropbearmulti")
+    for name, d in (("dropbear", "usr/sbin"), ("dropbearkey", "usr/bin"), ("dbclient", "usr/bin"), ("scp", "usr/bin")):
+        link = stage / d / name
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.unlink(missing_ok=True)
+        link.symlink_to("/usr/sbin/dropbearmulti")  # dropbearmulti dispatches on argv[0]
+
+
+def build(stage: Path, jobs: int = os.cpu_count() or 4) -> None:
+    stage = stage.resolve()
+    """Stage = busybox + dropbear + overlay + authorized_keys. Modules/firmware are added by build_mainline.py."""
+    if stage.exists():
+        shutil.rmtree(stage)
+    for d in ("dev", "proc", "sys", "tmp", "run", "root/.ssh", "etc/dropbear", "lib/modules", "lib/firmware", "mnt"):
+        (stage / d).mkdir(parents=True, exist_ok=True)
+    ensure_toolchain(jobs)
+    build_busybox(jobs, stage)
+    build_dropbear(jobs, stage)
+    shutil.copytree(SRC / "overlay", stage, symlinks=True, dirs_exist_ok=True)
+    keys = SRC / "authorized_keys"
+    shutil.copy2(keys, stage / "root/.ssh/authorized_keys")
+    (stage / "root").chmod(0o700)
+    (stage / "root/.ssh").chmod(0o700)
+    (stage / "root/.ssh/authorized_keys").chmod(0o600)
+    size = sum(f.stat().st_size for f in stage.rglob("*") if f.is_file() and not f.is_symlink())
+    log(f"rootfs staged in {stage}: {size} B of files (before modules/firmware)")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--stage", type=Path, default=ROOT / "tmp/mainline/rootfs")
+    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--toolchain-only", action="store_true", help="build the musl cross toolchain, then exit")
+    ap.add_argument("--regen-busybox-config", action="store_true",
+                    help="rewrite mainline/rootfs/busybox.config from busybox defconfig + BUSYBOX_OPTS, then exit")
+    a = ap.parse_args()
+    if a.regen_busybox_config:
+        ensure_toolchain(a.jobs)
+        src = unpack(BUSYBOX, WORK / "src")
+        busybox_config(src, regen=True)
+        return 0
+    if a.toolchain_only:
+        ensure_toolchain(a.jobs)
+        return 0
+    build(a.stage, a.jobs)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

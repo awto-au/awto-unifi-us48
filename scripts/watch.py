@@ -34,13 +34,13 @@ RULES = [
     (rb"Ready for binary \(ymodem\)", "uboot-loady"),
     (rb"Verifying 'kernel1'", "stock-loading"),
     (rb"Linux version 3\.6\.5", "stock-kernel"),
-    (rb"Linux version 6\.|Linux version 7\.", "openwrt-kernel"),
+    (rb"Linux version 6\.|Linux version 7\.", "linux-kernel"),
     (rb"cfgmtd", "stock-init"),
-    (rb"Please press Enter to activate this console", "console-enter"),  # printed by stock AND OpenWrt
+    (rb"Please press Enter to activate this console", "console-enter"),  # printed by stock AND ours
     (rb"US-48-500W(-US)?\.[0-9.]+[#$] ", "stock-shell"),
     (rb"US-48-500W login:", "stock-login"),
-    (rb"root@OpenWrt", "openwrt-shell"),
-    (rb"BusyBox v1\.3[0-9]", "openwrt-userspace"),
+    (rb"root@us48", "linux-shell"),
+    (rb"BusyBox v1\.3[0-9]", "linux-userspace"),
 ]
 
 

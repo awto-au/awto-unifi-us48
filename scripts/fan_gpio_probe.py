@@ -1,8 +1,8 @@
 #!/usr/bin/python3
-"""fan_gpio_probe — drive candidate GPIO pins for 'fan power' from the OpenWrt shell, one announced step at a time.
+"""fan_gpio_probe — drive candidate GPIO pins for 'fan power' from the board shell, one announced step at a time.
 
 Usage: scripts/fan_gpio_probe.py [--hold S]
-- Needs OpenWrt on the console (busybox devmem). Sets us48_fan pwm1_enable=1 (manual) first, restores the old value at the end.
+- Needs Linux on the console (busybox devmem). Sets us48_fan pwm1_enable=1 (manual) first, restores the old value at the end.
   Manual pins the level: the driver writes a frame (and CMIC GP pins) only on a level change or a fail-level event.
 - Candidates: CMIC_GP1 of unit 0 / unit 1 / both -> 1; CCA GPIO 4, 5, 10 -> opposite of their current level.
 - Each step restores the registers. GP2/GP3 (SFP TX-disable) are not touched. Log: tmp/logs/fan_gpio_probe.log

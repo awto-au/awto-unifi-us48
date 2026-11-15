@@ -1,0 +1,4 @@
+#!/bin/sh
+# ssh: key only (/root/.ssh/authorized_keys), host keys generated on first connection (-R).
+mkdir -p /etc/dropbear
+dropbear -R -s -g -p 22

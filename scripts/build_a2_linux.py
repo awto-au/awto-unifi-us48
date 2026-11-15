@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """build_a2_linux — package Linux for a2 (unit 1 Cortex-A9) from the single mainline build (#79).
 
-- One kernel for a1 and a2 (scripts/build_mainline.py, tmp/mainline/build). This script only packages:
+- One kernel for a1 and a2 (scripts/build_mainline.py, tmp/mainline/build-debug). This script only packages:
   zImage copy (no appended DTB: a2 gets its DTB in r2), us48-a2.dtb from mainline/a2/us48-a2.dts, checks.
 - DTS addresses = hwdb (scripts/hwdb.py), passed to cpp as A2_* macros; no second copy in the DTS.
 - Initramfs is built into the zImage (same one as a1; /init picks the role from the DT compatible).
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import hwdb  # noqa: E402
 
-BUILD = ROOT / "tmp/mainline/build"
+BUILD = ROOT / "tmp/mainline/build-debug"
 TREE = ROOT / "tmp/linux-mainline"
 OUT = ROOT / "tmp/a2"
 DTS = ROOT / "mainline/a2/us48-a2.dts"

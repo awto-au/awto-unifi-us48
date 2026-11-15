@@ -115,7 +115,7 @@ def step(mhz: int, image: str | None) -> dict:
     if mhz != 1550 and run(["scripts/u2_ramboot.py", "--image", f"tmp/uboot/us48-uboot-cpu{mhz}.bin"], 120):
         res["first_error"] = "variant ramboot failed"
         return res
-    img = image or "tmp/mainline/us48-mainline.bin"
+    img = image or "tmp/mainline/us48-mainline-debug.bin"
     if run(["scripts/dev.py", "u2-boot", "--from", "tftp", "--image", img], 150):
         res["first_error"] = "mainline u2-boot failed"
         return res

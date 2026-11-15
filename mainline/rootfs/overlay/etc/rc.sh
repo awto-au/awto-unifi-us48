@@ -1,0 +1,15 @@
+#!/bin/sh
+# Boot sequence: base mounts, syslogd, then /etc/rc.d/S* in order (plain scripts, argument "start").
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
+hostname us48
+watchdog -t 5 -T 30 /dev/watchdog	# SP805 armed by awto-uboot (~46 s); feed every 5 s, 30 s margin on a hang
+syslogd -O /tmp/messages -s 256	# no SysV IPC in the kernel, so no logread; before the rc.d scripts so their logger lines land
+for s in /etc/rc.d/S*; do
+	[ -x "$s" ] && "$s" start
+done

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Fan + temperature drivers (kernel/us48-{cmic-gpio,cmic-mspi,pvtmon,fan}); policy is in the DT thermal zones (#19).
+# Quiet rule + switch: docs/fan.md. Without this the fans keep awto-uboot's level. us48_pci is loaded by S04us48-net.
+
+M=/lib/modules/$(uname -r)
+exec 2>/dev/kmsg
+for m in us48_cmic_gpio us48_cmic_mspi us48_pvtmon us48_fan; do
+	insmod $M/$m.ko || echo "us48-thermal: insmod $m failed rc=$?" > /dev/kmsg
+done

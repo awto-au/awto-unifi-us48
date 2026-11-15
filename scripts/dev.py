@@ -56,16 +56,16 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import console  # noqa: E402
 
-# $US48_IMAGE overrides, e.g. tmp/mainline/us48-mainline.bin (#15).
-IMAGE = Path(os.environ.get("US48_IMAGE") or REPO / "tmp/tftp/us48-initramfs.bin").resolve()
+# $US48_IMAGE overrides (default: scripts/build_mainline.py output).
+IMAGE = Path(os.environ.get("US48_IMAGE") or REPO / "tmp/mainline/us48-mainline-debug.bin").resolve()
 LOAD_ADDR = "0x01000000"  # U-Boot scratch RAM, docs/uboot.md §6
 
 # --------------------------------------------------------------------------
 # STEPS — command name -> (summary, argv, accepts_extra_args). [] = not configured (SKIP).
 # --------------------------------------------------------------------------
 STEPS: dict[str, tuple[str, list[str], bool]] = {
-    "build":     ("build the OpenWrt initramfs (scripts/build_openwrt.py)",
-                  [sys.executable, str(REPO / "scripts/build_openwrt.py")], True),
+    "build":     ("build the mainline image (scripts/build_mainline.py)",
+                  [sys.executable, str(REPO / "scripts/build_mainline.py")], True),
     "test":      ("run the test suite", [], True),
     "lint":      ("static analysis", [], True),
     "fmt-check": ("formatting check (no writes)", [], False),
@@ -311,7 +311,7 @@ def _classify_tail(raw: bytes) -> str | None:
     if e.endswith(b"activate this console."):
         return "press-enter"
     if e.endswith((b"#", b"$")):
-        return "openwrt" if b"OpenWrt" in t else "stock-shell"
+        return "linux" if b"@us48" in t else "stock-shell"
     i = t.rfind(b"Hit any key")
     if i >= 0 and re.fullmatch(rb"Hit any key to stop autoboot:[\s\x08\d]*", t[i:]):
         return "countdown"
@@ -321,7 +321,7 @@ def _classify_tail(raw: bytes) -> str | None:
 def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
     """Passive first: listen, never type into a booting board. Ctrl-C only after 2 s of silence.
 
-    Returns uboot | countdown | stock-login | stock-shell | openwrt | press-enter | reset-loop | silent | unknown.
+    Returns uboot | countdown | stock-login | stock-shell | linux | press-enter | reset-loop | silent | unknown.
     Ctrl-C is harmless at u-boot>, a shell and a login prompt, and each answers with a prompt we can read.
     """
     t0, acc, ever = time.monotonic(), b"", False
@@ -494,7 +494,7 @@ def _to_uboot(s: console.Session) -> bool:
     if st == "ourboot":
         log("in our second-stage U-Boot: reset back to stock U-Boot")
         s.send_line("reset")
-    elif st in ("stock-login", "stock-shell", "openwrt", "press-enter") and _serial_reboot(s):
+    elif st in ("stock-login", "stock-shell", "linux", "press-enter") and _serial_reboot(s):
         pass
     elif subprocess.run(["ping", "-c", "1", "-W", "1", SWITCH_IP], capture_output=True).returncode == 0:
         log("rebooting stock firmware over SSH")
@@ -544,11 +544,11 @@ KERNEL0_LEN = 0xF00000
 # kernel0 holds two images: our U-Boot (uImage, 2 MiB slot, Dan 2026-11-15) at the slot start and the kernel (13 MiB) after it.
 # Stock U-Boot loads either with sf read + bootm; u-boot, bootsel (0x1ee0000), kernel1, EEPROM stay untouched.
 SLOTS = {"uboot": (0x0, 0x200000, REPO / "tmp/uboot/us48-uboot-chain.bin"),
-         "openwrt": (0x200000, 0xD00000, None)}
+         "linux": (0x200000, 0xD00000, None)}
 
 
 def _slot(extra: list[str]) -> tuple[str, int, int, Path]:
-    name = extra[extra.index("--slot") + 1] if "--slot" in extra else "openwrt"
+    name = extra[extra.index("--slot") + 1] if "--slot" in extra else "linux"
     if name not in SLOTS:
         raise SystemExit(f"--slot {name}: expected one of {', '.join(SLOTS)}")
     off, length, image = SLOTS[name]
@@ -613,7 +613,7 @@ def _arm_sp805(s: console.Session, prompt: bytes | list[bytes] = PROMPT) -> bool
     return True
 
 
-def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes | list[bytes] = PROMPT) -> int:
+def _bootm_watch(s: console.Session, slot: str = "linux", prompt: bytes | list[bytes] = PROMPT) -> int:
     if not _arm_sp805(s, prompt):
         log("could not arm SP805 — not booting without a hardware watchdog", "FATAL")
         return 1
@@ -631,7 +631,7 @@ def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes | list
             s.expect([b"awto-uboot>", b"uboot-2>", b"us48-uboot>"], 20.0, "second-stage prompt")
             log(f"second-stage U-Boot prompt {time.monotonic() - t0:.1f} s after handover", "ALERT")
             return 0
-        hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "OpenWrt userspace")
+        hit = s.expect([b"Please press Enter", b"Kernel panic", b"BusyBox"], USERSPACE_BUDGET_S, "userspace")
     except console.Timeout as e:
         log(str(e), "FATAL")
         log(f"full console log: {CAPTURE_HINT}", "FATAL")
@@ -639,7 +639,7 @@ def _bootm_watch(s: console.Session, slot: str = "openwrt", prompt: bytes | list
     if hit == b"Kernel panic":
         log(f"kernel panic {time.monotonic() - t0:.1f} s after handover — see {CAPTURE_HINT}", "FATAL")
         return 1
-    log(f"OpenWrt userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
+    log(f"userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
     s.send_line("")
     s.read_idle(0.5, 3.0)
     log("power-cycle (or `reboot`) returns to stock slot kernel1", "ALERT")
@@ -696,7 +696,7 @@ TFTP_START_S = 3.0
 # slowest measured 8.5 MB run (~180 s). Expiry = log the last output and give up, board stays at the prompt.
 U2_TFTP_STALL_S = 70.0
 U2_TFTP_CAP_S = 540.0
-U2_IMAGE = "us48-initramfs.bin"
+U2_IMAGE = "us48-mainline-debug.bin"
 
 
 def _host_ip_for(board_ip: str) -> str | None:
@@ -819,7 +819,7 @@ def _u2_image(extra: list[str]) -> str:
     return f.name
 
 
-@command("uboot-2 (at its prompt): load the OpenWrt image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp] [--image FILE]",
+@command("uboot-2 (at its prompt): load the mainline image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp] [--image FILE]",
          kind="action")
 def cmd_u2_boot(extra: list[str]) -> int:
     src = extra[extra.index("--from") + 1] if "--from" in extra else "flash"
@@ -827,7 +827,7 @@ def cmd_u2_boot(extra: list[str]) -> int:
         log("usage: u2-boot [--from flash|tftp] [--image FILE]", "ERROR")
         return 2
     img = _u2_image(extra)
-    name, off, length, _img = _slot(["--slot", "openwrt"])
+    name, off, length, _img = _slot(["--slot", "linux"])
     s = console.Session()
     try:
         s.write(b"\x03\r\n")  # abort a running TFTP retry loop or a half-typed line
@@ -861,10 +861,10 @@ def cmd_stock_fresh(_extra: list[str]) -> int:
         log(f"board state: {st}")
         if st == "ourboot":
             s.send_line("reset")  # uboot-1 autoboots stock Linux (we do not abort its countdown)
-        elif st not in ("stock-login", "stock-shell", "press-enter", "openwrt"):
+        elif st not in ("stock-login", "stock-shell", "press-enter", "linux"):
             log(f"cannot start from state {st}", "FATAL")
             return 1
-        elif st == "openwrt" and not _serial_reboot(s):
+        elif st == "linux" and not _serial_reboot(s):
             return 1
     return 0 if _wait_stock_ready() else 1
 
@@ -879,7 +879,7 @@ def cmd_uboot(extra: list[str]) -> int:
     return 0
 
 
-@command("RAM-boot the OpenWrt initramfs: reboot -> U-Boot -> loady -> bootm (no flash writes)",
+@command("RAM-boot the mainline initramfs: reboot -> U-Boot -> loady -> bootm (no flash writes)",
          args="--serial [--baud N] [--no-boot]", kind="action")
 def cmd_boot_ram(extra: list[str]) -> int:
     if "--serial" not in extra:
@@ -905,7 +905,7 @@ def cmd_boot_ram(extra: list[str]) -> int:
 
 @command("write an image to a kernel0 slot: uboot-2 TFTP -> RAM -> sf erase/write + read-back CRC, then boot it "
          "(--serial: old loady path, off by default)",
-         args="[--slot openwrt] [--image FILE] [--no-boot] [--serial [--baud N]]", kind="action")
+         args="[--slot linux] [--image FILE] [--no-boot] [--serial [--baud N]]", kind="action")
 def cmd_flash_kernel0(extra: list[str]) -> int:
     if "--serial" not in extra:
         return _flash_kernel0_u2(extra)
@@ -913,10 +913,10 @@ def cmd_flash_kernel0(extra: list[str]) -> int:
 
 
 def _flash_kernel0_u2(extra: list[str]) -> int:
-    """Board must be at the uboot-2 prompt (boot-flash --slot uboot). Only the openwrt slot is written."""
+    """Board must be at the uboot-2 prompt (boot-flash --slot uboot). Only the linux slot is written."""
     slot, slot_off, slot_len, _img = _slot(extra)
-    if slot != "openwrt":
-        log("flash-kernel0 over TFTP writes the openwrt slot only", "FATAL")
+    if slot != "linux":
+        log("flash-kernel0 over TFTP writes the linux slot only", "FATAL")
         return 1
     if not _ensure_console():
         return 1
@@ -1001,7 +1001,7 @@ def _flash_kernel0_serial(extra: list[str]) -> int:
 
 
 @command("boot a kernel0 slot: reboot -> U-Boot -> sf read -> bootm (seconds, no serial transfer)",
-         args="[--slot uboot|openwrt]", kind="action")
+         args="[--slot uboot|linux]", kind="action")
 def cmd_boot_flash(extra: list[str]) -> int:
     name, off, length, _img = _slot(extra)
     s, _baud = _session_at_uboot(extra)
@@ -1068,12 +1068,12 @@ def _stock_shell(s: console.Session) -> bool:
             log(str(e), "FATAL")
             return False
     s.send_line("")
-    if st == "openwrt":
+    if st == "linux":
         # Our image is up: reboot (SP805) -> U-Boot autoboots stock kernel1 by itself.
-        log("OpenWrt running: rebooting into stock (kernel1)")
+        log("mainline Linux running: rebooting into stock (kernel1)")
         s.send_line("reboot")
         try:
-            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after OpenWrt reboot")
+            s.expect([b"Please press Enter", b"login:"], STOCK_BOOT_S, "stock userspace after Linux reboot")
         except console.Timeout as e:
             log(str(e), "FATAL")
             return False
@@ -1236,7 +1236,7 @@ def cmd_cmic_load(extra: list[str]) -> int:
         else:
             ko = Path(a)
     if not ko.exists():
-        log(f"{ko} missing: python3 scripts/build_us48_cmic.py", "FATAL")
+        log(f"{ko} missing: python3 scripts/build_mainline.py --module-only", "FATAL")
         return 1
     if not _ensure_console():
         return 1
@@ -1265,7 +1265,7 @@ FLASH_DD_S = 300
 
 
 @command("write an image to a kernel0 slot FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
-         args="[--slot uboot|openwrt] [--no-boot]", kind="action")
+         args="[--slot uboot|linux] [--no-boot]", kind="action")
 def cmd_flash_net(extra: list[str]) -> int:
     import hashlib
     slot, slot_off, slot_len, image = _slot(extra)

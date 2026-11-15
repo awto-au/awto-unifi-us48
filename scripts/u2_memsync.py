@@ -3,7 +3,7 @@
 
 Usage:
   scripts/u2_memsync.py warm                  board at the awto-uboot prompt on a WARM chip: `hr2mem dump`, write the image to
-                                              flash kernel0 @0xBE0000 (inside kernel0, above the OpenWrt slot's 10 MB image), verify crc
+                                              flash kernel0 @0xBE0000 (inside kernel0, above the Linux slot's 10 MB image), verify crc
   scripts/u2_memsync.py cold [--sync] [--range A B] [--no-cycle | --here]
                                               power-cycle -> awto-uboot (no stock) -> ping (cold init) -> sf read image -> `hr2mem diff`
                                               (or `sync`), then ping + CMIC ch1 RXPKT
@@ -22,7 +22,7 @@ from dev import console, log  # noqa: E402
 
 RAM_IMG = 0x05000000
 RAM_BACK = 0x06000000
-FLASH_IMG = 0xBE0000          # kernel0 = 0xE0000..0xFE0000; OpenWrt slot image (<= 10.2 MB) ends 0xB90000
+FLASH_IMG = 0xBE0000          # kernel0 = 0xE0000..0xFE0000; Linux slot image (<= 10.2 MB) ends 0xB90000
 FLASH_MAX = 0x400000
 LEN_FILE = dev.REPO / "tmp/memimg.len"
 STALL_S = 30.0                # a table prints within ~1 s at S-channel speed (<100 us/op x <=16k entries); 30 s = hung

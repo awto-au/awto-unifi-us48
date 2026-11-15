@@ -1,0 +1,29 @@
+#!/bin/sh
+# PoE off on all 48 ports: BCM59111 op-mode reg 0x12 = 0 (2 bits/port, 00 = shutdown). awto-unifi-us48#24
+# 12 chips: PCA9548 0x70 ch4 (ports 1-24) / ch5 (25-48), addr 0x28-0x2d. Map: #23 (Ubiquiti GPL bcm59111.c).
+# A chip that NAKs has no FW running (held in reset / cold) → it is not powering ports either.
+
+log() { logger -s -t us48-poe-off "$*"; }
+
+bus_for() {
+	for n in /sys/bus/i2c/devices/i2c-*/name; do
+		grep -q "chan_id $1)" "$n" && { d=${n%/name}; echo "${d##*i2c-}"; return; }
+	done
+}
+
+rc=0
+for ch in 4 5; do
+	bus=$(bus_for $ch)
+	[ -n "$bus" ] || { log "mux ch$ch: no i2c bus"; rc=1; continue; }
+	for a in 0x28 0x29 0x2a 0x2b 0x2c 0x2d; do
+		if ! i2cget -y "$bus" $a 0x41 >/dev/null 2>&1; then
+			log "ch$ch $a: no answer (no FW running)"
+			continue
+		fi
+		i2cset -y "$bus" $a 0x12 0x00
+		v=$(i2cget -y "$bus" $a 0x12)
+		log "ch$ch $a: fw $(i2cget -y "$bus" $a 0x41) opmode 0x12=$v"
+		[ "$v" = 0x00 ] || rc=1
+	done
+done
+exit $rc

@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import clock_trial as ct  # noqa: E402
 import console  # noqa: E402
+import build_rootfs  # noqa: E402
 import dev  # noqa: E402
 
 LOGF = dev.LOGS / "clock_sweep.log"
@@ -34,8 +35,7 @@ ct.LOGF = LOGF  # one log for the whole sweep, clock_trial helpers included
 RESULTS = dev.LOGS / "clock_sweep_results.md"
 MEMTEST_SRC = dev.REPO / "scripts/memtest_arm.c"
 MEMTEST_BIN = dev.TMP / "memtest/memtest_arm"
-CC = dev.REPO / ("tmp/openwrt-build/staging_dir/toolchain-arm_cortex-a9_gcc-14.4.0_musl_eabi/bin/"
-                 "arm-openwrt-linux-muslgnueabi-gcc")
+CC = Path(build_rootfs.CROSS + "gcc")  # musl toolchain from build_rootfs.py
 BACKUP = dev.REPO / "private/backups/20261012T055324Z/full-flash.bin"  # verified full-flash backup (ddr.md)
 
 # BCM56150 DS: TJ max 125 C, steady state 110 C (DS lines 5957-5959, 8471). Abort 90 C (Dan, 2026-11-14):
@@ -59,7 +59,7 @@ UB_TEST_LEN = 64 << 20
 UB_CHUNK = 4 << 20  # keeps each command short: uboot-1 private WDT is 30 s x 400 / MHz (6 s at 2000)
 SRAM = 0x1B000000
 SRAM_LEN = 0x4000
-OPENWRT_FLASH = dev.KERNEL0_OFF + dev.SLOTS["openwrt"][0]
+LINUX_FLASH = dev.KERNEL0_OFF + dev.SLOTS["linux"][0]
 SP805_PET = f"mw.l {dev.SP805:x} {dev.SP805_LOAD:x}"  # WDTLOAD write restarts the count (SP805 TRM)
 
 # memtest_arm: stall = no output line for 60 s (awto-dan#53); first run sets the cap to 3x its duration.
@@ -94,7 +94,7 @@ def show_plan(steps: list[int]) -> None:
 
 def build() -> int:
     MEMTEST_BIN.parent.mkdir(parents=True, exist_ok=True)
-    r = subprocess.run([str(CC), "-static", "-O2", "-s", "-Wall", "-Wextra", "-o", str(MEMTEST_BIN),
+    r = subprocess.run([str(CC), "-static", *build_rootfs.ARCH_FLAGS[:2], "-O2", "-s", "-Wall", "-Wextra", "-o", str(MEMTEST_BIN),
                         str(MEMTEST_SRC)], capture_output=True, text=True, timeout=120,
                        env={"PATH": "/usr/bin:/bin", "STAGING_DIR": str(dev.TMP / "memtest")})
     log(f"build memtest_arm rc={r.returncode} {r.stdout}{r.stderr}".strip())
@@ -188,9 +188,9 @@ def host_crc(pattern: bytes, length: int) -> str:
 def uboot_refs(s, budget: float) -> dict[str, str]:
     """At 400 MHz before the switch: flash reads through MSPI (sf read) and the BSPI window."""
     ub(s, "sf probe 0", dev.SF_BUDGET_S)
-    ub(s, f"sf read {UB_TEST + UB_TEST_LEN:x} {OPENWRT_FLASH:x} 100000", dev.SF_BUDGET_S)
+    ub(s, f"sf read {UB_TEST + UB_TEST_LEN:x} {LINUX_FLASH:x} 100000", dev.SF_BUDGET_S)
     return {"sf": ub_crc(s, UB_TEST + UB_TEST_LEN, 0x100000, budget),
-            "bspi": ub_crc(s, 0x1C000000 + OPENWRT_FLASH, 0x100000, budget)}
+            "bspi": ub_crc(s, 0x1C000000 + LINUX_FLASH, 0x100000, budget)}
 
 
 def uboot_checks(s, refs: dict[str, str], budget: float) -> dict[str, str]:
@@ -226,9 +226,9 @@ def uboot_checks(s, refs: dict[str, str], budget: float) -> dict[str, str]:
         sbad += ub_crc(s, SRAM, SRAM_LEN, ct.CMD_S) != host_crc(struct.pack("<I", pat), SRAM_LEN)
     res["ub_sram"] = "ok" if not sbad else f"FAIL {sbad}"
     ub(s, SP805_PET, ct.CMD_S)
-    ub(s, f"sf read {UB_TEST + UB_TEST_LEN:x} {OPENWRT_FLASH:x} 100000", dev.SF_BUDGET_S)
+    ub(s, f"sf read {UB_TEST + UB_TEST_LEN:x} {LINUX_FLASH:x} 100000", dev.SF_BUDGET_S)
     res["ub_spi_sf"] = "ok" if ub_crc(s, UB_TEST + UB_TEST_LEN, 0x100000, budget) == refs["sf"] else "FAIL"
-    res["ub_spi_bspi"] = "ok" if ub_crc(s, 0x1C000000 + OPENWRT_FLASH, 0x100000, budget) == refs["bspi"] else "FAIL"
+    res["ub_spi_bspi"] = "ok" if ub_crc(s, 0x1C000000 + LINUX_FLASH, 0x100000, budget) == refs["bspi"] else "FAIL"
     return res
 
 
