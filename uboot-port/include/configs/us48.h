@@ -3,7 +3,15 @@
 #ifndef __US48_H
 #define __US48_H
 
+/* Facts come from hwdb (staged by build_uboot.py) */
+#include "../../board/ubiquiti/us48/us48_hwdb.h"
+
+#ifdef CONFIG_US48_A2
+#define CFG_SYS_SDRAM_BASE		HW_A2_CARVEOUT_BASE
+#else
 #define CFG_SYS_SDRAM_BASE		0x00000000
+#endif
+#define CFG_SYS_PL310_BASE		HW_PL310_BASE
 
 /* Relock values: 1000..1999 in 12.5 MHz steps (ndiv = MHz x 2 / 25), see US48_RELOCK_OK */
 #if CONFIG_US48_CPU_MHZ != 400 && CONFIG_US48_CPU_MHZ != 800 && \

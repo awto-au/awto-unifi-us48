@@ -39,6 +39,10 @@
 static bool payload;
 module_param(payload, bool, 0644);
 MODULE_PARM_DESC(payload, "load zImage/DTB/initramfs into the carveout after the (boot stub) ELF");
+/* "uboot": firmware = raw us48-a2-uboot.bin (awto-uboot, load = entry = carveout base), no ELF, no resource table (docs/a2-uboot.md) */
+static char *mode = "elf";
+module_param(mode, charp, 0644);
+MODULE_PARM_DESC(mode, "elf (stub or self-test ELF) or uboot (raw awto-uboot at the carveout base; payload=1 also preloads zImage + DTB)");
 static char *kernel_fw = "us48-a2-zImage";
 static char *dtb_fw = "us48-a2.dtb";
 static char *initrd_fw = "us48-a2-initrd";	/* optional: empty, whitespace-only or a missing file = none */
@@ -178,20 +182,61 @@ static u32 a2_off(u32 param, u32 dt)
 	return param != U32_MAX ? param : dt;
 }
 
-/* Standard ELF load (stub or self-test); in payload mode also the kernel, DTB, initramfs and the stub's boot args. */
+static bool a2_uboot(void)
+{
+	return mode && sysfs_streq(mode, "uboot");
+}
+
+/* uboot mode: the image is raw, so none of the ELF hooks apply; no resource table */
+static int a2_sanity_check(struct rproc *rproc, const struct firmware *fw)
+{
+	if (!a2_uboot())
+		return rproc_elf_sanity_check(rproc, fw);
+	if (!fw->size || fw->size > HW_A2_STUB_SIZE) {
+		dev_err(&rproc->dev, "uboot image %zu B: want 1..%u B (the first carveout MiB)\n", fw->size, HW_A2_STUB_SIZE);
+		return -EFBIG;
+	}
+	return 0;
+}
+
+static int a2_parse_fw(struct rproc *rproc, const struct firmware *fw)
+{
+	return a2_uboot() ? 0 : rproc_elf_load_rsc_table(rproc, fw);
+}
+
+static struct resource_table *a2_find_loaded_rsc_table(struct rproc *rproc, const struct firmware *fw)
+{
+	return a2_uboot() ? NULL : rproc_elf_find_loaded_rsc_table(rproc, fw);
+}
+
+static u64 a2_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
+{
+	struct us48_a2 *a = rproc->priv;
+
+	return a2_uboot() ? a->da : rproc_elf_get_boot_addr(rproc, fw);
+}
+
+/* Standard ELF load (stub or self-test) or the raw awto-uboot; in payload mode also the kernel, DTB, initramfs and (ELF only) the stub's boot args. */
 static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 {
 	struct us48_a2 *a = rproc->priv;
 	struct us48_a2_boot_args *args = a->va + US48_A2_BOOT_ARGS_OFF;
 	u32 koff = a2_off(kernel_off, a->dt_off[0]), doff = a2_off(dtb_off, a->dt_off[1]);
 	u32 ioff = a2_off(initrd_off, a->dt_off[2]);
-	int ret = rproc_elf_load_segments(rproc, fw);
+	bool ub = a2_uboot();
+	int ret = 0;
 
+	if (ub) {
+		memcpy(a->va, fw->data, fw->size);
+		dev_info(a->dev, "uboot: %zu B at a2 %#x\n", fw->size, a->da);
+	} else {
+		ret = rproc_elf_load_segments(rproc, fw);
+	}
 	if (ret || !payload)
 		return ret;
 	ret = a2_blob(a, kernel_fw, koff, "kernel", false) ?: a2_blob(a, dtb_fw, doff, "dtb", false) ?:
 	      a2_blob(a, initrd_fw, ioff, "initrd", true);
-	if (ret)
+	if (ret || ub)
 		return ret;
 	args->kernel = a->da + koff;
 	args->dtb = a->da + doff;
@@ -303,10 +348,10 @@ static const struct rproc_ops us48_a2_ops = {
 	.start			= us48_a2_start,
 	.stop			= us48_a2_stop,
 	.load			= us48_a2_load,
-	.parse_fw		= rproc_elf_load_rsc_table,
-	.find_loaded_rsc_table	= rproc_elf_find_loaded_rsc_table,
-	.get_boot_addr		= rproc_elf_get_boot_addr,
-	.sanity_check		= rproc_elf_sanity_check,
+	.parse_fw		= a2_parse_fw,
+	.find_loaded_rsc_table	= a2_find_loaded_rsc_table,
+	.get_boot_addr		= a2_get_boot_addr,
+	.sanity_check		= a2_sanity_check,
 };
 
 static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_device_id *id)

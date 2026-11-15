@@ -9,6 +9,30 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
 	default "us48"
 
+config US48_A2
+	bool "Target is unit 1's Cortex-A9 (a2), loaded into its carveout by us48_a2 (docs/a2-uboot.md, #83)"
+	help
+	  RAM = hwdb a2_carveout minus a2_shared (generated DT), DCC console, no unit 0 peripherals.
+
+config US48_PCIE
+	bool "Unit 0 PCIe root complex bring-up (pcie.c)"
+	default y
+
+config US48_FAN
+	bool "Fans, LM75 and PVTMON at boot (fan.c, unit 0 only)"
+	default y
+
+config US48_ARM_SP805
+	bool "Arm the SP805 watchdog before the CPU clock switch if it is not running"
+	default y
+
+config US48_L2
+	bool "Enable the PL310 L2 cache with the D-cache; flushed and disabled before the next stage"
+	default y if US48_A2
+	select SYS_L2_PL310
+	help
+	  Off for unit 0 (corruption with Linux at 1550 MHz, #17). a2: untested at 1000 MHz (#83).
+
 config US48_CPU_MHZ
 	int "A9 clock set by uboot-2 at early init (400, 800, or 1000..1999)"
 	default 400

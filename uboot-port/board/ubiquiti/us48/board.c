@@ -8,11 +8,14 @@
 #include <dm.h>
 #include <fdtdec.h>
 #include <cpu_func.h>
+#include <command.h>
 #include <init.h>
 #include <log.h>
 #include <vsprintf.h>
 #include <asm/global_data.h>
+#include <asm/armv7.h>
 #include <asm/io.h>
+#include <asm/pl310.h>
 #include "us48_sram_clk.h"
 #include "us48_fan.h"
 #include "us48_pcie.h"
@@ -30,10 +33,10 @@ int dram_init_banksize(void)
 	return fdtdec_setup_memory_banksize();
 }
 
-/* Relocate to the top of bank 1: the low bank holds image, kernel and stock leftovers */
+/* Unit 0: relocate to the top of bank 1 (the low bank holds image, kernel, stock leftovers). a2: end of its RAM */
 phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
 {
-	return 0x70000000;
+	return IS_ENABLED(CONFIG_US48_A2) ? gd->ram_top : 0x70000000;
 }
 
 /* ARM PLL / CCU, layout and sequences: docs/clocks.md (register map, E1, E2); docs/uboot-cpu-clock.md */
@@ -55,6 +58,8 @@ static ulong us48_arm_hz(void)
 
 	if (fid == 0)
 		return 25000000;
+	if (fid == 2)
+		return 100000000;	/* sys clk row (a2's ROM default, same as us48_a2) */
 	if ((fid != 6 && fid != 7) || (readl(CCU_PLLARMC) & BIT(8)) || !(a & BIT(28)) ||
 	    (readl(CCU_PLLARM_OFFSET) & BIT(29)))
 		return 0;
@@ -83,9 +88,9 @@ static int us48_cpu_switch(int mhz)
 
 	/* E0 gate: ch1 mdiv 2 (else fid 7 = 1600), fid 6, and we really are at 400 */
 #ifdef CONFIG_US48_CPU_REENTRY
-	/* chained from a fast awto-uboot: fid 6/7 at any rate; E2 goes via fid 2 so the start rate is irrelevant */
+	/* chained from a fast awto-uboot or a2's ROM state: fid 2/6/7; E2 goes via fid 2 so the start rate is irrelevant */
 	if ((readl(CCU_PLLARMCTL5) & 0xff) != 2 || (((readl(CCU_POLICY_DBG) >> 12) & 7) != 6 &&
-	    ((readl(CCU_POLICY_DBG) >> 12) & 7) != 7))
+	    ((readl(CCU_POLICY_DBG) >> 12) & 7) != 7 && ((readl(CCU_POLICY_DBG) >> 12) & 7) != 2))
 		return -EINVAL;
 #else
 	if ((readl(CCU_PLLARMCTL5) & 0xff) != 2 || ((readl(CCU_POLICY_DBG) >> 12) & 7) != 6 ||
@@ -94,7 +99,7 @@ static int us48_cpu_switch(int mhz)
 #endif
 
 	/* SP805 normally armed by dev.py before bootm; arm 10 s if not (APB clock, unchanged by this) */
-	if ((readl(SP805_BASE + 8) & 3) != 3) {
+	if (IS_ENABLED(CONFIG_US48_ARM_SP805) && (readl(SP805_BASE + 8) & 3) != 3) {
 		writel(0x1acce551, SP805_BASE + 0xc00);
 		writel(50000000 * 10, SP805_BASE);
 		writel(3, SP805_BASE + 8);
@@ -147,7 +152,10 @@ int board_early_init_f(void)
 		us48_cpu_status = 1;
 		return 0;
 	}
-	us48_cpu_status = us48_cpu_switch(mhz);
+	if (IS_ENABLED(CONFIG_US48_CPU_REENTRY) && us48_arm_hz() / 1000000 == mhz)
+		us48_cpu_status = 2;	/* already at the target (the loader set it) */
+	else
+		us48_cpu_status = us48_cpu_switch(mhz);
 	if (!us48_cpu_status)
 		us48_cpu_status = 2;
 	return 0;
@@ -178,10 +186,57 @@ int board_init(void)
 	       us48_cpu_status, hz / 1000000, hz / 2000000);
 	if (us48_cpu_status < 0)
 		printf("cpu: switch refused/failed (%d), staying at 400\n", us48_cpu_status);
-	us48_pcie_init();	/* unit 1 link first: fan group 0/1 and the eth probe need it (#76) */
-	us48_fan_boot();
+	if (IS_ENABLED(CONFIG_US48_PCIE))
+		us48_pcie_init();	/* unit 1 link first: fan group 0/1 and the eth probe need it (#76) */
+	if (IS_ENABLED(CONFIG_US48_FAN))
+		us48_fan_boot();
 	return 0;
 }
+
+#ifdef CONFIG_US48_L2
+extern struct pl310_regs *const pl310;
+
+/* Called by the armv7 MMU setup before the D-cache goes on: invalidate all ways, then enable */
+void v7_outer_cache_enable(void)
+{
+	if (readl(&pl310->pl310_ctrl) & L2X0_CTRL_EN)
+		return;
+	v7_outer_cache_inval_all();
+	writel(L2X0_CTRL_EN, &pl310->pl310_ctrl);
+}
+
+/* Called by cleanup_before_linux: the next stage expects L2 off with memory current */
+void v7_outer_cache_disable(void)
+{
+	v7_outer_cache_flush_all();
+	writel(0, &pl310->pl310_ctrl);
+}
+#endif
+
+#ifndef CONFIG_SYSRESET
+/* a2 has no reset line of its own: a1 stops/starts the remoteproc */
+void reset_cpu(void)
+{
+	puts("reset: not available here, stop/start us48_a2 from a1\n");
+}
+#endif
+
+static int do_cpu(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	ulong hz = us48_arm_hz();
+
+	printf("cpu: target %d MHz status %d, ARM %lu MHz, PERIPHCLK %lu MHz, L2 %s\n", CONFIG_US48_CPU_MHZ,
+	       us48_cpu_status, hz / 1000000, hz / 2000000,
+#ifdef CONFIG_US48_L2
+	       readl(&pl310->pl310_ctrl) & L2X0_CTRL_EN ? "on" : "off"
+#else
+	       "not built"
+#endif
+	       );
+	return CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(cpu, 1, 0, do_cpu, "ARM clock, status, L2", "");
 
 /* PERIPHCLK = ARM / 2, from the live PLL registers; 0 reads fall back to the 400 MHz value */
 static ulong us48_periph_get_rate(struct clk *clk)
