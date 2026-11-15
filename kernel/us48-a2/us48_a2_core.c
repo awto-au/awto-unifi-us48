@@ -42,9 +42,10 @@
  * written through the unit 1 regmap before the release. 0 = leave the CCU as the ROM left it.
  * GO and PLL lock: ~10 us / tens of us expected (I, unmeasured on unit 1); 1 ms limit, expiry = log + restore.
  */
-static uint cpu_mhz = 1000;
+/* Default 100 (sys clk, ROM state): a2 corrupts memory above 100 MHz, Dan 2026-11-15, #79 */
+static uint cpu_mhz = 100;
 module_param(cpu_mhz, uint, 0644);
-MODULE_PARM_DESC(cpu_mhz, "a2 ARM clock set at start: 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO a multiple of 25 MHz; 0 = leave");
+MODULE_PARM_DESC(cpu_mhz, "a2 ARM clock set at start: 100 (sys clk), 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO a multiple of 25 MHz; 0 = leave");
 /*
  * unit 1 AXI (GENPLL ch3, APB = AXI/4): power-on mdiv 5 = 400 MHz, uboot-1 runs unit 0 at 200 (mode 4) (#79).
  * Sequence = D-Link genpll.c iproc_config_genpll (docs/clocks.md E5). 0 = leave.
@@ -271,8 +272,8 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 	}
 	if (ret || !payload)
 		return ret;
-	if (cpu_mhz > 400)
-		dev_warn(a->dev, "Linux payload at cpu_mhz %u: memory corruption seen above 400 MHz (#70, #79)\n", cpu_mhz);
+	if (cpu_mhz > 100)
+		dev_warn(a->dev, "Linux payload at cpu_mhz %u: memory corruption seen above 100 MHz (#70, #79)\n", cpu_mhz);
 	ret = a2_blob(a, kernel_fw, koff, "kernel", false) ?: a2_blob(a, dtb_fw, doff, "dtb", false) ?:
 	      a2_blob(a, initrd_fw, ioff, "initrd", true);
 	if (ret || ub)
@@ -339,10 +340,12 @@ static int a2_set_cpu(struct us48_a2 *a, uint mhz)
 
 	if (!mhz)
 		return 0;
-	if (hz / 1000000 == mhz && fid == (CCU_FID6(mhz) ? 6 : 7))
+	if (mhz == 100 && fid == 2)
 		return 0;
-	if (!(mhz >= 400 && mhz < 2000 && CCU_VCO_MHZ(mhz) % 25 == 0 && CCU_VCO_MHZ(mhz) >= 1600 && CCU_VCO_MHZ(mhz) <= 4000))
-		return dev_err_probe(a->dev, -EINVAL, "cpu_mhz %u: 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO 1600..4000 and a multiple of 25\n", mhz);
+	if (mhz != 100 && hz / 1000000 == mhz && fid == (CCU_FID6(mhz) ? 6 : 7))
+		return 0;
+	if (mhz != 100 && !(mhz >= 400 && mhz < 2000 && CCU_VCO_MHZ(mhz) % 25 == 0 && CCU_VCO_MHZ(mhz) >= 1600 && CCU_VCO_MHZ(mhz) <= 4000))
+		return dev_err_probe(a->dev, -EINVAL, "cpu_mhz %u: 100, 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO 1600..4000 and a multiple of 25\n", mhz);
 	ret = regmap_read(a->map, CCU(PLLARMCTL5), &v);
 	if (ret)
 		return ret;
@@ -357,6 +360,8 @@ static int a2_set_cpu(struct us48_a2 *a, uint mhz)
 	ret = a2_ccu_go(a, 0x82020202);
 	if (ret)
 		goto restore;
+	if (mhz == 100)
+		goto out;	/* sys clk policy already selected above; PLL left as is */
 	ret = regmap_write(a->map, CCU(PLLARMB), (pb & ~HW_CCU_PLLARMB_NDIV_FRAC_MASK) | 1);
 	ret = ret ?: regmap_write(a->map, CCU(PLLARMA), CCU_PLLARMA_VAL(mhz, 0));
 	ret = ret ?: regmap_read_poll_timeout(a->map, CCU(PLLARMA), v, (v & CCU_LOCKED) == CCU_LOCKED, 0, CCU_WAIT_US);

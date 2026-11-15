@@ -176,7 +176,7 @@ def check_layout(db, zimage: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--cpu-mhz", type=int, default=1000, help="a2 ARM MHz = us48_a2 cpu_mhz (default 1000); sets the DTB timer clock")
+    ap.add_argument("--cpu-mhz", type=int, default=100, help="a2 ARM MHz = us48_a2 cpu_mhz (default 100, #79); sets the DTB timer clock")
     ap.add_argument("--bootargs", default="console=hvc0 earlycon=dcc", help="a2 kernel command line (DT chosen/bootargs)")
     ap.add_argument("--l2", action="store_true", help="add the PL310 node (kernel enables L2)")
     ap.add_argument("--dtb-name", default="us48-a2.dtb", help="output name in tmp/a2")
