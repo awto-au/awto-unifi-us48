@@ -104,6 +104,7 @@ static void win_page(struct us48_pci *p, u32 addr)
 	if (p->page_valid && p->page == v)
 		return;
 	writel(v, p->bar0 + PAXB_IMAP0_7);
+	readl(p->bar0 + PAXB_IMAP0_7);	/* flush: window read right after the posted write returned the old page (#80) */
 	p->page = v;
 	p->page_valid = true;
 }

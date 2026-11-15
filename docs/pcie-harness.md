@@ -81,6 +81,11 @@ Stop = snapshot to `tmp/logs/pcie_freeze-<ts>.txt` (mismatch log, a2 struct, sta
 
 Counted, soak continues: single test timeout (`slow:<test>`), retrain (`ep_link_chg`, `rc_link_chg`, `lt_seen`), AER correctable, `pci_status_err`.
 
+## Window flush (#80, found on the first smoke)
+- `us48_pci` `win_page()`: IMAP0_7 write is posted; the first window access after a page change returned the previous page's word at the same offset (pat_addr word 0 = page 3 word 0; `dl_inactive` = PAXB LINK_STATUS read stale after another accessor moved the window).
+- Not an a2 conflict: reproduced with a2 stopped. The bustest firmware does not touch SRAM (stack at the carveout end, code in the carveout).
+- Fix: read IMAP0_7 back after the write. After it: smoke PASS, `dl_inactive` 0.
+
 ## Open
 - All of it unmeasured; first board run sets `A2_READY_S`, the 50 ms floor and the a2 numbers.
 - MMU bring-up of the firmware, IRQ-off timing in `lat`, whether unit 0 PVTMON through CMC1 collides with `us48-pvtmon` (reads are retried; a collision at worst reads 'unreadable' once).
