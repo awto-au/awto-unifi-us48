@@ -62,10 +62,10 @@
 | `uart0` | axi0 | `0x18000300` | `0x100` | 0 | 8 | C | UART0 (same layout as uart1); stock firmware references both | tmp/linux-mainline bcm-hr2.dtsi serial@300; scripts/stock_uart_order.py |
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
 | `ddr_ctl` | axi0 | `0x18010000` | `0x400` | 0 | 1 | C | DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride | D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md |
-| `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 26 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 137 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
-| `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 0 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL Note: register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*) | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
-| `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 0 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 20 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 9 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
 | `mspi` | axi0 | `0x18027200` | `0x184` | 0 | 13 | C | QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8 | us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI |
 | `sp804_0` | axi0 | `0x18034000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer0), APB clock | tmp/linux-mainline bcm-hr2.dtsi timer@34000 |
 | `sp804_1` | axi0 | `0x18035000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer1) | tmp/linux-mainline bcm-hr2.dtsi timer@35000 |
@@ -78,6 +78,12 @@
 | `xgpll` | axi0 | `0x1803fc1c` | `0x18` | 0 | 6 | C | XGPLL: DDR clock source. CK = 25 x NDIV_INT(CTRL_4) x 2 / CH1_MDIV(CTRL_2); live 120 / 9 = 666.7 MHz | docs/clock-audit.md s4 (DDR) ([DL] ddr_init.c:190-198, [RG], [E0]) |
 | `idm_pcie_m0` | axi0 | `0x18101000` | `0x1000` | 0 | 1 | C | AXI_PCIE_M0 IDM wrapper (PAXB AXI master) | regdb AXI_PCIE_M0_IDM_* |
 | `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
+| `idm_sram_s0` | axi0 | `0x18120000` | `0x1000` | 0 | 13 | C | SRAM_S0 IDM wrapper (regdb SRAM_S0_IDM_*) | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `idm_apbz_s0` | axi0 | `0x18121000` | `0x1000` | 0 | 11 | C | APBZ_S0 IDM wrapper (regdb APBZ_S0_IDM_*) | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `idm_axiic_ds_3` | axi0 | `0x18123000` | `0x1000` | 0 | 10 | C | AXIIC_DS_3 IDM wrapper (regdb AXIIC_DS_3_IDM_*) | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `idm_apbw` | axi0 | `0x18131000` | `0x1000` | 0 | 13 | C | APBW IDM wrapper (regdb APBW_IDM_*) | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `idm_apbx` | axi0 | `0x18132000` | `0x1000` | 0 | 12 | C | APBX IDM wrapper (regdb APBX_IDM_*) | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `idm_axiic_ds_0` | axi0 | `0x18141000` | `0x1000` | 0 | 10 | C | AXIIC_DS_0 IDM wrapper (regdb AXIIC_DS_0_IDM_*) | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
 | `ccu` | axi0 | `0x19000000` | `0x1000` | 0 | 16 | C | IHOST CCU: ARM PLL, clock policy, clock gates | docs/clocks.md Register map; docs/clock-audit.md s2 |
 | `ccu_rst` | axi0 | `0x19000f00` | `0x100` | 0 | 1 | I | IHOST reset control (A9 core reset) Note: only WR_ACCESS is named in regdb; +8 meaning from the script, not decoded | scripts/u2_lut_reset_test.py (core: 0x19000f00 key, 0x19000f08 = 2); regdb IHOST_PROC_RST_WR_ACCESS |
 | `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 8 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) Note: register offsets below are from DDI 0388I Table 10-1 (external view, relative to debug base) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
@@ -140,31 +146,142 @@ Same registers as `uart1`.
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
 | `0x0` | `REVISION` | 32 | ro |  |  | C |  | regdb; socregs.h |
+| `0x4` | `CLK_PM_CTRL` | 32 | rw |  | DIS_DDR_CLK[0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x10` | `PLL_STATUS` | 32 | ro |  |  | C |  | regdb; socregs.h |
 | `0x14` | `PLL_CONFIG` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0x18` | `PLL_CONTROL` | 32 | rw |  |  | C |  | regdb |
 | `0x1c` | `PLL_DIVIDERS` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x20` | `AUX_CONTROL` | 32 | rw |  | IS_AD[6:4], IS_CS[9:7], IS_ODT[3:1], OVERRIDE[0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x30` | `VDL_OVRIDE_BYTE_CTL` | 32 | rw |  |  | C |  | regdb; docs/ddr.md shmoo targets (0x18010830) |
 | `0x34` | `VDL_OVRIDE_BIT_CTL` | 32 | rw |  |  | C |  | regdb; socregs.h; docs/ddr.md shmoo targets (0x18010834) |
 | `0x38` | `IDLE_PAD_CONTROL` | 32 | rw |  |  | C |  | regdb |
 | `0x3c` | `ZQ_PVT_COMP_CTL` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0x40` | `DRIVE_PAD_CTL` | 32 | rw |  |  | C |  | regdb |
+| `0x44` | `VDL_RD_DATA_DLY_STATUS` | 32 | ro |  | AUTO_INIT_STATE[11:6], RD_DATA_DLY_MAX[5:3], RD_DATA_DLY_MIN[2:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x48` | `VDL_CALIBRATE` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0x4c` | `VDL_CALIB_STATUS` | 32 | ro |  |  | C |  | regdb; socregs.h |
+| `0x50` | `VDL_DQ_CALIB_STATUS` | 32 | ro |  | DQS_CALIB_CLOCKS[3], DQS_CALIB_LOCK[1], DQS_CALIB_MODE[2], DQS_CALIB_TOTAL[25:16], DQ_CALIB_LOCK[0], DQ_CALIB_TOTAL[13:4] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x54` | `VDL_WR_CHAN_CALIB_STATUS` | 32 | ro |  | WR_CHAN_CALIB_BIT_OFFSET[21:16], WR_CHAN_CALIB_BYTE_SEL[1], WR_CHAN_CALIB_CLOCKS[2], WR_CHAN_CALIB_LOCK[0], WR_CHAN_CALIB_TOTAL[13:4] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x58` | `VDL_RD_EN_CALIB_STATUS` | 32 | ro |  | RD_EN_CALIB_BIT_OFFSET[21:16], RD_EN_CALIB_BYTE_SEL[1], RD_EN_CALIB_CLOCKS[2], RD_EN_CALIB_LOCK[0], RD_EN_CALIB_TOTAL[13:4] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x5c` | `VIRTUAL_VTT_CONTROL` | 32 | rw |  | ENABLE_CKE_IDLE[0], ENABLE_CS_IDLE[1], ENABLE_CTL_IDLE[2], ERROR_RESET[3], HIGH_VTT[4], LOW_VTT[5] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x60` | `VIRTUAL_VTT_STATUS` | 32 | ro |  | ERROR[18:3], ERROR_HIGH[1], ERROR_LOW[2], READY[0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x64` | `VIRTUAL_VTT_CONNECTIONS` | 32 | rw |  | MASK[26:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x68` | `VIRTUAL_VTT_OVERRIDE` | 32 | rw |  | MASK[26:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x6c` | `VREF_DAC_CONTROL` | 32 | rw |  |  | C |  | regdb; docs/ddr.md shmoo targets (0x1801086c) |
+| `0x70` | `PHYBIST_CNTRL` | 32 | rw |  | BENCH_MODE[4], ENABLE[0], FORCE_CTL_ERROR[2], FORCE_DAT_ERROR[3], FORCE_ERROR_SEL[13:8], INT_LOOPBACK[1] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x74` | `PHYBIST_SEED` | 32 | rw |  | SEED[31:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x78` | `PHYBIST_STATUS` | 32 | ro |  | CTL_DONE[0], CTL_PASS[2], DAT_DONE[1], DAT_PASS[3] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x7c` | `PHYBIST_CTL_STATUS` | 32 | ro |  | CTL_ERRORS[26:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x80` | `PHYBIST_DQ_STATUS` | 32 | ro |  | DAT_ERRORS[31:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x84` | `PHYBIST_MISC_STATUS` | 32 | ro |  | CK_ERRORS[7:4], DM_ERRORS[3:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x90` | `COMMAND_REG` | 32 | rw |  | AD[15:0], AUX[24:22], BA[18:16], CAS[20], MPR_MODE[28], RAS[19], WE[21] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x94` | `MODE_REG0` | 32 | ro |  | AD[15:0], VALID[16] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x98` | `MODE_REG1` | 32 | ro |  | AD[15:0], VALID[16] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x9c` | `MODE_REG2` | 32 | ro |  | AD[15:0], VALID[16] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0xa0` | `MODE_REG3` | 32 | ro |  | AD[15:0], VALID[16] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0xa4` | `STANDBY_CONTROL` | 32 | rw |  | ARMED[15], CKE[4], LDO_VOLTS[8:7], PWRDOWN_CKE[9], PWRDOWN_LDO_VOLTS[13:12], PWRDOWN_RST_N[10], PWRDOWN_SKIP_MRS[11], RST_N[5], SKIP_MRS[6], STANDBY[3:0], STANDBY_ACTIVE[16], STANDBY_EXIT_PIN_EN[17], STANDBY_READY[18], WARMSTART[14] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0xb0` | `STRAP_CONTROL` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0xb4` | `STRAP_CONTROL2` | 32 | rw |  |  | C |  | regdb; socregs.h |
-| `0x318` | `WL0_UNK_318` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x31c` | `WL0_UNK_31C` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x320` | `WL0_UNK_320` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x324` | `WL0_UNK_324` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x340` | `WL0_UNK_340` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x344` | `WL0_UNK_344` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0xb8` | `STRAP_STATUS` | 32 | ro |  | AD_WIDTH[15:14], BUS16[12], BUS8[11], CHIP_SIZE[7:6], CHIP_WIDTH[10], DUAL_RANK[13], FROM_MEMC[28], FROM_REG[29], JEDEC_TYPE[5:1], MHZ[27:16], STRAPS_VALID[0], VDDQ[9:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0xbc` | `STRAP_STATUS2` | 32 | ro |  | AL[19:17], CL[6:0], CWL[11:7], DDR3[20], WR[16:12] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0xc0` | `DEBUG_FREEZE_ENABLE` | 32 | rw |  | WL0_BL0[0], WL0_BL1[1], WL1_BL0[2], WL1_BL1[3] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0xc4` | `DATAPATH_LOOPBACK` | 32 | rw |  | ENABLE[0], USE_ADDR_CTL[1], XOR_DM_RD_EN[2] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x200` | `WL0_VDL_OVRIDE_BYTE_RD_EN` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x204` | `WL0_VDL_OVRIDE_BYTE0_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x208` | `WL0_VDL_OVRIDE_BYTE0_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x20c` | `WL0_VDL_OVRIDE_BYTE0_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x210` | `WL0_VDL_OVRIDE_BYTE0_BIT0_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x214` | `WL0_VDL_OVRIDE_BYTE0_BIT1_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x218` | `WL0_VDL_OVRIDE_BYTE0_BIT2_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x21c` | `WL0_VDL_OVRIDE_BYTE0_BIT3_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x220` | `WL0_VDL_OVRIDE_BYTE0_BIT4_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x224` | `WL0_VDL_OVRIDE_BYTE0_BIT5_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x228` | `WL0_VDL_OVRIDE_BYTE0_BIT6_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x22c` | `WL0_VDL_OVRIDE_BYTE0_BIT7_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x230` | `WL0_VDL_OVRIDE_BYTE0_DM_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x234` | `WL0_VDL_OVRIDE_BYTE0_BIT0_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x238` | `WL0_VDL_OVRIDE_BYTE0_BIT0_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x23c` | `WL0_VDL_OVRIDE_BYTE0_BIT1_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x240` | `WL0_VDL_OVRIDE_BYTE0_BIT1_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x244` | `WL0_VDL_OVRIDE_BYTE0_BIT2_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x248` | `WL0_VDL_OVRIDE_BYTE0_BIT2_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x24c` | `WL0_VDL_OVRIDE_BYTE0_BIT3_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x250` | `WL0_VDL_OVRIDE_BYTE0_BIT3_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x254` | `WL0_VDL_OVRIDE_BYTE0_BIT4_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x258` | `WL0_VDL_OVRIDE_BYTE0_BIT4_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x25c` | `WL0_VDL_OVRIDE_BYTE0_BIT5_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x260` | `WL0_VDL_OVRIDE_BYTE0_BIT5_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x264` | `WL0_VDL_OVRIDE_BYTE0_BIT6_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x268` | `WL0_VDL_OVRIDE_BYTE0_BIT6_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x26c` | `WL0_VDL_OVRIDE_BYTE0_BIT7_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x270` | `WL0_VDL_OVRIDE_BYTE0_BIT7_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x274` | `WL0_VDL_OVRIDE_BYTE0_BIT_RD_EN` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2a4` | `WL0_VDL_OVRIDE_BYTE1_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2a8` | `WL0_VDL_OVRIDE_BYTE1_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2ac` | `WL0_VDL_OVRIDE_BYTE1_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2b0` | `WL0_VDL_OVRIDE_BYTE1_BIT0_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2b4` | `WL0_VDL_OVRIDE_BYTE1_BIT1_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2b8` | `WL0_VDL_OVRIDE_BYTE1_BIT2_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2bc` | `WL0_VDL_OVRIDE_BYTE1_BIT3_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2c0` | `WL0_VDL_OVRIDE_BYTE1_BIT4_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2c4` | `WL0_VDL_OVRIDE_BYTE1_BIT5_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2c8` | `WL0_VDL_OVRIDE_BYTE1_BIT6_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2cc` | `WL0_VDL_OVRIDE_BYTE1_BIT7_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2d0` | `WL0_VDL_OVRIDE_BYTE1_DM_W` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2d4` | `WL0_VDL_OVRIDE_BYTE1_BIT0_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2d8` | `WL0_VDL_OVRIDE_BYTE1_BIT0_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2dc` | `WL0_VDL_OVRIDE_BYTE1_BIT1_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2e0` | `WL0_VDL_OVRIDE_BYTE1_BIT1_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2e4` | `WL0_VDL_OVRIDE_BYTE1_BIT2_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2e8` | `WL0_VDL_OVRIDE_BYTE1_BIT2_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2ec` | `WL0_VDL_OVRIDE_BYTE1_BIT3_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2f0` | `WL0_VDL_OVRIDE_BYTE1_BIT3_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2f4` | `WL0_VDL_OVRIDE_BYTE1_BIT4_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2f8` | `WL0_VDL_OVRIDE_BYTE1_BIT4_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x2fc` | `WL0_VDL_OVRIDE_BYTE1_BIT5_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x300` | `WL0_VDL_OVRIDE_BYTE1_BIT5_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x304` | `WL0_VDL_OVRIDE_BYTE1_BIT6_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x308` | `WL0_VDL_OVRIDE_BYTE1_BIT6_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x30c` | `WL0_VDL_OVRIDE_BYTE1_BIT7_R_P` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x310` | `WL0_VDL_OVRIDE_BYTE1_BIT7_R_N` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x314` | `WL0_VDL_OVRIDE_BYTE1_BIT_RD_EN` | 32 | rw |  | BUSY[31], BYTE_SEL[8], OVR_EN[16], OVR_FORCE[17], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x318` | `WL0_UNK_318` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x31c` | `WL0_UNK_31C` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x320` | `WL0_UNK_320` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x324` | `WL0_UNK_324` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x328` | `WL0_DYN_VDL_OVRIDE_BYTE0_R_P` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x32c` | `WL0_DYN_VDL_OVRIDE_BYTE0_R_N` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x330` | `WL0_DYN_VDL_OVRIDE_BYTE0_BIT_R_P` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x334` | `WL0_DYN_VDL_OVRIDE_BYTE0_BIT_R_N` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x338` | `WL0_DYN_VDL_OVRIDE_BYTE0_W` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x33c` | `WL0_DYN_VDL_OVRIDE_BYTE0_BIT_W` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x340` | `WL0_UNK_340` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x344` | `WL0_UNK_344` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x348` | `WL0_DYN_VDL_OVRIDE_BYTE1_R_P` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x34c` | `WL0_DYN_VDL_OVRIDE_BYTE1_R_N` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x350` | `WL0_DYN_VDL_OVRIDE_BYTE1_BIT_R_P` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x354` | `WL0_DYN_VDL_OVRIDE_BYTE1_BIT_R_N` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x358` | `WL0_DYN_VDL_OVRIDE_BYTE1_W` | 32 | rw |  | BYTE_SEL[8], OVR_EN[16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x35c` | `WL0_DYN_VDL_OVRIDE_BYTE1_BIT_W` | 32 | rw |  | BYTE_SEL[8], DM_OVR_EN[24], OVR_EN[23:16], OVR_STEP[5:0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x360` | `WL0_READ_DATA_DLY` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0x364` | `WL0_READ_CONTROL` | 32 | rw |  |  | C |  | regdb |
-| `0x368` | `WL0_UNK_368` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
-| `0x36c` | `WL0_UNK_36C` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x368` | `WL0_UNK_368` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x36c` | `WL0_UNK_36C` | 32 | rw |  |  | I |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x370` | `WL0_READ_FIFO_DATA_BL0_0` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x374` | `WL0_READ_FIFO_DATA_BL0_1` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x378` | `WL0_READ_FIFO_DATA_BL0_2` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x37c` | `WL0_READ_FIFO_DATA_BL0_3` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x380` | `WL0_READ_FIFO_DATA_BL1_0` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x384` | `WL0_READ_FIFO_DATA_BL1_1` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x388` | `WL0_READ_FIFO_DATA_BL1_2` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x38c` | `WL0_READ_FIFO_DATA_BL1_3` | 32 | ro |  | DATA_N[7:0], DATA_P[15:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x390` | `WL0_READ_FIFO_STATUS` | 32 | ro |  | STATUS0[3:0], STATUS1[7:4] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x394` | `WL0_READ_FIFO_CLEAR` | 32 | ro |  | CLEAR[0] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x3a0` | `WL0_IDLE_PAD_CONTROL` | 32 | rw |  | AUTO_DQ_IDDQ_MODE[21:20], AUTO_DQ_RXENB_MODE[23:22], CLK0_IDDQ[2], CLK0_OEB[0], CLK0_REB[1], CLK0_RXENB[3], CLK1_IDDQ[6], CLK1_OEB[4], CLK1_REB[5], CLK1_RXENB[7], DQS_IDDQ[10], DQS_OEB[8], DQS_REB[9], DQS_RXENB[11], DQ_IDDQ[18], DQ_OEB[16], DQ_REB[17], DQ_RXENB[19], IDLE[31], READ_ENB_IDDQ[14], READ_ENB_OEB[12], READ_ENB_REB[13], READ_ENB_RXENB[15] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x3a4` | `WL0_DRIVE_PAD_CTL` | 32 | rw |  | DQS_ALWAYS_ON[10], DQS_TX_DIS[9], GDDR_SYMMETRY[5], G_DDR[0], HALF_STRENGTH[7], HALF_STRENGTH_CK[8], NO_DQS_RD[11], RDQS_EN[6], RT120B_G[1], RT60B[2], VDDO_VOLTS[4:3] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `0x3a8` | `WL0_CLOCK_PAD_DISABLE` | 32 | rw |  | CLK0_PAD_DIS[0], CLK1_PAD_DIS[1], DM_PAD_DIS[2] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x3ac` | `WL0_WR_PREAMBLE_MODE` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x3b0` | `WL0_PHYBIST_VDL_ADJ` | 32 | rw |  | DQ0_VDL_ADJ[20:16], DQ1_VDL_ADJ[28:24], DQS0_VDL_ADJ[4:0], DQS1_VDL_ADJ[12:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 
 ### paxb0 (`0x18012000`)
 
@@ -199,6 +316,45 @@ Same registers as `uart1`.
 | `0xf10` | `STRAP_STATUS` | 32 | ro |  |  | C | PCIe straps (iproc PCIe IF enable, force 1 lane, force gen1, ...) | regdb PAXB_0_STRAP_STATUS |
 | `0xf14` | `RESET_STATUS` | 32 | ro |  | EP_PERST_B[1], HARD_RST_B[4], PCIE_RC_MODE_PERST_B[8], PCIE_PHY_PIPE_RESETMDIO_N[9], PAXB_RST_N[10] | I | Reset line levels; bit 8 follows CLK_CONTROL bit 0 (printed by awto-uboot) | regdb PAXB_0_RESET_STATUS (bit meaning of 8 inferred from its name) |
 | `0xf18` | `RESET_ENABLE_IN_PCIE_LINK_DOWN` | 32 | rw |  | EN_IPROC_RESET[0], EN_PAXB_RESET[1], EN_CHIP_RESET[2] | C | Reset-on-link-down enables; reset 0, not written by uboot-1 or stock | regdb PAXB_0_RESET_ENABLE_IN_PCIE_LINK_DOWN |
+
+### bspi (`0x18027000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `REVISION_ID` | 32 | ro |  | MAJOR[15:8], MINOR[7:0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x4` | `SCRATCH` | 32 | rw |  | SCRATCH[31:0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x8` | `MAST_N_BOOT_CTRL` | 32 | rw |  | MAST_N_BOOT[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0xc` | `BUSY_STATUS` | 32 | ro |  | BUSY[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x10` | `INTR_STATUS` | 32 | ro |  | INTR_0[0], INTR_1[1] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x14` | `B0_STATUS` | 32 | ro |  | B0_ADDRESS[25:0], B0_EMPTY[28], B0_FULL[29], B0_HIT[26], B0_MISS[27], B0_PREFETCH_ACTIVE[30] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x18` | `B0_CTRL` | 32 | rw |  | B0_FLUSH[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x1c` | `B1_STATUS` | 32 | ro |  | B1_ADDRESS[25:0], B1_EMPTY[28], B1_FULL[29], B1_HIT[26], B1_MISS[27], B1_PREFETCH_ACTIVE[30] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x20` | `B1_CTRL` | 32 | rw |  | B1_FLUSH[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x24` | `STRAP_OVERRIDE_CTRL` | 32 | rw |  | ADDR_4BYTE_N_3BYTE[2], DATA_DUAL_N_SGL[1], DATA_QUAD[3], ENDIAN_MODE[4], OVERRIDE[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x28` | `FLEX_MODE_ENABLE` | 32 | rw |  | BSPI_FLEX_MODE_ENABLE[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x2c` | `BITS_PER_CYCLE` | 32 | rw |  | ADDR_BPC_SELECT[17:16], CMD_BPC_SELECT[25:24], DATA_BPC_SELECT[1:0], MODE_BPC_SELECT[9:8] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x30` | `BITS_PER_PHASE` | 32 | rw |  | ADDR_BPP_SELECT[16], CMD_BPP_SELECT[24], DUMMY_CYCLES[7:0], MODE_BPP[8] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x34` | `CMD_AND_MODE_BYTE` | 32 | rw |  | BSPI_CMD_BYTE[7:0], BSPI_MODE_BYTE[23:16] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x38` | `BSPI_FLASH_UPPER_ADDR_BYTE` | 32 | rw |  | BSPI_FLASH_UPPER_ADDR[31:24] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x3c` | `BSPI_XOR_VALUE` | 32 | rw |  | BSPI_XOR_VALUE[31:20] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x40` | `BSPI_XOR_ENABLE` | 32 | rw |  | BSPI_XOR_ENABLE[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x44` | `BSPI_PIO_MODE_ENABLE` | 32 | rw |  | BSPI_PIO_MODE[0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x48` | `BSPI_PIO_IODIR` | 32 | rw |  | BSPI_PIO_DIR[2:0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+| `0x4c` | `BSPI_PIO_DATA` | 32 | rw |  | BSPI_PIO_DATA[2:0] | C |  | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
+
+### bspi_raf (`0x18027100`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `RAF_START_ADDR` | 32 | rw |  | START_ADDR[31:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x4` | `RAF_NUM_WORDS` | 32 | rw |  | NUMWORDS[31:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x8` | `RAF_CTRL` | 32 | rw |  | CLEAR[1], START[0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0xc` | `RAF_FULLNESS` | 32 | ro |  | FULLNESS[6:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x10` | `RAF_WATERMARK` | 32 | rw |  | FULLNESS_WATERMARK[1:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x14` | `RAF_STATUS` | 32 | ro |  | FIFO_EMPTY[1], FIFO_FULL[2], SESSION_BUSY[0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x18` | `RAF_READ_DATA` | 32 | ro |  | DATA[31:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x1c` | `RAF_WORD_CNT` | 32 | ro |  | CURRENT_WORD_COUNT[31:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
+| `0x20` | `RAF_CURR_ADDR` | 32 | ro |  | CURRENT_ADDRESS[31:0] | C |  | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
 
 ### mspi (`0x18027200`)
 
@@ -290,6 +446,105 @@ Same registers as `sp804_0`.
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
 | `0x800` | `RESET_CONTROL` | 32 | rw |  |  | C | see idm_pcie_m0.RESET_CONTROL | uboot-1 0x1c0245a4, 0x1c0245c0 |
+
+### idm_sram_s0 (`0x18120000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  | CLK_ENABLE[0], MEM_CLR_SNAP[6], MEM_TM[5:1], SRAM_INIT[7] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x500` | `IO_STATUS` | 32 | ro |  |  | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x800` | `RESET_CONTROL` | 32 | rw |  | RESET[0] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+
+### idm_apbz_s0 (`0x18121000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x800` | `RESET_CONTROL` | 32 | rw |  | RESET[0] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+
+### idm_axiic_ds_3 (`0x18123000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+
+### idm_apbw (`0x18131000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  | ARCACHE_JTAG_M0[27:24], AWCACHE_JTAG_M0[23:20], CLK_ENABLE[0], FORCECLOCKSON[1], INITIATE_BIST[15], OTP_POWER_READY[16], UARTCLKSEL[17] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x500` | `IO_STATUS` | 32 | ro |  | BIST_DONE[15], BIST_FAIL[14] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x800` | `RESET_CONTROL` | 32 | rw |  | RESET[0] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+
+### idm_apbx (`0x18132000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  | CLK_ENABLE[0] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x800` | `RESET_CONTROL` | 32 | rw |  | RESET[0] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+
+### idm_axiic_ds_0 (`0x18141000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x804` | `RESET_STATUS` | 32 | ro |  | ACTIVE_READ[0], ACTIVE_WRITE[1], READ_RECEIVED[2], WRITE_RECEIVED[3] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x808` | `RESET_READ_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x80c` | `RESET_WRITE_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x900` | `ERROR_LOG_CONTROL` | 32 | rw |  | BUS_ERROR_INTERRUPT[1], BUS_ERROR_RESET[0], TIMEOUT_ENABLE[9], TIMEOUT_EXPONENT[8:4], TIMEOUT_INTERRUPT[3], TIMEOUT_RESET[2] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x904` | `ERROR_LOG_COMPLETE` | 32 | ro |  | ERROR_COMPLETE[0], OVERFLOW_COMPLETE[1] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x908` | `ERROR_LOG_STATUS` | 32 | ro |  | CAUSE[1:0], ERROR_OVERFLOW[2] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x90c` | `ERROR_LOG_ADDR_LSB` | 32 | ro |  | ADDR[31:0] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x914` | `ERROR_LOG_ID` | 32 | ro |  | MASTER_ID[15:0], VMASTER_ID[31:16] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0x91c` | `ERROR_LOG_FLAGS` | 32 | ro |  | BURST[13:12], CACHE[19:16], DATA_IN[10:8], LEN[3:0], LOCK[15:14], PROT[22:20], READ_WRITE[24] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
+| `0xa00` | `INTERRUPT_STATUS` | 32 | ro |  | ERROR_LOG_INTERRUPT[0], TIMEOUT_INTERRUPT[1] | C |  | regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
 
 ### ccu (`0x19000000`)
 

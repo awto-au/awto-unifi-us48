@@ -347,3 +347,458 @@ sdk = "AXI_PCIE_S0_IDM_S_IDM_RESET_CONTROL"
 desc = "see idm_pcie_m0.RESET_CONTROL"
 src = "uboot-1 0x1c0245a4, 0x1c0245c0"
 conf = "C"
+
+# IDM wrappers past 0x18120000 (regdb <INST>_IDM_*; 4 KiB instance, ERROR_LOG at +0x900, RESET at +0x800)
+[block.idm_sram_s0]
+space = "axi0"
+base = 0x18120000
+size = 0x1000
+unit = 0
+desc = "SRAM_S0 IDM wrapper (regdb SRAM_S0_IDM_*)"
+src = "regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_sram_s0.reg.IO_CONTROL_DIRECT]
+offset = 0x408
+sdk = "SRAM_S0_IDM_IO_CONTROL_DIRECT"
+fields = ["CLK_ENABLE 0", "MEM_CLR_SNAP 6", "MEM_TM 5:1", "SRAM_INIT 7"]
+
+[block.idm_sram_s0.reg.IO_STATUS]
+offset = 0x500
+access = "ro"
+sdk = "SRAM_S0_IDM_IO_STATUS"
+
+[block.idm_sram_s0.reg.RESET_CONTROL]
+offset = 0x800
+sdk = "SRAM_S0_IDM_RESET_CONTROL"
+fields = ["RESET 0"]
+
+[block.idm_sram_s0.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "SRAM_S0_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_sram_s0.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "SRAM_S0_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_sram_s0.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "SRAM_S0_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "SRAM_S0_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "SRAM_S0_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "SRAM_S0_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "SRAM_S0_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "SRAM_S0_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_sram_s0.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "SRAM_S0_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_sram_s0.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "SRAM_S0_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]
+
+[block.idm_apbz_s0]
+space = "axi0"
+base = 0x18121000
+size = 0x1000
+unit = 0
+desc = "APBZ_S0 IDM wrapper (regdb APBZ_S0_IDM_*)"
+src = "regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_apbz_s0.reg.RESET_CONTROL]
+offset = 0x800
+sdk = "APBZ_S0_IDM_IDM_RESET_CONTROL"
+fields = ["RESET 0"]
+
+[block.idm_apbz_s0.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_apbz_s0.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbz_s0.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbz_s0.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_apbz_s0.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "APBZ_S0_IDM_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]
+
+[block.idm_axiic_ds_3]
+space = "axi0"
+base = 0x18123000
+size = 0x1000
+unit = 0
+desc = "AXIIC_DS_3 IDM wrapper (regdb AXIIC_DS_3_IDM_*)"
+src = "regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_axiic_ds_3.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_axiic_ds_3.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_3.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_3.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_axiic_ds_3.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "AXIIC_DS_3_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]
+
+[block.idm_apbw]
+space = "axi0"
+base = 0x18131000
+size = 0x1000
+unit = 0
+desc = "APBW IDM wrapper (regdb APBW_IDM_*)"
+src = "regdb APBW_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_apbw.reg.IO_CONTROL_DIRECT]
+offset = 0x408
+sdk = "APBW_IDM_IDM_IO_CONTROL_DIRECT"
+fields = ["ARCACHE_JTAG_M0 27:24", "AWCACHE_JTAG_M0 23:20", "CLK_ENABLE 0", "FORCECLOCKSON 1", "INITIATE_BIST 15", "OTP_POWER_READY 16", "UARTCLKSEL 17"]
+
+[block.idm_apbw.reg.IO_STATUS]
+offset = 0x500
+access = "ro"
+sdk = "APBW_IDM_IDM_IO_STATUS"
+fields = ["BIST_DONE 15", "BIST_FAIL 14"]
+
+[block.idm_apbw.reg.RESET_CONTROL]
+offset = 0x800
+sdk = "APBW_IDM_IDM_RESET_CONTROL"
+fields = ["RESET 0"]
+
+[block.idm_apbw.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "APBW_IDM_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_apbw.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "APBW_IDM_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbw.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "APBW_IDM_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbw.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "APBW_IDM_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_apbw.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "APBW_IDM_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_apbw.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "APBW_IDM_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_apbw.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "APBW_IDM_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_apbw.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "APBW_IDM_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbw.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "APBW_IDM_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_apbw.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "APBW_IDM_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]
+
+[block.idm_apbx]
+space = "axi0"
+base = 0x18132000
+size = 0x1000
+unit = 0
+desc = "APBX IDM wrapper (regdb APBX_IDM_*)"
+src = "regdb APBX_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_apbx.reg.IO_CONTROL_DIRECT]
+offset = 0x408
+sdk = "APBX_IDM_IDM_IO_CONTROL_DIRECT"
+fields = ["CLK_ENABLE 0"]
+
+[block.idm_apbx.reg.RESET_CONTROL]
+offset = 0x800
+sdk = "APBX_IDM_IDM_RESET_CONTROL"
+fields = ["RESET 0"]
+
+[block.idm_apbx.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "APBX_IDM_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_apbx.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "APBX_IDM_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbx.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "APBX_IDM_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbx.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "APBX_IDM_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_apbx.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "APBX_IDM_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_apbx.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "APBX_IDM_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_apbx.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "APBX_IDM_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_apbx.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "APBX_IDM_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_apbx.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "APBX_IDM_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_apbx.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "APBX_IDM_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]
+
+[block.idm_axiic_ds_0]
+space = "axi0"
+base = 0x18141000
+size = 0x1000
+unit = 0
+desc = "AXIIC_DS_0 IDM wrapper (regdb AXIIC_DS_0_IDM_*)"
+src = "regdb AXIIC_DS_0_IDM_*; uboot-1 emu writes (#69 comment 6888018710)"
+conf = "C"
+
+[block.idm_axiic_ds_0.reg.RESET_STATUS]
+offset = 0x804
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_RESET_STATUS"
+fields = ["ACTIVE_READ 0", "ACTIVE_WRITE 1", "READ_RECEIVED 2", "WRITE_RECEIVED 3"]
+
+[block.idm_axiic_ds_0.reg.RESET_READ_ID]
+offset = 0x808
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_RESET_READ_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_0.reg.RESET_WRITE_ID]
+offset = 0x80c
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_RESET_WRITE_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_CONTROL]
+offset = 0x900
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_CONTROL"
+fields = ["BUS_ERROR_INTERRUPT 1", "BUS_ERROR_RESET 0", "TIMEOUT_ENABLE 9", "TIMEOUT_EXPONENT 8:4", "TIMEOUT_INTERRUPT 3", "TIMEOUT_RESET 2"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_COMPLETE]
+offset = 0x904
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_COMPLETE"
+fields = ["ERROR_COMPLETE 0", "OVERFLOW_COMPLETE 1"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_STATUS]
+offset = 0x908
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_STATUS"
+fields = ["CAUSE 1:0", "ERROR_OVERFLOW 2"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_ADDR_LSB]
+offset = 0x90c
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_ADDR_LSB"
+fields = ["ADDR 31:0"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_ID]
+offset = 0x914
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_ID"
+fields = ["MASTER_ID 15:0", "VMASTER_ID 31:16"]
+
+[block.idm_axiic_ds_0.reg.ERROR_LOG_FLAGS]
+offset = 0x91c
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_ERROR_LOG_FLAGS"
+fields = ["BURST 13:12", "CACHE 19:16", "DATA_IN 10:8", "LEN 3:0", "LOCK 15:14", "PROT 22:20", "READ_WRITE 24"]
+
+[block.idm_axiic_ds_0.reg.INTERRUPT_STATUS]
+offset = 0xa00
+access = "ro"
+sdk = "AXIIC_DS_0_IDM_INTERRUPT_STATUS"
+fields = ["ERROR_LOG_INTERRUPT 0", "TIMEOUT_INTERRUPT 1"]

@@ -295,7 +295,111 @@ unit = 0
 desc = "QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL"
 src = "us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000)"
 conf = "C"
-note = "register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*)"
+
+[block.bspi.reg.REVISION_ID]
+offset = 0x0
+access = "ro"
+sdk = "QSPI_BSPI_REGISTERS_REVISION_ID"
+fields = ["MAJOR 15:8", "MINOR 7:0"]
+
+[block.bspi.reg.SCRATCH]
+offset = 0x4
+sdk = "QSPI_BSPI_REGISTERS_SCRATCH"
+fields = ["SCRATCH 31:0"]
+
+[block.bspi.reg.MAST_N_BOOT_CTRL]
+offset = 0x8
+sdk = "QSPI_BSPI_REGISTERS_MAST_N_BOOT_CTRL"
+fields = ["MAST_N_BOOT 0"]
+
+[block.bspi.reg.BUSY_STATUS]
+offset = 0xc
+access = "ro"
+sdk = "QSPI_BSPI_REGISTERS_BUSY_STATUS"
+fields = ["BUSY 0"]
+
+[block.bspi.reg.INTR_STATUS]
+offset = 0x10
+access = "ro"
+sdk = "QSPI_BSPI_REGISTERS_INTR_STATUS"
+fields = ["INTR_0 0", "INTR_1 1"]
+
+[block.bspi.reg.B0_STATUS]
+offset = 0x14
+access = "ro"
+sdk = "QSPI_BSPI_REGISTERS_B0_STATUS"
+fields = ["B0_ADDRESS 25:0", "B0_EMPTY 28", "B0_FULL 29", "B0_HIT 26", "B0_MISS 27", "B0_PREFETCH_ACTIVE 30"]
+
+[block.bspi.reg.B0_CTRL]
+offset = 0x18
+sdk = "QSPI_BSPI_REGISTERS_B0_CTRL"
+fields = ["B0_FLUSH 0"]
+
+[block.bspi.reg.B1_STATUS]
+offset = 0x1c
+access = "ro"
+sdk = "QSPI_BSPI_REGISTERS_B1_STATUS"
+fields = ["B1_ADDRESS 25:0", "B1_EMPTY 28", "B1_FULL 29", "B1_HIT 26", "B1_MISS 27", "B1_PREFETCH_ACTIVE 30"]
+
+[block.bspi.reg.B1_CTRL]
+offset = 0x20
+sdk = "QSPI_BSPI_REGISTERS_B1_CTRL"
+fields = ["B1_FLUSH 0"]
+
+[block.bspi.reg.STRAP_OVERRIDE_CTRL]
+offset = 0x24
+sdk = "QSPI_BSPI_REGISTERS_STRAP_OVERRIDE_CTRL"
+fields = ["ADDR_4BYTE_N_3BYTE 2", "DATA_DUAL_N_SGL 1", "DATA_QUAD 3", "ENDIAN_MODE 4", "OVERRIDE 0"]
+
+[block.bspi.reg.FLEX_MODE_ENABLE]
+offset = 0x28
+sdk = "QSPI_BSPI_REGISTERS_FLEX_MODE_ENABLE"
+fields = ["BSPI_FLEX_MODE_ENABLE 0"]
+
+[block.bspi.reg.BITS_PER_CYCLE]
+offset = 0x2c
+sdk = "QSPI_BSPI_REGISTERS_BITS_PER_CYCLE"
+fields = ["ADDR_BPC_SELECT 17:16", "CMD_BPC_SELECT 25:24", "DATA_BPC_SELECT 1:0", "MODE_BPC_SELECT 9:8"]
+
+[block.bspi.reg.BITS_PER_PHASE]
+offset = 0x30
+sdk = "QSPI_BSPI_REGISTERS_BITS_PER_PHASE"
+fields = ["ADDR_BPP_SELECT 16", "CMD_BPP_SELECT 24", "DUMMY_CYCLES 7:0", "MODE_BPP 8"]
+
+[block.bspi.reg.CMD_AND_MODE_BYTE]
+offset = 0x34
+sdk = "QSPI_BSPI_REGISTERS_CMD_AND_MODE_BYTE"
+fields = ["BSPI_CMD_BYTE 7:0", "BSPI_MODE_BYTE 23:16"]
+
+[block.bspi.reg.BSPI_FLASH_UPPER_ADDR_BYTE]
+offset = 0x38
+sdk = "QSPI_BSPI_REGISTERS_BSPI_FLASH_UPPER_ADDR_BYTE"
+fields = ["BSPI_FLASH_UPPER_ADDR 31:24"]
+
+[block.bspi.reg.BSPI_XOR_VALUE]
+offset = 0x3c
+sdk = "QSPI_BSPI_REGISTERS_BSPI_XOR_VALUE"
+fields = ["BSPI_XOR_VALUE 31:20"]
+
+[block.bspi.reg.BSPI_XOR_ENABLE]
+offset = 0x40
+sdk = "QSPI_BSPI_REGISTERS_BSPI_XOR_ENABLE"
+fields = ["BSPI_XOR_ENABLE 0"]
+
+[block.bspi.reg.BSPI_PIO_MODE_ENABLE]
+offset = 0x44
+sdk = "QSPI_BSPI_REGISTERS_BSPI_PIO_MODE_ENABLE"
+fields = ["BSPI_PIO_MODE 0"]
+
+[block.bspi.reg.BSPI_PIO_IODIR]
+offset = 0x48
+sdk = "QSPI_BSPI_REGISTERS_BSPI_PIO_IODIR"
+fields = ["BSPI_PIO_DIR 2:0"]
+
+[block.bspi.reg.BSPI_PIO_DATA]
+offset = 0x4c
+sdk = "QSPI_BSPI_REGISTERS_BSPI_PIO_DATA"
+fields = ["BSPI_PIO_DATA 2:0"]
 
 [block.bspi_raf]
 space = "axi0"
@@ -305,6 +409,56 @@ unit = 0
 desc = "BSPI RAF (read-ahead FIFO) regs, tail of the bspi window"
 src = "us48-uboot.dts comment (bspi_raf = bspi + 0x100)"
 conf = "C"
+
+[block.bspi_raf.reg.RAF_START_ADDR]
+offset = 0x0
+sdk = "QSPI_RAF_START_ADDR"
+fields = ["START_ADDR 31:0"]
+
+[block.bspi_raf.reg.RAF_NUM_WORDS]
+offset = 0x4
+sdk = "QSPI_RAF_NUM_WORDS"
+fields = ["NUMWORDS 31:0"]
+
+[block.bspi_raf.reg.RAF_CTRL]
+offset = 0x8
+sdk = "QSPI_RAF_CTRL"
+fields = ["CLEAR 1", "START 0"]
+
+[block.bspi_raf.reg.RAF_FULLNESS]
+offset = 0xc
+access = "ro"
+sdk = "QSPI_RAF_FULLNESS"
+fields = ["FULLNESS 6:0"]
+
+[block.bspi_raf.reg.RAF_WATERMARK]
+offset = 0x10
+sdk = "QSPI_RAF_WATERMARK"
+fields = ["FULLNESS_WATERMARK 1:0"]
+
+[block.bspi_raf.reg.RAF_STATUS]
+offset = 0x14
+access = "ro"
+sdk = "QSPI_RAF_STATUS"
+fields = ["FIFO_EMPTY 1", "FIFO_FULL 2", "SESSION_BUSY 0"]
+
+[block.bspi_raf.reg.RAF_READ_DATA]
+offset = 0x18
+access = "ro"
+sdk = "QSPI_RAF_READ_DATA"
+fields = ["DATA 31:0"]
+
+[block.bspi_raf.reg.RAF_WORD_CNT]
+offset = 0x1c
+access = "ro"
+sdk = "QSPI_RAF_WORD_CNT"
+fields = ["CURRENT_WORD_COUNT 31:0"]
+
+[block.bspi_raf.reg.RAF_CURR_ADDR]
+offset = 0x20
+access = "ro"
+sdk = "QSPI_RAF_CURR_ADDR"
+fields = ["CURRENT_ADDRESS 31:0"]
 
 [block.i2c0]
 space = "axi0"

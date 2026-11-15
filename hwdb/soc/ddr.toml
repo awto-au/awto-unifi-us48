@@ -1,4 +1,4 @@
-# DDR3 controller (Denali) and PHY, axi0 unit 0. Named PHY subset only; full set is regdb DDR_PHY_* (docs/ddr.md).
+# DDR3 controller (Denali) and PHY, axi0 unit 0. PHY registers from regdb DDR_PHY_* (docs/ddr.md).
 
 [block.ddr_ctl]
 space = "axi0"
@@ -141,47 +141,628 @@ conf = "C"
 [block.ddr_phy.reg.WL0_UNK_318]
 offset = 0x318
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_31C]
 offset = 0x31c
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_320]
 offset = 0x320
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_324]
 offset = 0x324
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_340]
 offset = 0x340
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_344]
 offset = 0x344
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_368]
 offset = 0x368
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
 
 [block.ddr_phy.reg.WL0_UNK_36C]
 offset = 0x36c
 src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
-conf = "C"
+conf = "I"
 note = "name and fields unknown"
+
+# regdb DDR_PHY_* not named above (fields from regdb; read-only = regdb flags 0x10)
+[block.ddr_phy.reg.AUX_CONTROL]
+offset = 0x20
+sdk = "DDR_PHY_CONTROL_REGS_AUX_CONTROL"
+fields = ["IS_AD 6:4", "IS_CS 9:7", "IS_ODT 3:1", "OVERRIDE 0"]
+
+[block.ddr_phy.reg.CLK_PM_CTRL]
+offset = 0x4
+sdk = "DDR_PHY_CONTROL_REGS_CLK_PM_CTRL"
+fields = ["DIS_DDR_CLK 0"]
+
+[block.ddr_phy.reg.COMMAND_REG]
+offset = 0x90
+sdk = "DDR_PHY_CONTROL_REGS_COMMAND_REG"
+fields = ["AD 15:0", "AUX 24:22", "BA 18:16", "CAS 20", "MPR_MODE 28", "RAS 19", "WE 21"]
+
+[block.ddr_phy.reg.DATAPATH_LOOPBACK]
+offset = 0xc4
+sdk = "DDR_PHY_CONTROL_REGS_DATAPATH_LOOPBACK"
+fields = ["ENABLE 0", "USE_ADDR_CTL 1", "XOR_DM_RD_EN 2"]
+
+[block.ddr_phy.reg.DEBUG_FREEZE_ENABLE]
+offset = 0xc0
+sdk = "DDR_PHY_CONTROL_REGS_DEBUG_FREEZE_ENABLE"
+fields = ["WL0_BL0 0", "WL0_BL1 1", "WL1_BL0 2", "WL1_BL1 3"]
+
+[block.ddr_phy.reg.MODE_REG0]
+offset = 0x94
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_MODE_REG0"
+fields = ["AD 15:0", "VALID 16"]
+
+[block.ddr_phy.reg.MODE_REG1]
+offset = 0x98
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_MODE_REG1"
+fields = ["AD 15:0", "VALID 16"]
+
+[block.ddr_phy.reg.MODE_REG2]
+offset = 0x9c
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_MODE_REG2"
+fields = ["AD 15:0", "VALID 16"]
+
+[block.ddr_phy.reg.MODE_REG3]
+offset = 0xa0
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_MODE_REG3"
+fields = ["AD 15:0", "VALID 16"]
+
+[block.ddr_phy.reg.PHYBIST_CNTRL]
+offset = 0x70
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_CNTRL"
+fields = ["BENCH_MODE 4", "ENABLE 0", "FORCE_CTL_ERROR 2", "FORCE_DAT_ERROR 3", "FORCE_ERROR_SEL 13:8", "INT_LOOPBACK 1"]
+
+[block.ddr_phy.reg.PHYBIST_CTL_STATUS]
+offset = 0x7c
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_CTL_STATUS"
+fields = ["CTL_ERRORS 26:0"]
+
+[block.ddr_phy.reg.PHYBIST_DQ_STATUS]
+offset = 0x80
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_DQ_STATUS"
+fields = ["DAT_ERRORS 31:0"]
+
+[block.ddr_phy.reg.PHYBIST_MISC_STATUS]
+offset = 0x84
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_MISC_STATUS"
+fields = ["CK_ERRORS 7:4", "DM_ERRORS 3:0"]
+
+[block.ddr_phy.reg.PHYBIST_SEED]
+offset = 0x74
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_SEED"
+fields = ["SEED 31:0"]
+
+[block.ddr_phy.reg.PHYBIST_STATUS]
+offset = 0x78
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_PHYBIST_STATUS"
+fields = ["CTL_DONE 0", "CTL_PASS 2", "DAT_DONE 1", "DAT_PASS 3"]
+
+[block.ddr_phy.reg.STANDBY_CONTROL]
+offset = 0xa4
+sdk = "DDR_PHY_CONTROL_REGS_STANDBY_CONTROL"
+fields = ["ARMED 15", "CKE 4", "LDO_VOLTS 8:7", "PWRDOWN_CKE 9", "PWRDOWN_LDO_VOLTS 13:12", "PWRDOWN_RST_N 10", "PWRDOWN_SKIP_MRS 11", "RST_N 5", "SKIP_MRS 6", "STANDBY 3:0", "STANDBY_ACTIVE 16", "STANDBY_EXIT_PIN_EN 17", "STANDBY_READY 18", "WARMSTART 14"]
+
+[block.ddr_phy.reg.STRAP_STATUS]
+offset = 0xb8
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_STRAP_STATUS"
+fields = ["AD_WIDTH 15:14", "BUS16 12", "BUS8 11", "CHIP_SIZE 7:6", "CHIP_WIDTH 10", "DUAL_RANK 13", "FROM_MEMC 28", "FROM_REG 29", "JEDEC_TYPE 5:1", "MHZ 27:16", "STRAPS_VALID 0", "VDDQ 9:8"]
+
+[block.ddr_phy.reg.STRAP_STATUS2]
+offset = 0xbc
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_STRAP_STATUS2"
+fields = ["AL 19:17", "CL 6:0", "CWL 11:7", "DDR3 20", "WR 16:12"]
+
+[block.ddr_phy.reg.VDL_DQ_CALIB_STATUS]
+offset = 0x50
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VDL_DQ_CALIB_STATUS"
+fields = ["DQS_CALIB_CLOCKS 3", "DQS_CALIB_LOCK 1", "DQS_CALIB_MODE 2", "DQS_CALIB_TOTAL 25:16", "DQ_CALIB_LOCK 0", "DQ_CALIB_TOTAL 13:4"]
+
+[block.ddr_phy.reg.VDL_RD_DATA_DLY_STATUS]
+offset = 0x44
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VDL_RD_DATA_DLY_STATUS"
+fields = ["AUTO_INIT_STATE 11:6", "RD_DATA_DLY_MAX 5:3", "RD_DATA_DLY_MIN 2:0"]
+
+[block.ddr_phy.reg.VDL_RD_EN_CALIB_STATUS]
+offset = 0x58
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VDL_RD_EN_CALIB_STATUS"
+fields = ["RD_EN_CALIB_BIT_OFFSET 21:16", "RD_EN_CALIB_BYTE_SEL 1", "RD_EN_CALIB_CLOCKS 2", "RD_EN_CALIB_LOCK 0", "RD_EN_CALIB_TOTAL 13:4"]
+
+[block.ddr_phy.reg.VDL_WR_CHAN_CALIB_STATUS]
+offset = 0x54
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VDL_WR_CHAN_CALIB_STATUS"
+fields = ["WR_CHAN_CALIB_BIT_OFFSET 21:16", "WR_CHAN_CALIB_BYTE_SEL 1", "WR_CHAN_CALIB_CLOCKS 2", "WR_CHAN_CALIB_LOCK 0", "WR_CHAN_CALIB_TOTAL 13:4"]
+
+[block.ddr_phy.reg.VIRTUAL_VTT_CONNECTIONS]
+offset = 0x64
+sdk = "DDR_PHY_CONTROL_REGS_VIRTUAL_VTT_CONNECTIONS"
+fields = ["MASK 26:0"]
+
+[block.ddr_phy.reg.VIRTUAL_VTT_CONTROL]
+offset = 0x5c
+sdk = "DDR_PHY_CONTROL_REGS_VIRTUAL_VTT_CONTROL"
+fields = ["ENABLE_CKE_IDLE 0", "ENABLE_CS_IDLE 1", "ENABLE_CTL_IDLE 2", "ERROR_RESET 3", "HIGH_VTT 4", "LOW_VTT 5"]
+
+[block.ddr_phy.reg.VIRTUAL_VTT_OVERRIDE]
+offset = 0x68
+sdk = "DDR_PHY_CONTROL_REGS_VIRTUAL_VTT_OVERRIDE"
+fields = ["MASK 26:0"]
+
+[block.ddr_phy.reg.VIRTUAL_VTT_STATUS]
+offset = 0x60
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VIRTUAL_VTT_STATUS"
+fields = ["ERROR 18:3", "ERROR_HIGH 1", "ERROR_LOW 2", "READY 0"]
+
+[block.ddr_phy.reg.WL0_CLOCK_PAD_DISABLE]
+offset = 0x3a8
+sdk = "DDR_PHY_WORD_LANE_0_CLOCK_PAD_DISABLE"
+fields = ["CLK0_PAD_DIS 0", "CLK1_PAD_DIS 1", "DM_PAD_DIS 2"]
+
+[block.ddr_phy.reg.WL0_DRIVE_PAD_CTL]
+offset = 0x3a4
+sdk = "DDR_PHY_WORD_LANE_0_DRIVE_PAD_CTL"
+fields = ["DQS_ALWAYS_ON 10", "DQS_TX_DIS 9", "GDDR_SYMMETRY 5", "G_DDR 0", "HALF_STRENGTH 7", "HALF_STRENGTH_CK 8", "NO_DQS_RD 11", "RDQS_EN 6", "RT120B_G 1", "RT60B 2", "VDDO_VOLTS 4:3"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_BIT_R_N]
+offset = 0x334
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_BIT_R_N"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_BIT_R_P]
+offset = 0x330
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_BIT_R_P"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_BIT_W]
+offset = 0x33c
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_BIT_W"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_R_N]
+offset = 0x32c
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_R_N"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_R_P]
+offset = 0x328
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_R_P"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE0_W]
+offset = 0x338
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE0_W"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_BIT_R_N]
+offset = 0x354
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_BIT_R_N"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_BIT_R_P]
+offset = 0x350
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_BIT_R_P"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_BIT_W]
+offset = 0x35c
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_BIT_W"
+fields = ["BYTE_SEL 8", "DM_OVR_EN 24", "OVR_EN 23:16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_R_N]
+offset = 0x34c
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_R_N"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_R_P]
+offset = 0x348
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_R_P"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_DYN_VDL_OVRIDE_BYTE1_W]
+offset = 0x358
+sdk = "DDR_PHY_WORD_LANE_0_DYN_VDL_OVRIDE_BYTE1_W"
+fields = ["BYTE_SEL 8", "OVR_EN 16", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_IDLE_PAD_CONTROL]
+offset = 0x3a0
+sdk = "DDR_PHY_WORD_LANE_0_IDLE_PAD_CONTROL"
+fields = ["AUTO_DQ_IDDQ_MODE 21:20", "AUTO_DQ_RXENB_MODE 23:22", "CLK0_IDDQ 2", "CLK0_OEB 0", "CLK0_REB 1", "CLK0_RXENB 3", "CLK1_IDDQ 6", "CLK1_OEB 4", "CLK1_REB 5", "CLK1_RXENB 7", "DQS_IDDQ 10", "DQS_OEB 8", "DQS_REB 9", "DQS_RXENB 11", "DQ_IDDQ 18", "DQ_OEB 16", "DQ_REB 17", "DQ_RXENB 19", "IDLE 31", "READ_ENB_IDDQ 14", "READ_ENB_OEB 12", "READ_ENB_REB 13", "READ_ENB_RXENB 15"]
+
+[block.ddr_phy.reg.WL0_PHYBIST_VDL_ADJ]
+offset = 0x3b0
+sdk = "DDR_PHY_WORD_LANE_0_PHYBIST_VDL_ADJ"
+fields = ["DQ0_VDL_ADJ 20:16", "DQ1_VDL_ADJ 28:24", "DQS0_VDL_ADJ 4:0", "DQS1_VDL_ADJ 12:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_CLEAR]
+offset = 0x394
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_CLEAR"
+fields = ["CLEAR 0"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL0_0]
+offset = 0x370
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL0_0"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL0_1]
+offset = 0x374
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL0_1"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL0_2]
+offset = 0x378
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL0_2"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL0_3]
+offset = 0x37c
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL0_3"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL1_0]
+offset = 0x380
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL1_0"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL1_1]
+offset = 0x384
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL1_1"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL1_2]
+offset = 0x388
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL1_2"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_DATA_BL1_3]
+offset = 0x38c
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_DATA_BL1_3"
+fields = ["DATA_N 7:0", "DATA_P 15:8"]
+
+[block.ddr_phy.reg.WL0_READ_FIFO_STATUS]
+offset = 0x390
+access = "ro"
+sdk = "DDR_PHY_WORD_LANE_0_READ_FIFO_STATUS"
+fields = ["STATUS0 3:0", "STATUS1 7:4"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT0_R_N]
+offset = 0x238
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT0_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT0_R_P]
+offset = 0x234
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT0_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT0_W]
+offset = 0x210
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT0_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT1_R_N]
+offset = 0x240
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT1_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT1_R_P]
+offset = 0x23c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT1_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT1_W]
+offset = 0x214
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT1_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT2_R_N]
+offset = 0x248
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT2_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT2_R_P]
+offset = 0x244
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT2_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT2_W]
+offset = 0x218
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT2_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT3_R_N]
+offset = 0x250
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT3_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT3_R_P]
+offset = 0x24c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT3_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT3_W]
+offset = 0x21c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT3_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT4_R_N]
+offset = 0x258
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT4_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT4_R_P]
+offset = 0x254
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT4_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT4_W]
+offset = 0x220
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT4_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT5_R_N]
+offset = 0x260
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT5_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT5_R_P]
+offset = 0x25c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT5_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT5_W]
+offset = 0x224
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT5_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT6_R_N]
+offset = 0x268
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT6_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT6_R_P]
+offset = 0x264
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT6_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT6_W]
+offset = 0x228
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT6_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT7_R_N]
+offset = 0x270
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT7_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT7_R_P]
+offset = 0x26c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT7_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT7_W]
+offset = 0x22c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT7_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_BIT_RD_EN]
+offset = 0x274
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_BIT_RD_EN"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_DM_W]
+offset = 0x230
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_DM_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_R_N]
+offset = 0x20c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_R_P]
+offset = 0x208
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE0_W]
+offset = 0x204
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE0_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT0_R_N]
+offset = 0x2d8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT0_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT0_R_P]
+offset = 0x2d4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT0_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT0_W]
+offset = 0x2b0
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT0_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT1_R_N]
+offset = 0x2e0
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT1_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT1_R_P]
+offset = 0x2dc
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT1_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT1_W]
+offset = 0x2b4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT1_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT2_R_N]
+offset = 0x2e8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT2_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT2_R_P]
+offset = 0x2e4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT2_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT2_W]
+offset = 0x2b8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT2_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT3_R_N]
+offset = 0x2f0
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT3_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT3_R_P]
+offset = 0x2ec
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT3_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT3_W]
+offset = 0x2bc
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT3_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT4_R_N]
+offset = 0x2f8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT4_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT4_R_P]
+offset = 0x2f4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT4_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT4_W]
+offset = 0x2c0
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT4_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT5_R_N]
+offset = 0x300
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT5_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT5_R_P]
+offset = 0x2fc
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT5_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT5_W]
+offset = 0x2c4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT5_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT6_R_N]
+offset = 0x308
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT6_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT6_R_P]
+offset = 0x304
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT6_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT6_W]
+offset = 0x2c8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT6_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT7_R_N]
+offset = 0x310
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT7_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT7_R_P]
+offset = 0x30c
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT7_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT7_W]
+offset = 0x2cc
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT7_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_BIT_RD_EN]
+offset = 0x314
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_BIT_RD_EN"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_DM_W]
+offset = 0x2d0
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_DM_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_R_N]
+offset = 0x2ac
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_R_N"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_R_P]
+offset = 0x2a8
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_R_P"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE1_W]
+offset = 0x2a4
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE1_W"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]
+
+[block.ddr_phy.reg.WL0_VDL_OVRIDE_BYTE_RD_EN]
+offset = 0x200
+sdk = "DDR_PHY_WORD_LANE_0_VDL_OVRIDE_BYTE_RD_EN"
+fields = ["BUSY 31", "BYTE_SEL 8", "OVR_EN 16", "OVR_FORCE 17", "OVR_STEP 5:0"]

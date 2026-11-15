@@ -47,16 +47,18 @@ def _rg(n):
     return r.base, r.size or 0x1000
 
 
-# Memory map and register addresses come from hwdb (#72). Not in hwdb yet: the BSPI/RAF register
-# offsets (RAF_* below, from FUN_1c024d10), DDR controller/PHY and the IDM wrappers past 0x18120000
-# (those pages are auto-mapped on first access and listed as UNMAPPED in the report).
+# Memory map and register addresses/offsets come from hwdb (#72).
 A_UART = DB.addr("uart1")
 A_MSPI = DB.addr("mspi")
 A_BSPI = DB.addr("bspi")
 A_RAF = DB.addr("bspi_raf")
 A_GT = DB.addr("gtimer.COUNTER_LO")
 A_MSPI_REG = {n: DB.addr("mspi." + n) for n in ("SPCR0_MSB", "NEWQP", "ENDQP", "SPCR2", "STATUS", "TXRAM", "RXRAM", "CDRAM")}
-RAF_START, RAF_WORDS, RAF_CTRL, RAF_STATUS, RAF_FIFO = 0x00, 0x04, 0x08, 0x14, 0x18  # FUN_1c024d10
+RAF_START = DB.reg("bspi_raf.RAF_START_ADDR").offset  # FUN_1c024d10
+RAF_WORDS = DB.reg("bspi_raf.RAF_NUM_WORDS").offset
+RAF_CTRL = DB.reg("bspi_raf.RAF_CTRL").offset
+RAF_STATUS = DB.reg("bspi_raf.RAF_STATUS").offset
+RAF_FIFO = DB.reg("bspi_raf.RAF_READ_DATA").offset
 # Timer-bounded polls the branch heuristic cannot decide (exit branch is backward): (caller return pc, reg addr) -> bits to set.
 # DDR PHY reg reader FUN_1c0062e4 (read at 0x1c0062f8), poll loops in FUN_1c007058 (timer: 0x1c005ef8 start, 0x1c005f34 expired).
 KNOWN_POLLS = {
@@ -66,8 +68,8 @@ KNOWN_POLLS = {
 # Modelled DDR PHY status (read default when never written): VDL calibration status, bit0 idle, bit1 locked
 # (FUN_1c007058 @0x1c007560 / 0x1c0075b0).
 STATUS_DEFAULTS = {0x1801084C: 0x3}
-MSPI_CS = 0x180  # chip-select control, written by spi_xfer BEGIN/END
-BSPI_UPPER = 0x38  # upper address byte (<<24) written by FUN_1c024d10 @0x1c024e4c
+MSPI_CS = DB.reg("mspi.WRITE_LOCK").offset  # chip-select control, written by spi_xfer BEGIN/END
+BSPI_UPPER = DB.reg("bspi.BSPI_FLASH_UPPER_ADDR_BYTE").offset  # upper address byte (<<24), FUN_1c024d10 @0x1c024e4c
 # device windows (mmio): hwdb regions of kind device in axi0, plus hand blocks outside them (cmic0)
 DEVICES = [(n, r.base, r.size) for n, r in DB.regions.items() if r.space == "axi0" and r.kind == "device"]
 DEVICES += [(n, b.base, b.size) for n, b in DB.blocks.items()
