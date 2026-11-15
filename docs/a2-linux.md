@@ -32,10 +32,16 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 ## Risks
 - a1 reader late or stopped: a2 blocks in DCC (earlycon per character); hvc0 never registered if the first drain is >100 ms late.
-- DTB at +0x0b00000 (current hwdb) is overwritten by the decompressed kernel.
-- First MiB reused by the kernel: resource table/trace there are overwritten.
+- The decompressed kernel (RAM base + 0x8000 .. +0xe77044 with bss) overwrites the stub MiB: fine, the stub has jumped; the layout check is in `build_a2_linux.py`.
+- The decompressor prints nothing (`DEBUG_UNCOMPRESS` needs `!ARCH_MULTIPLATFORM`): the first output is `earlycon` at `parse_early_param`, so a silent a2 is not yet "kernel dead" (#79 bisect).
 - Atomics: ldrex/strex on host DDR over PCIe, local monitor only (UP, non-shared mapping); untested on a2.
 - Page tables, stack and all data cross PCIe on cache misses; L2 off. Expect slow boot; L1 only.
 - PERIPHCLK 200 MHz assumed (global timer rate); wrong rate = wrong time only. Clock follows #70.
 - ~14 MB uncompressed kernel + 10 MB zImage in 63 MiB leaves ~35 MiB free.
 - a1: first boot with HVC_DCC unmeasured (100 ms console probe).
+
+## Bring-up bisect (#79)
+- Stub: `a` at entry, `J` at the jump over DCC; boot args `stage`/`status`/`dcc_fail` at carveout +0x200 (a2-design.md).
+- `remoteproc0/pcsr`: PC samples; `dcc_stats`: reader alive, words drained.
+- PC ranges (ARM state, PCSR = address + 8): stub `0x080000xx`; decompressor `0x09000000` + zImage size (its stack/bss just above); decompressed kernel before the MMU `0x08008000+` (phys = virt - 0xb8000000); after the MMU `0xc0008000+` (System.map in `tmp/mainline/build`).
+- Module params (`us48_a2`): `stub_dcc` (default 1), `hdbgen_off` (clear DSCR.HDBGEN after the release; default off = a2 runs with halting debug enabled).

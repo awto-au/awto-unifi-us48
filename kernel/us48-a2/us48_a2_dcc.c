@@ -37,6 +37,7 @@ struct us48_a2_dcc {
 	struct work_struct work;
 	spinlock_t lock;	/* both fifos */
 	bool running;
+	u32 polls, words, dscr;	/* debugfs dcc_stats: polls run, DTRTX words drained, last DSCR seen */
 	DECLARE_KFIFO(log, u8, DCC_LOG_SZ);
 	DECLARE_KFIFO(in, u8, DCC_IN_SZ);
 };
@@ -70,6 +71,7 @@ static void dcc_work(struct work_struct *w)
 		ret = regmap_read(d->map, DBG(DSCR), &dscr);
 		if (ret)
 			break;
+		WRITE_ONCE(d->dscr, dscr);
 		if (dscr & HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK) {
 			ret = regmap_read(d->map, DBG(DTRTX), &v);
 			if (ret)
@@ -83,6 +85,8 @@ static void dcc_work(struct work_struct *w)
 			break;
 		}
 	}
+	WRITE_ONCE(d->polls, d->polls + 1);
+	WRITE_ONCE(d->words, d->words + n);
 	if (n)
 		dcc_deliver(d, buf, n);
 	if (ret) {
@@ -246,8 +250,20 @@ static int dcc_log_show(struct seq_file *m, void *unused)
 }
 DEFINE_SHOW_ATTRIBUTE(dcc_log);
 
+static int dcc_stats_show(struct seq_file *m, void *unused)
+{
+	struct us48_a2_dcc *d = m->private;
+
+	seq_printf(m, "running %d polls %u words %u last_dscr %#x\n", READ_ONCE(d->running), READ_ONCE(d->polls),
+		   READ_ONCE(d->words), READ_ONCE(d->dscr));
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(dcc_stats);
+
 void us48_a2_dcc_debugfs(struct us48_a2_dcc *d, struct dentry *dir)
 {
-	if (dir)
-		debugfs_create_file("dcc_log", 0444, dir, d, &dcc_log_fops);
+	if (!dir)
+		return;
+	debugfs_create_file("dcc_log", 0444, dir, d, &dcc_log_fops);
+	debugfs_create_file("dcc_stats", 0444, dir, d, &dcc_stats_fops);
 }

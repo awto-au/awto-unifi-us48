@@ -4,6 +4,7 @@
  * Firmware us48-a2.elf runs from a DT reserved-memory carveout in host DDR (design: docs/a2-design.md).
  */
 #include <linux/auxiliary_bus.h>
+#include <linux/debugfs.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -12,7 +13,9 @@
 #include <linux/of_address.h>
 #include <linux/regmap.h>
 #include <linux/remoteproc.h>
+#include <linux/seq_file.h>
 #include <linux/sizes.h>
+#include <linux/string.h>
 #include "remoteproc_internal.h"
 #include "us48_hwdb.h"
 #include "us48_pci.h"
@@ -38,7 +41,13 @@ module_param(payload, bool, 0644);
 MODULE_PARM_DESC(payload, "load zImage/DTB/initramfs into the carveout after the (boot stub) ELF");
 static char *kernel_fw = "us48-a2-zImage";
 static char *dtb_fw = "us48-a2.dtb";
-static char *initrd_fw = "us48-a2-initrd";	/* empty string: none */
+static char *initrd_fw = "us48-a2-initrd";	/* optional: empty, whitespace-only or a missing file = none */
+static bool hdbgen_off;
+module_param(hdbgen_off, bool, 0644);
+MODULE_PARM_DESC(hdbgen_off, "clear DSCR.HDBGEN after the release: a2 runs without halting-debug enabled (bring-up experiment, #79)");
+static bool stub_dcc = true;
+module_param(stub_dcc, bool, 0644);
+MODULE_PARM_DESC(stub_dcc, "boot stub writes DCC marker characters (proves the console path before the kernel runs)");
 module_param(kernel_fw, charp, 0644);
 module_param(dtb_fw, charp, 0644);
 module_param(initrd_fw, charp, 0644);
@@ -120,25 +129,47 @@ static int a2_release(struct us48_a2 *a)
 			      HW_CS_DEBUG0_DSCR_RESTARTED_MASK, "restart");
 }
 
-/* Copy one firmware file to carveout + off: past the stub MiB, below a2_shared (resource table, trace). */
-static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *what)
+/*
+ * Copy one firmware file to carveout + off: past the stub MiB, below a2_shared (resource table, trace).
+ * optional: an empty name (sysfs stores a trailing newline) or a missing file is skipped, not an error.
+ */
+static int a2_blob(struct us48_a2 *a, const char *name, u32 off, const char *what, bool optional)
 {
 	const struct firmware *fw;
+	char *n = kstrdup(name ?: "", GFP_KERNEL);
 	int ret;
 
-	if (off == U32_MAX)
-		return dev_err_probe(a->dev, -EINVAL, "payload: no %s offset (DT ubnt,%s-offset or module parameter)\n", what, what);
-	ret = request_firmware(&fw, name, a->dev);
-	if (ret)
-		return dev_err_probe(a->dev, ret, "payload: %s %s\n", what, name);
-	if (off < HW_A2_STUB_SIZE || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
-		dev_err(a->dev, "payload: %s %s (%zu B) at +%#x does not fit the carveout\n", what, name, fw->size, off);
+	if (!n)
+		return -ENOMEM;
+	strim(n);
+	if (optional && !*n) {
+		dev_info(a->dev, "payload: no %s configured, skipped\n", what);
+		ret = 0;
+		goto out;
+	}
+	ret = optional ? firmware_request_nowarn(&fw, n, a->dev) : request_firmware(&fw, n, a->dev);
+	if (ret == -ENOENT && optional) {
+		dev_info(a->dev, "payload: %s %s not present, skipped\n", what, n);
+		ret = 0;
+		goto out;
+	}
+	if (ret) {
+		ret = dev_err_probe(a->dev, ret, "payload: %s %s\n", what, n);
+		goto out;
+	}
+	if (off == U32_MAX) {
+		dev_err(a->dev, "payload: no %s offset (DT ubnt,%s-offset or module parameter)\n", what, what);
+		ret = -EINVAL;
+	} else if (off < HW_A2_STUB_SIZE || off > a->size - HW_A2_SHARED_SIZE || fw->size > a->size - HW_A2_SHARED_SIZE - off) {
+		dev_err(a->dev, "payload: %s %s (%zu B) at +%#x does not fit the carveout\n", what, n, fw->size, off);
 		ret = -EFBIG;
 	} else {
 		memcpy(a->va + off, fw->data, fw->size);
-		dev_info(a->dev, "payload: %s %s at a2 %#x, %zu B\n", what, name, a->da + off, fw->size);
+		dev_info(a->dev, "payload: %s %s at a2 %#x, %zu B\n", what, n, a->da + off, fw->size);
 	}
 	release_firmware(fw);
+out:
+	kfree(n);
 	return ret;
 }
 
@@ -158,14 +189,16 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 
 	if (ret || !payload)
 		return ret;
-	ret = a2_blob(a, kernel_fw, koff, "kernel") ?: a2_blob(a, dtb_fw, doff, "dtb");
-	if (!ret && initrd_fw && *initrd_fw)
-		ret = a2_blob(a, initrd_fw, ioff, "initrd");
+	ret = a2_blob(a, kernel_fw, koff, "kernel", false) ?: a2_blob(a, dtb_fw, doff, "dtb", false) ?:
+	      a2_blob(a, initrd_fw, ioff, "initrd", true);
 	if (ret)
 		return ret;
 	args->kernel = a->da + koff;
 	args->dtb = a->da + doff;
 	args->status = 0;
+	args->flags = stub_dcc ? US48_A2_BOOT_F_DCC : 0;
+	args->dcc_fail = 0;
+	args->stage = 0;
 	wmb();
 	args->magic = US48_A2_BOOT_MAGIC;	/* last: the stub parks without it */
 	return 0;
@@ -220,6 +253,8 @@ static int us48_a2_start(struct rproc *rproc)
 	if (!ret)
 		us48_a2_dcc_start(a->dcc);	/* before the release: a2's hvc_dcc gives up after 100 ms */
 	ret = ret ?: a2_release(a);
+	if (!ret && hdbgen_off)
+		ret = regmap_clear_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_HDBGEN_MASK);
 	if (ret) {
 		us48_a2_dcc_stop(a->dcc);
 		a2_reset(a);	/* never leave a2 halted */
@@ -237,6 +272,30 @@ static int us48_a2_stop(struct rproc *rproc)
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
 	return a2_reset(a);
 }
+
+/*
+ * debugfs pcsr: DSCR + 8 DBGPCSR samples (PCSR = instruction address + 8 in ARM state; 0xffffffff = not
+ * sampled). Read-only on the CoreSight window: safe next to the DCC poller. Map to System.map / the boot args.
+ */
+#define PCSR_SAMPLES	8
+static int a2_pcsr_show(struct seq_file *m, void *unused)
+{
+	struct us48_a2 *a = m->private;
+	u32 v, i;
+	int ret = regmap_read(a->map, A2_DBG(DSCR), &v);
+
+	if (ret)
+		return ret;
+	seq_printf(m, "dscr %#x\n", v);
+	for (i = 0; i < PCSR_SAMPLES; i++) {
+		ret = regmap_read(a->map, A2_DBG(ITR_PCSR), &v);
+		if (ret)
+			return ret;
+		seq_printf(m, "pcsr %#010x\n", v);
+	}
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(a2_pcsr);
 
 static const struct rproc_ops us48_a2_ops = {
 	.prepare		= us48_a2_prepare,
@@ -296,8 +355,11 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if (IS_ERR(a->dcc))
 		return PTR_ERR(a->dcc);
 	ret = devm_rproc_add(dev, rproc);
-	if (!ret)
+	if (!ret) {
 		us48_a2_dcc_debugfs(a->dcc, rproc->dbg_dir);
+		if (rproc->dbg_dir)
+			debugfs_create_file("pcsr", 0444, rproc->dbg_dir, a, &a2_pcsr_fops);
+	}
 	return ret;
 }
 

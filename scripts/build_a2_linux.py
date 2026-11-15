@@ -141,12 +141,20 @@ def check_layout(db, zimage: Path) -> None:
     end = db.region("a2_carveout").base + 0x8000 + image.stat().st_size + 0x100000  # + ~bss/margin (vmlinux bss 0.22 MB)
     sizes = {"zImage": zimage.stat().st_size}
     log(f"decompressed kernel + bss reaches a2 AXI ~0x{end:x}; zImage {sizes['zImage']} B")
-    for name in ("a2_dtb", "a2_stub", "a2_shared"):
+    # a2_stub is not checked: the stub has jumped to the zImage before the first byte is decompressed over it
+    lo = db.region("a2_carveout").base + 0x8000
+    for name in ("a2_dtb", "a2_zimage"):
         r = db.region(name)
-        lo = db.region("a2_carveout").base + 0x8000
-        if name != "a2_shared" and r.base < end and r.base + r.size > lo:
+        if r.base < end and r.base + r.size > lo and r.base != db.region("a2_zimage").base:
             log(f"WARNING: hwdb {name} 0x{r.base:x}+0x{r.size:x} lies inside the decompressed kernel (0x{lo:x}..0x{end:x}): "
                 "it is overwritten before the kernel reads it (docs/a2-linux.md risks)")
+    zb = db.region("a2_zimage").base
+    if end > zb:
+        die(f"decompressed kernel reaches 0x{end:x}, past the zImage at 0x{zb:x}: the decompressor would relocate itself")
+    # AUTO_ZRELADDR: RAM base = pc & 0xf8000000 while the zImage runs (arch/arm/boot/compressed/head.S)
+    ram = db.region("a2_carveout").base
+    if zb & 0xf8000000 != ram:
+        die(f"AUTO_ZRELADDR would derive RAM base 0x{zb & 0xf8000000:x} from the zImage at 0x{zb:x}, hwdb RAM base is 0x{ram:x}")
     zr = db.region("a2_zimage")
     if sizes["zImage"] > zr.size:
         die(f"zImage {sizes['zImage']} B exceeds hwdb a2_zimage region {zr.size} B")

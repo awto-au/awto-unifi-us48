@@ -50,11 +50,12 @@ Dan, 2026-11-15: a2 is used only through proper kernel drivers and standard fram
 
 ## Payload mode: Linux on a2 (#79)
 
-- `us48_a2.payload=1` (param, runtime): after the stub ELF (`us48-a2-boot.elf`, set via `/sys/class/remoteproc/remoteproc0/firmware`) the driver copies `/lib/firmware/us48-a2-zImage`, `us48-a2.dtb` and optionally `us48-a2-initrd` into the carveout at the DT offsets (module params `kernel_off`/`dtb_off`/`initrd_off` override) and writes the stub's boot args (`a2fw/us48_a2_boot.h`: magic, zImage, DTB; magic last).
-- Both ELFs (self-test, boot stub) link code at `a2_stub` and the resource table + trace at `a2_shared`; the loaded table is therefore not overwritten by the kernel. Stub (`a2fw/boot.S`) at the a2 entry: MMU and D-cache off, I-cache invalidated then on, r0 = 0, r1 = 0xffffffff, r2 = DTB, `bx` zImage. No magic = it parks, never a guessed address.
+- `us48_a2.payload=1` (param, runtime): after the stub ELF (`us48-a2-boot.elf`, set via `/sys/class/remoteproc/remoteproc0/firmware`) the driver copies `/lib/firmware/us48-a2-zImage`, `us48-a2.dtb` and optionally `us48-a2-initrd` (empty name, whitespace-only or missing file = skipped, no error; the zImage embeds the initramfs) into the carveout at the DT offsets (module params `kernel_off`/`dtb_off`/`initrd_off` override) and writes the stub's boot args at carveout `+0x200` (`a2fw/us48_a2_boot.h`: magic, zImage, DTB, flags; magic last). The stub reports `status` (1 = at the jump), `stage` (1 magic ok, 2 first DCC marker written, 3 at the jump) and `dcc_fail` (markers skipped on a full DTRTX).
+- Both ELFs (self-test, boot stub) link code at `a2_stub` and the resource table + trace at `a2_shared`; the loaded table is therefore not overwritten by the kernel. Stub (`a2fw/boot.S`) at the a2 entry: MMU and D-cache off, L1 D invalidated by set/way (the decompressor enables the D-cache without), I-cache invalidated then on, DCC markers `a` (entry) and `J` (jump) when `stub_dcc=1` (default), r0 = 0, r1 = 0xffffffff, r2 = DTB, `bx` zImage. No magic = it parks, never a guessed address.
 - Initramfs: built into the zImage today; an external one is optional (`us48-a2-initrd`), its addresses go into the a2 DTS `chosen` node (the driver does not edit the DTB). Blobs must end below `a2_shared`.
 - a2 boots the same kernel build as a1 (plain zImage, no appended DTB); modules are shared by kernel.release. Same remoteproc stop/start reloads everything: `echo stop`, replace the files, `echo start`.
 - Start/stop/recovery/coredump are the standard remoteproc paths; the payload only changes what `load` copies.
+- debugfs `remoteproc0/`: `dcc_log`, `dcc_stats` (polls, words drained, last DSCR), `pcsr` (DSCR + 8 DBGPCSR samples, read-only).
 
 ## Linux on a2: kernel side (#79, docs/a2-linux.md)
 
