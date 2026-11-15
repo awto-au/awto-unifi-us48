@@ -189,12 +189,66 @@ regs = ["cca.GPIO_DOUT", "cca.GPIO_OUTEN"]
 src = "docs/uboot.md s5"
 conf = "C"
 
-[binary.uboot1.func.phy_read]
-name = "phy_read"
+[binary.uboot1.func.mdio_read]
+name = "mdio_read"
 addr = 0x1c023c64
-role = "CCB-MDIO helper for PCIe SerDes (read/write pair at this address)"
-src = "docs/uboot.md s5"
+role = "CCB MDIO read of register r0 (PHY addr 2): wait busy clear (100 x 10 us), cmd = reg << 18 | 0x61020000, ctrl (0x18032000, CHIPCOMMONB_MII_MANAGEMENT_CONTROL) = 0x9a, cmd at 0x18032004"
+src = "disassembly 0x1c023c64 (Ghidra FUN_1c023c64); docs/uboot.md s5"
+conf = "C"
+
+[binary.uboot1.func.mdio_write]
+name = "mdio_write"
+addr = 0x1c023de4
+role = "CCB MDIO write (reg r0, value r1) for the PCIe SerDes; same busy wait"
+src = "disassembly 0x1c023de4"
 conf = "I"
+
+[binary.uboot1.func.soc_pcie_hw_init]
+name = "soc_pcie_hw_init"
+addr = 0x1c0244b0
+role = "per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL"
+regs = ["idm_pcie_m0.RESET_CONTROL", "idm_pcie_s0.RESET_CONTROL", "paxb0.CLK_CONTROL", "paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA", "paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76"
+conf = "C"
+
+[binary.uboot1.func.soc_pcie_check_link]
+name = "soc_pcie_check_link"
+addr = 0x1c024084
+role = "RC header type must be 1 (else 'End-Point mode - ignored'), walk cap list for PCIe cap, read LNKSTA; active iff (LNKSTA & 0x3f0) != 0"
+regs = ["rccfg0.HEADER_TYPE", "rccfg0.LNKSTA"]
+src = "Ghidra FUN_1c024084; disassembly 0x1c0241dc; #76"
+conf = "C"
+
+[binary.uboot1.func.pci_bar_assign]
+name = "pci_bar_assign"
+addr = 0x1c023468
+role = "assign BARs of one function bottom-up from the port membase: size align up, 64-bit BARs also clear the upper dword; command = arg 5"
+src = "Ghidra FUN_1c023468; #76"
+conf = "I"
+
+[binary.uboot1.func.rc_cfg_read16]
+name = "rc_cfg_read16"
+addr = 0x1c023f88
+role = "RC own config read: CONFIG_IND_ADDR = off & 0xffc, CONFIG_IND_DATA >> ((off & 3) * 8)"
+regs = ["paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA"]
+src = "disassembly 0x1c023f88; #76"
+conf = "C"
+
+[binary.uboot1.func.rc_cfg_read8]
+name = "rc_cfg_read8"
+addr = 0x1c023fb4
+role = "same, byte"
+regs = ["paxb0.CONFIG_IND_ADDR", "paxb0.CONFIG_IND_DATA"]
+src = "disassembly 0x1c023fb4; #76"
+conf = "C"
+
+[binary.uboot1.func.ep_cfg_read32]
+name = "ep_cfg_read32"
+addr = 0x1c024258
+role = "endpoint config read: CFG_ADDR = devfn bits | bus << 20 | reg & 0xfc, data = CFG_DATA"
+regs = ["paxb0.CFG_ADDR", "paxb0.CFG_DATA"]
+src = "Ghidra FUN_1c024258; #76"
+conf = "C"
 
 [binary.uboot1.func.serial_getc]
 name = "serial_getc"
@@ -230,9 +284,16 @@ conf = "C"
 
 [binary.uboot1.func.udelay]
 name = "udelay"
-addr = 0x1c02ad1c
-role = "delay loop; pets the watchdog"
-src = "docs/uboot.md s2"
+addr = 0x1c02ad00
+role = "udelay(us): chunks of <= 10 s, pets the watchdog + timer wait per chunk"
+src = "docs/uboot.md s2; disassembly 0x1c02ad00-0x1c02ad30"
+conf = "C"
+
+[binary.uboot1.func.mdelay]
+name = "mdelay"
+addr = 0x1c02ad34
+role = "mdelay(ms): ms x udelay(1000)"
+src = "disassembly 0x1c02ad34-0x1c02ad4c"
 conf = "C"
 
 [binary.uboot1.func.cpu_eth_init]

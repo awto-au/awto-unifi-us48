@@ -8,6 +8,10 @@ unit = 0
 desc = "Unit 1 (BCM53346) AXI map as seen by a2; host reaches it via PAXB IMAP0_7 + BAR0+0x7000 window"
 unit = 1
 
+[space.rccfg0]
+desc = "Config space of unit 0's root port, via PAXB CONFIG_IND_ADDR/DATA (offsets)"
+unit = 0
+
 [space.bar0u1]
 desc = "Unit 1 PCIe BAR0 (32 KiB), offsets from BAR0 start"
 unit = 1

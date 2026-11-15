@@ -11,6 +11,7 @@
 |---|---|
 | `axi0` | Unit 0 (BCM53344, host SoC) AXI/physical map as seen by a1; PCIe-routed windows and unit-1 BAR2 also appear here |
 | `axi1` | Unit 1 (BCM53346) AXI map as seen by a2; host reaches it via PAXB IMAP0_7 + BAR0+0x7000 window |
+| `rccfg0` | Config space of unit 0's root port, via PAXB CONFIG_IND_ADDR/DATA (offsets) |
 | `bar0u1` | Unit 1 PCIe BAR0 (32 KiB), offsets from BAR0 start |
 
 ## Regions
@@ -44,7 +45,7 @@
 | `cca` | axi0 | `0x18000000` | `0x100` | 0 | 5 | C | ChipcommonA: chip id, core control, GPIO | regdb/hr2_regs.tsv CHIPCOMMONA_*; docs/board.md GPIO map |
 | `uart0` | axi0 | `0x18000300` | `0x100` | 0 | 8 | C | UART0 (same layout as uart1); stock firmware references both | tmp/linux-mainline bcm-hr2.dtsi serial@300; scripts/stock_uart_order.py |
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
-| `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 15 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
+| `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 0 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL Note: register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*) | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
 | `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 0 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
 | `mspi` | axi0 | `0x18027200` | `0x184` | 0 | 12 | C | QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8 | us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI |
@@ -57,6 +58,8 @@
 | `dmu` | axi0 | `0x1803f000` | `0x1000` | 0 | 3 | C | DMU/PCU: straps, chip reset | uboot-port/arch/arm/dts/us48-uboot.dts dmu@3f000; docs/a2.md; scripts/u2_lut_reset_test.py |
 | `genpll` | axi0 | `0x1803fc00` | `0x20` | 0 | 5 | C | GENPLL (iProc wrap): VCO 25 x 80 = 2000 MHz; ch3 = AXI (mdiv 10 = 200 MHz); APB = AXI/4 = 50 MHz | docs/clocks.md Clock tree; docs/clock-audit.md s5 ([DL] genpll.c, [E0]) |
 | `xgpll` | axi0 | `0x1803fc1c` | `0x18` | 0 | 6 | C | XGPLL: DDR clock source. CK = 25 x NDIV_INT(CTRL_4) x 2 / CH1_MDIV(CTRL_2); live 120 / 9 = 666.7 MHz | docs/clock-audit.md s4 (DDR) ([DL] ddr_init.c:190-198, [RG], [E0]) |
+| `idm_pcie_m0` | axi0 | `0x18101000` | `0x1000` | 0 | 1 | C | AXI_PCIE_M0 IDM wrapper (PAXB AXI master) | regdb AXI_PCIE_M0_IDM_* |
+| `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
 | `ccu` | axi0 | `0x19000000` | `0x1000` | 0 | 16 | C | IHOST CCU: ARM PLL, clock policy, clock gates | docs/clocks.md Register map; docs/clock-audit.md s2 |
 | `ccu_rst` | axi0 | `0x19000f00` | `0x100` | 0 | 1 | I | IHOST reset control (A9 core reset) Note: only WR_ACCESS is named in regdb; +8 meaning from the script, not decoded | scripts/u2_lut_reset_test.py (core: 0x19000f00 key, 0x19000f08 = 2); regdb IHOST_PROC_RST_WR_ACCESS |
 | `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 7 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
@@ -71,7 +74,8 @@
 | `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 2 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 24 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 12 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
-| `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 15 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
+| `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
+| `rccfg0` | rccfg0 | `0x00000000` | `0x1000` | 0 | 15 | C | Config space of unit 0's root port (bus 0 dev 0 fn 0), reached through PAXB CONFIG_IND_ADDR/DATA | uboot-1 soc_pcie_hw_init 0x1c0244b0-0x1c0248a0; stock log C083748:569; pcie-iproc.c:776-860 |
 
 ## Registers
 
@@ -110,21 +114,35 @@ Same registers as `uart1`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CLK_CONTROL` | 32 | rw | `0x4` |  | C | stock soc_pcie_init: = 3 then 1 around PERST# | docs/driver-internals.md 14.2 (PERST# note); regdb |
+| `0x0` | `CLK_CONTROL` | 32 | rw | `0x4` | RC_PCIE_RST_OUTPUT[0], EP_MODE_SURVIVE_PERST[1], EP_PERST_SOURCE_SELECT[2] | C | IPROC_PCIE_CLK_CTRL. Cold 0x4 = PERST# asserted (bit 0 clear). uboot-1 only reads it. Survives DMU soft reset | regdb PAXB_0_CLK_CONTROL; pcie-iproc.c:26-33,731-755; uboot-1 0x1c0245d0-e8 (read only); stock soc_pcie_init 0xc033eae8-0xc033eb10 (= 3, 250 us, = 1, 250 ms); docs/stock-bootlog-facts.md:15-19 (cold 0x4, warm 0x1, mainline reboot 0x0) |
 | `0x30` | `ENDIANESS` | 32 | rw |  |  | C | BDE writes 0x01010101 then reads back; != 1 -> write 0 (LE) | docs/driver-internals.md 14.2 table (BAR0 0x2030) |
+| `0x100` | `PCIE_RC_AXI_CONFIG` | 32 | rw |  |  | C | RC AXI master AxUSER/AxCACHE config; not written by uboot-1 or stock | regdb PAXB_0_PCIE_RC_AXI_CONFIG |
 | `0x104` | `PCIE_EP_AXI_CONFIG` | 32 | rw |  |  | C | BDE writes 0 (enable iProc DMA to external host memory) | docs/driver-internals.md 14.2 (BAR0 0x2104) |
+| `0x120` | `CONFIG_IND_ADDR` | 32 | rw |  | ADDRESS[10:0], PROTOCOL_LAYER[12:11], FUNCTION_NUM[15:13] | C | IPROC_PCIE_CFG_IND_ADDR: indirect access to the root port's own config space (bus 0, dev 0); data in CONFIG_IND_DATA | regdb PAXB_0_CONFIG_IND_ADDR; pcie-iproc.c:310 (0x120); uboot-1 FUN_1c023f88/fb4 @0x1c023f88 (writes offset & 0xffc, reads +0x124 >> (off & 3) * 8) |
+| `0x124` | `CONFIG_IND_DATA` | 32 | rw |  |  | C | IPROC_PCIE_CFG_IND_DATA: data of the RC config dword selected by CONFIG_IND_ADDR | regdb PAXB_0_CONFIG_IND_DATA; pcie-iproc.c:311 |
+| `0x1f8` | `CFG_ADDR` | 32 | rw |  | CFG_TYPE[1:0], REG_NUMBER[7:2], EXTREG_NUMBER[11:8], FUNC_NUMBER[14:12], DEV_NUMBER[19:15], BUS_NUMBER[27:20] | C | IPROC_PCIE_CFG_ADDR: ECAM-style address of an endpoint config access (bus >= 1); data in CFG_DATA | regdb PAXB_0_CFG_ADDR; pcie-iproc.c:469-472 (ECAM offset \| CFG_TYPE_1); uboot-1 FUN_1c024258 @0x1c024258 (bus<<20 \| dev<<15 \| fn<<12 \| reg) |
+| `0x1fc` | `CFG_DATA` | 32 | rw |  |  | C | IPROC_PCIE_CFG_DATA: data of the endpoint config dword selected by CFG_ADDR. 0xffff0001 on a vendor-ID read = config retry (RRS) | regdb PAXB_0_CFG_DATA; pcie-iproc.c:312,481-500 (CFG_RETRY_STATUS) |
+| `0x330` | `INTX_EN` | 32 | rw |  | EN_INTA[0], EN_INTB[1], EN_INTC[2], EN_INTD[3] | C | RC INTx enable; stock soc_pcie_init writes 0xf after enumeration | regdb PAXB_0_PCIE_SYS_RC_INTX_EN; stock soc_pcie_init 0xc033ebcc-d4; pcie-iproc.c:313 |
 | `0xc04` | `IMAP0_1` | 32 | rw |  |  | C | unit 1: BAR0+0x2c04, ignores writes | docs/sram.md Unit 1; regdb |
 | `0xc08` | `IMAP0_2` | 32 | rw |  | PAXB_SEL[12] | C | live 0x18012001 on unit 1: b12 clear = PAXB_0, case A | docs/driver-internals.md 14.1, 14.4 |
 | `0xc1c` | `IMAP0_7` | 32 | rw |  |  | C | selects the 4 KiB AXI page shown at BAR0+0x7000; host-writable; default (unit 1) 0x18032001; page address \| 1 | docs/a2.md; kernel/us48-pci/us48_pci.h US48_PAXB_IMAP0_7_DEF |
 | `0xc80` | `IMAP1` | 32 | rw |  |  | I | RC side live 0x80 (stock soc_pcie_init +0xc80 = 0x80); meaning not decoded | docs/driver-internals.md 14.3, 14.4 |
 | `0xd08` | `IARR_1_LOWER` | 32 | rw | `0x1` |  | C | inbound window 1 enable, PCIe base 0 (stock soc_pcie_init writes 1); window size not decoded (>= 128 MiB) | docs/driver-internals.md 14.3; docs/pci-layer.md |
+| `0xd0c` | `IARR_1_UPPER` | 32 | rw |  |  | C | inbound window 1 PCIe address high | regdb PAXB_0_IARR_1_UPPER |
 | `0xd20` | `OARR_0` | 32 | rw |  |  | C | unit 1: BAR0+0x2d20; a2 host-RAM window = 0x08000001 (inside 0x08000000-0x0fffffff only) | docs/a2.md; docs/pci-layer.md us48_pci_a2_host_window |
 | `0xd24` | `OARR_0_UPPER` | 32 | rw |  |  | C |  | scripts/a2_bench.py (mw.l 0x08002d24 0) |
+| `0xd28` | `OARR_1` | 32 | rw |  | VALID[0], ADDR[31:26] | C | outbound window 1; stock writes (membase + 64 MiB) \| 1 | regdb PAXB_0_OARR_1; stock soc_pcie_init 0xc033eb84 (str [r1,#0xd28]) |
+| `0xd2c` | `OARR_1_UPPER` | 32 | rw |  |  | C | outbound window 1, AXI address bits 35:32 | regdb PAXB_0_OARR_1_UPPER |
 | `0xd34` | `OARR_FUNC0_MSI_PAGE` | 32 | rw |  |  | C | BDE: \|= 1 only if MSI | docs/driver-internals.md 14.2 table |
 | `0xd40` | `OMAP_0_LO` | 32 | rw |  |  | C | OMAP_0 low word; a2 host window uses 0 (AXI 0x08000000 = host phys 0) | docs/a2.md (BAR0+0x2d40/44) |
 | `0xd44` | `OMAP_0_HI` | 32 | rw |  |  | C |  | docs/a2.md (BAR0+0x2d40/44) |
+| `0xd48` | `OMAP_1_LO` | 32 | rw |  |  | C | outbound window 1 PCIe address low; stock writes membase + 64 MiB | regdb PAXB_0_OMAP_1_LOWER; stock soc_pcie_init 0xc033eb7c (str [r1,#0xd48]) |
 | `0xd60` | `OARR_2` | 32 | rw |  |  | C | endpoint DMA window to host memory; BDE writes 1, live 1 under Linux | docs/driver-internals.md 14.2, 14.4 |
 | `0xd64` | `OARR_2_UPPER` | 32 | rw |  |  | C | dma_hi_bits: 1 on PAXB_0 | docs/driver-internals.md 14.2 |
+| `0xf0c` | `PCIE_LINK_STATUS` | 32 | ro | `0x0` | PCIE_LINK_IN_L1[0], PCIE_RX_L0S_TIMEOUT[1], PCIE_DL_ACTIVE[2], PCIE_PHYLINKUP[3] | C | IPROC_PCIE_LINK_STATUS: mainline requires PHYLINKUP and DL_ACTIVE (0xc). No LTSSM state register is in the regdb or any doc; PHYLINKUP is the nearest signal | regdb PAXB_0_PCIE_LINK_STATUS; pcie-iproc.c:48-51,779-783 |
+| `0xf10` | `STRAP_STATUS` | 32 | ro |  |  | C | PCIe straps (iproc PCIe IF enable, force 1 lane, force gen1, ...) | regdb PAXB_0_STRAP_STATUS |
+| `0xf14` | `RESET_STATUS` | 32 | ro |  | EP_PERST_B[1], HARD_RST_B[4], PCIE_RC_MODE_PERST_B[8], PCIE_PHY_PIPE_RESETMDIO_N[9], PAXB_RST_N[10] | I | Reset line levels; bit 8 follows CLK_CONTROL bit 0 (printed by awto-uboot) | regdb PAXB_0_RESET_STATUS (bit meaning of 8 inferred from its name) |
+| `0xf18` | `RESET_ENABLE_IN_PCIE_LINK_DOWN` | 32 | rw |  | EN_IPROC_RESET[0], EN_PAXB_RESET[1], EN_CHIP_RESET[2] | C | Reset-on-link-down enables; reset 0, not written by uboot-1 or stock | regdb PAXB_0_RESET_ENABLE_IN_PCIE_LINK_DOWN |
 
 ### mspi (`0x18027200`)
 
@@ -203,6 +221,18 @@ Same registers as `sp804_0`.
 | `0xc` | `CTRL_3` | 32 | rw |  |  | C |  | docs/clock-audit.md s4 ([RG]) |
 | `0x10` | `CTRL_4` | 32 | rw |  | NDIV_INT[7:0] | C |  | docs/clock-audit.md s4 |
 | `0x14` | `STATUS` | 32 | rw |  | LOCK[31] | C |  | docs/clock-audit.md s4 |
+
+### idm_pcie_m0 (`0x18101000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x800` | `RESET_CONTROL` | 32 | rw |  |  | C | uboot-1 soc_pcie_hw_init: 1 (assert), 2.5 ms, S0 = 1, 2.5 ms, M0 = 0, 2.5 ms, S0 = 0, 100 ms; cold PERST# stays asserted through this | uboot-1 0x1c024598-0x1c0245cc; tmp/uboot1_emu.tsv seq 116835-116848 |
+
+### idm_pcie_s0 (`0x1810b000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x800` | `RESET_CONTROL` | 32 | rw |  |  | C | see idm_pcie_m0.RESET_CONTROL | uboot-1 0x1c0245a4, 0x1c0245c0 |
 
 ### ccu (`0x19000000`)
 
@@ -334,6 +364,26 @@ Same registers as `mspi`.
 
 Same registers as `paxb0`.
 
+### rccfg0 (`0x00000000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x4` | `COMMAND` | 16 | rw |  |  | C | bridge command; uboot-1 writes 0x146 (MEM, bus master, SERR) once the link is active; stock log: 0140 -> 0143 | uboot-1 0x1c024678 (movw r7,#0x146) -> 0x1c02488c |
+| `0xe` | `HEADER_TYPE` | 8 | rw |  |  | C | header type; 1 = bridge (RC mode), else uboot-1 prints 'End-Point mode - ignored' | uboot-1 FUN_1c024084 @0x1c0240b4; pcie-iproc.c:786-791 |
+| `0x18` | `PRIMARY_BUS` | 8 | rw |  |  | C | uboot-1 writes 0 | uboot-1 0x1c0246cc |
+| `0x19` | `SECONDARY_BUS` | 8 | rw |  |  | C | uboot-1 writes 1 | uboot-1 0x1c0246e0 |
+| `0x1a` | `SUBORDINATE_BUS` | 8 | rw |  |  | C | uboot-1 writes 4 | uboot-1 0x1c0246f4 |
+| `0x20` | `MEM_BASE` | 16 | rw |  |  | C | bridge memory base [31:20 of address in bits 15:4]; uboot-1 writes the port membase >> 16 = 0x0800 (0x08000000) | uboot-1 0x1c024790 |
+| `0x22` | `MEM_LIMIT` | 16 | rw |  |  | C | bridge memory limit; uboot-1 writes (membase + 0x08000000) >> 16 = 0x1000 | uboot-1 0x1c0247b0 |
+| `0xac` | `PCIE_CAP` | 8 | rw |  |  | C | PCI Express capability header (cap id 0x10 at 0xac, next at 0xad); PCI_EXP_* offsets below are from 0xac | docs/stock-bootlog-facts.md:40 (reg[0xac]=0x10); pcie-iproc.c IPROC_PCI_EXP_CAP |
+| `0xb0` | `DEVCAP` | 32 | rw |  |  | C |  | stock log reg[0xb0]=0x8000 |
+| `0xb4` | `DEVCTL` | 16 | rw |  |  | C |  | stock log reg[0xb4]=0x2c10 |
+| `0xb8` | `LNKCAP` | 32 | rw |  |  | C |  | stock log reg[0xb8]=0x5c12: 5 GT/s x1 |
+| `0xbc` | `LNKCTL` | 16 | rw |  |  | I | link control | uboot-1 struct fill @0x1c0245f4-0x1c024644 (reg[0xbc] in the Linux dump is the 0xbc config word) |
+| `0xbe` | `LNKSTA` | 16 | ro |  | CLS[3:0], NLW[9:4], TRAIN[11], SLOT_CLK[12], DLLLA[13] | C | uboot-1 'LINKSTA reg 0xbe': port active iff (LNKSTA & 0x3f0) != 0 (NLW). Cold 0x1001 = no width = not active. Warm 0x9012 = x1, 5 GT/s, DLLLA | uboot-1 FUN_1c024084 @0x1c0241dc-0x1c024200 (tst r2,#0x3f0); docs/stock-bootlog-facts.md:15-19 |
+| `0xdc` | `LNKCTL2` | 32 | rw |  |  | I | link control 2 (target link speed bits 3:0); mainline drops gen2 to gen1 if NLW = 0 | pcie-iproc.c:820-826 (IPROC_PCI_EXP_CAP + PCI_EXP_LNKCTL2 = 0xac + 0x30) |
+| `0x43c` | `CLASS_CTRL` | 32 | rw |  |  | C | class code override: mainline forces 0x060400 (PCI-PCI bridge) | pcie-iproc.c:795-800 |
+
 ## Firmware: uboot1
 
 stock U-Boot of the US-48-500W (uboot-1) (base `0x1c000000`)
@@ -365,12 +415,20 @@ stock U-Boot of the US-48-500W (uboot-1) (base `0x1c000000`)
 | `0x1c01dba8` | `main_loop` | hush main loop |  | I | docs/uboot.md s2 |
 | `0x1c01e33c` | `ubntapp_loader` | reads 0x50000 B from flash 0x5814c to 0x67030000 every boot, magic 0x87564523, sets ubntaddr |  | C | docs/uboot.md s6 |
 | `0x1c01f680` | `gpio_set` | CCA GPIO setter; callers use pins 6, 7 only | cca.GPIO_DOUT, cca.GPIO_OUTEN | C | docs/uboot.md s5 |
-| `0x1c023c64` | `phy_read` | CCB-MDIO helper for PCIe SerDes (read/write pair at this address) |  | I | docs/uboot.md s5 |
+| `0x1c023468` | `pci_bar_assign` | assign BARs of one function bottom-up from the port membase: size align up, 64-bit BARs also clear the upper dword; command = arg 5 |  | I | Ghidra FUN_1c023468; #76 |
+| `0x1c023c64` | `mdio_read` | CCB MDIO read of register r0 (PHY addr 2): wait busy clear (100 x 10 us), cmd = reg << 18 \| 0x61020000, ctrl (0x18032000, CHIPCOMMONB_MII_MANAGEMENT_CONTROL) = 0x9a, cmd at 0x18032004 |  | C | disassembly 0x1c023c64 (Ghidra FUN_1c023c64); docs/uboot.md s5 |
+| `0x1c023de4` | `mdio_write` | CCB MDIO write (reg r0, value r1) for the PCIe SerDes; same busy wait |  | I | disassembly 0x1c023de4 |
+| `0x1c023f88` | `rc_cfg_read16` | RC own config read: CONFIG_IND_ADDR = off & 0xffc, CONFIG_IND_DATA >> ((off & 3) * 8) | paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA | C | disassembly 0x1c023f88; #76 |
+| `0x1c023fb4` | `rc_cfg_read8` | same, byte | paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA | C | disassembly 0x1c023fb4; #76 |
+| `0x1c024084` | `soc_pcie_check_link` | RC header type must be 1 (else 'End-Point mode - ignored'), walk cap list for PCIe cap, read LNKSTA; active iff (LNKSTA & 0x3f0) != 0 | rccfg0.HEADER_TYPE, rccfg0.LNKSTA | C | Ghidra FUN_1c024084; disassembly 0x1c0241dc; #76 |
+| `0x1c024258` | `ep_cfg_read32` | endpoint config read: CFG_ADDR = devfn bits \| bus << 20 \| reg & 0xfc, data = CFG_DATA | paxb0.CFG_ADDR, paxb0.CFG_DATA | C | Ghidra FUN_1c024258; #76 |
+| `0x1c0244b0` | `soc_pcie_hw_init` | per port: SerDes MDIO init, IDM M0/S0 reset pulses (2.5 ms steps, then 100 ms), prints CLK_CONTROL ('its value'), fills the port struct, soc_pcie_check_link after 1 ms, on active: bridge bus numbers 0/1/4, mem window, BARs of 01:00.0, command 0x146. Never writes CLK_CONTROL | idm_pcie_m0.RESET_CONTROL, idm_pcie_s0.RESET_CONTROL, paxb0.CLK_CONTROL, paxb0.CONFIG_IND_ADDR, paxb0.CONFIG_IND_DATA, paxb0.CFG_ADDR, paxb0.CFG_DATA | C | disassembly 0x1c0244b0-0x1c0248a0; tmp/uboot1_emu.tsv seq 116835-116855; #76 |
 | `0x1c024a04` | `serial_getc` | serial receive; pets the watchdog | uart1.LSR, uart1.RBR_THR_DLL | I | docs/uboot.md s2 |
 | `0x1c024a1c` | `serial_putc` | serial transmit; pets the watchdog | uart1.LSR, uart1.RBR_THR_DLL | I | docs/uboot.md s2 |
 | `0x1c024a64` | `serial_init` | UART1 115200 8N1, FIFO enabled | uart1.LCR, uart1.RBR_THR_DLL, uart1.DLH_IER, uart1.IIR_FCR | C | docs/uboot.md s5 |
 | `0x1c025020` | `spi_setup_slave` | QSPI MSPI/BSPI setup for flash (spi1.0) | mspi.SPCR0_LSB, mspi.SPCR0_MSB | C | docs/uboot.md s5 |
-| `0x1c02ad1c` | `udelay` | delay loop; pets the watchdog |  | C | docs/uboot.md s2 |
+| `0x1c02ad00` | `udelay` | udelay(us): chunks of <= 10 s, pets the watchdog + timer wait per chunk |  | C | docs/uboot.md s2; disassembly 0x1c02ad00-0x1c02ad30 |
+| `0x1c02ad34` | `mdelay` | mdelay(ms): ms x udelay(1000) |  | C | disassembly 0x1c02ad34-0x1c02ad4c |
 | `0x1c031eb4` | `cpu_eth_init` |  |  | I | docs/uboot.md s5 |
 | `0x1c032380` | `eth_register` |  |  | I | docs/uboot.md s5 |
 | `0x1c034dd0` | `board_eth_init` | prints 'Board Net Initialization Failed'; no AMAC/GMAC driver |  | I | docs/uboot.md s5 |
