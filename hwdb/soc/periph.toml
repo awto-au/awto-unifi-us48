@@ -156,7 +156,7 @@ space = "axi0"
 base = 0x18020000
 size = 0x1000
 unit = 0
-desc = "ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 52-59 events, 68 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I)"
+desc = "ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 53-60 events (event N on SPI 53+N, board-measured), 69 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I)"
 src = "regdb DMAC_PL330_*; tmp/linux-mainline bcm-hr2.dtsi dma@20000"
 conf = "C"
 note = "stays in IDM reset (dmac_idm.RESET_CONTROL = 1) until released; reading it before that stalls the bus. AXI cache/coherency attributes: CC_n.*_CACHE_CTRL"

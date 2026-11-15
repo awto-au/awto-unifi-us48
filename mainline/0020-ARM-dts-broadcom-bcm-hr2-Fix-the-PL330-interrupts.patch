@@ -6,7 +6,7 @@ Subject: [PATCH 20/21] ARM: dts: broadcom: bcm-hr2: Fix the PL330 interrupts
 The PL330 interrupts were copied from bcm-nsp.dtsi. HR2 has the HX4/KT2
 interrupt layout: the UART (SPI 91) and the NAND controller (SPI 74) sit
 at the HX4/KT2 numbers, and between them the DMAC event lines start at
-SPI 52 with the abort line at SPI 68, not at SPI 47 and 63.
+SPI 53 with the abort line at SPI 69, not at SPI 47 and 63.
 
 SPI 47 to 51 are IDM and DDR controller interrupts there, so the old
 numbers claimed lines of other blocks, and a pending IDM interrupt
@@ -31,16 +31,18 @@ index 89037ffb8318..fc4eff2ba527 100644
 -				     <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>,
 -				     <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>,
 -				     <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
-+			interrupts = <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
- 				     <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
- 				     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
+-				     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
 -				     <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
++			interrupts = <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
 +				     <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>,
 +				     <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
 +				     <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>,
 +				     <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>,
 +				     <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
-+				     <GIC_SPI 68 IRQ_TYPE_LEVEL_HIGH>;
++				     <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 69 IRQ_TYPE_LEVEL_HIGH>;
  			clocks = <&apb_clk>;
  			clock-names = "apb_pclk";
  			#dma-cells = <1>;

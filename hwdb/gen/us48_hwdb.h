@@ -1484,7 +1484,7 @@
 #define HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_SHIFT	2
 #define HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_MASK	0x4U
 
-/* block dmac (axi0): ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 52-59 events, 68 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I) [C] */
+/* block dmac (axi0): ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 53-60 events (event N on SPI 53+N, board-measured), 69 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I) [C] */
 #define HW_DMAC_BASE	0x18020000U
 #define HW_DMAC_SIZE	0x1000U
 #define HW_DMAC_DS	0x0U

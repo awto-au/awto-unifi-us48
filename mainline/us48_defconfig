@@ -140,6 +140,8 @@ CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
 # Core SoC test kit (#84): PL330 as a module (IDM reset must be released first, docs/core-bringup.md); iproc-rng200 does not fit the HR2 RNG layout
 CONFIG_DMADEVICES=y
 CONFIG_PL330_DMA=m
+# Without it reset_control_get_optional() is a stub returning NULL: pl330 never deasserts dmac_idm (#84)
+CONFIG_RESET_CONTROLLER=y
 CONFIG_GPIOLIB=y
 CONFIG_PINCTRL_IPROC_GPIO=y
 CONFIG_MFD_SYSCON=y

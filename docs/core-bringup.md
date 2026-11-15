@@ -12,7 +12,7 @@
 | 2 | CPU clock | `CLK_BCM_HR2` | built in | `core_test clock`: `us48bench spin` vs `--mhz` | `spin` 976 MHz vs 1000 (0.98) | `spin` 92 MHz vs 100 (0.92) |
 | 3 | Timers | `ARM_GLOBAL_TIMER`, TWD, `ARM_TIMER_SP804` | built in | `core_test timers`: tick drift (a1), cyclictest 1 s | clocksource `arm_global_timer`; tick drift -873 ppm (+-1000 ppm jitter, 2 s window: not a drift number); cyclictest n/a (musl ENOSYS on sched_*scheduler; `tools/rt-tests-musl.patch` now uses the raw syscalls, not yet run on the board) | `arm_global_timer`; cyclictest n/a (musl); drift not measured (DCC poll too coarse) |
 | 4 | Interrupts | `ARM_GIC` | built in | `core_test irq`: `/proc/interrupts` delta 1 s; MSI is #54 | `gt` (GIC 27) 103 irq in 1 s (HZ 100 + load) | `gt` 144 irq in 1 s (parse window ~1.4 s) |
-| 5 | DMA | `PL330_DMA` + `us48_idm_reset` | `pl330.ko`, `us48_idm_reset.ko` | `core_test dma`: load idm reset module, `pl330` (probe releases the reset via DT `resets`), `dmatest.ko` 20 iterations | first run (2026-11-15): `RESET_CONTROL` read 0x1; manual `devmem` release then `insmod pl330` + dmatest hung the board (power-cycled). Re-run with the reset controller: not yet | not run (`--dmac` DTB needs a1's release of unit 1 IDM) |
+| 5 | DMA | `PL330_DMA` + `us48_idm_reset` | `pl330.ko`, `us48_idm_reset.ko` | `core_test dma`: load idm reset module, `pl330` (probe releases the reset via DT `resets`), `dmatest.ko` 20 iterations | 2026-11-16 (normal image, kernel0): `release:`/`released:` lines, `Loaded driver for PL330 DMAC-41330` (8 chan, 16 events), 8 channels x 100 x 256 KiB copies 0 failures; 20 verified copies x 8 chan (16 KiB) 0 failures || not run (`--dmac` DTB needs a1's release of unit 1 IDM) |
 | 6 | Memory | - | - | `core_test memory`: `memtester 1M 1` (a2 512K), meminfo split | `memtester 1M x1` rc 0; MemTotal 178260 kB (Low 47188, High 131072) | `memtester 512K x1` rc 0; MemTotal 47732 kB (L2 on: 47728) |
 | 7 | RNG | `HW_RANDOM_BCM2835` (nsp layout) | built in | `core_test rng`: `rngtest` on 20000 bits | `18033000.rng`, `rngtest` 8 blocks, 0 fail | `rngtest` 8 blocks, 0 fail |
 | 8 | Watchdog | `ARM_SP805_WATCHDOG` | built in | `core_test wdt`: sysfs + VALUE reads, no reset test | `sp805-wdt` registered, `/dev/watchdog0`; VALUE reads 0x1dacc411 -> 0x1ba5ba87 (counting) | VALUE reads 0xffffffff both (not armed: nothing arms SP805 on a2 in Linux boot; awto-uboot a2 also leaves it off) |
@@ -50,7 +50,9 @@
 - Already present, `=y` in `mainline/us48_defconfig`: QSPI (`SPI_BCM_QSPI`), I2C (`I2C_BCM_IPROC`), SP804, SP805, global timer, PL310, GIC.
 - SP805 stays built in: awto-uboot arms it (~46 s) and a module would leave it unfed until the insmod. `WATCHDOG_HANDLE_BOOT_ENABLED=y` makes the watchdog core feed it until userspace opens `/dev/watchdog`, so the busybox feeder is gone from `rc.sh`. The driver default timeout (60 s) applies after probe.
 - PL330 (a1 DTS patches 14, 15): `bcm-hr2.dtsi` `dma@20000` had no `apb_pclk`, so the AMBA bus never probed it. Added the 50 MHz APB clock, a `dma` label and `arm,primecell-periphid = <0x00041330>` (no ID read at boot); the board DTS sets `okay`.
-- PL330 gate: `dmac_idm.RESET_CONTROL` (0x18114800) resets to 1 (held in reset); an access while it is 1 stalls the bus. Owner: `kernel/us48-idm-reset` (reset controller module, DT `dmac_idm` in the board DTS, patch 16), consumed by `pl330` as `resets = <&dmac_idm 0>; reset-names = "dma"`. pl330 defers until the module is loaded. Which boot stage releases it on the board is unmeasured.
+- PL330 gate: `dmac_idm.RESET_CONTROL` (0x18114800) resets to 1 (held in reset); an access while it is 1 aborts (imprecise external abort). Owner: `kernel/us48-idm-reset` (reset controller module, DT `dmac_idm`, patch 16), consumed by `pl330` as `resets = <&dmac_idm 0>; reset-names = "dma"`. Release = clear bit 0 only; `IO_CONTROL_DIRECT` is 0xc003f003 at boot (bit 0 already set), no write needed.
+- Root cause of the imprecise abort (#84): `CONFIG_RESET_CONTROLLER` was off, so `devm_reset_control_get_optional()` is a stub returning NULL and pl330 never called the deassert; its first register read (`CRD`, +0xe14, in `pl330_add`) hit the DMAC in reset. Fix: `CONFIG_RESET_CONTROLLER=y` in `mainline/us48_defconfig`. The debug profile never showed it only because its panic came earlier (IRQs).
+- PL330 IRQ lines: event N is on GIC 85+N = SPI 53+N, board-measured (dmatest single channel = event 0 counts on GIC 85 only; GIC 84 never fires). SPI 52 is not an event line; with SPI 52-59, event 7 (8th channel) had no line and timed out (patch 20 now 53-60, abort 69 by the D-Link ids 85..100 events + 101 abort, abort line unmeasured).
 - RNG: regdb `CHIPCOMMONB_RNG_*` at 0x18033000 is the iProc/NSP layout (CTRL +0, STATUS +4, DATA +8, FF_THRES +0xc, INT_MASK +0x10), handled by `bcm2835-rng` (compatible `brcm,bcm-nsp-rng`, already in the dtsi, patch 9). `iproc-rng200` wants its FIFO at +0x20: not built, and the #29 comment calling this block RNG200 is incorrect.
 - SP804 on a1 is already the DT `ccbtimer0/1`; the clocksource/clockevent choice (global timer rating 300 vs SP804) is what `timers` shows.
 - Tick (#84 item 6): the base had `HZ_PERIODIC`, `HZ_100`, no `HIGH_RES_TIMERS` (cyclictest 1000 us: min 4248 / avg 9192 / max 10477 us, 10 ms tick granularity, debug image 2026-11-15). Base now `NO_HZ_IDLE` + `HIGH_RES_TIMERS` (selects `TICK_ONESHOT`; `arm_global_timer` is a per-CPU oneshot clockevent, no broadcast device needed on one CPU). `HZ`: normal 1000 (rated max; 1 ms jiffy timers, cost one tick IRQ per ms when busy), debug 250 (checks make each tick dearer). Also affects the 1 ms hrtimer poll in us48_cmic (#56).
@@ -69,13 +71,9 @@
   - D-Link HR2 GPL `arch/arm/mach-iproc/board_bu.c`: SDIO `setup_sdio()` writes 0 to `IDM_RESET_CONTROL` only; SATA `config_AHCI()` sets `IO_CONTROL_DIRECT` |= 1, `udelay(1000)`, writes `RESET_CONTROL` 0, `udelay(1000)`. Its PL330 platform device has no IDM write at all (boot stage releases it).
   - Upstream: no iProc IDM reset driver. `reset-simple` would fit the register (bit 0, active high) but has no settle and no compatible for it; NSP/HR2 `dma@20000` has no `resets`. pl330 already takes an optional `dma` reset (`drivers/dma/pl330.c`).
   - regdb names `IO_CONTROL_DIRECT` bit 0 `CLK_GATING_EN`, not a clock enable: the clock-enable cause from the first run is NOT confirmed by any source; BISDN releases the DMAC without touching it.
-- Board run 2026-11-15 (debug image from HEAD, RAM boot; awto-uboot as flashed, not the 3a0d49c build): `us48_idm_reset` probes (`RESET_CONTROL=0x1`, `IO_CONTROL_DIRECT=0xc003f003`, bit 0 already set before any write). `insmod pl330` panics at `devm_request_threaded_irq` in `pl330_probe`: the IRQ fires at once and `pl330_irq_handler` takes `pl330->lock` before `pl330_add()` initialises it (lockdep splat, then NULL deref, `Fatal exception in interrupt`). No `release:` console line appeared. Same with `clk_en=1`.
-  - Source order (`pl330_probe`): `devm_reset_control_get_optional("dma")` + `reset_control_deassert` at drivers/dma/pl330.c:3048-3057, IRQ requests at 3071-3078, `pl330_add()` (`spin_lock_init` at 1967) at 3087. The deassert comes first.
-  - DT names match (`reset-names = "dma"`, dtc of the built DTB); a missing provider would return -EPROBE_DEFER, not NULL (drivers/reset/core.c:1141-1200). So the callback should have run; unproven because `dev_info` is KERN_INFO and the console loglevel on the run is unknown.
-  - Pending IRQ: SPI 47-51 are other blocks' lines (above). The NULL deref is `tasklet_schedule` on the tasklet `pl330_add()` has not set up: `pl330_update()` with `num_events` 0 sets `reset_dmac` for any `ES` bit (pl330.c:1673-1680).
-  - Fixes: patch 20 (IRQs), patch 21 (pl330 requests IRQs after `pl330_add`, candidate for #41).
+- `dmatest` is not in the normal image: build `drivers/dma/dmatest.c` out of tree against `tmp/mainline/build-normal` (`obj-m += dmatest.o`, `make M=...`) and scp it; the debug image panics at boot with KASAN (#84 item 11). Run: `insmod dmatest.ko max_channels=8 threads_per_chan=1 iterations=100 test_buf_size=262144 norandom=1 noverify=1 timeout=500 wait=1 run=1`; max_channels=N starts N+1 channels.
+- Earlier panic (IRQ before `pl330_add`): fixed by patches 20/21; history in #84.
 - Read path without /dev/mem: debugfs `/sys/kernel/debug/us48_idm_reset/regs` (read only), used by `core_test dma`.
-- Not established: the hang cause. Candidates left: PL330 AXI attributes (`AXUSER_CONFIG`, `CC_n.*_CACHE_CTRL`), DMAC access before the settle, pl330 probe reading registers. The module logs `IO_CONTROL_DIRECT`/`RESET_CONTROL` before and after the release so the last console line locates a hang.
 
 ## Flash read path (#20, #84 item 9)
 
@@ -104,7 +102,7 @@
 - Reader on a1: `cat /dev/ttyA20 > /tmp/a2.out &` before `echo start` (docs/a2-linux.md). The runner types the command into `/dev/ttyA20` and polls `/tmp/a2.out` for a marker; tick drift (`timers`) is a1 only.
 - Limits (`A1_LIMIT_S` 13, `A2_LIMIT_S` 40, memory 20/60) are estimates until the first board run.
 
-## Bandwidth budget (#84 item 0, a1 ARM 1000 MHz, L2 on, 2026-11-15, debug image, `us48bench`, DDR 667)
+## Bandwidth budget (#84 item 0, a1 ARM 1000 MHz, L2 on, 2026-11-15 debug image `us48bench`; PL330/CPU-copy rows 2026-11-16 normal image at the commit of this change, DDR 667)
 
 | Stage | Measured | Theoretical | Gap / why |
 |---|---|---|---|
@@ -113,7 +111,9 @@
 | DDR copy | 431 MB/s | | read-bound |
 | DDR latency, 8 MiB / 16 MiB | 187 / 202 ns | | L2 (256 KiB) hit 137 ns at 256K, L1 4.9 ns |
 | L1/L2-resident (16 KiB) rd/wr/cp | 1652 / 1662 / 1185 MB/s | | CPU-bound |
-| PL330 memcpy DDR->DDR | not measured | | `insmod pl330` panics in the probe IRQ (#84 item 5, PL330 release sequence section) |
+| PL330 memcpy DDR->DDR, 1 channel, 256 KiB copies | 96 MB/s | not measured | `dmatest` `noverify=1 norandom=1`, per-copy time only |
+| PL330 memcpy, 8 channels concurrent (aggregate) | ~315 MB/s (8 x 37-41) | | 4 ch 5 x 64 = 320 MB/s: saturates at 4-5 channels; 0.78x CPU copy (406) |
+| CPU memcpy, same image, 256 KiB / 8 MiB | 451 / 406 MB/s | | `us48bench bw` cp, userspace, L2 on |
 | CMIC packet-DMA RX pps / MB/s | not measured | | no quick test exists (needs a traffic generator + RX loop, no script) |
 | a2 -> host DDR over PCIe (a2 at 1000, #80, 2026-11-15) | cached rd 113 / wr 1061, uncached rd 14 / wr 123 MB/s, 298 ns | PCIe x1 gen2 ~400 MB/s | from #80, not rerun |
 | a2 own DDR path at 100 MHz (this run) | L2 off rd/wr/cp 22/254/23 MB/s, 1520 ns; L2 on 55/259/59 MB/s, 1499 ns | | a2 RAM is host DDR over PCIe: every miss crosses it |
