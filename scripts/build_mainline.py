@@ -14,7 +14,7 @@
 Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs-check] [--prepare-only] [--jobs N]
   default          rebuild the branch from mainline/*.patch (git am), configure, build, pack
   --keep-branch    build the branch as it is (after editing the tree); skips git am
-  --save-patches   git format-patch BASE..BRANCH -> mainline/ (replaces old patches), then exit
+  --save-patches   git format-patch BASE..BRANCH -> mainline/, rewriting only patches whose content changed (names kept), then exit
   --checkpatch     scripts/checkpatch.pl --strict on every commit of the branch, then exit
   --dtbs-check     make dtbs_check for the new board DTS (dtschema from tmp/dtschema-venv), then exit
   --module-only    build the out-of-tree modules only (--tree/--build-dir: private tree + build dir, no staging)
@@ -22,6 +22,7 @@ Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs
 
 import argparse
 import os
+import re
 import struct
 import zlib
 import shutil
@@ -146,11 +147,78 @@ def rebuild_branch() -> None:
     log(f"branch {BRANCH} = {BASE} + {len(patches)} patches")
 
 
+def _norm_patch(text: str) -> str:
+    """Patch text without what git regenerates per run: From <hash>, [PATCH n/N], Subject wrapping, index lines, hunk headers."""
+    lines = text.splitlines()[1:]
+    out, i = [], 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith("Subject: "):
+            subj = ln
+            while i + 1 < len(lines) and lines[i + 1].startswith(" "):
+                i += 1
+                subj += " " + lines[i].strip()
+            ln = re.sub(r"^Subject: \[PATCH[^\]]*\] ?", "Subject: ", subj)
+        elif ln.startswith("index "):    # blob ids move when an earlier patch changes
+            i += 1
+            continue
+        elif ln.startswith("@@ "):       # offsets and function context follow earlier patches and the git version
+            ln = "@@"
+        out.append(ln)
+        i += 1
+    return "\n".join(out)
+
+
+def _subject(norm: str) -> str:
+    return next(ln for ln in norm.split("\n") if ln.startswith("Subject: "))
+
+
+def sync_patches(gen: Path, dest: Path) -> tuple[int, int, int]:
+    """Make dest hold the patches in gen: unchanged ones (same normalised content) are left alone, a changed one keeps its
+    file name, new/removed ones are added/deleted. Returns (kept, rewritten, added+removed)."""
+    old = {}
+    for f in sorted(dest.glob("0*.patch")):
+        n = _norm_patch(f.read_text())
+        old[_subject(n)] = (f, n)
+    kept = rewritten = changed = 0
+    used = set()
+    for g in sorted(gen.glob("0*.patch")):
+        text = g.read_text()
+        n = _norm_patch(text)
+        subj = _subject(n)
+        hit = old.get(subj)
+        num = g.name[:4]
+        if hit:
+            f, on = hit
+            used.add(f)
+            target = f if f.name[:4] == num else f.with_name(num + f.name[4:])
+            if target != f:
+                f.rename(target)
+                changed += 1
+            if on == n:
+                kept += 1
+            else:
+                target.write_text(text)
+                rewritten += 1
+        else:
+            (dest / g.name).write_text(text)
+            changed += 1
+    for subj, (f, _n) in old.items():
+        if f not in used:
+            f.unlink()
+            changed += 1
+    return kept, rewritten, changed
+
+
 def save_patches() -> None:
-    for p in PATCHES.glob("0*.patch"):
-        p.unlink()
-    run(["git", "format-patch", "-q", "--no-signature", "-o", str(PATCHES), f"{BASE}..{BRANCH}"])
-    log(f"wrote {len(list(PATCHES.glob('0*.patch')))} patches to mainline/")
+    """Branch -> mainline/*.patch, touching only patches whose content changed (stable names, no hash/numbering churn)."""
+    gen = OUTDIR / "patches-gen"
+    shutil.rmtree(gen, ignore_errors=True)
+    gen.mkdir(parents=True)
+    run(["git", "format-patch", "-q", "--no-signature", "--abbrev=9", "-o", str(gen), f"{BASE}..{BRANCH}"])
+    kept, rewritten, changed = sync_patches(gen, PATCHES)
+    shutil.rmtree(gen, ignore_errors=True)
+    log(f"patches in mainline/: {kept} unchanged, {rewritten} rewritten, {changed} added/removed/renumbered")
 
 
 def checkpatch() -> int:
