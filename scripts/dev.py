@@ -1503,6 +1503,14 @@ def cmd_selftest(_extra: list[str]) -> int:
     check("--help lists commands", all(c in h.stdout for c in COMMANDS))
     u = subprocess.run([sys.executable, __file__, "no-such-command"], capture_output=True, text=True, cwd=REPO)
     check("unknown command exits 2", u.returncode == 2)
+    # --help / parse errors of every board command print the usage and exit before any console access.
+    for name, meta in COMMANDS.items():
+        if meta["kind"] == "step":
+            continue
+        ch = subprocess.run([sys.executable, __file__, name, "--help"], capture_output=True, text=True, cwd=REPO)
+        cb = subprocess.run([sys.executable, __file__, name, "--no-such-flag"], capture_output=True, text=True, cwd=REPO)
+        check(f"{name} --help prints usage, exits 0", ch.returncode == 0 and f"Usage: scripts/dev.py {name}" in ch.stdout)
+        check(f"{name} bad flag prints usage, exits 2", cb.returncode == 2 and f"Usage: scripts/dev.py {name}" in cb.stderr)
     if failures:
         log(f"selftest FAILED: {', '.join(failures)}", "FATAL")
         return 1
@@ -1533,6 +1541,46 @@ def usage() -> int:
     return 2
 
 
+def command_usage(name: str, meta: dict, err: str | None = None) -> int:
+    """Per-command usage to stdout (help, rc 0) or stderr (parse error, rc 2). Never touches the board."""
+    out = sys.stderr if err else sys.stdout
+    if err:
+        print(f"dev.py {name}: {err}", file=out)
+    print(f"Usage: scripts/dev.py {name} {meta['args']}".rstrip(), file=out)
+    print(f"  {meta['summary']}", file=out)
+    return 2 if err else 0
+
+
+def check_args(meta: dict, extra: list[str]) -> str | None:
+    """Flag syntax check against the command's `args` text, before any console/board access.
+
+    Unknown `--flag`, missing flag value or non-numeric `N` -> error text. Tokens after a bare `--` are passed
+    through unchecked. Step commands (extra args passed through) are not checked.
+    """
+    spec = meta["args"]
+    if meta["kind"] == "step":
+        return None
+    flags = set(re.findall(r"--[a-z0-9-]+", spec)) | {"--baud"}  # --baud: _session_at_uboot, every console command
+    valued = {m[0]: m[1] for m in re.findall(r"(--[a-z0-9-]+) ([A-Za-z][\w.|]*)(?=[\]\s]|$)", spec)}
+    valued.setdefault("--baud", "N")
+    i = 0
+    while i < len(extra):
+        t = extra[i]
+        if t == "--":
+            break
+        if t.startswith("--"):
+            if t not in flags:
+                return f"unknown option {t}"
+            if t in valued:
+                if i + 1 >= len(extra) or extra[i + 1].startswith("--"):
+                    return f"option {t} needs a value ({valued[t]})"
+                if valued[t] == "N" and not extra[i + 1].isdigit():
+                    return f"option {t} needs a number, got {extra[i + 1]!r}"
+                i += 1
+        i += 1
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help", "help"):
@@ -1542,6 +1590,12 @@ def main(argv: list[str] | None = None) -> int:
     if meta is None:
         print(f"unknown command: {name!r} — try scripts/dev.py describe", file=sys.stderr)
         return 2
+    # -h/--help anywhere before a bare `--` prints the command usage and returns; nothing runs.
+    if any(t in ("-h", "--help") for t in (extra[:extra.index("--")] if "--" in extra else extra)):
+        return command_usage(name, meta)
+    err = check_args(meta, extra)
+    if err:
+        return command_usage(name, meta, err)
     rc = meta["fn"](extra)
     return 0 if rc == SKIPPED else rc
 
