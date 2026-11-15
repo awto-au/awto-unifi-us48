@@ -18,6 +18,14 @@
 #error "A2_* macros (value and _H unit-address digits) come from hwdb via scripts/build_a2_linux.py"
 #endif
 
+/* Unit 1 CCB/APB test peripherals (#84): off unless build_a2_linux.py --periph / --dmac says "okay" */
+#ifndef A2_PERIPH_STATUS
+#define A2_PERIPH_STATUS "disabled"
+#endif
+#ifndef A2_DMAC_STATUS
+#define A2_DMAC_STATUS "disabled"
+#endif
+
 / {
 	compatible = "ubnt,us48-a2", "brcm,hr2";
 	model = "UniFi US-48-500W unit 1 Cortex-A9 (a2)";
@@ -88,5 +96,56 @@
 		#address-cells = <0>;
 		interrupt-controller;
 		reg = <A2_GIC_DIST_BASE 0x1000>, <A2_GIC_CPU_BASE 0x100>;
+	};
+
+	/*
+	 * Unit 1 CCB/APB blocks (#84), conf I: same die as unit 0, so addresses (hwdb), IRQs (bcm-hr2.dtsi) and the
+	 * 50 MHz APB clock are taken as equal; none of it is measured on unit 1. Fixed PERIPIDs: no ID read at boot.
+	 */
+	apb_clk: clock-apb {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <50000000>;
+	};
+
+	rng@A2_RNG_BASE_H {
+		compatible = "brcm,bcm-nsp-rng";
+		reg = <A2_RNG_BASE 0x14>;
+		status = A2_PERIPH_STATUS;
+	};
+
+	watchdog@A2_WDT_BASE_H {
+		compatible = "arm,sp805", "arm,primecell";
+		arm,primecell-periphid = <0x00141805>;
+		reg = <A2_WDT_BASE 0x1000>;
+		interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&apb_clk>, <&apb_clk>;
+		clock-names = "wdog_clk", "apb_pclk";
+		status = A2_PERIPH_STATUS;
+	};
+
+	timer@A2_SP804_BASE_H {
+		compatible = "arm,sp804";
+		reg = <A2_SP804_BASE 0x1000>;
+		interrupts = <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&apb_clk>, <&apb_clk>, <&apb_clk>;
+		clock-names = "timer0clk", "timer1clk", "apb_pclk";
+		status = A2_PERIPH_STATUS;
+	};
+
+	/* stalls the bus while dmac_idm.RESET_CONTROL is 1 (hwdb): a2 cannot release it itself, a1 does it over PCIe */
+	dma@A2_DMAC_BASE_H {
+		compatible = "arm,pl330", "arm,primecell";
+		arm,primecell-periphid = <0x00041330>;
+		reg = <A2_DMAC_BASE 0x1000>;
+		interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 52 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&apb_clk>;
+		clock-names = "apb_pclk";
+		#dma-cells = <1>;
+		status = A2_DMAC_STATUS;
 	};
 };

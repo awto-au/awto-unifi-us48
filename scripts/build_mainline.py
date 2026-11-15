@@ -198,7 +198,7 @@ def dtbs_check(jobs: int) -> int:
 def stage_rootfs() -> str:
     """mainline/rootfs (busybox + dropbear + overlay) + firmware + a /dev/console node; returns the INITRAMFS_SOURCE value."""
     stage = STAGE
-    build_rootfs.build(stage, os.cpu_count() or 4)
+    build_rootfs.build(stage, os.cpu_count() or 4, tools=PROFILE == "debug")  # test tools (#84): debug image only
     for name in ("us48-a2.elf", "us48-a2-bustest.elf", "us48-a2-bustest-nommu.elf"):	# scripts/build_a2fw.py; remoteproc loads /lib/firmware/<name>
         fw = ROOT / "tmp/a2fw" / name
         if fw.exists():
@@ -258,14 +258,35 @@ MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko
            ("kernel/us48-pvtmon", ["us48_pvtmon.ko"]), ("kernel/us48-fan", ["us48_fan.ko"])]
 
 
+def intree_modules() -> list:
+    """In-tree `=m` modules (modules.order lists them once built; the .config says what is wanted): #84 pl330, dmatest, torture."""
+    cfg = BUILD / ".config"
+    return [l for l in cfg.read_text().splitlines() if l.endswith("=m")] if cfg.exists() else []
+
+
+def stage_intree_modules() -> None:
+    """Copy the built in-tree .ko files (drivers/dma/pl330.ko ...) next to ours in lib/modules/<release>; the rc scripts/core_test insmod them."""
+    order = BUILD / "modules.order"
+    names = [l.strip()[:-2] + ".ko" for l in order.read_text().splitlines() if l.strip().endswith(".o")] if order.exists() else []  # lists .o
+    dst = STAGE / "lib/modules" / (BUILD / "include/config/kernel.release").read_text().strip()
+    dst.mkdir(parents=True, exist_ok=True)
+    for rel in names:
+        ko = BUILD / rel
+        shutil.copy2(ko, dst / ko.name)
+        run([f"{CROSS}strip", "--strip-debug", str(dst / ko.name)])
+        log(f"{ko.name} ({(dst / ko.name).stat().st_size} B) staged from the kernel tree")
+
+
 def build_modules(jobs: int, stage: bool = True) -> None:
     """Out-of-tree us48 modules against this tree, staged into the initramfs rootfs (stage=False: build only).
 
     Module.symvers of the kernel is needed for a warning-free modpost: built with `vmlinux modules` once per build dir.
     """
     kmake("modules_prepare", jobs=jobs)
-    if not (BUILD / "Module.symvers").exists():
+    if not (BUILD / "Module.symvers").exists() or intree_modules():
         kmake("vmlinux", "modules", jobs=jobs)
+    if stage:
+        stage_intree_modules()
     extra = []
     for rel, kos in MODULES:
         mod = ROOT / rel

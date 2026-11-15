@@ -1474,6 +1474,14 @@ pub const HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_PAXB_RESET_MASK: u32 = 0x2;
 pub const HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_SHIFT: u32 = 2;
 pub const HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_MASK: u32 = 0x4;
 
+// block dmac (axi0) [C]
+pub const HW_DMAC_BASE: u32 = 0x18020000;
+pub const HW_DMAC_SIZE: u32 = 0x1000;
+pub const HW_DMAC_DS: u32 = 0x0;
+pub const HW_DMAC_DPC: u32 = 0x4;
+pub const HW_DMAC_INTEN: u32 = 0x20;
+pub const HW_DMAC_CR0: u32 = 0xe00;
+
 // block bspi (axi0) [C]
 pub const HW_BSPI_BASE: u32 = 0x18027000;
 pub const HW_BSPI_SIZE: u32 = 0x124;
@@ -1694,6 +1702,21 @@ pub const HW_MSPI_WRITE_LOCK: u32 = 0x180;
 pub const HW_MSPI_WRITE_LOCK_LOCK_SHIFT: u32 = 0;
 pub const HW_MSPI_WRITE_LOCK_LOCK_MASK: u32 = 0x1;
 
+// block rng (axi0) [C]
+pub const HW_RNG_BASE: u32 = 0x18033000;
+pub const HW_RNG_SIZE: u32 = 0x14;
+pub const HW_RNG_CTRL: u32 = 0x0;
+pub const HW_RNG_CTRL_RBGEN_SHIFT: u32 = 0;
+pub const HW_RNG_CTRL_RBGEN_MASK: u32 = 0x1;
+pub const HW_RNG_CTRL_RBG2X_SHIFT: u32 = 1;
+pub const HW_RNG_CTRL_RBG2X_MASK: u32 = 0x2;
+pub const HW_RNG_STATUS: u32 = 0x4;
+pub const HW_RNG_STATUS_WARM_CNT_SHIFT: u32 = 0;
+pub const HW_RNG_STATUS_WARM_CNT_MASK: u32 = 0xfffff;
+pub const HW_RNG_STATUS_RND_VAL_SHIFT: u32 = 24;
+pub const HW_RNG_STATUS_RND_VAL_MASK: u32 = 0xff000000;
+pub const HW_RNG_DATA: u32 = 0x8;
+
 // block sp804_0 (axi0) [C]
 pub const HW_SP804_0_BASE: u32 = 0x18034000;
 pub const HW_SP804_0_SIZE: u32 = 0x1000;
@@ -1830,6 +1853,14 @@ pub const HW_IDM_PCIE_M0_RESET_CONTROL: u32 = 0x800;
 pub const HW_IDM_PCIE_S0_BASE: u32 = 0x1810b000;
 pub const HW_IDM_PCIE_S0_SIZE: u32 = 0x1000;
 pub const HW_IDM_PCIE_S0_RESET_CONTROL: u32 = 0x800;
+
+// block dmac_idm (axi0) [C]
+pub const HW_DMAC_IDM_BASE: u32 = 0x18114000;
+pub const HW_DMAC_IDM_SIZE: u32 = 0x1000;
+pub const HW_DMAC_IDM_IO_CONTROL_DIRECT: u32 = 0x408;
+pub const HW_DMAC_IDM_RESET_CONTROL: u32 = 0x800;
+pub const HW_DMAC_IDM_RESET_CONTROL_RESET_SHIFT: u32 = 0;
+pub const HW_DMAC_IDM_RESET_CONTROL_RESET_MASK: u32 = 0x1;
 
 // block idm_sram_s0 (axi0) [C]
 pub const HW_IDM_SRAM_S0_BASE: u32 = 0x18120000;

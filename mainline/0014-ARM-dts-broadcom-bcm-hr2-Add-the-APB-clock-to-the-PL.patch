@@ -1,0 +1,42 @@
+From a2541389c8c7be72e3ea69621770ef0233e833ca Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Sun, 15 Nov 2026 16:49:13 +1100
+Subject: [PATCH 14/15] ARM: dts: broadcom: bcm-hr2: Add the APB clock to the
+ PL330 DMA controller
+
+The AMBA bus needs an apb_pclk clock before it reads the PrimeCell ID,
+so the disabled dma node never probed. Give it the 50 MHz APB clock,
+a label for board files, and a fixed PERIPHID (0x00041330) so the bus
+does not read the controller at boot: it can sit in IDM reset.
+
+Signed-off-by: TODO
+---
+ arch/arm/boot/dts/broadcom/bcm-hr2.dtsi | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+index 73f591055c86..89037ffb8318 100644
+--- a/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
++++ b/arch/arm/boot/dts/broadcom/bcm-hr2.dtsi
+@@ -159,9 +159,11 @@ uart1: serial@400 {
+ 			status = "disabled";
+ 		};
+ 
+-		dma@20000 {
++		dma: dma@20000 {
+ 			compatible = "arm,pl330", "arm,primecell";
+ 			reg = <0x20000 0x1000>;
++			/* skips the PrimeCell ID read at boot: the DMAC may still be in IDM reset */
++			arm,primecell-periphid = <0x00041330>;
+ 			interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
+@@ -171,6 +173,8 @@ dma@20000 {
+ 				     <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&apb_clk>;
++			clock-names = "apb_pclk";
+ 			#dma-cells = <1>;
+ 			status = "disabled";
+ 		};

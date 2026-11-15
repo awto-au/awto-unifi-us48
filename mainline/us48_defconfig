@@ -131,6 +131,11 @@ CONFIG_THERMAL_GOV_STEP_WISE=y
 CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE=y
 CONFIG_WATCHDOG=y
 CONFIG_ARM_SP805_WATCHDOG=y
+# SP805 is armed by awto-uboot (~46 s): built in, and the core feeds it until userspace opens /dev/watchdog (replaces the busybox feeder, #84)
+CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
+# Core SoC test kit (#84): PL330 as a module (IDM reset must be released first, docs/core-bringup.md); iproc-rng200 does not fit the HR2 RNG layout
+CONFIG_DMADEVICES=y
+CONFIG_PL330_DMA=m
 CONFIG_GPIOLIB=y
 CONFIG_PINCTRL_IPROC_GPIO=y
 CONFIG_MFD_SYSCON=y

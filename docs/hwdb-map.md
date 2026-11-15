@@ -64,9 +64,11 @@
 | `ddr_ctl` | axi0 | `0x18010000` | `0x400` | 0 | 1 | C | DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride | D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md |
 | `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 137 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
+| `dmac` | axi0 | `0x18020000` | `0x1000` | 0 | 4 | C | ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 47-54 channels, 63 abort (bcm-nsp.dtsi/bcm-hr2.dtsi, not checked on HR2) Note: stays in IDM reset (dmac_idm.RESET_CONTROL = 1) until released; reading it before that stalls the bus. AXI cache/coherency attributes: CC_n.*_CACHE_CTRL | regdb DMAC_PL330_*; tmp/linux-mainline bcm-hr2.dtsi dma@20000 |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 20 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
 | `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 9 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
 | `mspi` | axi0 | `0x18027200` | `0x184` | 0 | 13 | C | QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8 | us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI |
+| `rng` | axi0 | `0x18033000` | `0x14` | 0 | 3 | C | ChipcommonB RNG, iProc/NSP layout (CTRL, STATUS, DATA, FF_THRES, INT_MASK): upstream `bcm2835-rng` (compatible brcm,bcm-nsp-rng). Not RNG200: iproc-rng200 expects its FIFO at +0x20 | regdb CHIPCOMMONB_RNG_*; bcm2835-rng.c nsp_rng_of_data |
 | `sp804_0` | axi0 | `0x18034000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer0), APB clock | tmp/linux-mainline bcm-hr2.dtsi timer@34000 |
 | `sp804_1` | axi0 | `0x18035000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer1) | tmp/linux-mainline bcm-hr2.dtsi timer@35000 |
 | `i2c0` | axi0 | `0x18038000` | `0x50` | 0 | 0 | C | iProc SMBus 0 (CCB I2C) | docs/board.md (0x18038000, offsets 0x00..0x4c); bcm-hr2.dtsi i2c@38000 |
@@ -78,6 +80,7 @@
 | `xgpll` | axi0 | `0x1803fc1c` | `0x18` | 0 | 6 | C | XGPLL: DDR clock source. CK = 25 x NDIV_INT(CTRL_4) x 2 / CH1_MDIV(CTRL_2); live 120 / 9 = 666.7 MHz | docs/clock-audit.md s4 (DDR) ([DL] ddr_init.c:190-198, [RG], [E0]) |
 | `idm_pcie_m0` | axi0 | `0x18101000` | `0x1000` | 0 | 1 | C | AXI_PCIE_M0 IDM wrapper (PAXB AXI master) | regdb AXI_PCIE_M0_IDM_* |
 | `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
+| `dmac_idm` | axi0 | `0x18114000` | `0x1000` | 0 | 2 | C | IDM wrapper of the PL330: reset and AXI user config | regdb DMAC_M0_IDM_* |
 | `idm_sram_s0` | axi0 | `0x18120000` | `0x1000` | 0 | 13 | C | SRAM_S0 IDM wrapper (regdb SRAM_S0_IDM_*) | regdb SRAM_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
 | `idm_apbz_s0` | axi0 | `0x18121000` | `0x1000` | 0 | 11 | C | APBZ_S0 IDM wrapper (regdb APBZ_S0_IDM_*) | regdb APBZ_S0_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
 | `idm_axiic_ds_3` | axi0 | `0x18123000` | `0x1000` | 0 | 10 | C | AXIIC_DS_3 IDM wrapper (regdb AXIIC_DS_3_IDM_*) | regdb AXIIC_DS_3_IDM_*; uboot-1 emu writes (#69 comment 6888018710) |
@@ -317,6 +320,15 @@ Same registers as `uart1`.
 | `0xf14` | `RESET_STATUS` | 32 | ro |  | EP_PERST_B[1], HARD_RST_B[4], PCIE_RC_MODE_PERST_B[8], PCIE_PHY_PIPE_RESETMDIO_N[9], PAXB_RST_N[10] | I | Reset line levels; bit 8 follows CLK_CONTROL bit 0 (printed by awto-uboot) | regdb PAXB_0_RESET_STATUS (bit meaning of 8 inferred from its name) |
 | `0xf18` | `RESET_ENABLE_IN_PCIE_LINK_DOWN` | 32 | rw |  | EN_IPROC_RESET[0], EN_PAXB_RESET[1], EN_CHIP_RESET[2] | C | Reset-on-link-down enables; reset 0, not written by uboot-1 or stock | regdb PAXB_0_RESET_ENABLE_IN_PCIE_LINK_DOWN |
 
+### dmac (`0x18020000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `DS` | 32 | ro |  |  | C |  | regdb |
+| `0x4` | `DPC` | 32 | ro |  |  | C |  | regdb |
+| `0x20` | `INTEN` | 32 | rw |  |  | C |  | regdb |
+| `0xe00` | `CR0` | 32 | ro |  |  | C | build config 0: channels, peripheral requests, events (read by the driver at probe) | regdb |
+
 ### bspi (`0x18027000`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
@@ -373,6 +385,14 @@ Same registers as `uart1`.
 | `0xc0` | `RXRAM[32]` | 32 | rw |  |  | C |  | regdb MSPI_RXRAM_00 0x15c0 minus 0x1500 |
 | `0x140` | `CDRAM[16]` | 32 | rw |  | PCS[3:0], DSCK[4], DT[5], BITSE[6], CONT[7] | C |  | regdb MSPI_CDRAM_00 0x1640 minus 0x1500 (PCS 1:0 + RESERVED 3:2 there); drivers/spi/spi-bcm-qspi.c MSPI_CDRAM_PCS 0xf |
 | `0x180` | `WRITE_LOCK` | 32 | rw |  | LOCK[0] | I | iProc QSPI: MSPI_WRITE_LOCK. CMICm alias CMICM_BSPI_MAST_N_BOOT (0x1680): 1 = MSPI owns the bus | drivers/spi/spi-bcm-qspi.c MSPI_WRITE_LOCK 0x180; regdb CMICM_BSPI_MAST_N_BOOT 0x1680 minus 0x1500; kernel/us48-cmic-mspi WRITE_LOCK = 1 |
+
+### rng (`0x18033000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `CTRL` | 32 | rw |  | RBGEN[0], RBG2X[1] | C |  | regdb |
+| `0x4` | `STATUS` | 32 | ro |  | WARM_CNT[19:0], RND_VAL[31:24] | C |  | regdb |
+| `0x8` | `DATA` | 32 | ro |  |  | C |  | regdb |
 
 ### sp804_0 (`0x18034000`)
 
@@ -446,6 +466,13 @@ Same registers as `sp804_0`.
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
 | `0x800` | `RESET_CONTROL` | 32 | rw |  |  | C | see idm_pcie_m0.RESET_CONTROL | uboot-1 0x1c0245a4, 0x1c0245c0 |
+
+### dmac_idm (`0x18114000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x408` | `IO_CONTROL_DIRECT` | 32 | rw |  |  | C |  | regdb |
+| `0x800` | `RESET_CONTROL` | 32 | rw | `0x1` | RESET[0] | C | 1 = DMAC held in reset (reset value); 0 releases it. No upstream owner: scripts/core_test.py dma --idm-release Note: which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84) | regdb |
 
 ### idm_sram_s0 (`0x18120000`)
 

@@ -27,7 +27,7 @@
 - Contents: busybox 1.37.0 static (`busybox.config`, regenerate with `build_rootfs.py --regen-busybox-config`), dropbear 2026.94 static multi-binary (ssh server, key only), `overlay/` copied as is.
 - Pinned tarballs (sha256 in the script) in `/mnt/1tnvme/toolchains/dl`.
 - `/init`: a2 role (DT compatible `ubnt,us48-a2`) = banner + console shell; a1 = `exec /sbin/init` (busybox, `/etc/inittab`: `sysinit` = `/etc/rc.sh`, `askfirst` shell on the console).
-- `/etc/rc.sh`: mounts, hostname `us48`, `watchdog` (feeds the SP805 awto-uboot arms, ~46 s), `syslogd -O /tmp/messages` (no SysV IPC in the kernel: no `logread`), then `/etc/rc.d/S*` in order:
+- `/etc/rc.sh`: mounts (the SP805 awto-uboot arms, ~46 s, is fed by the kernel driver: `WATCHDOG_HANDLE_BOOT_ENABLED`, #84), hostname `us48`, `syslogd -O /tmp/messages` (no SysV IPC in the kernel: no `logread`), then `/etc/rc.d/S*` in order:
   - `S04us48-net`: insmod `us48_cmic unit0=1`, `us48_pci`, `us48_cmic_xe`; ge1/xe49/xe50 up, ge1 `192.168.25.207/24` (ip-registry `us48-boot`).
   - `S14us48-thermal`: insmod `us48_cmic_gpio`, `us48_cmic_mspi`, `us48_pvtmon`, `us48_fan` (fans: `docs/fan.md`).
   - `S20dropbear`: `dropbear -R -s -g -p 22`; `/root/.ssh/authorized_keys` = `mainline/rootfs/authorized_keys` (public keys).
@@ -35,6 +35,7 @@
 - `/usr/sbin/us48-poe`, `us48-poe-off`: present, not run at boot (bench image keeps the PoE state stock left; run `us48-poe-off` by hand).
 - Modules: `/lib/modules/<release>/*.ko` (loaded by explicit insmod order in the rc scripts; `us48_a2` and `us48_bustest` are loaded by hand). Firmware: `/lib/firmware/us48-a2*.elf` (from `tmp/a2fw`).
 - initramfs = a gen_init_cpio list of the stage (all uid/gid 0), written by `build_mainline.py`; modules are stripped of debug info.
+- Debug profile only: static test tools in `/usr/bin` (`build_rootfs.py --tools`, docs/core-bringup.md); in-tree `=m` modules (`pl330`, `dmatest`, torture, `test_*`) are staged into `/lib/modules/<release>` by `build_mainline.py`.
 - Stage is rebuilt on every `build_mainline.py` run (`tmp/mainline/rootfs`); the busybox/dropbear builds are a few seconds each.
 
 ## Profiles
@@ -70,6 +71,9 @@
 | 7 | ARM: dts: broadcom: Add Ubiquiti UniFi US-48-500W | board DTS: 2x128 MiB RAM, SPI-NOR map, CMIC SMBus (0x48000000) + PCA9548 + 4x LM75 on ch6, pcie0, DMU syscon + syscon-reboot (0x200, mask 0x2, value 0), UART1 console; no bootargs |
 | 8 | ARM: dts: broadcom: bcm-hr2: Fix PMU interrupts for the single CPU | two PMU IRQs + one `interrupt-affinity` entry made `armv7-pmu` fail with -EINVAL; one IRQ |
 | 9 | hwrng: bcm2835: Allow building on Hurricane 2 (ARCH_BCM_IPROC) | HR2 `brcm,bcm-nsp-rng` is handled by this driver; Kconfig did not list ARCH_BCM_IPROC |
+| 10-13 | us-48-500w a2 reserved memory, auxiliary bus selectable, lm75 `#thermal-sensor-cells`, fans + thermal zones | see the patch files |
+| 14 | ARM: dts: broadcom: bcm-hr2: Add the APB clock to the PL330 DMA controller | `apb_pclk` missing, node never probed; `dma` label; fixed PERIPHID (#84) |
+| 15 | ARM: dts: broadcom: us-48-500w: Enable the PL330 DMA controller | `okay`; `pl330` is a module (#84, docs/core-bringup.md) |
 
 Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.

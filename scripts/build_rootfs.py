@@ -9,7 +9,11 @@
 - Stage: tmp/mainline/rootfs (build_mainline.py adds modules + firmware, then packs it as the initramfs).
 - Log: tmp/logs/build_rootfs.log.
 
-Usage: build_rootfs.py [--toolchain-only] [--stage DIR] [--regen-busybox-config] [--jobs N]
+- --tools (#84, debug image only): static test tools into <stage>/usr/bin: memtester, cyclictest (rt-tests, with the
+  tools/numa-stub libnuma stand-in), tinymembench, plus tools/us48bench.c and tools/rngtest.c. Built tools are cached in
+  tmp/rootfs/tools-bin; delete a file there to rebuild it. Normal profile has none (keeps the 13 MiB slot).
+
+Usage: build_rootfs.py [--toolchain-only] [--stage DIR] [--regen-busybox-config] [--jobs N] [--tools]
 """
 
 import argparse
@@ -55,6 +59,15 @@ BUSYBOX = ("busybox-1.37.0", "https://busybox.net/downloads/busybox-1.37.0.tar.b
            "3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4")
 DROPBEAR = ("dropbear-2026.94", "https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2",
             "e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81")
+
+MEMTESTER = ("memtester-4.7.1", "https://pyropus.ca/software/memtester/old-versions/memtester-4.7.1.tar.gz",
+             "e427de663f7bd22d1ebee8af12506a852c010bd4fcbca1e0e6b02972d298b5bb")
+RTTESTS = ("rt-tests-2.11", "https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.gz",
+           "3d6e6fafaa7e9c72963c634b2999997d2c48c4aa080ca4ea35b52e825a4c64b2")
+TINYMEMBENCH = ("tinymembench-a2cf6d7e382e3aea1eb39173174d9fa28cad15f3",  # ssvb/tinymembench master, no releases
+                "https://codeload.github.com/ssvb/tinymembench/tar.gz/a2cf6d7e382e3aea1eb39173174d9fa28cad15f3",
+                "e9553d6e273c24ff62d9a63f06c4d68ad697f22e35d25102c3740f96e1d25d32")
+TOOLS_BIN = WORK / "tools-bin"
 
 # busybox: defconfig + these (symbol -> y/n/value); applied by --regen-busybox-config, result is committed
 BUSYBOX_OPTS = {
@@ -226,9 +239,49 @@ def build_dropbear(jobs: int, stage: Path) -> None:
         link.symlink_to("/usr/sbin/dropbearmulti")  # dropbearmulti dispatches on argv[0]
 
 
-def build(stage: Path, jobs: int = os.cpu_count() or 4) -> None:
+def build_tools(jobs: int, stage: Path) -> None:
+    """Static test tools (#84) into stage/usr/bin; each is built once into TOOLS_BIN (delete to rebuild)."""
+    TOOLS_BIN.mkdir(parents=True, exist_ok=True)
+    flags = " ".join(ARCH_FLAGS)
+    cc = " ".join(cc_cmd())
+    if not (TOOLS_BIN / "memtester").exists():
+        src = unpack(MEMTESTER, WORK / "src")
+        (src / "conf-cc").write_text(f"{CROSS}gcc {flags} -O2 -Wno-parentheses -DPOSIX -D_POSIX_C_SOURCE=200809L -D_FILE_OFFSET_BITS=64 -DTEST_NARROW_WRITES -c\n")
+        (src / "conf-ld").write_text(f"{CROSS}gcc -static -s\n")
+        run(["make", f"-j{jobs}", "memtester"], cwd=src)
+        shutil.copy2(src / "memtester", TOOLS_BIN / "memtester")
+    if not (TOOLS_BIN / "tinymembench").exists():
+        src = unpack(TINYMEMBENCH, WORK / "src")
+        run(["make", f"-j{jobs}", f"CC={cc} -O2"], cwd=src)  # NEON paths are #ifdef'd out (no VFP/NEON on this SKU)
+        run([f"{CROSS}strip", str(src / "tinymembench")])
+        shutil.copy2(src / "tinymembench", TOOLS_BIN / "tinymembench")
+    if not (TOOLS_BIN / "cyclictest").exists():
+        stub = ROOT / "tools/numa-stub"
+        obj = WORK / "numa-stub"
+        obj.mkdir(parents=True, exist_ok=True)
+        run([f"{CROSS}gcc", *ARCH_FLAGS, "-c", str(stub / "numa.c"), "-o", str(obj / "numa.o")])
+        run([f"{CROSS}ar", "rcs", str(obj / "libnuma.a"), str(obj / "numa.o")])
+        src = unpack(RTTESTS, WORK / "src")
+        cyc = src / "src/cyclictest/cyclictest.c"  # musl already defines sigev_notify_thread_id
+        cyc.write_text(cyc.read_text().replace("#define sigev_notify_thread_id _sigev_un._tid",
+                                               "#ifndef sigev_notify_thread_id\n#define sigev_notify_thread_id _sigev_un._tid\n#endif"))
+        run(["make", f"-j{jobs}", f"CC={CROSS}gcc", f"AR={CROSS}ar", "no_libcpupower=1", "PYLIB=x",
+             f"CFLAGS={' '.join(ARCH_FLAGS)} -I{stub}", f"LDFLAGS=-static -L{obj}", "cyclictest"], cwd=src)
+        run([f"{CROSS}strip", str(src / "cyclictest")])
+        shutil.copy2(src / "cyclictest", TOOLS_BIN / "cyclictest")
+    for name in ("us48bench", "rngtest"):  # our own, rebuilt every time (a second)
+        run([*cc_cmd(), "-Wall", "-Wextra", "-o", str(TOOLS_BIN / name), str(ROOT / f"tools/{name}.c")])
+        run([f"{CROSS}strip", str(TOOLS_BIN / name)])
+    dst = stage / "usr/bin"
+    dst.mkdir(parents=True, exist_ok=True)
+    for name in ("memtester", "tinymembench", "cyclictest", "us48bench", "rngtest"):
+        shutil.copy2(TOOLS_BIN / name, dst / name)
+    log("tools staged: " + ", ".join(f"{n} {(dst / n).stat().st_size} B" for n in ("memtester", "tinymembench", "cyclictest", "us48bench", "rngtest")))
+
+
+def build(stage: Path, jobs: int = os.cpu_count() or 4, tools: bool = False) -> None:
     stage = stage.resolve()
-    """Stage = busybox + dropbear + overlay + authorized_keys. Modules/firmware are added by build_mainline.py."""
+    """Stage = busybox + dropbear + overlay + authorized_keys (+ test tools). Modules/firmware are added by build_mainline.py."""
     if stage.exists():
         shutil.rmtree(stage)
     for d in ("dev", "proc", "sys", "tmp", "run", "root/.ssh", "etc/dropbear", "lib/modules", "lib/firmware", "mnt"):
@@ -236,6 +289,8 @@ def build(stage: Path, jobs: int = os.cpu_count() or 4) -> None:
     ensure_toolchain(jobs)
     build_busybox(jobs, stage)
     build_dropbear(jobs, stage)
+    if tools:
+        build_tools(jobs, stage)
     shutil.copytree(SRC / "overlay", stage, symlinks=True, dirs_exist_ok=True)
     keys = SRC / "authorized_keys"
     shutil.copy2(keys, stage / "root/.ssh/authorized_keys")
@@ -250,6 +305,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage", type=Path, default=ROOT / "tmp/mainline/rootfs")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--tools", action="store_true",
+                    help="also stage the static test tools (memtester, cyclictest, tinymembench, us48bench, rngtest)")
     ap.add_argument("--toolchain-only", action="store_true", help="build the musl cross toolchain, then exit")
     ap.add_argument("--regen-busybox-config", action="store_true",
                     help="rewrite mainline/rootfs/busybox.config from busybox defconfig + BUSYBOX_OPTS, then exit")
@@ -262,7 +319,7 @@ def main() -> int:
     if a.toolchain_only:
         ensure_toolchain(a.jobs)
         return 0
-    build(a.stage, a.jobs)
+    build(a.stage, a.jobs, tools=a.tools)
     return 0
 
 

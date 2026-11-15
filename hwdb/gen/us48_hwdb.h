@@ -1475,6 +1475,14 @@
 #define HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_SHIFT	2
 #define HW_PAXB0_RESET_ENABLE_IN_PCIE_LINK_DOWN_EN_CHIP_RESET_MASK	0x4U
 
+/* block dmac (axi0): ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 47-54 channels, 63 abort (bcm-nsp.dtsi/bcm-hr2.dtsi, not checked on HR2) [C] */
+#define HW_DMAC_BASE	0x18020000U
+#define HW_DMAC_SIZE	0x1000U
+#define HW_DMAC_DS	0x0U
+#define HW_DMAC_DPC	0x4U
+#define HW_DMAC_INTEN	0x20U
+#define HW_DMAC_CR0	0xe00U
+
 /* block bspi (axi0): QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL [C] */
 #define HW_BSPI_BASE	0x18027000U
 #define HW_BSPI_SIZE	0x124U
@@ -1695,6 +1703,21 @@
 #define HW_MSPI_WRITE_LOCK_LOCK_SHIFT	0
 #define HW_MSPI_WRITE_LOCK_LOCK_MASK	0x1U
 
+/* block rng (axi0): ChipcommonB RNG, iProc/NSP layout (CTRL, STATUS, DATA, FF_THRES, INT_MASK): upstream `bcm2835-rng` (compatible brcm,bcm-nsp-rng). Not RNG200: iproc-rng200 expects its FIFO at +0x20 [C] */
+#define HW_RNG_BASE	0x18033000U
+#define HW_RNG_SIZE	0x14U
+#define HW_RNG_CTRL	0x0U
+#define HW_RNG_CTRL_RBGEN_SHIFT	0
+#define HW_RNG_CTRL_RBGEN_MASK	0x1U
+#define HW_RNG_CTRL_RBG2X_SHIFT	1
+#define HW_RNG_CTRL_RBG2X_MASK	0x2U
+#define HW_RNG_STATUS	0x4U
+#define HW_RNG_STATUS_WARM_CNT_SHIFT	0
+#define HW_RNG_STATUS_WARM_CNT_MASK	0xfffffU
+#define HW_RNG_STATUS_RND_VAL_SHIFT	24
+#define HW_RNG_STATUS_RND_VAL_MASK	0xff000000U
+#define HW_RNG_DATA	0x8U
+
 /* block sp804_0 (axi0): SP804 dual timer (ccbtimer0), APB clock [C] */
 #define HW_SP804_0_BASE	0x18034000U
 #define HW_SP804_0_SIZE	0x1000U
@@ -1831,6 +1854,14 @@
 #define HW_IDM_PCIE_S0_BASE	0x1810b000U
 #define HW_IDM_PCIE_S0_SIZE	0x1000U
 #define HW_IDM_PCIE_S0_RESET_CONTROL	0x800U
+
+/* block dmac_idm (axi0): IDM wrapper of the PL330: reset and AXI user config [C] */
+#define HW_DMAC_IDM_BASE	0x18114000U
+#define HW_DMAC_IDM_SIZE	0x1000U
+#define HW_DMAC_IDM_IO_CONTROL_DIRECT	0x408U
+#define HW_DMAC_IDM_RESET_CONTROL	0x800U
+#define HW_DMAC_IDM_RESET_CONTROL_RESET_SHIFT	0
+#define HW_DMAC_IDM_RESET_CONTROL_RESET_MASK	0x1U
 
 /* block idm_sram_s0 (axi0): SRAM_S0 IDM wrapper (regdb SRAM_S0_IDM_*) [C] */
 #define HW_IDM_SRAM_S0_BASE	0x18120000U

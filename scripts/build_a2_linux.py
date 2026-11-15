@@ -34,6 +34,7 @@ STALL_S = 60
 TOTAL_S = 3600  # backstop only; not yet measured as 3x cold worst case (first full run logs its time)
 # 3 s per tool call: dtc/cpp on a 100-line file take milliseconds
 TOOL_TIMEOUT = 3
+PERIPH = DMAC = False  # --periph / --dmac: enable the unit 1 CCB test nodes (rng, sp805, sp804) / the PL330 in the DTB (#84)
 
 
 def log(msg: str) -> None:
@@ -111,6 +112,12 @@ def macros(db) -> dict:
     m.update(pair("SHARED", shared.base, shared.size))
     for name, blk in (("GIC_DIST", "gic_dist"), ("GIC_CPU", "gic_cpu"), ("GTIMER", "gtimer"), ("TWD", "twd")):
         m.update(pair(name, db.addr(blk)))
+    for name, blk in (("RNG", "rng"), ("WDT", "sp805"), ("SP804", "sp804_0"), ("DMAC", "dmac")):  # unit 1 CCB blocks, #84
+        m.update(pair(name, db.addr(blk)))
+    if PERIPH:
+        m["A2_PERIPH_STATUS"] = '"okay"'
+    if DMAC:
+        m["A2_DMAC_STATUS"] = '"okay"'
     return m
 
 
@@ -165,7 +172,11 @@ def check_layout(db, zimage: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--build", action="store_true", help="run scripts/build_mainline.py first")
+    ap.add_argument("--periph", action="store_true", help="DTB with the unit 1 rng/sp805/sp804 nodes enabled (#84, conf I)")
+    ap.add_argument("--dmac", action="store_true", help="DTB with the unit 1 PL330 enabled; only after a1 released dmac_idm.RESET_CONTROL (#84)")
     a = ap.parse_args()
+    global PERIPH, DMAC
+    PERIPH, DMAC = a.periph, a.dmac
     LOG.parent.mkdir(parents=True, exist_ok=True)
     OUT.mkdir(parents=True, exist_ok=True)
     if a.build:

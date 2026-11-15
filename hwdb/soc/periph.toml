@@ -151,6 +151,92 @@ desc = "0x1acce551 unlocks writes; any other value locks"
 src = "docs/clocks.md E1 (mw.l 18039c00 1acce551)"
 conf = "C"
 
+[block.dmac]
+space = "axi0"
+base = 0x18020000
+size = 0x1000
+unit = 0
+desc = "ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 47-54 channels, 63 abort (bcm-nsp.dtsi/bcm-hr2.dtsi, not checked on HR2)"
+src = "regdb DMAC_PL330_*; tmp/linux-mainline bcm-hr2.dtsi dma@20000"
+conf = "C"
+note = "stays in IDM reset (dmac_idm.RESET_CONTROL = 1) until released; reading it before that stalls the bus. AXI cache/coherency attributes: CC_n.*_CACHE_CTRL"
+
+[block.dmac.reg.DS]
+offset = 0x0
+access = "ro"
+sdk = "DMAC_PL330_DS"
+src = "regdb"
+
+[block.dmac.reg.DPC]
+offset = 0x4
+access = "ro"
+sdk = "DMAC_PL330_DPC"
+src = "regdb"
+
+[block.dmac.reg.INTEN]
+offset = 0x20
+sdk = "DMAC_PL330_INTEN"
+src = "regdb"
+
+[block.dmac.reg.CR0]
+offset = 0xe00
+access = "ro"
+sdk = "DMAC_PL330_CR0"
+desc = "build config 0: channels, peripheral requests, events (read by the driver at probe)"
+src = "regdb"
+
+[block.dmac_idm]
+space = "axi0"
+base = 0x18114000
+size = 0x1000
+unit = 0
+desc = "IDM wrapper of the PL330: reset and AXI user config"
+src = "regdb DMAC_M0_IDM_*"
+conf = "C"
+
+[block.dmac_idm.reg.IO_CONTROL_DIRECT]
+offset = 0x408
+sdk = "DMAC_M0_IDM_IO_CONTROL_DIRECT"
+src = "regdb"
+
+[block.dmac_idm.reg.RESET_CONTROL]
+offset = 0x800
+reset = 0x1
+sdk = "DMAC_M0_IDM_RESET_CONTROL"
+fields = ["RESET 0"]
+desc = "1 = DMAC held in reset (reset value); 0 releases it. No upstream owner: scripts/core_test.py dma --idm-release"
+src = "regdb"
+conf = "C"
+note = "which stage (stock U-Boot, awto-uboot) already releases it on the board is unmeasured (#84)"
+
+[block.rng]
+space = "axi0"
+base = 0x18033000
+size = 0x14
+unit = 0
+desc = "ChipcommonB RNG, iProc/NSP layout (CTRL, STATUS, DATA, FF_THRES, INT_MASK): upstream `bcm2835-rng` (compatible brcm,bcm-nsp-rng). Not RNG200: iproc-rng200 expects its FIFO at +0x20"
+src = "regdb CHIPCOMMONB_RNG_*; bcm2835-rng.c nsp_rng_of_data"
+conf = "C"
+
+[block.rng.reg.CTRL]
+offset = 0x0
+fields = ["RBGEN 0", "RBG2X 1"]
+sdk = "CHIPCOMMONB_RNG_CTRL"
+src = "regdb"
+
+[block.rng.reg.STATUS]
+offset = 0x4
+access = "ro"
+fields = ["WARM_CNT 19:0", "RND_VAL 31:24"]
+sdk = "CHIPCOMMONB_RNG_STATUS"
+src = "regdb"
+
+[block.rng.reg.DATA]
+offset = 0x8
+access = "ro"
+sdk = "CHIPCOMMONB_RNG_DATA"
+src = "regdb"
+
 [block.sp804_0]
 space = "axi0"
 base = 0x18034000
