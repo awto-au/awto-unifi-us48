@@ -7,6 +7,7 @@
 #include <clk-uclass.h>
 #include <dm.h>
 #include <fdtdec.h>
+#include <cpu_func.h>
 #include <init.h>
 #include <log.h>
 #include <vsprintf.h>
@@ -42,7 +43,7 @@ phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
  * 0 = not yet run, 1 = at 400 (no switch asked), 2 = switched, <0 = refused/failed.
  * .data: set in board_early_init_f before relocation, where .bss overlays .rel.dyn (u-boot.lds).
  */
-static int cpu_status __section(".data") = 0;
+static int us48_cpu_status __section(".data") = 0;
 
 /* Mainline clk-iproc-armpll.c recalc: bypass, lock, offset mode, 0 = max divider. fid 2 (sys clk) -> 0 */
 static ulong us48_arm_hz(void)
@@ -143,13 +144,29 @@ int board_early_init_f(void)
 	int mhz = CONFIG_US48_CPU_MHZ;
 
 	if (mhz == 400) {
-		cpu_status = 1;
+		us48_cpu_status = 1;
 		return 0;
 	}
-	cpu_status = us48_cpu_switch(mhz);
-	if (!cpu_status)
-		cpu_status = 2;
+	us48_cpu_status = us48_cpu_switch(mhz);
+	if (!us48_cpu_status)
+		us48_cpu_status = 2;
 	return 0;
+}
+
+/*
+ * L1 only, called once after relocation. PL310 L2 stays off: SYS_L2_PL310 unset, stock hands over with it off,
+ * and Linux with L1+L2 on corrupted memory at 1550 MHz (#17). DMA memory is uncached, see us48_cmic_eth.c (#75).
+ */
+void enable_caches(void)
+{
+	if (IS_ENABLED(CONFIG_US48_ICACHE)) {
+		invalidate_icache_all();
+		icache_enable();
+	}
+	if (IS_ENABLED(CONFIG_US48_DCACHE))
+		dcache_enable();	/* builds the page table: DRAM cached, the rest strongly ordered */
+	if (!IS_ENABLED(CONFIG_US48_ICACHE) && !IS_ENABLED(CONFIG_US48_DCACHE))
+		puts("caches: off (US48_ICACHE=n, US48_DCACHE=n)\n");
 }
 
 /* Console is up here */
@@ -158,9 +175,9 @@ int board_init(void)
 	ulong hz = us48_arm_hz();
 
 	printf("cpu: US48_CPU_MHZ=%d status=%d ARM=%lu MHz PERIPHCLK=%lu MHz\n", CONFIG_US48_CPU_MHZ,
-	       cpu_status, hz / 1000000, hz / 2000000);
-	if (cpu_status < 0)
-		printf("cpu: switch refused/failed (%d), staying at 400\n", cpu_status);
+	       us48_cpu_status, hz / 1000000, hz / 2000000);
+	if (us48_cpu_status < 0)
+		printf("cpu: switch refused/failed (%d), staying at 400\n", us48_cpu_status);
 	us48_pcie_init();	/* unit 1 link first: fan group 0/1 and the eth probe need it (#76) */
 	us48_fan_boot();
 	return 0;

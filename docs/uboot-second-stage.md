@@ -40,7 +40,7 @@ First-port caveat: DI §12 is **open** for exactly this port (front 1: PHY link 
 | DRAM bank | `0x60000000`, 256 MiB fixed (`dram_init`) | stock hard-codes the same (C, uboot.md §5). Low 128 MiB alias at `0x0` (I, matches stock `mem=128M@0x0`; `boot-ram` already boots kernels at `0x18000` through it) |
 | Relocation | to `ram_top` = `0x70000000` (top of the bank) | stock's own copy at `0x6ffa0000` is dead after the handoff (C); after relocation `0x04000000` is free again for the kernel |
 | TFTP / kernel buffer | `0x01000000`, `bootm` copies to `0x18000` | same as `boot-ram`; uImage load/entry `0x18000` rule unchanged (uboot.md §4) |
-| DMA window | 1 MiB inside the bank, mapped non-cacheable (`mmu_set_region_dcache_behaviour`) | no L2/CMIC-coherence evidence (I); avoids flush/invalidate bugs. Descriptors + packet buffers live here |
+| DMA window | 1 MiB inside the bank, mapped non-cacheable (`mmu_set_region_dcache_behaviour`) | no L2/CMIC-coherence evidence (I); no per-frame flush/invalidate. Descriptors + packet buffers live here; the probe flushes the 1 MiB before remapping it (D-cache on, #75) |
 
 - Low alias outside the DRAM bank: bootm to `0x18000` runs through U-Boot's memmove, no bank check on legacy images (I). If mainline complains, add a second `bi_dram` entry `0x0/128 MiB` and set `bootm_low=0`.
 - Low alias is device-mapped (uncached) in our own page table unless added as a bank (I). Cost: 6 MiB copy at uncached speed, well under a second.
@@ -48,7 +48,7 @@ First-port caveat: DI §12 is **open** for exactly this port (front 1: PHY link 
 ### Low-level init
 - `CONFIG_SKIP_LOWLEVEL_INIT` (no PLL, DDR, clock, cache reset): stock already did DDR + CPU clock (uboot.md §5, C).
 - **Skip**: DDR shmoo, QSPI re-init of stock's `mtd2` writes, stock's A9 private-watchdog arming (`wdt_arm`, stock's `board_init_r`; already stopped by `bootm`). The SP805 is not skipped: feed it (Watchdog section).
-- **Do**: own page table + D-cache on (mainline `dcache_enable`), `ARM global timer` or SP804-class tick for `udelay` (see section 3), UART1 `0x18000400` NS16550 at 115200 (C, uboot.md §3). Console clock rate to be read from the stock divisor, not guessed (uboot.md Open items: UART input clock not measured).
+- **Do**: own page table + L1 I/D-cache on in `enable_caches()` (`US48_ICACHE`/`US48_DCACHE`, default y; L2 off, #17, #75), `ARM global timer` or SP804-class tick for `udelay` (see section 3), UART1 `0x18000400` NS16550 at 115200 (C, uboot.md §3). Console clock rate to be read from the stock divisor, not guessed (uboot.md Open items: UART input clock not measured).
 - `reset`: stock's table handler is NULL (uboot.md §3). Ours = SP805 forced reset: unlock `0x1acce551` at `+0xC00`, load 1, control 3 (INTEN | RESEN). Same as UNVR `reset_cpu()` on its SP805 (UNVR `docs/uboot-port-plan.md` §4). `dev.py` already reboots the unit this way (SP805 expiry, `scripts/dev.py` `boot-flash` path). C. Whether the SP805 reset also resets the switch cores / unit 1: not known. I
 
 ### Watchdog (the **SP805 at `0x18039000`**; corrects the first draft, which named the A9 private watchdog)

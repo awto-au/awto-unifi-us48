@@ -39,6 +39,16 @@ bool us48_pcie_up(void);
 #define GE_LINK_WAIT_MS	4000
 #define GE_LINK_POLL_MS	20
 
+/*
+ * Flush before the remap: lines cached earlier (D-cache is on since enable_caches) must not be evicted over DMA data.
+ * DCBs, RX ring and TX buffers are written by the CMIC behind the CPU: uncached, so no per-frame maintenance (#75).
+ */
+static void us48_dma_uncached(ulong base)
+{
+	flush_dcache_range(base, base + SZ_1M);
+	mmu_set_region_dcache_behaviour(base, SZ_1M, DCACHE_OFF);
+}
+
 struct us48_eth_priv {
 	struct bcm_cmic_unit unit;
 	struct bcm_hr2_dma dma;
@@ -188,11 +198,7 @@ static int us48_eth_probe(struct udevice *dev)
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct bcm_hr2_dma *d = &p->dma;
 
-	/*
-	 * DCBs, RX ring and TX buffers are written by the CMIC behind the CPU: they must not sit in the D-cache
-	 * (stale DONE bits, dirty lines evicted over DMA data lost most received frames). Linux uses coherent memory.
-	 */
-	mmu_set_region_dcache_behaviour(DMA_REGION, SZ_1M, DCACHE_OFF);
+	us48_dma_uncached(DMA_REGION);
 	/* Registers are touched on the first start only: probe runs at boot on every net init. */
 	p->unit.base = (void __iomem *)(uintptr_t)pdata->iobase;
 	d->rx_dcb = (__le32 *)(DMA_REGION + RX_DCB_OFF);
@@ -217,7 +223,7 @@ static int us48_ge_probe(struct udevice *dev)
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct bcm_hr2_dma *d = &p->dma;
 
-	mmu_set_region_dcache_behaviour(GE_DMA_REGION, SZ_1M, DCACHE_OFF);
+	us48_dma_uncached(GE_DMA_REGION);
 	p->unit.base = (void __iomem *)(uintptr_t)pdata->iobase;
 	p->ge = &ge1;
 	d->rx_dcb = (__le32 *)(GE_DMA_REGION + RX_DCB_OFF);

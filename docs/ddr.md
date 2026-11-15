@@ -22,7 +22,7 @@
 - DDR is already trained and running at 667 MHz, 256 MiB at `0x60000000` (low 128 MiB aliased at `0x0`). C
 - uboot-2 builds with `CONFIG_SKIP_LOWLEVEL_INIT`: no PLL, no DDR init, no shmoo, no `mtd2` access. C (uboot-second-stage.md)
 - So uboot-2 cannot corrupt `mtd2`; only a stock boot with Ctrl-C or an invalid blob rewrites it. C
-- uboot-2 enables its own caches (stock hands over with them off): `WARNING: Caches not enabled` does not limit uboot-2 or Linux. I
+- uboot-2 enables L1 I+D itself (`enable_caches()`, Kconfig `US48_ICACHE`/`US48_DCACHE`, #75). L2 (PL310) stays off: Linux at 1550 MHz corrupted memory with L1+L2 on (#17). I
 
 ## Stored parameters: `mtd2` `shmoo`
 
