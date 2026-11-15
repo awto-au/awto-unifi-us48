@@ -4,7 +4,10 @@
  * and provides the unit 1 AXI regmap over the PAXB IMAP window. Facts: docs/pci-layer.md.
  */
 #include <linux/auxiliary_bus.h>
+#include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
+#include <linux/seq_file.h>
+#include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -51,6 +54,7 @@ struct us48_pci {
 	bool out_mapped;
 	u32 page;
 	struct us48_pci_adev *adev[ADEV_NUM];
+	struct dentry *dbg;
 };
 
 struct us48_pci *us48_pci_from_adev(struct auxiliary_device *adev)
@@ -281,6 +285,69 @@ static void adevs_del(struct us48_pci *p)
 	}
 }
 
+/* --- debugfs paxb: read-only PAXB AXI/ordering config of both units (#79) --- */
+
+#define PAXB_RC_AXI_CONFIG	0x18012100	/* RC_AXI_CONFIG, EP_AXI_CONFIG, +8 unused, +0xc RX_DEBUG_CONTROL_0 */
+#define PAXB_U0_PHYS		0x18012100
+
+static int paxb_show(struct seq_file *m, void *unused)
+{
+	static const char * const nm[] = { "RC_AXI_CONFIG", "EP_AXI_CONFIG", "(0x108)", "RX_DEBUG_CONTROL_0" };
+	struct us48_pci *p = m->private;
+	void __iomem *va;
+	int i;
+
+	va = ioremap(PAXB_U0_PHYS, 0x10);
+	if (va) {
+		for (i = 0; i < 4; i++)
+			seq_printf(m, "unit0 0x%08x %-18s %08x\n", PAXB_U0_PHYS + 4 * i, nm[i], readl(va + 4 * i));
+		iounmap(va);
+	}
+	va = us48_pci_win_get(p, PAXB_RC_AXI_CONFIG);
+	if (IS_ERR(va))
+		return PTR_ERR(va);
+	for (i = 0; i < 4; i++)
+		seq_printf(m, "unit1 0x%08x %-18s %08x\n", PAXB_RC_AXI_CONFIG + 4 * i, nm[i], readl(va + 4 * i));
+	us48_pci_win_put(p);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(paxb);
+
+/* write-only test poke "<unit 0|1> <0x18012100..0x1801210c> <value>"; only that PAXB block, board experiments (#79) */
+static ssize_t poke_write(struct file *file, const char __user *ubuf, size_t len, loff_t *ppos)
+{
+	struct us48_pci *p = file->private_data;
+	unsigned int unit, addr, val;
+	void __iomem *va;
+	char buf[64];
+
+	if (len >= sizeof(buf) || copy_from_user(buf, ubuf, len))
+		return -EINVAL;
+	buf[len] = 0;
+	if (sscanf(buf, "%u %i %i", &unit, &addr, &val) != 3 || unit > 1 || addr < PAXB_RC_AXI_CONFIG ||
+	    addr > PAXB_RC_AXI_CONFIG + 0xc || addr & 3)
+		return -EINVAL;
+	if (unit == 0) {
+		va = ioremap(addr, 4);
+		if (!va)
+			return -ENOMEM;
+		writel(val, va);
+		iounmap(va);
+	} else {
+		va = us48_pci_win_get(p, addr);
+		if (IS_ERR(va))
+			return PTR_ERR(va);
+		writel(val, va);
+		us48_pci_win_put(p);
+	}
+	return len;
+}
+
+static const struct file_operations poke_fops = {
+	.open = simple_open,
+	.write = poke_write,
+};
+
 /* --- PCI --- */
 
 static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -324,11 +391,15 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return PTR_ERR(p->map);
 	p->alive = true;
 	pci_set_drvdata(pdev, p);
+	p->dbg = debugfs_create_dir("us48_pci", NULL);
+	debugfs_create_file("paxb", 0444, p->dbg, p, &paxb_fops);
+	debugfs_create_file("poke", 0200, p->dbg, p, &poke_fops);
 
 	for (i = 0; i < ADEV_NUM; i++) {
 		ret = adev_add(p, i, names[i]);
 		if (ret) {
 			adevs_del(p);
+			debugfs_remove_recursive(p->dbg);
 			return ret;
 		}
 	}
@@ -349,6 +420,7 @@ static void us48_pci_remove(struct pci_dev *pdev)
 {
 	struct us48_pci *p = pci_get_drvdata(pdev);
 
+	debugfs_remove_recursive(p->dbg);
 	adevs_del(p);	/* clients stop first, while the device still answers */
 	mutex_lock(&p->schan_lock);
 	mutex_lock(&p->win_lock);

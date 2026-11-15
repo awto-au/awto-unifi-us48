@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""a2_raw — run an a2 ELF on the board (debugfs mounted, us48_a2.ko in /lib/modules) and print trace0 + pcsr (#79).
+
+Usage: a2_raw.py ELF_NAME [cpu_mhz] [wait_s]   (ELF in /lib/firmware; cpu_mhz 0 = leave PLL; log tmp/logs/a2_raw.log)
+Wait: trace0 re-read every 0.2 s until it stops growing for 1 s; wait_s (default 5) is the cap. rawtest runs < 1 s at 1000 MHz.
+"""
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REMOTE = r"""
+D=/sys/class/remoteproc/remoteproc0; T=/sys/kernel/debug/remoteproc/remoteproc0
+[ -p /tmp/f ] || mkfifo /tmp/f; exec 3<>/tmp/f
+lsmod | grep -q us48_a2 || insmod /lib/modules/*/us48_a2.ko
+[ "$(cat $D/state)" = offline ] || echo stop > $D/state
+echo @MHZ@ > /sys/module/us48_a2/parameters/cpu_mhz
+echo @ELF@ > $D/firmware
+echo start > $D/state
+n=0; last=""; same=0
+while [ $n -lt @N@ ]; do
+  read -t 0.2 x <&3; n=$((n+1)); cur=$(cat $T/trace0)
+  if [ "$cur" = "$last" ]; then same=$((same+1)); else same=0; fi
+  last="$cur"; [ $same -ge 5 ] && break
+done
+echo "$cur"; echo "poll=$n"; cat $T/pcsr | tail -1; tail -2 $T/ccu
+"""
+
+
+def main() -> int:
+    a = sys.argv[1:]
+    elf, mhz, wait = a[0], a[1] if len(a) > 1 else "0", float(a[2]) if len(a) > 2 else 5.0
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"),
+                        REMOTE.replace("@ELF@", elf).replace("@MHZ@", mhz).replace("@N@", str(int(wait / 0.2)))],
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    print(out)
+    (ROOT / "tmp/logs/a2_raw.log").open("a").write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {a}\n{out}\n")
+    return r.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

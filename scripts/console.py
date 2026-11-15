@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import select
 import socket
 import subprocess
 import time
@@ -245,10 +246,21 @@ class Session:
 
     def write(self, data: bytes) -> None:
         try:
-            self.s.sendall(data)
+            self._send(data)
         except (BrokenPipeError, ConnectionResetError):
             self._reconnect()  # tio respawned (baud change / adapter reconnect)
-            self.s.sendall(data)
+            self._send(data)
+
+    def _send(self, data: bytes) -> None:
+        # nonblocking socket: full buffer = EAGAIN; wait for writable, give up after 1 s (raises)
+        end = time.monotonic() + 1.0
+        while data:
+            try:
+                data = data[self.s.send(data):]
+            except BlockingIOError:
+                if time.monotonic() > end:
+                    raise
+                select.select([], [self.s], [], 0.05)
 
     def send_line(self, text: str) -> None:
         log(f">> {text!r}")

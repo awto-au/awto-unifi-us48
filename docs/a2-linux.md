@@ -85,3 +85,12 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Store word, load it back at once, under WBWA / WB-no-WA (Linux) / WT / NC mappings (tests A, B), plus store + line clean-invalidate + reload (C) and store + 9 same-set loads + reload (D). Memory truth re-read through the NC alias after clean+invalidate.
 - Output: `trace0` text. `m` = wrong loads, `r` = wrong words in memory; `m>0, r=0` = stale read, `r>0` = lost or late write. Header shows ACTLR and the L1 way size.
 - Run at `cpu_mhz=1000`: `insmod us48_a2.ko firmware name`, `echo start`, `cat /sys/kernel/debug/remoteproc/remoteproc0/trace0` (a1 text only, no DCC). Expect A_nwa/B_nwa to fail if the leading suspect is right; repeat at 100 MHz as control.
+
+## Board results (#79, 2026-11-15, unit 1 at 1000 MHz unless stated)
+- Tools: `scripts/a2_up.py` (cycle, RAM-boot debug image, debugfs), `scripts/a2_raw.py` (run an a2 ELF, print trace0), `scripts/u2_run.py` (catch the awto-uboot window); `us48_pci` debugfs `paxb` (read both units) and `poke` (write-only, 0x18012100..0x1801210c).
+- rawtest: 100 MHz and 400 MHz clean (pass 1-3, all m = r = 0). 600/800/1000 MHz: a2 sits at the undefined-instruction vector (PCSR 0xffff000c = vector 0xffff0004 + 8) right after the header text in most runs; the runs that complete show instruction words (`e59f0110`, `eb009e3c`) in the `r` counters (data line holding code).
+  - Corruption is in what a2 reads or writes, before any store-then-load test runs: instruction/data line mix-up, not an ordering race on one word.
+- PAXB (reset values on both units): RC_AXI_CONFIG 0x0003bfdf, EP_AXI_CONFIG 0x0003ffff, RX_DEBUG_CONTROL_0 0x0000001f (IGNORE_BRESP 0).
+- `init_default_cache_policy()` overrides the `mmu.c:57` default from the CPU section flags (`proc-v7-2level.S` PMD_FLAGS_UP): the one-line `cachepolicy` default has no effect. Test patch `mainline/a2/0001-ARM-v7-UP-section-flags-write-allocate-a2-test.patch` (kernel prints `Memory policy: Data cache writealloc`): 5 boots at 1000 MHz = 1 clean, 4 oops/panic (slab corruption, NULL deref). Write-allocate is not the fix.
+- RO + no-snoop off (DevCtl 0x2c10 -> 0x2400 on root port and EP): rawtest 1 of 6 runs complete (control 4 of 6): no gain.
+- Pokes (rawtest, 8 runs each, restored after): unit 0 RX_DEBUG 0x1c (serialise reads): 5 of 8 abort/corrupt; unit 1 EP_AXI_CONFIG 0: 4 of 8 abort; unit 0 RC_AXI_CONFIG 0x3e1f: 7 of 8 abort. No change.

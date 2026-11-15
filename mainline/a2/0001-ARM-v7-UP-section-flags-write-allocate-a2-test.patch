@@ -1,0 +1,20 @@
+From: awto-claudia
+Subject: [a2 TEST ONLY, #79] ARM: mm: v7 UP section flags write-allocate (PMD_FLAGS_UP = WBWA)
+
+Test for the a2 corruption above 100 MHz; not applied by build_mainline.py (subdirectory).
+mmu.c cachepolicy default is overridden by init_default_cache_policy() from these flags.
+Build: tmp/mainline/build-a2wa (config of build-normal).
+---
+diff --git a/arch/arm/mm/proc-v7-2level.S b/arch/arm/mm/proc-v7-2level.S
+index 1007702fcaf3..6a2c3ef1500f 100644
+--- a/arch/arm/mm/proc-v7-2level.S
++++ b/arch/arm/mm/proc-v7-2level.S
+@@ -18,7 +18,7 @@
+ 
+ /* PTWs cacheable, inner WB not shareable, outer WB not shareable */
+ #define TTB_FLAGS_UP	TTB_IRGN_WB|TTB_RGN_OC_WB
+-#define PMD_FLAGS_UP	PMD_SECT_WB
++#define PMD_FLAGS_UP	PMD_SECT_WBWA
+ 
+ /* PTWs cacheable, inner WBWA shareable, outer WBWA not shareable */
+ #define TTB_FLAGS_SMP	TTB_IRGN_WBWA|TTB_S|TTB_NOS|TTB_RGN_OC_WBWA
