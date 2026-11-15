@@ -68,12 +68,14 @@
 - Base `us48_defconfig` = hardware + userspace needs; CPU-speed mitigations (Spectre) stay off in both.
 - Release string differs per profile (`7.4.0-rc1-norm+` / `7.4.0-rc1-dbg+`); modules are built per build dir and staged under that release.
 - Debug fragment: memory (KFENCE, SLUB_DEBUG_ON, DEBUG_PAGEALLOC, PAGE_POISONING, INIT_ON_ALLOC/FREE, DEBUG_VM, KMEMLEAK, DEBUG_SG/LIST/PLIST/NOTIFIERS, HARDENED_USERCOPY, FORTIFY, STACKPROTECTOR_STRONG), locking (PROVE_LOCKING, PROVE_RCU, DEBUG_OBJECTS*, mutex/rwsem/spinlock/ww checks), DMA_API_DEBUG, DEBUG_SHIRQ/DEVRES, softlockup panic, hung task, WQ_WATCHDOG, UBSAN (bounds, shift, unreachable), KALLSYMS_ALL, DWARF5, ftrace, kprobes, perf, dynamic debug, debugfs, IKCONFIG, PANIC_ON_OOPS. `DEBUG_DRIVER` off (noisy).
-- Lockdep tables sized down (`LOCKDEP_*_BITS`): lowmem was 64 MiB while the a2 block was `no-map`; with the reusable pool (patch 18) it is 128 MiB, of which 64 MiB is movable-only until the early allocations are done. Tables not yet re-grown.
-- KASAN generic outline (`KASAN_STACK`) is in the debug fragment since patch 18, first boot unverified (#84). History: with the `no-map` a2 block lowmem was 64 MiB and inline panicked at memmap allocation (kernel 35 MiB + 8 MiB shadow + 8 MiB CMA + 14 MiB memmap), outline hung before earlycon output. Risk now:
-  - Early allocations (shadow = 1/8 of all lowmem incl. the pool = 16 MiB, memmap) must fit in the 64 MiB of lowmem outside the pool + default CMA: the pool is `memblock_reserve`d until `cma_activate_area()`. Sizes: docs/core-bringup.md (Memory map).
-  - A silent hang before earlycon would be the old outline failure again (not explained by memory): then boot with the normal profile and bisect `KASAN_STACK`, `KASAN_OUTLINE`.
+- Debug lowmem: `VMSPLIT_1G` (PAGE_OFFSET 0x40000000) makes bank 1 (0x68000000) lowmem, so all 256 MiB is direct-mapped and there is no highmem (`0K highmem`); userspace is limited to 1 GiB. `SPARSEMEM` replaces FLATMEM (the flat memmap spans the 0x08000000..0x68000000 hole: 14 MiB).
+- Lockdep tables sized down (`LOCKDEP_*_BITS`), not re-grown.
+- KASAN generic outline (`KASAN_STACK`) in the debug fragment, boots (2026-11-16, #84; `MemTotal` 192980 kB, `0K highmem`). Boot failures on the way, in order:
+  - `Failed to allocate 14680064 bytes for node 0 memory map`: FLATMEM memmap over the hole -> SPARSEMEM.
+  - `UBSAN shift-out-of-bounds` + `dump_page` storm in `memmap_init_reserved_range`: stackdepot bug, KASAN sets the hash order to the maximum (1M entries), `alloc_large_system_hash()` returns 512K, `init_stack_table()` initialised the requested count and overwrote 4 MiB past the table (the `struct page` array). Fix `mainline/0022` (init `stack_hash_mask + 1` entries). Not specific to this board; upstream candidate.
+  - OOM in `dma_debug_create_entries` ("System is deadlocked on memory"): with 3G/1G only ~56 MiB of non-movable lowmem was left (128 MiB lowmem - 64 MiB movable-only a2 pool - 8 MiB CMA) for kernel 23 MiB + shadow 16 MiB + debug heap -> `VMSPLIT_1G`.
 - Not enabled:
-  - KASAN inline: not tried since the pool change (outline only, below).
+  - KASAN inline: not tried (outline only).
   - KCSAN, KMSAN, KASAN_SW_TAGS/HW_TAGS: no ARM32 support.
   - RCU stall detector: `TINY_RCU` (SMP off) has none.
   - `DMA_API_DEBUG_SG`, `DEBUG_TIMEKEEPING`: no longer exist in 7.4.
@@ -99,6 +101,7 @@
 | 17 | ... Read the boot flash with 1-1-4 quad | `spi-rx-bus-width = <4>` |
 | 18 | ... Make the a2 memory a reusable CMA pool | `a2@4000000` `shared-dma-pool` + `reusable` (was `no-map`), consumer node `a2-rproc` with `memory-region` and the offsets (#84 item 11) |
 | 19 | ... Add the on-chip SRAM as mmio-sram | `sram@1b000000` 16 KiB, one `dma-desc` pool; `CONFIG_SRAM=y` (#84 item 12) |
+| 22 | lib/stackdepot: Initialise only the hash table entries that were allocated | `init_stack_table()` ran over the requested count, not the allocated one: overwrote the `struct page` array under KASAN (#84) |
 
 Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.

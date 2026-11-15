@@ -1,0 +1,47 @@
+From 3799c19e88486e28b9d45bf8394d42562f7f532b Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Mon, 16 Nov 2026 03:48:38 +1100
+Subject: [PATCH 22/22] lib/stackdepot: Initialise only the hash table entries
+ that were allocated
+
+stack_depot_early_init() asks alloc_large_system_hash() for
+1 << stack_bucket_number_order entries (KASAN sets the order to the
+maximum, 1M entries) but the allocator may return fewer: it limits the
+table to a fraction of the memory. init_stack_table() then runs
+INIT_LIST_HEAD() over the requested count and writes past the end of
+the table, into whatever the memblock allocator placed next to it
+(struct page array on a 256 MiB ARM board: the next boot panics in
+memmap_init_reserved_range() under DEBUG_VM_PGFLAGS).
+
+Always initialise stack_hash_mask + 1 entries, the count that was
+actually allocated.
+
+Signed-off-by: TODO
+---
+ lib/stackdepot.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/lib/stackdepot.c b/lib/stackdepot.c
+index 90c52f2e0d3f..ecab21fc2d5c 100644
+--- a/lib/stackdepot.c
++++ b/lib/stackdepot.c
+@@ -201,13 +201,12 @@ int __init stack_depot_early_init(void)
+ 		stack_depot_disabled = true;
+ 		return -ENOMEM;
+ 	}
+-	if (!entries) {
+-		/*
+-		 * Obtain the number of entries that was calculated by
+-		 * alloc_large_system_hash().
+-		 */
+-		entries = stack_hash_mask + 1;
+-	}
++	/*
++	 * Always use the number of entries alloc_large_system_hash() actually
++	 * allocated: it can clamp a requested count (small memory), and
++	 * initialising the requested count overruns the table.
++	 */
++	entries = stack_hash_mask + 1;
+ 	init_stack_table(entries);
+ 
+ 	pr_info("allocating space for %u stack pools via memblock\n",

@@ -42,7 +42,7 @@
   - a2 on: `MemTotal` unchanged (`cma_alloc` does not change totalram); `MemFree` and `CmaFree` drop by 65536 kB.
 - a2 side (Linux on a2): its DTB memory node is the 63 MiB carveout minus `a2_shared`; awto-uboot on a2 relocates to `ram_top` 0x0bf00000 inside that node, so it is returned to a2 Linux like on a1 (MemTotal 47732 kB measured with the 1 MiB shared reserve; expected ~48 MB minus kernel/memmap, nothing else held).
 - Offline builds (no warnings, DTB W=1 clean, a2 DTB clean): normal zImage 3.75 MB (13 MiB slot ok), debug zImage 8.16 MB, DTB 11 KB, a2 DTB 2.6 KB (2.8 KB with L2).
-- KASAN (debug fragment, outline): vmlinux text+data+bss 23.0 MiB (was 16.7 MiB without), zImage 7.8 MiB. Early lowmem need ~23 + 16 (shadow) + ~4 (memmap, page_ext) = ~43 MiB against ~56 MiB (64 - 8 default CMA): fits on paper. Boot result: not run.
+- KASAN (debug fragment, outline): vmlinux text+data+bss 23.0 MiB (was 16.7 MiB without), zImage 7.8 MiB. Early lowmem need ~23 + 16 (shadow) + ~4 (memmap, page_ext) = ~43 MiB against ~56 MiB (64 - 8 default CMA): did not fit as a 3G/1G kernel (OOM); the debug profile uses `VMSPLIT_1G` + SPARSEMEM, all 256 MiB lowmem, boots (docs/mainline.md Profiles; `MemTotal` 192980 kB, `CmaTotal` 73728 kB, board 2026-11-16).
 
 ## Drivers and DT
 
