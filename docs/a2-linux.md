@@ -235,5 +235,19 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 - Both set, no capture: Linux shell 3.3-3.6 s after start, 3/3 at 1000 MHz and 6/6 with the module params; 1600 MHz 2/2 (capture: 0/4 faults at 800, 1200, 1400, 1600). 1650 and 1700 MHz: kernel pointers go wild (garbage DFAR / PC 0x1c000010), a2 hangs; SRAM-only code is clean to 1700 (above).
 - Unfixed a1 load at 600 MHz (order off): 1/6 fault (+ 0/4 idle), same stale-line signature.
-- Fix in `us48_a2`: `paxb_order` (default 1) sets EP_TX_WR_RD_ORDER before the release; `rx_arid` (default -1 = leave 3; 0 = serialise) sets unit 0 RX_FREE_ARID_COUNT while a2 runs and restores 3 in stop. debugfs `remoteproc0/paxb_tx` reads/writes the unit 1 register. `cpu_mhz` default stays 100.
-- Open: RX_FREE_ARID_COUNT 0 costs inbound read concurrency of unit 0 (cmic DMA reads of DDR too): not measured; 1 and 2 untried. The 1650 MHz failure is not stale lines (not captured with the dump).
+- Fix in `us48_a2`: `paxb_order` (default 1) sets EP_TX_WR_RD_ORDER before the release; `rx_arid` (default 0 since the sweep below; -1 = leave 3) sets unit 0 RX_FREE_ARID_COUNT while a2 runs and restores 3 in stop. debugfs `remoteproc0/paxb_tx` reads/writes the unit 1 register. `cpu_mhz` default stays 100.
+- Open: the 1650 MHz failure is not stale lines (not captured with the dump).
+
+### RX_FREE_ARID_COUNT sweep (#79, #88, 2026-11-16, base 8224728)
+- Reliability: debug a1 image (RAM boot), `a2_cap.py LINUX <MHz> --skip --limit-ms 6000 --runs 6 rx_arid=N`, `paxb_order=1`, a1 DDR write load = `dd` 48 MiB to tmpfs in a loop (two loops were running), a2 Linux normal zImage, AXI 200. Fault = captured abort (`state done`, DFAR 0x4); clean = limit expiry with userspace reached.
+
+| rx_arid | 1000 MHz faults / runs | 1400 MHz faults / runs |
+|---|---|---|
+| 3 (reset, order only) | 2/6 (earlier) | - |
+| 2 | 1/6 | 0/6 |
+| 1 | 4/12 (0/6, then 4/6) | 0/6 |
+| 0 | 0/6 (+0/13 earlier) | 0/6 |
+
+- Only 0 is clean: default `rx_arid=0`.
+- a2 Linux start (normal image, `dcc_poll=1`, a1 idle, 15 s limit for the shell): rx_arid 2 hung in 7 of 13 starts (stub `aJ`, no Linux output), rx_arid 3 0/2, 1 0/1, 0 0/1 (+0/1 with the new default); small samples.
+- Throughput cost: none measurable (table in core-bringup.md, "RX_FREE_ARID_COUNT cost").

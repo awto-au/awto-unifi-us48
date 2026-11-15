@@ -99,9 +99,9 @@ MODULE_PARM_DESC(dcc_poll, "a1 DCC reader polls a2's DSCR/DTRTX while a2 runs (0
 static bool paxb_order = true;
 module_param(paxb_order, bool, 0644);
 MODULE_PARM_DESC(paxb_order, "unit 1 PAXB TX_DEBUG_CFG.EP_TX_WR_RD_ORDER: a2 reads wait for its earlier writes (reset 0 = a read may pass a write)");
-static int rx_arid = -1;
+static int rx_arid;
 module_param(rx_arid, int, 0644);
-MODULE_PARM_DESC(rx_arid, "unit 0 PAXB RX_FREE_ARID_COUNT while a2 runs (0..3; 0 = one inbound read at a time; -1 = leave the reset value 3)");
+MODULE_PARM_DESC(rx_arid, "unit 0 PAXB RX_FREE_ARID_COUNT while a2 runs (default 0 = one inbound read at a time, #79; 1..3 fault under a1 DDR load; -1 = leave the reset value 3)");
 static bool stub_dcc = true;
 module_param(stub_dcc, bool, 0644);
 MODULE_PARM_DESC(stub_dcc, "boot stub writes DCC marker characters (proves the console path before the kernel runs)");

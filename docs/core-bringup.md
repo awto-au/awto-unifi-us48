@@ -117,3 +117,34 @@
 | CMIC packet-DMA RX pps / MB/s | not measured | | no quick test exists (needs a traffic generator + RX loop, no script) |
 | a2 -> host DDR over PCIe (a2 at 1000, #80, 2026-11-15) | cached rd 113 / wr 1061, uncached rd 14 / wr 123 MB/s, 298 ns | PCIe x1 gen2 ~400 MB/s | from #80, not rerun |
 | a2 own DDR path at 100 MHz (this run) | L2 off rd/wr/cp 22/254/23 MB/s, 1520 ns; L2 on 55/259/59 MB/s, 1499 ns | | a2 RAM is host DDR over PCIe: every miss crosses it |
+
+## RX_FREE_ARID_COUNT cost (#79, #88; a1 ARM 1000 MHz, L2 on; 2026-11-16, base 8224728 + rx_arid default 0)
+
+- Unit 0 `RX_DEBUG_CONTROL_0` [1:0] (reset 3 = `0x1f`; value N = register `0x1c|N`) set with `devmem 0x1801210c` (a2 stopped) or `us48_a2 rx_arid=N` (a2 running Linux, 1000 MHz, DCC poll on, idle shell, `paxb_order=1`). `scripts/rx_arid_cost.py`, normal image, median of 3, each test 1-2 s.
+- TCP: 10 MiB both ways over ge1, host python timing (rx = host to board `nc -l`, tx = board `dd | nc`). PL330: `dmatest` 8 ch x 100 x 256 KiB `noverify=1 norandom=1`, summed KB/s.
+
+| rx_arid | a2 | TCP rx MB/s | TCP tx MB/s | PL330 MB/s |
+|---|---|---|---|---|
+| 3 | stopped | 63.5 | 19.6 | 303 |
+| 2 | stopped | 44.2 | 19.6 | 314 |
+| 1 | stopped | 63.8 | 19.5 | 311 |
+| 0 | stopped | 64.1 | 19.6 | 312 |
+| 3 | Linux | 65.9 | 19.0 | 305 |
+| 2 | Linux | 69.9 | 19.1 | 307 |
+| 1 | Linux | 63.6 | 19.1 | 297 |
+| 0 | Linux | 59.9 | 18.9 | 299 |
+
+- TCP rx reps scatter 44-72 MB/s inside every row (44.2 recurs: not a trend); tx is CPU-bound in `dd | nc` (19-20 MB/s); PL330 within +-5 %. No cost seen from rx_arid on unit 0 packet DMA or PL330 (PL330 is on the unit 0 AXI, not behind PAXB RX).
+- a2 boot to shell (`/init` shell answers a marker over DCC) 2.26-2.27 s at rx_arid 3, 1, 0 (one start 2.47 s at 2).
+- Unit 1 path: a2 `bustest` firmware at 1000 MHz, AXI 200, `paxb_order=1`, a1 idle, debug image, median of 3 passes (`scripts/a2_bus_arid.py`; results page read via `/dev/mem`, ticks at ARM/2 = 500 MHz):
+
+| rx_arid | cached rd / wr / cpy MB/s | uncached rd / wr MB/s | uncached lat / line fill ns |
+|---|---|---|---|
+| 3 | 29.6 / 274.3 / 28.7 | 3.9 / 66.6 | 1003 / 1085 |
+| 2 | 29.3 / 274.5 / 28.8 | 3.9 / 66.6 | 1004 / 1085 |
+| 1 | 29.3 / 274.3 / 28.8 | 3.9 / 66.6 | 1005 / 1085 |
+| 0 | 29.3 / 274.5 / 28.8 | 3.9 / 66.5 | 1011 / 1085 |
+
+- `paxb_order` 0 vs 1: identical (29.3 / 274.5). 400 MHz = 1000 MHz (latency-bound). a2 issues one miss at a time, so serialising inbound reads costs it nothing here.
+- The #80 row above (cached rd 113 MB/s) is not reproduced: now 29.3 at AXI 200 (module default `axi_mhz` 200; unit 1 power-on is 400).
+- `us48_bustest` a2 columns do not work since the CMA carveout (#84): it looks for the removed `ubnt,us48-a2-carveout` node ("no a2 carveout").
