@@ -33,7 +33,7 @@ CONFIG_CLK_BCM_HR2=y
 # Boot: appended DTB, initramfs, cmdline from the DTB/kernel
 CONFIG_ARM_APPENDED_DTB=y
 # CONFIG_ARM_ATAG_DTB_COMPAT is not set
-CONFIG_CMDLINE="console=ttyS0,115200 earlycon keep_bootcon cma=8M@32M-64M"
+CONFIG_CMDLINE="console=ttyS0,115200 earlycon cma=8M@32M-64M"
 CONFIG_BLK_DEV_INITRD=y
 CONFIG_RD_GZIP=y
 CONFIG_KERNEL_GZIP=y
