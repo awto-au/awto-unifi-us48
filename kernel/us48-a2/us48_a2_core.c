@@ -87,6 +87,9 @@ static char *initrd_fw = "us48-a2-initrd";	/* optional: empty, whitespace-only o
 static bool hdbgen_off;
 module_param(hdbgen_off, bool, 0644);
 MODULE_PARM_DESC(hdbgen_off, "clear DSCR.HDBGEN after the release: a2 runs without halting-debug enabled (bring-up experiment, #79)");
+static bool dcc_poll = true;
+module_param(dcc_poll, bool, 0644);
+MODULE_PARM_DESC(dcc_poll, "a1 DCC reader polls a2's DSCR/DTRTX while a2 runs (0 = never touch a2 debug regs after the release, #79)");
 static bool stub_dcc = true;
 module_param(stub_dcc, bool, 0644);
 MODULE_PARM_DESC(stub_dcc, "boot stub writes DCC marker characters (proves the console path before the kernel runs)");
@@ -496,7 +499,7 @@ static int us48_a2_start(struct rproc *rproc)
 	ret = ret ?: a2_set_cpu(a, cpu_mhz);
 	ret = ret ?: a2_halt(a);
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);
-	if (!ret)
+	if (!ret && dcc_poll)
 		us48_a2_dcc_start(a->dcc);	/* before the release: a2's hvc_dcc gives up after 100 ms */
 	ret = ret ?: a2_release(a);
 	if (!ret && hdbgen_off)

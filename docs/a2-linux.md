@@ -151,3 +151,16 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Failures are early (undefined vector right after the header text, before any test body) or whole-pass `r` (every word wrong). Adding the `rfirst` diagnostics to the same source made the unmodified test pass 8/8 (and `PT_SRAM` 8/8): the fault moves with code layout / timing, it does not track a test or a mapping.
 - Verdict: PTE write ordering and mismatched-attribute aliasing are not the cause (walks on-chip: same failures; alias-free: no failures but the alias build is also clean, so no separation). No Linux patch written.
 - Open: layout-dependent early corruption on cold I/D fills at 1000 MHz.
+
+## No-DCC / no-poll test (#79, 2026-11-15, a2 1000 MHz, AXI 200, fans 100 %)
+- rawtest never uses DCC (results in the a2_shared trace); only a1's DCC poller touches a2 debug regs while a2 runs. `us48_a2` param `dcc_poll=0` = no poller after the release; `hdbgen_off=1` = HDBGEN cleared after the release. `a2_raw.py` / `a2_raw_batch.py` take `k=v` params. `a2_raw` reads `pcsr` once after the run (diagnostic only).
+- Reproducer = `us48-a2-rawtest-orig` (rawtest.c from fc0b9c3, before the bisect edits; the current rawtest passes 4/4 and 8/8 with diagnostics code).
+
+| Params | ok / runs |
+|---|---|
+| poller on, HDBGEN on (control) | 0/4, 1/8 |
+| `dcc_poll=0` | 1/4, 0/8 |
+| `hdbgen_off=1` | 2/8 |
+| `dcc_poll=0 hdbgen_off=1` | 0/8 |
+
+- Failures identical with the poller off (undefined vector 0xffff000c, or `pass=` missing). a1 debug access and HDBGEN are not the cause; Linux no-DCC boots not run (step 1 not clean).
