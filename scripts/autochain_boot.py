@@ -24,22 +24,28 @@ STAGES = [(b"U-Boot usw", "uboot-1 banner"), (b"DDR Tune Completed", "DDR done")
           (b"Starting kernel", "bootm start"), (b"awto-uboot 20", "awto-uboot banner"), (b"awto-uboot> ", "prompt")]
 OVERALL_S = 40.0
 STALL_S = 15.0
-SIZE = 842736
+SIZE = (Path(__file__).resolve().parent.parent / "tmp/uboot/us48-uboot-chain.bin").stat().st_size  # uImage incl. header = flashed bytes
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manual", action="store_true")
+    ap.add_argument("--warm", action="store_true", help="no relay: send `reset` at the awto-uboot prompt (implies --manual)")
     ap.add_argument("--xip", action="store_true", help="with --manual: bootm 0x1c0e0000 instead of sf read + bootm")
     a = ap.parse_args()
+    a.manual = a.manual or a.warm
     s = console.Session()
     try:
         s.read_idle(0.2, 1.0)
-        host = dev.os.environ.get("US48_RELAY", dev.RELAY_DEFAULT)
-        log(f"relay {host}: off -> {dev._relay_post(host, 'off')}", "WARN")
-        threading.Event().wait(dev.RELAY_GAP_S)
-        t0 = time.monotonic()  # t=0 = start of the relay ON call (the POST itself is part of the power-up)
-        threading.Thread(target=lambda: log(f"relay on -> {dev._relay_post(host, 'on')}", "ALERT"), daemon=True).start()
+        if a.warm:
+            s.send_line("reset")
+            t0 = time.monotonic()  # t=0 = `reset` sent
+        else:
+            host = dev.os.environ.get("US48_RELAY", dev.RELAY_DEFAULT)
+            log(f"relay {host}: off -> {dev._relay_post(host, 'off')}", "WARN")
+            threading.Event().wait(dev.RELAY_GAP_S)
+            t0 = time.monotonic()  # t=0 = start of the relay ON call (the POST itself is part of the power-up)
+            threading.Thread(target=lambda: log(f"relay on -> {dev._relay_post(host, 'on')}", "ALERT"), daemon=True).start()
         seen: dict[str, float] = {}
         seen_lines = 0
         last = t0
