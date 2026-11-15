@@ -36,6 +36,9 @@
 #define IMAP_VALID	1
 #define OUT_GRANULE	SZ_64M	/* OARR/OMAP ADDR[31:26] */
 
+/* awto-uboot board/ubiquiti/us48/pcie.c: set before its first unit 1 BAR2 read, cleared after it */
+#define U1_MARK_PROBING	0x31554d43U
+
 enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_PVTMON, ADEV_GPIO, ADEV_NUM };
 
 struct us48_pci_adev {
@@ -393,6 +396,7 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	};
 	struct regmap_config axi_cfg;
 	struct us48_pci *p;
+	bool cmic_suspect;
 	int i, ret;
 
 	/* 01:00.1 shares the ID; only function 0 carries BAR0/BAR2 as used here */
@@ -430,7 +434,13 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	debugfs_create_file("genpll", 0444, p->dbg, p, &genpll_fops);
 	debugfs_create_file("poke", 0200, p->dbg, p, &poke_fops);
 
+	/* awto-uboot probe marker (#98): a CMIC read stalled on an earlier boot; any BAR2 access would hang a1 */
+	cmic_suspect = readl(p->bar0 + HW_PAXB1_EP_BASE + HW_PAXB1_EP_PCIE_SYS_EQ_PAGE_UPPER) == U1_MARK_PROBING;
+	if (cmic_suspect)
+		dev_warn(&pdev->dev, "unit 1 CMIC marked suspect by awto-uboot, no CMIC aux devices (power-cycle clears)\n");
 	for (i = 0; i < ADEV_NUM; i++) {
+		if (cmic_suspect && (i == ADEV_CMIC || i == ADEV_PVTMON || i == ADEV_GPIO))
+			continue;
 		ret = adev_add(p, i, names[i]);
 		if (ret) {
 			adevs_del(p);
@@ -471,6 +481,8 @@ static void us48_pci_shutdown(struct pci_dev *pdev)
 {
 	struct us48_pci *p = pci_get_drvdata(pdev);
 
+	/* Stops the CMIC pollers (fan, pvtmon): a read in flight at PERST# wedges unit 1 (#98) */
+	adevs_del(p);
 	mutex_lock(&p->win_lock);
 	if (p->alive)
 		win_restore(p);

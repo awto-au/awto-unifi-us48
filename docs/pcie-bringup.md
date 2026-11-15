@@ -51,3 +51,18 @@
   - `fan: probing unit 1 BAR at 0x08040000` succeeds, `us48_cmic_eth` pings on xe1.
 - Warm (stock reboot, `CLK_CTRL 0x1`): expect `pcie: link already up (warm)`, no PERST.
 - On `pcie: FAIL`: the printed registers and microseconds go into #76; adjust only from that measurement.
+
+## Unit 1 CMIC wedge guard (#98, #91)
+- Wedge = unit 1 CMIC AXI slave stuck (a2 read of `0x48023000`, or PERST# with a CMIC read in flight). Any BAR2 read then never completes: a1 stalls, SP805 bites, uboot-1 loops until a relay power cycle.
+- No PAXB-local register shows it (BAR0 `0x2000-0x2fff` dump healthy vs wedged: only a2's own window regs differ). PCIe completion timeout (RC DevCtl2 range A) does not bound the stall either.
+- Guard = probe marker: unit 1 PAXB `PCIE_SYS_EQ_PAGE_UPPER` (BAR0 `+0x22c0`, no function on the endpoint), `0x31554d43` = a BAR2 probe started and never finished.
+  - `us48_unit1_cmic_arm()` (pcie.c, from `fan.c`): link up, BAR0 PAXB id (`+0x2400`) = `0x834614e4`, marker clear, then write marker. Anything else: one line (`unit 1: CMIC SKIPPED ...` / `... access skipped`), skip.
+  - `us48_unit1_cmic_done()`: clear marker after the first BAR2 read returns; sets the `us48_pcie_up()` CMIC gate (fan, xe1 `start()`, `cmic unit 1`).
+  - The marker survives a1 restarts, SP805 and warm PERST#-less boots; only a unit 1 power cycle clears it (it dies with the wedge).
+  - Linux `us48_pci` probe reads it: set = no `cmic`/`pvtmon`/`gpio` aux devices (a2, clk, bustest stay). Fans: no frame (group 0's select line B is unit 1 GP0), LM75 and unit 0 PVTMON still read.
+- Boot count with a wedge, Linux `reboot` (2026-11-16, 3 of 3): the first boot after Linux's PERST# stalls before the marker is armed (first BAR0 read after PERST# on a wedged unit 1), the second arms it and stalls on BAR2, the third skips and reaches ssh (ssh +38..62 s, 2 SP805 bites). Later reboots from the skip state: same, 38 s.
+- Software unit 1 reset, tested 2026-11-16:
+  - Secondary bus reset from the a1 root port (`pci_reset_bus` = Bridge Control bit 6, config save/restore, 106 ms): link stays up (`LINK_STATUS` 0xd) but every later memory access to unit 1 bus-errors and the next config read hangs a1. Same on a healthy unit 1, so the wedge cannot be shown cleared. PCIe hot reset = the same mechanism.
+  - DMU `CRU_RESET` clear of `IPROC_RESET_N` on unit 1 through the BAR0 window: unit 1 loses its BARs (bus error), a1 then hung on `reboot -f`. `SW_RESET_N` does nothing on unit 0 (#63 E2b), not tried on unit 1.
+  - No board-level unit 1 reset line (GPIO/CPLD) in hwdb or the docs.
+- Open: a healthy Linux `reboot` also stalls once after Linux's PERST# (first BAR access after PERST# on a unit 1 Linux had initialised), and with CMIC pollers in flight at PERST# it can wedge unit 1 (`us48_pci` shutdown now removes the aux clients first). Cleanest fix: keep PERST# released at Linux shutdown (#67).

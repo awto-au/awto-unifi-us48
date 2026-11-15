@@ -103,6 +103,12 @@ src = "docs/a2.md (BAR0+0x2d40/44)"
 offset = 0xd44
 src = "docs/a2.md (BAR0+0x2d40/44)"
 
+[block.paxb0.reg.PCIE_SYS_EQ_PAGE_UPPER]
+offset = 0x2c0
+sdk = "PAXB_0_PCIE_SYS_EQ_PAGE_UPPER"
+desc = "upper 32 bits of the event-queue page address; no function on unit 1 (EQ/MSI unused). awto-uboot uses it as the unit 1 CMIC probe marker (#98)"
+src = "regdb PAXB_0_PCIE_SYS_EQ_PAGE_UPPER (regdb/hr2_regs.tsv)"
+
 [block.paxb0.reg.OARR_FUNC0_MSI_PAGE]
 offset = 0xd34
 sdk = "PAXB_0_OARR_FUNC0_MSI_PAGE"

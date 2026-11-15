@@ -107,10 +107,57 @@ static void windows(void)
 }
 
 static bool pcie_ok;
+static bool cmic_ok;
 
+/* Gate for every unit 1 CMIC (BAR2) access; BAR0 PAXB access only needs the link */
 bool us48_pcie_up(void)
 {
-	return pcie_ok && link_up();
+	return pcie_ok && cmic_ok && link_up();
+}
+
+/*
+ * Unit 1 CMIC probe marker (#98). A wedged CMIC never completes a BAR2 read and nothing PAXB-local shows it
+ * (BAR0 dumps healthy vs wedged identical). Marker = unit 1 PAXB EQ_PAGE_UPPER (unused on the endpoint), survives a1
+ * restarts and SP805; cleared only by a unit 1 PERST#/power cycle. Armed before the first BAR2 read, cleared after it.
+ * A probe that never finished (stall -> SP805) leaves it set: later boots skip the CMIC and continue.
+ */
+#define U1_MARK		((void __iomem *)(EP_BAR0 + HW_PAXB1_EP_BASE + HW_PAXB1_EP_PCIE_SYS_EQ_PAGE_UPPER))
+#define U1_MARK_PROBING	0x31554d43U	/* "CMU1" */
+#define U1_ID		((void __iomem *)(EP_BAR0 + HW_PAXB1_EP_BASE + 0x400))	/* endpoint config mirror: vendor/device */
+
+/* true = BAR2 may be read (marker armed; call us48_unit1_cmic_done()); false = skip all unit 1 CMIC access, already logged */
+bool us48_unit1_cmic_arm(void)
+{
+	u32 v;
+
+	if (!pcie_ok || !link_up()) {
+		printf("unit 1: PCIe link down, CMIC access skipped\n");
+		return false;
+	}
+	v = readl(U1_ID);
+	if (v != EP_VID_DID) {
+		printf("unit 1: BAR0 PAXB id reads %#x (want %#x), CMIC access skipped\n", v, EP_VID_DID);
+		return false;
+	}
+	v = readl(U1_MARK);
+	if (v == U1_MARK_PROBING) {
+		printf("unit 1: CMIC SKIPPED, an earlier boot stalled on it (probe marker set); power-cycle to clear. Fans: no unit 1 frames\n");
+		return false;
+	}
+	writel(U1_MARK_PROBING, U1_MARK);
+	if (readl(U1_MARK) != U1_MARK_PROBING) {
+		writel(0, U1_MARK);
+		printf("unit 1: probe marker does not hold, CMIC access skipped\n");
+		return false;
+	}
+	return true;
+}
+
+/* The first BAR2 read returned: clear the marker; ok = value looked sane */
+void us48_unit1_cmic_done(bool ok)
+{
+	writel(0, U1_MARK);
+	cmic_ok = ok;
 }
 
 static int pcie_init(void)

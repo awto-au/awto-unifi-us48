@@ -254,11 +254,12 @@ void us48_fan_boot(void)
 {
 	int hot = 0;
 
-	if (us48_pcie_up()) {
+	if (us48_unit1_cmic_arm()) {
 		printf("fan: probing unit 1 BAR at 0x%08x\n", CONFIG_BCM_CMIC_UNIT1_BASE);
 		unit1_ok = readl(unit1.base + RING_MAP_16_23) != 0xffffffff;
+		us48_unit1_cmic_done(unit1_ok);
 	} else {
-		printf("fan: PCIe link to unit 1 down, no unit 1 access; fans left at their power-on state (default speed unknown, docs/fan.md)\n");
+		printf("fan: no unit 1 access; fans left at their power-on state (default speed unknown, docs/fan.md)\n");
 	}
 	fan_all(CONFIG_US48_FAN_BOOT_LEVEL);
 	lm75_show(&hot);
