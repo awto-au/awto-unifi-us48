@@ -23,7 +23,16 @@
  * stalls a2's console writes. A poll drains up to DCC_BURST words (a2 refills DTRTX within microseconds,
  * each word costs ~2 regmap reads on the PCIe path); the rest waits for the next period.
  */
-#define DCC_POLL_NS	(5 * NSEC_PER_MSEC)
+/*
+ * Idle poll: a2 blocks per character until drained, so the idle interval is paid once per output burst.
+ * Busy poll: next poll after a poll that drained data (0 = at once). Defaults = measured set, docs/a2-linux.md.
+ */
+static uint poll_us = 5000;
+module_param(poll_us, uint, 0644);
+MODULE_PARM_DESC(poll_us, "DCC idle poll interval in us (a2 hvc_dcc_check gives up after 100 ms)");
+static uint busy_us = 5000;
+module_param(busy_us, uint, 0644);
+MODULE_PARM_DESC(busy_us, "DCC poll interval in us after a poll that drained data");
 #define DCC_BURST	256
 #define DCC_LOG_SZ	8192
 #define DCC_IN_SZ	256
@@ -95,7 +104,7 @@ static void dcc_work(struct work_struct *w)
 		return;
 	}
 	if (READ_ONCE(d->running))
-		hrtimer_start(&d->timer, DCC_POLL_NS, HRTIMER_MODE_REL);
+		hrtimer_start(&d->timer, ns_to_ktime((u64)(n ? busy_us : poll_us) * NSEC_PER_USEC), HRTIMER_MODE_REL);
 }
 
 static enum hrtimer_restart dcc_timer(struct hrtimer *t)

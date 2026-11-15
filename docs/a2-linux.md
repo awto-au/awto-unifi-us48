@@ -7,7 +7,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Linux RAM = carveout minus last MiB; last MiB = hwdb `a2_shared` (`hwdb/soc/a2_linux.toml`), `no-map`.
 - Kernel at base + 0x8000 (AUTO_ZRELADDR derives the base from where the zImage runs; ARM_PATCH_PHYS_VIRT), reaches ~base + 0x0f30000 with bss.
 - zImage at base + 0x1000000, DTB above the kernel end (layout requests in a2-design.md). Built-in initramfs: no external initrd.
-- Peripherals (hwdb `a9.toml`, same addresses as a1): GIC dist 0x19021000, GIC cpu 0x19020100, global timer 0x19020200 (PPI 11), TWD 0x19020600 (PPI 13), PERIPHCLK fixed 200 MHz (conf I).
+- Peripherals (hwdb `a9.toml`, same addresses as a1): GIC dist 0x19021000, GIC cpu 0x19020100, global timer 0x19020200 (PPI 11), TWD 0x19020600 (PPI 13), PERIPHCLK = ARM/2 (conf I, host-timed on unit 1 at 100 and 1000 MHz); DTB value from `build_a2_linux.py --cpu-mhz`.
 - Not in the DTS: DDR controller 0x60000000 (stalls a2), QSPI/flash, PCIe, PL310 (stays off as left by the ROM; the shared kernel only inits L2 from a DT node), CCB/APB peripherals.
 
 ## Console: DCC
@@ -36,7 +36,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - The decompressor prints nothing (`DEBUG_UNCOMPRESS` needs `!ARCH_MULTIPLATFORM`): the first output is `earlycon` at `parse_early_param`, so a silent a2 is not yet "kernel dead" (#79 bisect).
 - Atomics: ldrex/strex on host DDR over PCIe, local monitor only (UP, non-shared mapping); untested on a2.
 - Page tables, stack and all data cross PCIe on cache misses; L2 off. Expect slow boot; L1 only.
-- PERIPHCLK 200 MHz assumed (global timer rate); wrong rate = wrong time only. Clock follows #70.
+- DTB timer clock must equal the real PERIPHCLK or printk time is scaled (`--cpu-mhz` = us48_a2 `cpu_mhz`).
 - ~14 MB uncompressed kernel + 10 MB zImage in 63 MiB leaves ~35 MiB free.
 - a1: first boot with HVC_DCC unmeasured (100 ms console probe).
 
@@ -53,3 +53,22 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
   - `/init` mounts sysfs before the role check (`/proc/device-tree` is a symlink into `/sys`); a2 had taken the a1 path.
   - `ttyA2` termios is raw: ECHO looped a2's output back into DTRRX as input.
 - Stage files from the host: `scp -O` `us48-a2-boot.elf`, `us48-a2-zImage`, `us48-a2.dtb` to `/lib/firmware`; `mount -t debugfs`; `insmod us48_a2.ko payload=1`; `cat /dev/ttyA20 > file &` before `echo start`; keystrokes: `printf 'cmd\n' > /dev/ttyA20`.
+
+## Clock and boot speed (#70, #79, 2026-11-15)
+- Unit 1 power-on: `POLICY_DBG` 0x2222 = fid 2 (sys clk, 100 MHz row), PLLARMA 0x01004010 (PLL in reset, unlocked), ch0 mdiv 4, ch1 mdiv 2, ARM_DIV 0x2012. PERIPHCLK 50 MHz (heartbeat 25 beats/s x 2e6 ticks).
+- `us48_a2` `cpu_mhz` (default 1000, 0 = leave): E2 sequence of `us48_cpu_switch` through the regmap in `start()` before the halt. 400..600 = fid 6 (VCO 4x, ch0 mdiv 4), 700+ = fid 7 (VCO 2x, ch1 mdiv 2). 1000: GO + lock in 149 us, PERIPHCLK 500 MHz host-timed. debugfs `remoteproc0/ccu` = registers + computed MHz.
+- Standalone firmware (bustest, selftest) at 800/1000: no mismatch, link clean (`us48_bustest stats`).
+- Linux payload (debug and normal profile, with and without L2): early memory corruption (UBSAN in `memblock_free_all`, page-struct oops) at 500/600/800/1000; 400 fails about 3 in 5; 100 MHz boots every time. `cachepolicy=` is ignored on ARMv7 (`Only cachepolicy=writeback supported`): not a test. Poll rate of the DCC reader (5 ms, 1 ms, 20 ms, burst) does not change it. Open in #79.
+- `a2_boot_time.py <label> [--param k=v]` = start a2 Linux and time it (a1 uptime in centiseconds); a2 text in `tmp/logs/a2_boot_<label>.txt`.
+- Boot-speed table at 100 MHz (a1 wall from `echo start`; the 400 MHz debug zImage rows boot only intermittently):
+
+| Change | banner | shell |
+|---|---|---|
+| debug zImage, DCC poll 5 ms (baseline; a2 printk 22.0 s) | 29.4 s | 30.2 s |
+| poll 1 ms / busy 0, or 200 us / busy 0 | 29.4 / 29.2 s | 29.9 / 29.9 s |
+| uncompressed Image at `+0x8000` (`kernel_fw`, `kernel_off`) | 25.4 s | 26.2 s |
+| + `quiet`, no earlycon | 24.6 s | 25.1 s |
+| normal profile Image, quiet | 1.79 s | 2.50 s |
+| + PL310 L2 node (`build_a2_linux.py --l2`) | 1.32 s | 1.58 s |
+
+- Debug profile options (poisoning, lockdep, UBSAN) are the cost, not the console or decompression (4 s).

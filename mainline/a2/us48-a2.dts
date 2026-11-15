@@ -90,6 +90,16 @@
 		clocks = <&periph_clk>;
 	};
 
+#ifdef A2_L2
+	/* PL310 of unit 1 (hwdb a9 l2 block at +0x2000): enabled by the kernel from this node, off otherwise (#79) */
+	cache-controller@A2_L2_BASE_H {
+		compatible = "arm,pl310-cache";
+		reg = <A2_L2_BASE 0x1000>;
+		cache-unified;
+		cache-level = <2>;
+	};
+#endif
+
 	gic: interrupt-controller@A2_GIC_DIST_BASE_H {
 		compatible = "arm,cortex-a9-gic";
 		#interrupt-cells = <3>;
