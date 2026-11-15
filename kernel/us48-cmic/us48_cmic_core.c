@@ -1243,6 +1243,8 @@ EXPORT_SYMBOL_GPL(us48_quiesce);
 /* Unit 0: the host SoC's own CMIC on the AXI bus (0x48000000), management port front 1. */
 static uint unit0 = 1;
 module_param(unit0, uint, 0444);
+module_param_named(gaps, bcm_hr2_init_gaps, uint, 0644);
+MODULE_PARM_DESC(gaps, "1 = sleep the stock trace gaps in the cold init (#34)");
 MODULE_PARM_DESC(unit0, "1 (default) = drive unit 0 front 1 (ge1) over AXI; 0 = core only (us48_cmic_xe.ko needs the core loaded)");
 
 #define UNIT0_CMIC_BASE	0x48000000

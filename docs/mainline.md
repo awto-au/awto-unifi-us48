@@ -45,6 +45,11 @@
   - Unit 0: `bcm_hr2_u0_cold_init` (stock write list), unit 1: `bcm_hr2_u1_cold_init` with the minimum list `bcm_cmic_hr2_init1_min_data.h` (5541 ops, `scripts/gen_bcm_hr2_init1_min.py` from `init_phases.py --emit-min`).
   - Order: abort both DMA channels (logged as "left by bootloader" if one was running), TOP reset + cold init, credit release (`bcm_hr2_dma_init`), rings, ports.
 - Unload (`rmmod`): link work cancelled, netdevs unregistered (ndo_stop stops the poll timer, NAPI, both channels), both channels aborted and `DMA_DESC` cleared, skb pool purged; rings and netdev memory freed by devres afterwards. A self-check at the end logs `unbind self-check` (and `WARN`s) if DMA_CTRL/STAT, `nopen`, the TX ring or the skb pool are not clean. Reboot/shutdown keeps `us48_quiesce`.
+- Board 2026-11-16 (#78, normal profile):
+  - `us48_cmic_xe` reload x3: clean (2.7 s each, ge1/ssh stay up, unit 1 cold init + TSC download 1.6 s + CRC a081, no WARN, no leaks).
+  - `us48_cmic` (unit 0) reload FAILS: chip init + link up OK, ssh does not return, TX dead (TX counter frozen, `TX stuck: DMA_STAT 00000320` from the netdev watchdog; ch0 abort "still active"). RX still counts. Same with `gaps=1`.
+  - Same signature on the warm path (awto-uboot already initialised the chip, then Linux's forced init): any second full unit 0 init after a first one leaves TX hung; only a power cycle clears it. Open (#78).
+  - Module param `gaps` (#34) exists since 2026-11-16 (was documented, not wired).
 - `us48_cmic` cannot go while `us48_cmic_xe` is loaded (symbols); `scripts/mod_reload.py` handles the chain.
 - `scripts/mod_reload.py <module> [args]`: one detached `rmmod; insmod` script on the board (log `/tmp/mod_reload.log`), waits for ssh (30 s first-run limit), fetches the log; console-socket fallback. Log `tmp/logs/mod_reload.log`.
 - 10G microcode: `hwdb/firmware/us48-tsc.bin` -> `/lib/firmware`, loaded by `us48_cmic_xe` (driver-internals 9, Linux loader).
