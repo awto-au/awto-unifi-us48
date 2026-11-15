@@ -118,7 +118,7 @@ def console_fallback(rid: str, net_cmds: list[str]) -> str | None:
         with console.Session() as s:
             s.send_line("")
             s.read_idle(0.3, 2.0)
-            s.send_line(f"cat {BOARD_LOG}; ip -br addr")
+            s.send_line(f"cat {BOARD_LOG}; ip addr show")
             out = s.read_idle(0.5, 5.0).decode(errors="replace")
             log("console: " + out.replace("\r", ""))
             for c in net_cmds:
