@@ -12,6 +12,7 @@
 | `axi0` | Unit 0 (BCM53344, host SoC) AXI/physical map as seen by a1; PCIe-routed windows and unit-1 BAR2 also appear here |
 | `axi1` | Unit 1 (BCM53346) AXI map as seen by a2; host reaches it via PAXB IMAP0_7 + BAR0+0x7000 window |
 | `rccfg0` | Config space of unit 0's root port, via PAXB CONFIG_IND_ADDR/DATA (offsets) |
+| `sbus` | Switch S-channel register space of one chip: block id in the message header, 32-bit register address in the address word |
 | `bar0u1` | Unit 1 PCIe BAR0 (32 KiB), offsets from BAR0 start |
 
 ## Regions
@@ -43,6 +44,15 @@
 | `a2_ddr_hazard` | axi1 | `0x60000000` | `0x10000000` | hazard | C | Unused DDR controller on unit 1: any access stalls a2, cannot be halted; recover with CRU_CONTROL.ARM_RST_N | docs/sram.md (routing pitfall, #53) |
 | `bar0_axi_win` | bar0u1 | `0x00007000` | `0x1000` | window | C | 4 KiB AXI page of unit 1 selected by PAXB IMAP0_7 (BAR0+0x2c1c) | docs/a2.md; rust/a2ctl/src/main.rs WIN |
 
+## Constants
+
+| Const | Value | conf | Description | Source |
+|---|---|---|---|---|
+| `PVTMON_CALC_DIV` | 10 | C | see PVTMON_CALC_OFFSET | docs/clock-audit.md s3 |
+| `PVTMON_CALC_OFFSET` | 4180000 | C | T[mC] = (PVTMON_CALC_OFFSET - PVTMON_CALC_SLOPE * TEMP_DATA) / PVTMON_CALC_DIV, i.e. T[C] = 418 - 0.5556 * code | docs/clock-audit.md s3: OpenBCM openhurricane2.c:6172-6175 (0.1 C result), bcm-ns.dtsi:555 coefficients <(-556) 418000> |
+| `PVTMON_CALC_SLOPE` | 5556 | C | see PVTMON_CALC_OFFSET | docs/clock-audit.md s3 |
+| `TOP_SBUS_BLK` | 16 | C | S-channel block id of the TOP block (header bits 25:20) | docs/clock-audit.md s3 (READ_REG header 0x2d000200) |
+
 ## Blocks
 
 | Block | Space | Base | Size | Unit | Regs | conf | Description | Source |
@@ -56,7 +66,7 @@
 | `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 0 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL Note: register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*) | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
 | `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 0 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
-| `mspi` | axi0 | `0x18027200` | `0x184` | 0 | 12 | C | QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8 | us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI |
+| `mspi` | axi0 | `0x18027200` | `0x184` | 0 | 13 | C | QSPI MSPI (CPU-driven SPI, flash `sf`, spi-nor). Same layout as CMICm MSPI at cmic0+0x1500 (board IO: fans/LEDs). SCK = APB / (2 x SPBR), SPBR >= 8 | us48-uboot.dts spi@27200 reg; docs/board.md MSPI (TXRAM +0x40); docs/clocks.md QSPI MSPI |
 | `sp804_0` | axi0 | `0x18034000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer0), APB clock | tmp/linux-mainline bcm-hr2.dtsi timer@34000 |
 | `sp804_1` | axi0 | `0x18035000` | `0x1000` | 0 | 6 | C | SP804 dual timer (ccbtimer1) | tmp/linux-mainline bcm-hr2.dtsi timer@35000 |
 | `i2c0` | axi0 | `0x18038000` | `0x50` | 0 | 0 | C | iProc SMBus 0 (CCB I2C) | docs/board.md (0x18038000, offsets 0x00..0x4c); bcm-hr2.dtsi i2c@38000 |
@@ -81,9 +91,10 @@
 | `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | ARM DDI 0407I Table 1-3 (0x1000-0x1FFF); us48-uboot.dts gic reg <0x21000 0x1000> |
 | `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 24 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
-| `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 12 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
+| `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 13 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
 | `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
 | `rccfg0` | rccfg0 | `0x00000000` | `0x1000` | 0 | 15 | C | Config space of unit 0's root port (bus 0 dev 0 fn 0), reached through PAXB CONFIG_IND_ADDR/DATA | uboot-1 soc_pcie_hw_init 0x1c0244b0-0x1c0248a0; stock log C083748:569; pcie-iproc.c:776-860 |
+| `top_pvtmon` | sbus | `0x02050000` | `0xc00` | - | 3 | C | TOP block (SBUS block id 16) PVTMON: die temperature, units 0 and 1 | docs/clock-audit.md s3; OpenBCM openhurricane2.c pvtmon (TOP_PVTMON_*r), regdb TOP_PVTMON_* |
 
 ## Registers
 
@@ -204,7 +215,8 @@ Same registers as `uart1`.
 | `0x24` | `CPTQP` | 32 | ro |  | CPTQP[3:0] | C |  | regdb MSPI_CPTQP |
 | `0x40` | `TXRAM[16]` | 32 | rw |  |  | C | TXRAM stride 8 (docs/board.md); 16 entries | docs/board.md MSPI (TXRAM +0x40, stride 8) |
 | `0xc0` | `RXRAM[32]` | 32 | rw |  |  | C |  | regdb MSPI_RXRAM_00 0x15c0 minus 0x1500 |
-| `0x140` | `CDRAM[16]` | 32 | rw |  |  | C |  | regdb MSPI_CDRAM_00 0x1640 minus 0x1500 |
+| `0x140` | `CDRAM[16]` | 32 | rw |  | PCS[3:0], DSCK[4], DT[5], BITSE[6], CONT[7] | C |  | regdb MSPI_CDRAM_00 0x1640 minus 0x1500 (PCS 1:0 + RESERVED 3:2 there); drivers/spi/spi-bcm-qspi.c MSPI_CDRAM_PCS 0xf |
+| `0x180` | `WRITE_LOCK` | 32 | rw |  | LOCK[0] | I | iProc QSPI: MSPI_WRITE_LOCK. CMICm alias CMICM_BSPI_MAST_N_BOOT (0x1680): 1 = MSPI owns the bus | drivers/spi/spi-bcm-qspi.c MSPI_WRITE_LOCK 0x180; regdb CMICM_BSPI_MAST_N_BOOT 0x1680 minus 0x1500; openwrt/files/usr/sbin/us48-fand (MSPI + 0x180 = 1) |
 
 ### sp804_0 (`0x18034000`)
 
@@ -442,6 +454,14 @@ Same registers as `paxb0`.
 | `0xbe` | `LNKSTA` | 16 | ro |  | CLS[3:0], NLW[9:4], TRAIN[11], SLOT_CLK[12], DLLLA[13] | C | uboot-1 'LINKSTA reg 0xbe': port active iff (LNKSTA & 0x3f0) != 0 (NLW). Cold 0x1001 = no width = not active. Warm 0x9012 = x1, 5 GT/s, DLLLA | uboot-1 FUN_1c024084 @0x1c0241dc-0x1c024200 (tst r2,#0x3f0); docs/stock-bootlog-facts.md:15-19 |
 | `0xdc` | `LNKCTL2` | 32 | rw |  |  | I | link control 2 (target link speed bits 3:0); mainline drops gen2 to gen1 if NLW = 0 | pcie-iproc.c:820-826 (IPROC_PCI_EXP_CAP + PCI_EXP_LNKCTL2 = 0xac + 0x30) |
 | `0x43c` | `CLASS_CTRL` | 32 | rw |  |  | C | class code override: mainline forces 0x060400 (PCI-PCI bridge) | pcie-iproc.c:795-800 |
+
+### top_pvtmon (`0x02050000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `CTRL_0` | 32 | rw |  | BG_ADJ[2:0], AVDD1P0_0P9[6:3], FUNC_MODE_SEL[10:7], D2F_PWR_DOWN[11], INT_R_SEL[14:12], MEASUREMENT_CALLIBRATION[18:16], PROG_RESISTOR[22:19] | C | Init value 0x001d2003 (BG_ADJ 3, FUNC_MODE_SEL 0, MEASUREMENT_CALLIBRATION 5) | docs/clock-audit.md s3 (OpenMDK 154-172); regdb TOP_PVTMON_CTRL_0 fields |
+| `0x400` | `CTRL_1` | 32 | rw |  | PVTMON_SELECT[29:27], POWERDOWN[30], RESET_N[31] | C | Init: 0 then RESET_N (0x80000000). RESET_N set = running | docs/clock-audit.md s3 |
+| `0x800` | `RESULT_0` | 32 | ro |  | TEMP_DATA[9:0], PEAK_TEMP_DATA[31:22] | C | TEMP_DATA = 0 means no conversion yet | docs/clock-audit.md s3 |
 
 ## Firmware: ubntapp
 

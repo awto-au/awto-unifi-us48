@@ -1,0 +1,264 @@
+From dadb8c9cce9f0adbc36a6004e58ed8838eac54e7 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Sun, 15 Nov 2026 13:34:39 +1100
+Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Add fans and thermal zones
+
+Describe the CMIC of the first chip (MSPI for the board IO chains, the GP
+pins that select a chain, the die temperature sensor), the second chip's
+sensor and GP pins under its PCI node, the fan as an SPI client, and the
+thermal zones: 80 C on any LM75 (back at 50 C) or 100 C on a die drives
+the fan to 100 %.
+
+Signed-off-by: TODO
+---
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 204 +++++++++++++++++-
+ 1 file changed, 200 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 5972b15..1e696c2 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -8,6 +8,8 @@
+ 
+ /dts-v1/;
+ 
++#include <dt-bindings/gpio/gpio.h>
++
+ #include "bcm-hr2.dtsi"
+ 
+ / {
+@@ -52,6 +54,172 @@
+ 		value = <0x0>;
+ 	};
+ 
++	/* CMIC of the BCM53344 (unit 0): MSPI board IO, GP pins and the die temperature sensor, all out of tree (kernel/us48-*) */
++	mspi: spi@48001500 {
++		compatible = "ubnt,us48-cmic-mspi";
++		reg = <0x48001500 0x184>;
++		clocks = <&apb_clk>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		fan: fan@0 {
++			compatible = "ubnt,us48-fan";
++			reg = <0>;
++			/* SCK = 50 MHz / (2 x 141): the SPBR of the stock capture, faster is untested (#19) */
++			spi-max-frequency = <177305>;
++			spi-cpol;
++			spi-cpha;
++			/* A = unit 0 GP0 (1 = fan chains), B = unit 1 GP0 (0 = unit 0 fans, 1 = unit 1 fans) */
++			select-gpios = <&gp0 0 GPIO_ACTIVE_HIGH>, <&gp1 0 GPIO_ACTIVE_HIGH>;
++			/* a zone that stops reading forces 100 % */
++			us48,watch-zones = "lm75-48", "lm75-49", "lm75-4a", "lm75-4b", "die0", "die1";
++			#cooling-cells = <2>;
++		};
++	};
++
++	gp0: gpio@48002000 {
++		compatible = "ubnt,us48-cmic-gpio";
++		reg = <0x48002000 0x50>;
++		gpio-controller;
++		#gpio-cells = <2>;
++	};
++
++	/* CMC1 S-channel window of the CMIC; CMC0 belongs to us48_cmic */
++	pvtmon0: thermal-sensor@48032000 {
++		compatible = "ubnt,us48-pvtmon";
++		reg = <0x48032000 0x100>;
++		#thermal-sensor-cells = <0>;
++	};
++
++	/* Fans: 50 % (level 0) below 80 C on every LM75, 100 % from 80 C until all are back at 50 C, 100 % at a die >= 100 C */
++	thermal-zones {
++		lm75-48 {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&lm75_48 0>;
++
++			trips {
++				lm75_48_hot: hot {
++					temperature = <80000>;
++					hysteresis = <30000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&lm75_48_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++
++		lm75-49 {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&lm75_49 0>;
++
++			trips {
++				lm75_49_hot: hot {
++					temperature = <80000>;
++					hysteresis = <30000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&lm75_49_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++
++		lm75-4a {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&lm75_4a 0>;
++
++			trips {
++				lm75_4a_hot: hot {
++					temperature = <80000>;
++					hysteresis = <30000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&lm75_4a_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++
++		lm75-4b {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&lm75_4b 0>;
++
++			trips {
++				lm75_4b_hot: hot {
++					temperature = <80000>;
++					hysteresis = <30000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&lm75_4b_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++
++		die0 {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&pvtmon0>;
++
++			trips {
++				die0_hot: hot {
++					temperature = <100000>;
++					hysteresis = <10000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&die0_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++
++		die1 {
++			polling-delay = <2000>;
++			polling-delay-passive = <2000>;
++			thermal-sensors = <&pvtmon1>;
++
++			trips {
++				die1_hot: hot {
++					temperature = <100000>;
++					hysteresis = <10000>;
++					type = "active";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&die1_hot>;
++					cooling-device = <&fan 3 3>;
++				};
++			};
++		};
++	};
++
+ 	/* SMBus controller in the CMIC of the BCM53344, no interrupt wired */
+ 	i2c@48000000 {
+ 		compatible = "brcm,iproc-i2c";
+@@ -72,24 +240,28 @@
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 
+-				temperature-sensor@48 {
++				lm75_48: temperature-sensor@48 {
+ 					compatible = "national,lm75b";
+ 					reg = <0x48>;
++					#thermal-sensor-cells = <1>;
+ 				};
+ 
+-				temperature-sensor@49 {
++				lm75_49: temperature-sensor@49 {
+ 					compatible = "national,lm75b";
+ 					reg = <0x49>;
++					#thermal-sensor-cells = <1>;
+ 				};
+ 
+-				temperature-sensor@4a {
++				lm75_4a: temperature-sensor@4a {
+ 					compatible = "national,lm75b";
+ 					reg = <0x4a>;
++					#thermal-sensor-cells = <1>;
+ 				};
+ 
+-				temperature-sensor@4b {
++				lm75_4b: temperature-sensor@4b {
+ 					compatible = "national,lm75b";
+ 					reg = <0x4b>;
++					#thermal-sensor-cells = <1>;
+ 				};
+ 			};
+ 		};
+@@ -172,4 +344,28 @@
+ 	/* BCM53346 switch, no APB_ERR_EN register on Hurricane 2 */
+ 	compatible = "brcm,iproc-hr2-pcie", "brcm,iproc-pcie";
+ 	status = "okay";
++
++	/* 00:00.0 root port, 01:00.0 the switch: its aux devices pvtmon and gpio take the child nodes (kernel/us48-pci) */
++	pci@0,0 {
++		reg = <0x0000 0 0 0 0>;
++		device_type = "pci";
++		#address-cells = <3>;
++		#size-cells = <2>;
++		bus-range = <0x01 0xff>;
++		ranges;
++
++		switch@0,0 {
++			compatible = "pci14e4,8346";
++			reg = <0x10000 0 0 0 0>;
++
++			pvtmon1: pvtmon {
++				#thermal-sensor-cells = <0>;
++			};
++
++			gp1: gpio {
++				gpio-controller;
++				#gpio-cells = <2>;
++			};
++		};
++	};
+ };

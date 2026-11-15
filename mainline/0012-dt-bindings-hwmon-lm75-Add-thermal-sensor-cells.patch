@@ -1,0 +1,43 @@
+From 4e615fea0d151c6fb020267e744eab181269a150 Mon Sep 17 00:00:00 2001
+From: Dan <dan@awto.au>
+Date: Sun, 15 Nov 2026 13:33:39 +1100
+Subject: [PATCH] dt-bindings: hwmon: lm75: Add #thermal-sensor-cells
+
+The driver registers its temperature channel as a thermal sensor
+(HWMON_C_REGISTER_TZ), so a thermal zone can reference the node with
+thermal-sensors = <&sensor 0>. That needs #thermal-sensor-cells, as in
+adi,adt7470.
+
+Signed-off-by: TODO
+---
+ Documentation/devicetree/bindings/hwmon/lm75.yaml | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/hwmon/lm75.yaml b/Documentation/devicetree/bindings/hwmon/lm75.yaml
+index b48bf3f..4b177e8 100644
+--- a/Documentation/devicetree/bindings/hwmon/lm75.yaml
++++ b/Documentation/devicetree/bindings/hwmon/lm75.yaml
+@@ -61,12 +61,23 @@ properties:
+       Specify this property to set the alert polarity to active-high.
+     $ref: /schemas/types.yaml#/definitions/flag
+ 
++  "#thermal-sensor-cells":
++    const: 1
++    description:
++      The only valid index is 0 (temp1). Needed when the sensor is referenced
++      by a thermal zone (the driver registers the hwmon channel as a sensor).
++
+ required:
+   - compatible
+   - reg
+ 
+ allOf:
+   - $ref: hwmon-common.yaml#
++  - if:
++      required:
++        - "#thermal-sensor-cells"
++    then:
++      $ref: /schemas/thermal/thermal-sensor.yaml#
+   - if:
+       not:
+         properties:

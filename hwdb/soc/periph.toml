@@ -277,7 +277,15 @@ src = "regdb MSPI_RXRAM_00 0x15c0 minus 0x1500"
 offset = 0x140
 count = 16
 stride = 4
-src = "regdb MSPI_CDRAM_00 0x1640 minus 0x1500"
+fields = ["PCS 3:0", "DSCK 4", "DT 5", "BITSE 6", "CONT 7"]
+src = "regdb MSPI_CDRAM_00 0x1640 minus 0x1500 (PCS 1:0 + RESERVED 3:2 there); drivers/spi/spi-bcm-qspi.c MSPI_CDRAM_PCS 0xf"
+
+[block.mspi.reg.WRITE_LOCK]
+offset = 0x180
+fields = ["LOCK 0"]
+desc = "iProc QSPI: MSPI_WRITE_LOCK. CMICm alias CMICM_BSPI_MAST_N_BOOT (0x1680): 1 = MSPI owns the bus"
+src = "drivers/spi/spi-bcm-qspi.c MSPI_WRITE_LOCK 0x180; regdb CMICM_BSPI_MAST_N_BOOT 0x1680 minus 0x1500; openwrt/files/usr/sbin/us48-fand (MSPI + 0x180 = 1)"
+conf = "I"
 
 [block.bspi]
 space = "axi0"

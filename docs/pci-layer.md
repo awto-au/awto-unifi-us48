@@ -16,6 +16,10 @@ C = confirmed (evidence in repo/issues), I = inferred.
 | `us48_pci.a2.0` | `us48_a2` (remoteproc, `kernel/us48-a2`) | regmap + outbound window |
 | `us48_pci.cmic.0` | `us48_cmic_xe` (netdev, `kernel/us48-cmic`) | BAR2 base + PCI device (DMA) |
 | `us48_pci.clk.0` | none yet | stub for the clk provider (a2-design.md order 4) |
+| `us48_pci.pvtmon.0` | `us48_pvtmon` | die temperature thermal sensor + hwmon (#19, [fan.md](fan.md)) |
+| `us48_pci.gpio.0` | `us48_cmic_gpio` | CMIC GP pins gpio-chip (#19) |
+
+Aux devices `pvtmon` and `gpio` take their `of_node` from the DT child of the same name under the endpoint node (`switch@0,0`, `mainline/0013`).
 
 ## API (`us48_pci.h`, EXPORT_SYMBOL_GPL)
 | Function | Does |

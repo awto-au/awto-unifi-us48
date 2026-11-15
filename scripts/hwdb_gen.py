@@ -42,6 +42,10 @@ def gen_c(db):
         if g.size:
             o.append("#define HW_%s_SIZE\t0x%xU" % (ident(g.name), g.size))
     o.append("")
+    for n, c in sorted(db.consts.items()):
+        o.append("/* const %s: %s [%s] */" % (n, c.get("desc", ""), c["conf"]))
+        o.append("#define HW_CONST_%s\t%dL" % (ident(n), c["value"]))
+    o.append("")
     for b in iter_blocks(db):
         n = "HW_" + ident(b.name)
         o.append("/* block %s (%s): %s [%s] */" % (b.name, b.space, b.desc, b.conf))
@@ -120,6 +124,10 @@ def gen_rust(db):
         if g.size:
             o.append("pub const HW_%s_SIZE: u32 = 0x%x;" % (ident(g.name), g.size))
     o.append("")
+    for n, c in sorted(db.consts.items()):
+        o.append("// const %s [%s]" % (n, c["conf"]))
+        o.append("pub const HW_CONST_%s: i64 = %d;" % (ident(n), c["value"]))
+    o.append("")
     for b in iter_blocks(db):
         n = "HW_" + ident(b.name)
         o.append("// block %s (%s) [%s]" % (b.name, b.space, b.conf))
@@ -157,6 +165,9 @@ def gen_md(db):
         o.append("| `%s` | %s | `0x%08x` | %s | %s | %s | %s%s | %s |" % (
             g.name, g.space, g.base, ("`0x%x`" % g.size) if g.size else "?", g.kind, g.conf, md_cell(g.desc),
             (" Note: " + md_cell(g.note)) if g.note else "", md_cell(g.src)))
+    o += ["", "## Constants", "", "| Const | Value | conf | Description | Source |", "|---|---|---|---|---|"]
+    for n, c in sorted(db.consts.items()):
+        o.append("| `%s` | %d | %s | %s | %s |" % (n, c["value"], c["conf"], md_cell(c.get("desc", "")), md_cell(c.get("src", ""))))
     o += ["", "## Blocks", "", "| Block | Space | Base | Size | Unit | Regs | conf | Description | Source |", "|---|---|---|---|---|---|---|---|---|"]
     for b in iter_blocks(db):
         o.append("| `%s` | %s | `0x%08x` | %s | %s | %d | %s | %s%s | %s |" % (

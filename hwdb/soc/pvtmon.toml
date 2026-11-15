@@ -1,0 +1,52 @@
+# TOP PVTMON die temperature sensor, one per chip, S-channel only (no MMIO). Used by kernel/us48-pvtmon.
+
+[block.top_pvtmon]
+space = "sbus"
+base = 0x02050000
+size = 0xc00
+desc = "TOP block (SBUS block id 16) PVTMON: die temperature, units 0 and 1"
+src = "docs/clock-audit.md s3; OpenBCM openhurricane2.c pvtmon (TOP_PVTMON_*r), regdb TOP_PVTMON_*"
+conf = "C"
+
+[block.top_pvtmon.reg.CTRL_0]
+offset = 0x0
+fields = ["BG_ADJ 2:0", "AVDD1P0_0P9 6:3", "FUNC_MODE_SEL 10:7", "D2F_PWR_DOWN 11", "INT_R_SEL 14:12", "MEASUREMENT_CALLIBRATION 18:16", "PROG_RESISTOR 22:19"]
+desc = "Init value 0x001d2003 (BG_ADJ 3, FUNC_MODE_SEL 0, MEASUREMENT_CALLIBRATION 5)"
+src = "docs/clock-audit.md s3 (OpenMDK 154-172); regdb TOP_PVTMON_CTRL_0 fields"
+
+[block.top_pvtmon.reg.CTRL_1]
+offset = 0x400
+fields = ["PVTMON_SELECT 29:27", "POWERDOWN 30", "RESET_N 31"]
+desc = "Init: 0 then RESET_N (0x80000000). RESET_N set = running"
+src = "docs/clock-audit.md s3"
+
+[block.top_pvtmon.reg.RESULT_0]
+offset = 0x800
+access = "ro"
+fields = ["TEMP_DATA 9:0", "PEAK_TEMP_DATA 31:22"]
+desc = "TEMP_DATA = 0 means no conversion yet"
+src = "docs/clock-audit.md s3"
+
+[const.TOP_SBUS_BLK]
+value = 16
+desc = "S-channel block id of the TOP block (header bits 25:20)"
+src = "docs/clock-audit.md s3 (READ_REG header 0x2d000200)"
+conf = "C"
+
+[const.PVTMON_CALC_OFFSET]
+value = 4180000
+desc = "T[mC] = (PVTMON_CALC_OFFSET - PVTMON_CALC_SLOPE * TEMP_DATA) / PVTMON_CALC_DIV, i.e. T[C] = 418 - 0.5556 * code"
+src = "docs/clock-audit.md s3: OpenBCM openhurricane2.c:6172-6175 (0.1 C result), bcm-ns.dtsi:555 coefficients <(-556) 418000>"
+conf = "C"
+
+[const.PVTMON_CALC_SLOPE]
+value = 5556
+desc = "see PVTMON_CALC_OFFSET"
+src = "docs/clock-audit.md s3"
+conf = "C"
+
+[const.PVTMON_CALC_DIV]
+value = 10
+desc = "see PVTMON_CALC_OFFSET"
+src = "docs/clock-audit.md s3"
+conf = "C"

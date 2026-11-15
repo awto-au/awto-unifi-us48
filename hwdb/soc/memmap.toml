@@ -12,6 +12,9 @@ unit = 1
 desc = "Config space of unit 0's root port, via PAXB CONFIG_IND_ADDR/DATA (offsets)"
 unit = 0
 
+[space.sbus]
+desc = "Switch S-channel register space of one chip: block id in the message header, 32-bit register address in the address word"
+
 [space.bar0u1]
 desc = "Unit 1 PCIe BAR0 (32 KiB), offsets from BAR0 start"
 unit = 1

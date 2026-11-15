@@ -8,7 +8,9 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 #include <linux/pci.h>
+#include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/sizes.h>
@@ -31,7 +33,7 @@
 #define IMAP_VALID	1
 #define OUT_GRANULE	SZ_64M	/* OARR/OMAP ADDR[31:26] */
 
-enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_NUM };
+enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_PVTMON, ADEV_GPIO, ADEV_NUM };
 
 struct us48_pci_adev {
 	struct auxiliary_device adev;
@@ -233,6 +235,7 @@ EXPORT_SYMBOL_GPL(us48_pci_outbound_unmap);
 
 static void adev_release(struct device *dev)
 {
+	of_node_put(dev->of_node);
 	kfree(container_of(dev, struct us48_pci_adev, adev.dev));
 }
 
@@ -247,8 +250,11 @@ static int adev_add(struct us48_pci *p, int idx, const char *name)
 	a->adev.id = 0;
 	a->adev.dev.parent = &p->pdev->dev;
 	a->adev.dev.release = adev_release;
+	/* DT child of the endpoint node named like the aux device (pvtmon, gpio): thermal zones and gpio consumers need it */
+	device_set_node(&a->adev.dev, of_fwnode_handle(of_get_child_by_name(p->pdev->dev.of_node, name)));
 	ret = auxiliary_device_init(&a->adev);
 	if (ret) {
+		of_node_put(a->adev.dev.of_node);
 		kfree(a);
 		return ret;
 	}
@@ -280,7 +286,8 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	static const char * const names[ADEV_NUM] = {
 		[ADEV_A2] = US48_PCI_AUX_A2, [ADEV_CMIC] = US48_PCI_AUX_CMIC, [ADEV_CLK] = US48_PCI_AUX_CLK,
-		[ADEV_BUSTEST] = US48_PCI_AUX_BUSTEST,
+		[ADEV_BUSTEST] = US48_PCI_AUX_BUSTEST, [ADEV_PVTMON] = US48_PCI_AUX_PVTMON,
+		[ADEV_GPIO] = US48_PCI_AUX_GPIO,
 	};
 	struct us48_pci *p;
 	int i, ret;

@@ -165,6 +165,7 @@ class Db:
     def __init__(self):
         self.spaces = {}
         self.regions = {}
+        self.consts = {}
         self.blocks = {}
         self.binaries = {}
         self.sdk_sbus_regs = {}
@@ -180,6 +181,8 @@ class Db:
         self.files.append(str(path))
         for n, s in d.get("space", {}).items():
             self.spaces[n] = s
+        for n, c in d.get("const", {}).items():
+            self.consts[n] = c
         for n, r in d.get("region", {}).items():
             self.regions[n] = Region(n, r["space"], _int(r["base"]), _int(r["size"]) if "size" in r else None,
                                      r.get("kind", "device"), r.get("unit"), r.get("desc", ""), r.get("src", ""),
@@ -336,6 +339,10 @@ class Db:
         for n, s in self.spaces.items():
             if not s.get("desc"):
                 err.append("space %s: no desc" % n)
+        for n, c in self.consts.items():
+            prov("const", n, c.get("src", ""), c.get("conf", ""))
+            if not isinstance(c.get("value"), int):
+                err.append("const %s: value is not an integer" % n)
         for g in self.regions.values():
             prov("region", g.name, g.src, g.conf)
             if g.space not in self.spaces:

@@ -196,6 +196,9 @@ def stage_rootfs() -> Path:
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.unlink(missing_ok=True)
             shutil.copy2(f, dst)
+    link = stage / "etc/rc.d/S14us48-thermal"	# fan drivers (#19); not in the OpenWrt package's enabled list
+    link.unlink(missing_ok=True)
+    link.symlink_to("../init.d/us48-thermal")
     # OpenWrt's 6.18 kmods cannot load into this kernel; dropping them keeps the image inside the 14 MiB slot.
     shutil.rmtree(stage / "lib/modules", ignore_errors=True)
     rel = BUILD / "include/config/kernel.release"
@@ -248,7 +251,9 @@ def configure(jobs: int) -> None:
 # Build order = dependency order: us48_pci (aux parent) first, its Module.symvers feeds the others.
 MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko"]),
            ("kernel/us48-bustest", ["us48_bustest.ko"]),
-           ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"])]
+           ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"]),
+           ("kernel/us48-cmic-gpio", ["us48_cmic_gpio.ko"]), ("kernel/us48-cmic-mspi", ["us48_cmic_mspi.ko"]),
+           ("kernel/us48-pvtmon", ["us48_pvtmon.ko"]), ("kernel/us48-fan", ["us48_fan.ko"])]
 
 
 def build_modules(jobs: int, stage: bool = True) -> None:
@@ -317,7 +322,7 @@ def main() -> int:
     ap.add_argument("--dtbs-check", action="store_true")
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--module-only", action="store_true",
-                    help="build the out-of-tree modules (pci, a2, cmic); staged into the rootfs unless --build-dir is given")
+                    help="build the out-of-tree modules (pci, a2, cmic, gpio, mspi, pvtmon, fan); staged into the rootfs unless --build-dir is given")
     ap.add_argument("--tree", type=Path, help="kernel source tree (default tmp/linux-mainline)")
     ap.add_argument("--build-dir", type=Path, help="private kernel build dir (default tmp/mainline/build); skips staging")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),
