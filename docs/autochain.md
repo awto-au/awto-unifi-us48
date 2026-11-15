@@ -104,3 +104,37 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 - The kernel at the old offset `0x1e0000` is now inside the uboot slot: re-flash mainline to `0x2e0000` before booting it from flash.
 
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).
+
+## Autoboot to Linux (#63, #73, 2026-11-15)
+
+- awto-uboot `CONFIG_BOOTDELAY=1`, `CONFIG_BOOTCOMMAND="us48boot"` (`uboot-port/cmd/us48boot.c`): `sf probe`, read the 64 B uImage header at `0x2e0000`, check magic + header CRC + length (<= 13 MiB - 64), read exactly header + data, `bootm` (data CRC checked). Any failure prints the reason and stays at the prompt; no fallback.
+- Flashed: uboot slot (read-back crc `e325f81a`, 847728 B), kernel slot = `us48-mainline-normal.bin` (crc `6dfd3b22`, 3717403 B). Env untouched.
+- Catching the 1 s window: `dev.py _listen` sends a space every 20 ms from the `awto-uboot 20` banner until the prompt; uboot-1's own `autoboot:  0` line is not treated as a window.
+- `autochain_boot.py --full`: relay power-cycle, timestamps every stage, host-side ping + TCP :22 probes, ends 5 s after the shell prompt (or at ssh).
+
+Cold power-cycle x2, t0 = relay ON call (normal profile, quiet off, a1 at 1000 MHz):
+
+| Stage | Boot 1 | Boot 2 |
+|---|---|---|
+| uboot-1 banner | +1.07 s | +1.04 s |
+| DDR done | +1.27 | +1.25 |
+| uboot-1 PCIe line | +1.67 | +1.67 |
+| countdown line (bootdelay 0) | +1.83 | +1.83 |
+| bootm verify / start (2 MiB slot read by the env first) | +2.27 / +2.76 | +2.27 / +2.75 |
+| awto-uboot banner | +2.80 | +2.79 |
+| awto-uboot cpu / pcie lines | +2.88 | +2.85 / +2.87 |
+| us48boot header ok (includes the 1 s bootdelay) | +4.08 | +4.08 |
+| us48boot image read (3.7 MB `sf read`) | +4.57 | +4.54 |
+| kernel start (data CRC + copy + `Booting Linux`) | +4.85 | +4.85 |
+| kernel init done | +6.25 | +6.25 |
+| userspace (`rc.sh`) | +6.27 | +6.29 |
+| `us48-net: done` | +6.80 | +6.80 |
+| shell prompt | +6.86 | +6.86 |
+| ping / ssh | not reached | not reached |
+
+- Stock first stage chain: power-on to shell was ~140-220 s on stock, ~32 s from flash earlier today (debug image, no autoboot).
+- No kernel initcall gap above 0.16 s (dmesg deltas): kernel init is spread, nothing to cut.
+- `sf probe` clock 12.5 / 25 / 50 MHz: identical `sf read` time (0.482 s for 3.7 MB, crc `6dfd3b22`); `crc32` over 3.7 MB with caches = 0.060 s, so skipping the bootm data CRC saves under 0.1 s (kept).
+- `cp.l` from the BSPI window `0x1c2e0000`: 0.321 s for the same bytes (crc identical) vs 0.482 s: -0.16 s, built (`tmp/us48boot_xip.c`) but not flashed (host to board network down at the time, TFTP flash path needs it).
+- Remaining waits: uboot-1 to awto-uboot 2.8 s (fixed: env reads the whole 2 MiB slot, uboot-1 verify), bootdelay 1.0 s (fixed by the 1 s window decision), kernel 1.4 s, userspace 0.6 s.
+- Network after a cold flash boot: ge1 carrier 0 until awto-uboot initialises the switch (`us48-ge: cold init` runs on the first net command); with it, carrier 1 but `L2 insert ... failed: unicast to us will not arrive`. Not tuned (Dan 2026-11-15, #84).

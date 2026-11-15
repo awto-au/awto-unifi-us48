@@ -21,16 +21,46 @@ from dev import log  # noqa: E402
 
 STAGES = [(b"U-Boot usw", "uboot-1 banner"), (b"DDR Tune Completed", "DDR done"), (b"port 0", "PCIe line"),
           (b"Hit any key", "autoboot countdown"), (b"Verifying Checksum", "bootm verify"),
-          (b"Starting kernel", "bootm start"), (b"awto-uboot 20", "awto-uboot banner"), (b"awto-uboot> ", "prompt")]
+          (b"Starting kernel", "bootm start"), (b"awto-uboot 20", "awto-uboot banner"), (b"pcie:", "awto-uboot pcie"),
+          (b"cpu: US48", "awto-uboot cpu line"), (b"fans", "awto-uboot fans"),
+          (b"us48boot: header ok", "us48boot header ok"), (b"us48boot: image read", "us48boot read"),
+          (b"Booting Linux", "kernel start"), (b"Freeing unused kernel", "kernel init done"),
+          (b"starting pid", "userspace (rc.sh)"), (b"us48-net: done", "us48-net done"),
+          (b"Please press Enter", "shell prompt"), (b"awto-uboot> ", "prompt")]
+BOARD_IP = "192.168.25.207"  # ip-registry us48-boot
+# --full: autoboot to Linux. The stage list is cumulative: the awto-uboot/kernel names repeat across the two bootm hops,
+# so a name is only recorded once (the first occurrence). Expected total ~30 s; 120 s backstop, expiry = FATAL.
+FULL_OVERALL_S = 120.0
 OVERALL_S = 40.0
 STALL_S = 15.0
+# network is not tuned here (Dan 2026-11-15, #84): after the shell prompt wait this long for ping/ssh, then report
+NET_GRACE_S = 5.0
+FULL_STALL_S = 40.0  # kernel init is silent for a while with quiet console; 40 s = hung
 SIZE = 0x200000  # the env reads the whole 2 MiB uboot slot; bootm checks only the header length
+
+
+def probe_net(t0: float, seen: dict) -> None:
+    """Host-side: first ICMP echo reply and first TCP connect to :22, 0.2 s apart (the board has no log line for either)."""
+    import socket
+    import subprocess
+    while "ssh port open" not in seen and time.monotonic() - t0 < FULL_OVERALL_S:
+        if "ping answers" not in seen:
+            r = subprocess.run(["ping", "-c1", "-W1", "-n", BOARD_IP], capture_output=True)
+            if r.returncode == 0:
+                seen["ping answers"] = time.monotonic() - t0
+        try:
+            socket.create_connection((BOARD_IP, 22), 0.2).close()
+            seen["ssh port open"] = time.monotonic() - t0
+        except OSError:
+            pass
+        threading.Event().wait(0.2)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manual", action="store_true")
     ap.add_argument("--warm", action="store_true", help="no relay: send `reset` at the awto-uboot prompt (implies --manual)")
+    ap.add_argument("--full", action="store_true", help="env/awto-uboot autoboot: run until the board answers ssh (port 22)")
     ap.add_argument("--xip", action="store_true", help="with --manual: bootm 0x1c0e0000 instead of sf read + bootm")
     a = ap.parse_args()
     a.manual = a.manual or a.warm
@@ -47,15 +77,18 @@ def main() -> int:
             t0 = time.monotonic()  # t=0 = start of the relay ON call (the POST itself is part of the power-up)
             threading.Thread(target=lambda: log(f"relay on -> {dev._relay_post(host, 'on')}", "ALERT"), daemon=True).start()
         seen: dict[str, float] = {}
+        if a.full:
+            threading.Thread(target=probe_net, args=(t0, seen), daemon=True).start()
         seen_lines = 0
         last = t0
         last_space = 0.0
         manual_step = 0
-        while time.monotonic() - t0 < OVERALL_S:
+        limit, stall = (FULL_OVERALL_S, FULL_STALL_S) if a.full else (OVERALL_S, STALL_S)
+        while time.monotonic() - t0 < limit:
             if s._pump(0.02):
                 last = time.monotonic()
-            if time.monotonic() - last > STALL_S:
-                log(f"stall {STALL_S} s, last: {s.buf[-100:]!r}", "FATAL")
+            if time.monotonic() - last > stall and not (a.full and "ping answers" in seen):
+                log(f"stall {stall} s, last: {s.buf[-100:]!r}", "FATAL")
                 return 1
             lines = s.buf.split(b"\n")
             for ln in lines[seen_lines:-1]:
@@ -84,10 +117,17 @@ def main() -> int:
                 s.send_line(cmd)
                 manual_step += 1
                 s.buf += b"\n"
-            if b"awto-uboot> " in s.buf[-14:]:
+            if a.full and "ssh port open" not in seen and "shell prompt" in seen and \
+                    time.monotonic() - t0 > seen["shell prompt"] + NET_GRACE_S:
+                log("no ssh within the grace period: " + ", ".join(f"{k} +{v:.2f}" for k, v in seen.items()), "ALERT")
+                return 0
+            if a.full and "ssh port open" in seen:
                 log("stages: " + ", ".join(f"{k} +{v:.2f}" for k, v in seen.items()), "ALERT")
                 return 0
-        log(f"overall {OVERALL_S} s expired, stages {seen}, tail {s.buf[-150:]!r}", "FATAL")
+            if not a.full and b"awto-uboot> " in s.buf[-14:]:
+                log("stages: " + ", ".join(f"{k} +{v:.2f}" for k, v in seen.items()), "ALERT")
+                return 0
+        log(f"overall {limit} s expired, stages {seen}, tail {s.buf[-150:]!r}", "FATAL")
         return 1
     finally:
         s.close()

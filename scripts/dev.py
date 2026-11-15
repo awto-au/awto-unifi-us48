@@ -318,6 +318,32 @@ def _classify_tail(raw: bytes) -> str | None:
     return None
 
 
+# awto-uboot autoboots after 1 s (BOOTDELAY=1): from its banner, a space every 20 ms (any key aborts) until the
+# prompt. 20 ms = a few UART character times at 115200; spaces typed before the countdown wait in the 16 B FIFO.
+AUTOBOOT_KEY_S = 0.02
+
+
+def _listen(s: console.Session, acc: bytes, idle_s: float, cap_s: float) -> bytes:
+    """read_idle that returns as soon as the state is classifiable and holds the awto-uboot autoboot window open."""
+    t0, last = time.monotonic(), time.monotonic()
+    while time.monotonic() - t0 < cap_s:
+        if s._pump(AUTOBOOT_KEY_S):
+            last = time.monotonic()
+        seen = acc + s.buf
+        st = _classify_tail(seen)
+        # uboot-1 with env bootdelay 0 prints "autoboot:  0" and boots at once: not a window to abort, keep listening
+        if st and not (st == "countdown" and seen.rstrip().endswith(b"0")):
+            break
+        tail = seen[-3000:]
+        i = tail.rfind(b"awto-uboot 20")
+        if i >= 0 and b"awto-uboot>" not in tail[i:]:
+            s.write(b" ")
+        elif time.monotonic() - last > idle_s:
+            break
+    out, s.buf = s.buf, b""
+    return out
+
+
 def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
     """Passive first: listen, never type into a booting board. Ctrl-C only after 2 s of silence.
 
@@ -327,7 +353,7 @@ def _board_state(s: console.Session, budget_s: float = STOCK_BOOT_S) -> str:
     t0, acc, ever = time.monotonic(), b"", False
     s.buf = b""
     while time.monotonic() - t0 < budget_s:
-        data = s.read_idle(2.0, 6.0)
+        data = _listen(s, acc, 2.0, 6.0)
         if data:
             ever = True
             acc = (acc + data)[-4000:]
