@@ -70,16 +70,16 @@
 | `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
 | `ccu` | axi0 | `0x19000000` | `0x1000` | 0 | 16 | C | IHOST CCU: ARM PLL, clock policy, clock gates | docs/clocks.md Register map; docs/clock-audit.md s2 |
 | `ccu_rst` | axi0 | `0x19000f00` | `0x100` | 0 | 1 | I | IHOST reset control (A9 core reset) Note: only WR_ACCESS is named in regdb; +8 meaning from the script, not decoded | scripts/u2_lut_reset_test.py (core: 0x19000f00 key, 0x19000f08 = 2); regdb IHOST_PROC_RST_WR_ACCESS |
-| `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 8 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
+| `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 8 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) Note: register offsets below are from DDI 0388I Table 10-1 (external view, relative to debug base) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
 | `cs_pmu0` | axi0 | `0x19011000` | `0x1000` | 0 | 0 | C | CoreSight PMU of A9 CPU0 | regdb IHOST_A9PMU0_* lowest offset 0x19011000 |
 | `cs_ptm0` | axi0 | `0x19012000` | `0x1000` | 0 | 0 | C | CoreSight PTM (program trace) of A9 CPU0 | regdb IHOST_A9PTM0_* lowest offset 0x19012000 |
 | `cs_cti0` | axi0 | `0x19013000` | `0x1000` | 0 | 1 | C | CoreSight CTI of A9 CPU0 | regdb IHOST_A9CTI0_* lowest offset 0x19013000 |
-| `scu` | axi0 | `0x19020000` | `0x100` | 0 | 2 | I | Snoop control unit (PERIPHBASE + 0) Note: architectural: SCU at PERIPHBASE+0; not accessed by repo code | task #72 (SCU 0x19020000); ARM Cortex-A9 MPCore TRM |
-| `gic_cpu` | axi0 | `0x19020100` | `0x100` | 0 | 5 | C | GIC CPU interface | us48-uboot.dts gic reg <0x20100 0x100>; bcm-hr2.dtsi |
-| `gtimer` | axi0 | `0x19020200` | `0x100` | 0 | 3 | C | A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8 | us48-uboot.dts timer@20200; scripts/a2_bench.py TIMER; docs/clocks.md |
-| `twd` | axi0 | `0x19020600` | `0x40` | 0 | 5 | C | A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm | bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2 |
-| `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | us48-uboot.dts gic reg <0x21000 0x1000>; bcm-hr2.dtsi |
-| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
+| `scu` | axi0 | `0x19020000` | `0x100` | 0 | 2 | C | Snoop control unit (PERIPHBASE + 0) Note: architectural: SCU at PERIPHBASE+0; not accessed by repo code | ARM DDI 0407I Table 1-3 (SCU 0x0000-0x00FC) |
+| `gic_cpu` | axi0 | `0x19020100` | `0x100` | 0 | 5 | C | GIC CPU interface | ARM DDI 0407I Table 1-3 (0x0100-0x01FF); us48-uboot.dts gic reg <0x20100 0x100> |
+| `gtimer` | axi0 | `0x19020200` | `0x100` | 0 | 3 | C | A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8 | ARM DDI 0407I Table 1-3 (0x0200-0x02FF); us48-uboot.dts timer@20200; docs/clocks.md |
+| `twd` | axi0 | `0x19020600` | `0x40` | 0 | 5 | C | A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm | ARM DDI 0407I Table 1-3 (0x0600-0x06FF); bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2 |
+| `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | ARM DDI 0407I Table 1-3 (0x1000-0x1FFF); us48-uboot.dts gic reg <0x21000 0x1000> |
+| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 24 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 12 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
 | `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
@@ -310,14 +310,14 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `DIDR` | 32 | ro | `0x35137030` |  | C |  | regdb; docs/sram.md (a2 reads 0x35137041) |
-| `0x80` | `DTRRX` | 32 | rw |  |  | C |  | rust/a2ctl DTRRX; regdb |
-| `0x84` | `ITR_PCSR` | 32 | rw |  |  | C | write = ITR (instruction transfer), read = PCSR (PC sample); same offset (docs/pci-layer.md unknown 4) | rust/a2ctl ITR; scripts/a2_force_pc.py; regdb |
-| `0x88` | `DSCR` | 32 | rw |  | HALTED[0], RESTARTED[1], ITREN[13], HDBGEN[14], INSTRCOMPL[24], DTRTXFULL[29], DTRRXFULL[30] | C |  | docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch) |
-| `0x8c` | `DTRTX` | 32 | rw |  |  | I | external read = DBGDTRTX; the DCC console byte of a2 (CP14 c0,c5,0 write sets DSCR.DTRTXfull, this read clears it) | regdb; ARMv7 debug architecture (DBGDTRTXext); docs/a2-linux.md |
-| `0x90` | `DRCR` | 32 | rw |  | REQ_HALT[0], REQ_REST[1], CLR_STK_EXC[2], CLR_STK_PIPE[3] | C |  | regdb; docs/a2.md |
-| `0xfb0` | `LAR` | 32 | wo |  |  | C | write 0xC5ACCE55 to unlock | docs/a2.md; rust/a2ctl LAR |
-| `0xfb8` | `AUTHSTATUS` | 32 | ro |  |  | C | 0xff on a2 = debug authorised | docs/sram.md (a2) |
+| `0x0` | `DIDR` | 32 | ro | `0x35137030` |  | I |  | ARM DDI 0388I Table 10-1 (DBGDIDR 0x000, RO); reset from regdb / docs/sram.md (a2 reads 0x35137041). DIDR value not in fetched docs (ARM ARM) |
+| `0x80` | `DTRRX` | 32 | rw |  |  | C |  | ARM DDI 0388I Table 10-1 (DBGDTRRXext 0x080, RW); rust/a2ctl DTRRX; regdb |
+| `0x84` | `ITR_PCSR` | 32 | rw |  |  | C | write = ITR (instruction transfer, DBGITR WO), read = PCSR (DBGPCSR RO); same offset (docs/pci-layer.md unknown 4) | ARM DDI 0388I Table 10-1 (0x084: DBGITR WO / DBGPCSR RO); rust/a2ctl ITR; scripts/a2_force_pc.py; regdb |
+| `0x88` | `DSCR` | 32 | rw |  | HALTED[0], RESTARTED[1], ITREN[13], HDBGEN[14], INSTRCOMPL[24], DTRTXFULL[29], DTRRXFULL[30] | I |  Note: offset C; bits 0,1,13,14,24 are ARM ARM v7 DBGDSCR, not in DDI 0388I (not verified) | ARM DDI 0388I Table 10-1 (DBGDSCRext 0x088, RW); DBGDSCR[30] DTRRX full, [29] DTRTX full per DDI 0388I section 10.8 |
+| `0x8c` | `DTRTX` | 32 | rw |  |  | C | external read = DBGDTRTX; the DCC console byte of a2 (CP14 c0,c5,0 write sets DSCR.DTRTXfull, this read clears it) | ARM DDI 0388I Table 10-1 (DBGDTRTXext 0x08C, RW); docs/a2-linux.md |
+| `0x90` | `DRCR` | 32 | wo |  | REQ_HALT[0], REQ_REST[1], CLR_STK_EXC[2], CLR_STK_PIPE[3] | I |  Note: offset/access C; bit names are ARM ARM v7 DBGDRCR (HaltReq, RestartReq), not verified against DDI 0388I | ARM DDI 0388I Table 10-1 (DBGDRCR 0x090, WO); regdb; docs/a2.md |
+| `0xfb0` | `LAR` | 32 | wo |  |  | C | write 0xC5ACCE55 to unlock Note: unlock key 0xC5ACCE55 not in fetched docs | ARM DDI 0388I Table 10-9 (DBGLAR 0xFB0, WO); docs/a2.md; rust/a2ctl LAR |
+| `0xfb8` | `AUTHSTATUS` | 32 | ro |  |  | C | 0xff on a2 = debug authorised Note: value meaning is per ARM ARM, not in DDI 0388I | ARM DDI 0388I Table 10-9 (DBGAUTHSTATUS 0xFB8, RO); docs/sram.md (a2) |
 
 ### cs_cti0 (`0x19013000`)
 
@@ -329,62 +329,62 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CTRL` | 32 | rw |  | ENABLE[0] | I |  | ARM Cortex-A9 MPCore TRM SCU register summary |
-| `0x4` | `CONFIG` | 32 | ro |  |  | I |  | ARM Cortex-A9 MPCore TRM SCU register summary |
+| `0x0` | `CTRL` | 32 | rw |  | ENABLE[0] | C |  | ARM DDI 0407I Table 2-1 (0x00), Table 2-2 [0] SCU enable |
+| `0x4` | `CONFIG` | 32 | ro |  |  | C |  | ARM DDI 0407I Table 2-1 (0x04), Table 2-3 |
 
 ### gic_cpu (`0x19020100`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CTLR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_CTLR; regdb |
-| `0x4` | `PMR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_PMR; regdb |
-| `0x8` | `BPR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_BPR; regdb |
-| `0xc` | `IAR` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_IAR; regdb |
-| `0x10` | `EOIR` | 32 | wo |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_EOIR; regdb |
+| `0x0` | `CTLR` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-8 (ICCICR 0x000); IHI 0048B Table 4-2 (GICC_CTLR) |
+| `0x4` | `PMR` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-8 (ICCPMR 0x004); IHI 0048B Table 4-2 (GICC_PMR) |
+| `0x8` | `BPR` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-8 (ICCBPR 0x008); IHI 0048B Table 4-2 (GICC_BPR) |
+| `0xc` | `IAR` | 32 | ro |  |  | C |  | ARM DDI 0407I Table 3-8 (ICCIAR 0x00C, RO); IHI 0048B Table 4-2 (GICC_IAR) |
+| `0x10` | `EOIR` | 32 | wo |  |  | C |  | ARM DDI 0407I Table 3-8 (ICCEOIR 0x010, WO); IHI 0048B Table 4-2 (GICC_EOIR) |
 
 ### gtimer (`0x19020200`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `COUNTER_LO` | 32 | ro |  |  | I |  | ARM Cortex-A9 MPCore TRM global timer; scripts/a2_bench.py |
-| `0x4` | `COUNTER_HI` | 32 | ro |  |  | I |  | ARM Cortex-A9 MPCore TRM global timer |
-| `0x8` | `CONTROL` | 32 | rw |  | TIMER_ENABLE[0], COMP_ENABLE[1], IRQ_ENABLE[2], AUTO_INC[3] | C |  | scripts/a2_bench.py (control at +8, enabled by write); ARM TRM |
+| `0x0` | `COUNTER_LO` | 32 | rw |  |  | C |  Note: write only with the timer enable bit clear (DDI 0407I 4.4.1 step 1) | ARM DDI 0407I Table 4-4 (0x00, R/W), section 4.4.1 |
+| `0x4` | `COUNTER_HI` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 4-4 (0x04, R/W), section 4.4.1 |
+| `0x8` | `CONTROL` | 32 | rw |  | TIMER_ENABLE[0], COMP_ENABLE[1], IRQ_ENABLE[2], AUTO_INC[3], PRESCALER[15:8] | C |  | ARM DDI 0407I Table 4-4 (0x08), Table 4-5 |
 
 ### twd (`0x19020600`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `TIMER_LOAD` | 32 | rw |  |  | I |  | ARM Cortex-A9 MPCore TRM private timer |
-| `0x8` | `TIMER_CONTROL` | 32 | rw |  |  | I |  | ARM Cortex-A9 MPCore TRM private timer |
-| `0x20` | `WDT_LOAD` | 32 | rw |  |  | C | uboot-1 load 0x0165A0BC = 30 s x 781250 Hz (PERIPHCLK/256, assumes 200 MHz) | docs/uboot.md s2 (regs 0x19020620, wdt_arm @0x1c0027d8) |
-| `0x28` | `WDT_CONTROL` | 32 | rw |  | WD_ENABLE[0], AUTO_RELOAD[1], IRQ_ENABLE[2], WD_MODE[3], PRESCALER[15:8] | C | uboot-1 writes 0xFF0B = prescaler 255, WD mode, auto-reload, enable | docs/uboot.md s2 (+0x628 control) |
-| `0x34` | `WDT_DISABLE` | 32 | wo |  |  | C | write 0x12345678 then 0x87654321 to disable watchdog mode (wdt_stop @0x1c00282c) | docs/uboot.md s2 (+0x634 disable) |
+| `0x0` | `TIMER_LOAD` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 4-1 (0x00, RW) |
+| `0x8` | `TIMER_CONTROL` | 32 | rw |  | TIMER_ENABLE[0], AUTO_RELOAD[1], IRQ_ENABLE[2], PRESCALER[15:8] | C |  | ARM DDI 0407I Table 4-1 (0x08), Table 4-2 |
+| `0x20` | `WDT_LOAD` | 32 | rw |  |  | C | uboot-1 load 0x0165A0BC = 30 s x 781250 Hz (PERIPHCLK/256, assumes 200 MHz) | ARM DDI 0407I Table 4-1 (0x20, RW); docs/uboot.md s2 (regs 0x19020620, wdt_arm @0x1c0027d8) |
+| `0x28` | `WDT_CONTROL` | 32 | rw |  | WD_ENABLE[0], AUTO_RELOAD[1], IRQ_ENABLE[2], WD_MODE[3], PRESCALER[15:8] | C | uboot-1 writes 0xFF0B = prescaler 255, WD mode, auto-reload, enable | ARM DDI 0407I Table 4-1 (0x28), Table 4-3; docs/uboot.md s2 (+0x628 control) |
+| `0x34` | `WDT_DISABLE` | 32 | wo |  |  | C | write 0x12345678 then 0x87654321 to disable watchdog mode (wdt_stop @0x1c00282c) | ARM DDI 0407I Table 4-1 (0x34, WO), section 4.2.10; docs/uboot.md s2 (+0x634 disable) |
 
 ### gic_dist (`0x19021000`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CTLR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_CTLR |
-| `0x4` | `TYPER` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_TYPER; regdb |
-| `0x8` | `IIDR` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_IIDR; regdb |
-| `0x100` | `ISENABLER[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ISENABLERn; regdb |
-| `0x180` | `ICENABLER[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICENABLERn; regdb |
-| `0x200` | `ISPENDR[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ISPENDRn; regdb |
-| `0x280` | `ICPENDR[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICPENDRn; regdb |
-| `0x400` | `IPRIORITYR[64]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_IPRIORITYRn; regdb; uboot1 emu trace (#72 comment 6887363127) |
-| `0x800` | `ITARGETSR[64]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ITARGETSRn; regdb |
-| `0xc00` | `ICFGR[16]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICFGRn; regdb |
-| `0xf00` | `SGIR` | 32 | wo |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_SGIR; regdb |
+| `0x0` | `CTLR` | 32 | rw | `0x0` |  | C |  | ARM DDI 0407I Table 3-1 (ICDDCR 0x000); IHI 0048B Table 4-1 (GICD_CTLR) |
+| `0x4` | `TYPER` | 32 | ro |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDICTR 0x004, RO, config dependent); IHI 0048B Table 4-1 (GICD_TYPER) |
+| `0x8` | `IIDR` | 32 | ro | `0x102043b` |  | C |  | ARM DDI 0407I Table 3-1 (ICDIIDR 0x008, RO, reset 0x0102043B); IHI 0048B Table 4-1 (GICD_IIDR) |
+| `0x100` | `ISENABLER[8]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDISERn 0x100-0x11C); IHI 0048B Table 4-1 (GICD_ISENABLERn) |
+| `0x180` | `ICENABLER[8]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDICERn 0x180-0x19C); IHI 0048B GICD_ICENABLERn |
+| `0x200` | `ISPENDR[8]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDISPRn 0x200-0x27C); IHI 0048B GICD_ISPENDRn |
+| `0x280` | `ICPENDR[8]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDICPRn 0x280-0x29C); IHI 0048B GICD_ICPENDRn |
+| `0x400` | `IPRIORITYR[64]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDIPRn 0x400-0x4FC, RW); uboot1 emu trace (#72 comment 6887363127) |
+| `0x800` | `ITARGETSR[64]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDIPTRn 0x800-0x8FC, RW) |
+| `0xc00` | `ICFGR[16]` | 32 | rw |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDICFRn 0xC00-0xC3C, RW) |
+| `0xf00` | `SGIR` | 32 | wo |  |  | C |  | ARM DDI 0407I Table 3-1 (ICDSGIR 0xF00, WO); IHI 0048B Table 4-1 (GICD_SGIR) |
 
 ### pl310 (`0x19022000`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x100` | `CTRL` | 32 | rw |  | ENABLE[0] | I |  | ARM PL310 TRM register summary |
-| `0x900` | `LOCKDOWN_D[8]` | 32 | rw |  |  | C | Data lockdown by way, master n at +0x900 + 8n (0x900..0x938) | ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked) |
-| `0x904` | `LOCKDOWN_I[8]` | 32 | rw |  |  | C | Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c) | ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked) |
-| `0x950` | `LOCKDOWN_BY_LINE` | 32 | rw |  |  | C | uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM) | docs/sram.md (L2C+0x950); ARM CoreLink L2C-310 TRM (lockdown by line enable) |
-| `0x954` | `UNLOCK_ALL_LINES` | 32 | wo |  |  | C | Unlock all lines; uboot-1 FUN_1c0020f8 writes it ('Unlocking L2 Cache') (#72 comment 6887363127) | ARM CoreLink L2C-310 TRM (unlock all lines); uboot1 disassembly PC 0x6ffa2104 (#72) |
+| `0x100` | `CTRL` | 32 | rw | `0x0` | ENABLE[0] | C |  | ARM DDI 0246H Table 3-2 (reg1_control 0x100), Table 3-5 |
+| `0x900` | `LOCKDOWN_D[8]` | 32 | rw |  |  | C | Data lockdown by way, master n at +0x900 + 8n (0x900..0x938) | ARM DDI 0246H Table 3-2 (0x900-0x938), Table 3-20 |
+| `0x904` | `LOCKDOWN_I[8]` | 32 | rw |  |  | C | Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c) | ARM DDI 0246H Table 3-2 (0x904-0x93C), Table 3-21 |
+| `0x950` | `LOCKDOWN_BY_LINE` | 32 | rw | `0x0` |  | C | uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM) | ARM DDI 0246H Table 3-2 (reg9_lock_line_eng 0x950), Table 3-18 (lockdown_by_line_enable, bit 0); docs/sram.md (L2C+0x950) |
+| `0x954` | `UNLOCK_ALL_LINES` | 32 | rw |  |  | C | Unlock all lines; uboot-1 FUN_1c0020f8 writes it ('Unlocking L2 Cache') (#72 comment 6887363127) | ARM DDI 0246H Table 3-2 (reg9_unlock_wayg 0x954, RW), Table 3-19, section 3.3.11 (status readable); uboot1 disassembly PC 0x6ffa2104 (#72) |
 
 ### cmic0 (`0x48000000`)
 

@@ -1,4 +1,5 @@
-# Cortex-A9 MPCore private region (PERIPHBASE 0x19020000) and CoreSight. ARM TRM layouts are standard (conf I unless the repo used the register).
+# Cortex-A9 MPCore private region (PERIPHBASE 0x19020000) and CoreSight debug.
+# Doc refs: ARM DDI 0407I, DDI 0388I, DDI 0246H, IHI 0048B.B.b (manifest /vendors/arm/README.md).
 
 [block.scu]
 space = "axi0"
@@ -6,19 +7,21 @@ base = 0x19020000
 size = 0x100
 unit = 0
 desc = "Snoop control unit (PERIPHBASE + 0)"
-src = "task #72 (SCU 0x19020000); ARM Cortex-A9 MPCore TRM"
-conf = "I"
+src = "ARM DDI 0407I Table 1-3 (SCU 0x0000-0x00FC)"
+conf = "C"
 note = "architectural: SCU at PERIPHBASE+0; not accessed by repo code"
 
 [block.scu.reg.CTRL]
 offset = 0x0
 fields = ["ENABLE 0"]
-src = "ARM Cortex-A9 MPCore TRM SCU register summary"
+src = "ARM DDI 0407I Table 2-1 (0x00), Table 2-2 [0] SCU enable"
+conf = "C"
 
 [block.scu.reg.CONFIG]
 offset = 0x4
 access = "ro"
-src = "ARM Cortex-A9 MPCore TRM SCU register summary"
+src = "ARM DDI 0407I Table 2-1 (0x04), Table 2-3"
+conf = "C"
 
 [block.gic_cpu]
 space = "axi0"
@@ -26,39 +29,39 @@ base = 0x19020100
 size = 0x100
 unit = 0
 desc = "GIC CPU interface"
-src = "us48-uboot.dts gic reg <0x20100 0x100>; bcm-hr2.dtsi"
+src = "ARM DDI 0407I Table 1-3 (0x0100-0x01FF); us48-uboot.dts gic reg <0x20100 0x100>"
 conf = "C"
 
 [block.gic_cpu.reg.CTLR]
 offset = 0x0
 sdk = "IHOST_GICCPU_CONTROL"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICC_CTLR; regdb"
+src = "ARM DDI 0407I Table 3-8 (ICCICR 0x000); IHI 0048B Table 4-2 (GICC_CTLR)"
 conf = "C"
 
 [block.gic_cpu.reg.PMR]
 offset = 0x4
 sdk = "IHOST_GICCPU_PRIORITY_MASK"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICC_PMR; regdb"
+src = "ARM DDI 0407I Table 3-8 (ICCPMR 0x004); IHI 0048B Table 4-2 (GICC_PMR)"
 conf = "C"
 
 [block.gic_cpu.reg.BPR]
 offset = 0x8
 sdk = "IHOST_GICCPU_BIN_PT"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICC_BPR; regdb"
+src = "ARM DDI 0407I Table 3-8 (ICCBPR 0x008); IHI 0048B Table 4-2 (GICC_BPR)"
 conf = "C"
 
 [block.gic_cpu.reg.IAR]
 offset = 0xc
 access = "ro"
 sdk = "IHOST_GICCPU_INT_ACK"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICC_IAR; regdb"
+src = "ARM DDI 0407I Table 3-8 (ICCIAR 0x00C, RO); IHI 0048B Table 4-2 (GICC_IAR)"
 conf = "C"
 
 [block.gic_cpu.reg.EOIR]
 offset = 0x10
 access = "wo"
 sdk = "IHOST_GICCPU_EOI"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICC_EOIR; regdb"
+src = "ARM DDI 0407I Table 3-8 (ICCEOIR 0x010, WO); IHI 0048B Table 4-2 (GICC_EOIR)"
 conf = "C"
 
 [block.gtimer]
@@ -67,25 +70,24 @@ base = 0x19020200
 size = 0x100
 unit = 0
 desc = "A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8"
-src = "us48-uboot.dts timer@20200; scripts/a2_bench.py TIMER; docs/clocks.md"
+src = "ARM DDI 0407I Table 1-3 (0x0200-0x02FF); us48-uboot.dts timer@20200; docs/clocks.md"
 conf = "C"
 
 [block.gtimer.reg.COUNTER_LO]
 offset = 0x0
-access = "ro"
-src = "ARM Cortex-A9 MPCore TRM global timer; scripts/a2_bench.py"
-conf = "I"
+src = "ARM DDI 0407I Table 4-4 (0x00, R/W), section 4.4.1"
+conf = "C"
+note = "write only with the timer enable bit clear (DDI 0407I 4.4.1 step 1)"
 
 [block.gtimer.reg.COUNTER_HI]
 offset = 0x4
-access = "ro"
-src = "ARM Cortex-A9 MPCore TRM global timer"
-conf = "I"
+src = "ARM DDI 0407I Table 4-4 (0x04, R/W), section 4.4.1"
+conf = "C"
 
 [block.gtimer.reg.CONTROL]
 offset = 0x8
-fields = ["TIMER_ENABLE 0", "COMP_ENABLE 1", "IRQ_ENABLE 2", "AUTO_INC 3"]
-src = "scripts/a2_bench.py (control at +8, enabled by write); ARM TRM"
+fields = ["TIMER_ENABLE 0", "COMP_ENABLE 1", "IRQ_ENABLE 2", "AUTO_INC 3", "PRESCALER 15:8"]
+src = "ARM DDI 0407I Table 4-4 (0x08), Table 4-5"
 conf = "C"
 
 [block.twd]
@@ -94,37 +96,38 @@ base = 0x19020600
 size = 0x40
 unit = 0
 desc = "A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm"
-src = "bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2"
+src = "ARM DDI 0407I Table 1-3 (0x0600-0x06FF); bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2"
 conf = "C"
 
 [block.twd.reg.TIMER_LOAD]
 offset = 0x0
-src = "ARM Cortex-A9 MPCore TRM private timer"
-conf = "I"
+src = "ARM DDI 0407I Table 4-1 (0x00, RW)"
+conf = "C"
 
 [block.twd.reg.TIMER_CONTROL]
 offset = 0x8
-src = "ARM Cortex-A9 MPCore TRM private timer"
-conf = "I"
+fields = ["TIMER_ENABLE 0", "AUTO_RELOAD 1", "IRQ_ENABLE 2", "PRESCALER 15:8"]
+src = "ARM DDI 0407I Table 4-1 (0x08), Table 4-2"
+conf = "C"
 
 [block.twd.reg.WDT_LOAD]
 offset = 0x20
 desc = "uboot-1 load 0x0165A0BC = 30 s x 781250 Hz (PERIPHCLK/256, assumes 200 MHz)"
-src = "docs/uboot.md s2 (regs 0x19020620, wdt_arm @0x1c0027d8)"
+src = "ARM DDI 0407I Table 4-1 (0x20, RW); docs/uboot.md s2 (regs 0x19020620, wdt_arm @0x1c0027d8)"
 conf = "C"
 
 [block.twd.reg.WDT_CONTROL]
 offset = 0x28
 fields = ["WD_ENABLE 0", "AUTO_RELOAD 1", "IRQ_ENABLE 2", "WD_MODE 3", "PRESCALER 15:8"]
 desc = "uboot-1 writes 0xFF0B = prescaler 255, WD mode, auto-reload, enable"
-src = "docs/uboot.md s2 (+0x628 control)"
+src = "ARM DDI 0407I Table 4-1 (0x28), Table 4-3; docs/uboot.md s2 (+0x628 control)"
 conf = "C"
 
 [block.twd.reg.WDT_DISABLE]
 offset = 0x34
 access = "wo"
 desc = "write 0x12345678 then 0x87654321 to disable watchdog mode (wdt_stop @0x1c00282c)"
-src = "docs/uboot.md s2 (+0x634 disable)"
+src = "ARM DDI 0407I Table 4-1 (0x34, WO), section 4.2.10; docs/uboot.md s2 (+0x634 disable)"
 conf = "C"
 
 [block.gic_dist]
@@ -133,26 +136,28 @@ base = 0x19021000
 size = 0x1000
 unit = 0
 desc = "GIC distributor"
-src = "us48-uboot.dts gic reg <0x21000 0x1000>; bcm-hr2.dtsi"
+src = "ARM DDI 0407I Table 1-3 (0x1000-0x1FFF); us48-uboot.dts gic reg <0x21000 0x1000>"
 conf = "C"
 
 [block.gic_dist.reg.CTLR]
 offset = 0x0
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_CTLR"
+reset = 0x0
+src = "ARM DDI 0407I Table 3-1 (ICDDCR 0x000); IHI 0048B Table 4-1 (GICD_CTLR)"
 conf = "C"
 
 [block.gic_dist.reg.TYPER]
 offset = 0x4
 access = "ro"
 sdk = "IHOST_GICDIST_IC_TYPE_REG"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_TYPER; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDICTR 0x004, RO, config dependent); IHI 0048B Table 4-1 (GICD_TYPER)"
 conf = "C"
 
 [block.gic_dist.reg.IIDR]
 offset = 0x8
 access = "ro"
+reset = 0x0102043B
 sdk = "IHOST_GICDIST_DIST_IDENT_REG"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_IIDR; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDIIDR 0x008, RO, reset 0x0102043B); IHI 0048B Table 4-1 (GICD_IIDR)"
 conf = "C"
 
 # Per-IRQ arrays sized to the 256-IRQ scope the regdb names (ENABLE_SET0..7, PRIORITY_LEVEL0..63, SPI_TARGET0..63, INT_CONFIG0..15). Real max = GICD_TYPER ITLinesNumber (I).
@@ -161,7 +166,7 @@ offset = 0x100
 count = 8
 stride = 4
 sdk = "IHOST_GICDIST_ENABLE_SET0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ISENABLERn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDISERn 0x100-0x11C); IHI 0048B Table 4-1 (GICD_ISENABLERn)"
 conf = "C"
 
 [block.gic_dist.reg.ICENABLER]
@@ -169,7 +174,7 @@ offset = 0x180
 count = 8
 stride = 4
 sdk = "IHOST_GICDIST_ENABLE_CLR0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICENABLERn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDICERn 0x180-0x19C); IHI 0048B GICD_ICENABLERn"
 conf = "C"
 
 [block.gic_dist.reg.ISPENDR]
@@ -177,7 +182,7 @@ offset = 0x200
 count = 8
 stride = 4
 sdk = "IHOST_GICDIST_PENDING_SET0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ISPENDRn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDISPRn 0x200-0x27C); IHI 0048B GICD_ISPENDRn"
 conf = "C"
 
 [block.gic_dist.reg.ICPENDR]
@@ -185,7 +190,7 @@ offset = 0x280
 count = 8
 stride = 4
 sdk = "IHOST_GICDIST_PENDING_CLR0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICPENDRn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDICPRn 0x280-0x29C); IHI 0048B GICD_ICPENDRn"
 conf = "C"
 
 # 256 IRQs x 8 bit = 64 words (uboot-1 FUN_1c001dc8 writes words 16-63 at +0x440..0x4fc, docs/hwdb.md).
@@ -194,7 +199,7 @@ offset = 0x400
 count = 64
 stride = 4
 sdk = "IHOST_GICDIST_PRIORITY_LEVEL0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_IPRIORITYRn; regdb; uboot1 emu trace (#72 comment 6887363127)"
+src = "ARM DDI 0407I Table 3-1 (ICDIPRn 0x400-0x4FC, RW); uboot1 emu trace (#72 comment 6887363127)"
 conf = "C"
 
 [block.gic_dist.reg.ITARGETSR]
@@ -202,7 +207,7 @@ offset = 0x800
 count = 64
 stride = 4
 sdk = "IHOST_GICDIST_SPI_TARGET0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ITARGETSRn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDIPTRn 0x800-0x8FC, RW)"
 conf = "C"
 
 [block.gic_dist.reg.ICFGR]
@@ -210,14 +215,14 @@ offset = 0xc00
 count = 16
 stride = 4
 sdk = "IHOST_GICDIST_INT_CONFIG0"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICFGRn; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDICFRn 0xC00-0xC3C, RW)"
 conf = "C"
 
 [block.gic_dist.reg.SGIR]
 offset = 0xf00
 access = "wo"
 sdk = "IHOST_GICDIST_STI_CONTROL"
-src = "ARM GIC v1 architecture spec (IHI 0048) GICD_SGIR; regdb"
+src = "ARM DDI 0407I Table 3-1 (ICDSGIR 0xF00, WO); IHI 0048B Table 4-1 (GICD_SGIR)"
 conf = "C"
 
 [block.pl310]
@@ -228,19 +233,21 @@ unit = 0
 desc = "L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM"
 src = "docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5"
 conf = "C"
+note = "base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9)"
 
 [block.pl310.reg.CTRL]
 offset = 0x100
 fields = ["ENABLE 0"]
-src = "ARM PL310 TRM register summary"
-conf = "I"
+reset = 0x0
+src = "ARM DDI 0246H Table 3-2 (reg1_control 0x100), Table 3-5"
+conf = "C"
 
 [block.pl310.reg.LOCKDOWN_D]
 offset = 0x900
 count = 8
 stride = 8
 desc = "Data lockdown by way, master n at +0x900 + 8n (0x900..0x938)"
-src = "ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked)"
+src = "ARM DDI 0246H Table 3-2 (0x900-0x938), Table 3-20"
 conf = "C"
 
 [block.pl310.reg.LOCKDOWN_I]
@@ -248,20 +255,20 @@ offset = 0x904
 count = 8
 stride = 8
 desc = "Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c)"
-src = "ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked)"
+src = "ARM DDI 0246H Table 3-2 (0x904-0x93C), Table 3-21"
 conf = "C"
 
 [block.pl310.reg.LOCKDOWN_BY_LINE]
 offset = 0x950
+reset = 0x0
 desc = "uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM)"
-src = "docs/sram.md (L2C+0x950); ARM CoreLink L2C-310 TRM (lockdown by line enable)"
+src = "ARM DDI 0246H Table 3-2 (reg9_lock_line_eng 0x950), Table 3-18 (lockdown_by_line_enable, bit 0); docs/sram.md (L2C+0x950)"
 conf = "C"
 
 [block.pl310.reg.UNLOCK_ALL_LINES]
 offset = 0x954
-access = "wo"
 desc = "Unlock all lines; uboot-1 FUN_1c0020f8 writes it ('Unlocking L2 Cache') (#72 comment 6887363127)"
-src = "ARM CoreLink L2C-310 TRM (unlock all lines); uboot1 disassembly PC 0x6ffa2104 (#72)"
+src = "ARM DDI 0246H Table 3-2 (reg9_unlock_wayg 0x954, RW), Table 3-19, section 3.3.11 (status readable); uboot1 disassembly PC 0x6ffa2104 (#72)"
 conf = "C"
 
 [block.cs_debug0]
@@ -272,57 +279,70 @@ unit = 0
 desc = "CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1)"
 src = "docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_*"
 conf = "C"
+note = "register offsets below are from DDI 0388I Table 10-1 (external view, relative to debug base)"
 
 [block.cs_debug0.reg.DIDR]
 offset = 0x0
 access = "ro"
 reset = 0x35137030
 sdk = "IHOST_A9CPU0_DIDR"
-src = "regdb; docs/sram.md (a2 reads 0x35137041)"
+src = "ARM DDI 0388I Table 10-1 (DBGDIDR 0x000, RO); reset from regdb / docs/sram.md (a2 reads 0x35137041). DIDR value not in fetched docs (ARM ARM)"
+conf = "I"
 
 [block.cs_debug0.reg.DTRRX]
 offset = 0x80
 sdk = "IHOST_A9CPU0_DTRRX"
-src = "rust/a2ctl DTRRX; regdb"
+src = "ARM DDI 0388I Table 10-1 (DBGDTRRXext 0x080, RW); rust/a2ctl DTRRX; regdb"
+conf = "C"
 
 [block.cs_debug0.reg.DTRTX]
 offset = 0x8c
 desc = "external read = DBGDTRTX; the DCC console byte of a2 (CP14 c0,c5,0 write sets DSCR.DTRTXfull, this read clears it)"
 sdk = "IHOST_A9CPU0_DTRTX"
-src = "regdb; ARMv7 debug architecture (DBGDTRTXext); docs/a2-linux.md"
-conf = "I"
+src = "ARM DDI 0388I Table 10-1 (DBGDTRTXext 0x08C, RW); docs/a2-linux.md"
+conf = "C"
 
 [block.cs_debug0.reg.ITR_PCSR]
 offset = 0x84
-desc = "write = ITR (instruction transfer), read = PCSR (PC sample); same offset (docs/pci-layer.md unknown 4)"
+desc = "write = ITR (instruction transfer, DBGITR WO), read = PCSR (DBGPCSR RO); same offset (docs/pci-layer.md unknown 4)"
 sdk = "IHOST_A9CPU0_PCSR"
-src = "rust/a2ctl ITR; scripts/a2_force_pc.py; regdb"
+src = "ARM DDI 0388I Table 10-1 (0x084: DBGITR WO / DBGPCSR RO); rust/a2ctl ITR; scripts/a2_force_pc.py; regdb"
+conf = "C"
 
 [block.cs_debug0.reg.DSCR]
 offset = 0x88
 sdk = "IHOST_A9CPU0_DSCR"
 fields = ["HALTED 0", "RESTARTED 1", "ITREN 13", "HDBGEN 14", "INSTRCOMPL 24", "DTRTXFULL 29", "DTRRXFULL 30"]
-src = "docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch)"
+src = "ARM DDI 0388I Table 10-1 (DBGDSCRext 0x088, RW); DBGDSCR[30] DTRRX full, [29] DTRTX full per DDI 0388I section 10.8"
+conf = "I"
+note = "offset C; bits 0,1,13,14,24 are ARM ARM v7 DBGDSCR, not in DDI 0388I (not verified)"
 
 [block.cs_debug0.reg.DRCR]
 offset = 0x90
+access = "wo"
 sdk = "IHOST_A9CPU0_DRCR"
 fields = ["REQ_HALT 0", "REQ_REST 1", "CLR_STK_EXC 2", "CLR_STK_PIPE 3"]
-src = "regdb; docs/a2.md"
+src = "ARM DDI 0388I Table 10-1 (DBGDRCR 0x090, WO); regdb; docs/a2.md"
+conf = "I"
+note = "offset/access C; bit names are ARM ARM v7 DBGDRCR (HaltReq, RestartReq), not verified against DDI 0388I"
 
 [block.cs_debug0.reg.LAR]
 offset = 0xfb0
 access = "wo"
 desc = "write 0xC5ACCE55 to unlock"
 sdk = "IHOST_A9CPU0_LOCKACCESS"
-src = "docs/a2.md; rust/a2ctl LAR"
+src = "ARM DDI 0388I Table 10-9 (DBGLAR 0xFB0, WO); docs/a2.md; rust/a2ctl LAR"
+conf = "C"
+note = "unlock key 0xC5ACCE55 not in fetched docs"
 
 [block.cs_debug0.reg.AUTHSTATUS]
 offset = 0xfb8
 access = "ro"
 sdk = "IHOST_A9CPU0_AUTHSTATUS"
 desc = "0xff on a2 = debug authorised"
-src = "docs/sram.md (a2)"
+src = "ARM DDI 0388I Table 10-9 (DBGAUTHSTATUS 0xFB8, RO); docs/sram.md (a2)"
+conf = "C"
+note = "value meaning is per ARM ARM, not in DDI 0388I"
 
 [block.cs_pmu0]
 space = "axi0"
