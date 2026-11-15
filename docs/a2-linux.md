@@ -45,3 +45,11 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - `remoteproc0/pcsr`: PC samples; `dcc_stats`: reader alive, words drained.
 - PC ranges (ARM state, PCSR = address + 8): stub `0x080000xx`; decompressor `0x09000000` + zImage size (its stack/bss just above); decompressed kernel before the MMU `0x08008000+` (phys = virt - 0xb8000000); after the MMU `0xc0008000+` (System.map in `tmp/mainline/build`).
 - Module params (`us48_a2`): `stub_dcc` (default 1), `hdbgen_off` (clear DSCR.HDBGEN after the release; default off = a2 runs with halting debug enabled).
+
+## First boot (#79, 2026-11-15, debug profile, normal ARM 1000)
+- Plan A: dcc_log `aJ` (stub CP14 write + a1 reader work). Plan B: PCSR 0x09001xxx (decompressor, spread = inflating), then 0xc0xxxxxx (kernel). Linux reaches `/init` and a shell on hvc0 in ~10 s of a2 time (~50 s wall, L1 only, lockdep).
+- Fixes found on the way:
+  - `COMPAT_32BIT_TIME=y` in `us48_defconfig`: musl 1.2.6 uses the time32 syscalls for small values; without it `sleep`/`nanosleep` return ENOSYS at once (init and watchdog spin, board resets via SP805).
+  - `/init` mounts sysfs before the role check (`/proc/device-tree` is a symlink into `/sys`); a2 had taken the a1 path.
+  - `ttyA2` termios is raw: ECHO looped a2's output back into DTRRX as input.
+- Stage files from the host: `scp -O` `us48-a2-boot.elf`, `us48-a2-zImage`, `us48-a2.dtb` to `/lib/firmware`; `mount -t debugfs`; `insmod us48_a2.ko payload=1`; `cat /dev/ttyA20 > file &` before `echo start`; keystrokes: `printf 'cmd\n' > /dev/ttyA20`.

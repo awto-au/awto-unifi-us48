@@ -2,11 +2,12 @@
 # One initramfs for a1 and a2: the role comes from the DT root compatible (a2 DTB: "ubnt,us48-a2").
 # a1 -> busybox init (/etc/inittab); a2 -> banner + shell on the console (hvc0, DCC) (docs/a2-linux.md).
 mount -t proc proc /proc
+mount -t sysfs sysfs /sys	# /proc/device-tree is a symlink into /sys
 if grep -q "ubnt,us48-a2" /proc/device-tree/compatible 2>/dev/null; then
-	mount -t sysfs sysfs /sys
 	mount -t devtmpfs devtmpfs /dev
 	echo "us48-a2: Linux $(uname -r) on unit 1 Cortex-A9 (hvc0, DCC)"
 	exec setsid sh -c 'exec sh </dev/console >/dev/console 2>&1'
 fi
+umount /sys
 umount /proc
 exec /sbin/init "$@"

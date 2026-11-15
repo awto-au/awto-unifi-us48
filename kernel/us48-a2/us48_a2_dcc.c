@@ -211,6 +211,10 @@ struct us48_a2_dcc *us48_a2_dcc_create(struct device *dev, struct regmap *map)
 	d->drv->subtype = SERIAL_TYPE_NORMAL;
 	d->drv->init_termios = tty_std_termios;
 	d->drv->init_termios.c_cflag = B115200 | CS8 | CREAD | CLOCAL;
+	/* raw: ECHO would loop a2's output back into DTRRX as its own input */
+	d->drv->init_termios.c_iflag = 0;
+	d->drv->init_termios.c_oflag = 0;
+	d->drv->init_termios.c_lflag = 0;
 	d->drv->driver_state = d;
 	tty_set_operations(d->drv, &dcc_tty_ops);
 	ret = tty_register_driver(d->drv);
