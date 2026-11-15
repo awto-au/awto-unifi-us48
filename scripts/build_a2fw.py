@@ -62,6 +62,7 @@ def run(cmd):
 
 
 def main():
+    only = set(sys.argv[1:])  # optional: build only these ELF names (e.g. us48-a2-regprobe)
     OUT.mkdir(parents=True, exist_ok=True)
     LOG.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(message)s",
@@ -129,7 +130,12 @@ SECTIONS {{
                                  [f"-DSTRESS_TARGET={mhz * 10_000_000}ULL", f"-DSTRESS_K={STRESS_K}", f"-DSTRESS_MP={STRESS_MP}",
                                   f"-DEXP_A=0x{stress_ref()[0]:08x}", f"-DEXP_B=0x{stress_ref()[1]:08x}"]) for mhz in STRESS_MHZ),
                               ("us48-a2-ifd-diag22-nic", ("start.S", "iftest.c", "iftest_asm.S"),
-                               ["-DIF_D", *BIG, "-DWRAP_DATA=0", "-DDIAG_SET=0x400000", "-DNIC_ISS=3"])):
+                               ["-DIF_D", *BIG, "-DWRAP_DATA=0", "-DDIAG_SET=0x400000", "-DNIC_ISS=3"]),
+                              # read-only register probe (#86); regprobe_list.h comes from scripts/hwdb_probe.py gen
+                              ("us48-a2-regprobe", ("start.S", "regprobe.c", "regprobe_asm.S"),
+                               ["-I", str(OUT), "-DTRACE_SZ=0x30000"])):
+        if (only and name not in only) or (not only and name == "us48-a2-regprobe" and not (OUT / "regprobe_list.h").exists()):
+            continue
         objs = []
         for src in srcs:
             obj = OUT / f"{name}-{src}.o"

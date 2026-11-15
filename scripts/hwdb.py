@@ -171,6 +171,8 @@ class Db:
         self.sdk_sbus_regs = {}
         self.sdk_sbus_mems = {}
         self.ports = []
+        self.hw = {}  # "sdk_iproc.NAME" / "sdk_cmic.NAME" -> {seen, reset_ok?, ro_ok?, date?, unit?, why?} from hwdb/validation/*.toml
+        self.blocked = []  # hwdb/validation/*-blocked.toml entries
         self.files = []
         self._by_addr = None
 
@@ -250,6 +252,28 @@ class Db:
                     self.sdk_sbus_mems[row["name"]] = SdkReg(row["name"], "mem", row["block_labels"],
                                                              int(row["base"], 0), int(row["index_max"]) + 1, 0, fl,
                                                              "regdb/hr2_mems.tsv idx %s" % row["idx"])
+
+    def load_validation(self, root):
+        for p in sorted((pathlib.Path(root) / "hwdb/validation").glob("*.toml")):
+            with open(p, "rb") as f:
+                d = tomllib.load(f)
+            self.blocked += d.get("blocked", [])
+            for kind, regs in d.get("hw", {}).items():
+                for n, v in regs.items():
+                    self.hw["%s.%s" % (kind, n)] = v
+
+    def hw_of(self, name):
+        """Validation record of 'block.REG' (hand reg with sdk= maps to its regdb entry) or 'sdk_iproc.REG'; None = never read."""
+        if name in self.hw:
+            return self.hw[name]
+        try:
+            b, r = self._split(name)
+            reg = b.regs[r]
+        except KeyError:
+            return None
+        if not reg.sdk:
+            return None
+        return self.hw.get(("sdk_cmic." if b.base >= 0x48000000 else "sdk_iproc.") + reg.sdk)
 
     # ---- queries
     def _split(self, name):
@@ -395,6 +419,7 @@ def load(root=None, sdk=True):
     db.resolve_like()
     if sdk:
         db.load_sdk(root)
+    db.load_validation(root)
     return db
 
 
@@ -434,6 +459,8 @@ def main(argv):
         logging.info("sdk iproc regs %d, sdk cmic regs %d, sdk sbus regs %d, sbus mems %d",
                      len(db.blocks[SDK_IPROC].regs), len(db.blocks[SDK_CMIC].regs), len(db.sdk_sbus_regs),
                      len(db.sdk_sbus_mems))
+        seen = sum(1 for v in db.hw.values() if v.get("seen"))
+        logging.info("validation (hwdb/validation): %d records, %d seen, %d blocked ranges", len(db.hw), seen, len(db.blocked))
         logging.info("binaries %s, funcs %d, ports %d", list(db.binaries),
                      sum(len(b.funcs) for b in db.binaries.values()), len(db.ports))
         return 0

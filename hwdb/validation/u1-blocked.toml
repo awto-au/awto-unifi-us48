@@ -1,0 +1,30 @@
+# Unit 1 register ranges whose read stalls a2 (bus hang, only a power cycle recovers); found by scripts/hwdb_probe.py (#86).
+# Not read again until the cause is removed. lo/hi inclusive (a2 AXI address), src = run log.
+
+[[blocked]]
+name = "dmac"
+lo = 0x18020000
+hi = 0x18020fff
+why = "PL330 DMAC held in IDM reset (dmac_idm RESET_CONTROL = 1): read stalls the bus, first read DMAC_PL330_DS hung"
+src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, idx 562; docs/hwdb-map.md dmac note"
+
+[[blocked]]
+name = "amac"
+lo = 0x18022000
+hi = 0x18025fff
+why = "AMAC (GMAC0/UNIMAC0) held in IDM reset (docs/a2.md stock note: AMAC_IDM0 RESET_CONTROL = 1): first read GMAC0_DEVCONTROL hangs a2"
+src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, suspect amac, idx 0"
+
+[[blocked]]
+name = "cmic_timesync"
+lo = 0x48010600
+hi = 0x4801091f
+why = "CMIC TIMESYNC block (CMIC_TIMESYNC_*, offsets 0x10600-0x1091c): first read CMIC_TIMESYNC_COUNTER_CONFIG_SELECT hangs a2"
+src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, suspect cmic, idx 287"
+
+[[blocked]]
+name = "cmic_mmu_coslc"
+lo = 0x48023000
+hi = 0x48023007
+why = "CMIC_MMU_COSLC_COUNT_ADDR/DATA (indirect MMU counter access, 0x23000): first read CMIC_MMU_COSLC_COUNT_ADDR hangs a2"
+src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, suspect cmic, idx 1790"

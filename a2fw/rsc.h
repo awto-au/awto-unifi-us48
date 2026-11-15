@@ -9,7 +9,9 @@
 
 #define RSC_CARVEOUT	0
 #define RSC_TRACE	2
+#ifndef TRACE_SZ
 #define TRACE_SZ	4096
+#endif
 
 struct fw_rsc_carveout {
 	uint32_t da, pa, len, flags, reserved;
