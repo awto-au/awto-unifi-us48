@@ -188,3 +188,23 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 - H2 not supported: the CPU + L1 are stable at 1000 MHz (40 s total at 1000, 40 s at 800, 40 s at 600). Die max 88 C, LM75 max 66 C. Core voltage: regdb has `TOP_AVS_SEL_REG` (0x02074c00) and `TOP_PVTMON_CTRL_1.PVTMON_SELECT` (CMIC space); not read, H2 is clean.
 - Open: the corruption needs PCIe-resident code + data traffic with caches on (rawtest-class); streaming I+D (ifa/ifb/ifd) and SRAM-only CPU load are clean. Next: capture LR_und / SPSR_und at the first undefined (vector via VBAR in SRAM, or a1 halt + ITR read) to see which fetch returned what.
+
+### SRAM-only clock sweep (#79, 2026-11-15, `scripts/a2_sram_sweep.py`, `us48-a2-stress<MHz>`, AXI 200, `dcc_poll=0`, fans 100 %)
+- 2 runs per clock, 10 s each (PMCCNTR); mismatches (m + r) 0 in every ok run; log `tmp/logs/a2_sram_sweep.log`.
+
+| a2 MHz | result | passes per run | passes / MHz | die0 / die1 / LM75 max (C) |
+|---|---|---|---|---|
+| 1000 | ok x4 | 0x2d4d (11597) | 11.597 | 88 / 66-67 / 60 |
+| 1200 | ok x2 | 0x365c (13916) | 11.597 | 88 / 66-67 / 60 |
+| 1400 | ok x2 | 0x3f6b (16235) | 11.596 | 88 / 66-67 / 60 |
+| 1550 | ok x2 | 0x4637 (17975) | 11.597 | 88 / 66-67 / 60 |
+| 1600 | ok x2 | 0x487b (18555) | 11.597 | 88 / 67 / 60 |
+| 1650 | ok x2 | 0x4abf (19135) | 11.597 | 88 / 67-68 / 60 |
+| 1700 | ok x2 | 0x4d02 (19714) | 11.596 | 88 / 67-68 / 60 |
+| 1750 | FAIL run 1 | no trace, `pcsr 0x1c000010`, a2 stopped | - | 88 / 67 / 60 |
+
+- Pass count is linear in MHz (11.60 +- 0.01 per MHz), identical across runs: the clock is real up to 1700 MHz.
+- 1750: PLL locks (ARM 1750000011 Hz read back), a2 never prints the banner = fails at start, before the SRAM loop.
+- Highest clean SRAM-only clock 1700 MHz; first fail 1750 (sweep stopped there; 1800..1950 not tried).
+- Die temperature does not move with clock (PVTMON granularity ~0.5 C); die max 88 C, LM75 max 60 C.
+- Capacity: a2 SRAM 16 KiB; L2-as-RAM lockdown (128 KiB) not tested. Only small bare-metal code fits; Linux cannot run from SRAM.

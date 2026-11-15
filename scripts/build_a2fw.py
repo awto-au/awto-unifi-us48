@@ -25,6 +25,7 @@ BIG = ["-DBIG_LINES=2048"]  # iftest_asm.S: 64 KiB of straight-line code, 2x the
 
 
 STRESS_K, STRESS_MP = 20000, 8  # stress_asm.S ALU iterations and 8 KiB store/load passes per outer iteration
+STRESS_MHZ = (400, 600, 800, 1000, 1200, 1400, *range(1550, 2000, 50))  # #79 SRAM-only clock sweep
 
 
 def stress_ref():
@@ -126,7 +127,7 @@ SECTIONS {{
                               # H2 (#79): CPU + L1 stress from SRAM, target = 10 s at the named clock (cycles)
                               *((f"us48-a2-stress{mhz}", ("start.S", "stress.c", "stress_asm.S"),
                                  [f"-DSTRESS_TARGET={mhz * 10_000_000}ULL", f"-DSTRESS_K={STRESS_K}", f"-DSTRESS_MP={STRESS_MP}",
-                                  f"-DEXP_A=0x{stress_ref()[0]:08x}", f"-DEXP_B=0x{stress_ref()[1]:08x}"]) for mhz in (400, 600, 800, 1000)),
+                                  f"-DEXP_A=0x{stress_ref()[0]:08x}", f"-DEXP_B=0x{stress_ref()[1]:08x}"]) for mhz in STRESS_MHZ),
                               ("us48-a2-ifd-diag22-nic", ("start.S", "iftest.c", "iftest_asm.S"),
                                ["-DIF_D", *BIG, "-DWRAP_DATA=0", "-DDIAG_SET=0x400000", "-DNIC_ISS=3"])):
         objs = []
