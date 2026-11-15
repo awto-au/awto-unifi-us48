@@ -13,6 +13,7 @@
 #include <asm/global_data.h>
 #include <asm/io.h>
 #include "us48_sram_clk.h"
+#include "us48_fan.h"
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -152,6 +153,7 @@ int board_init(void)
 	       cpu_status, hz / 1000000, hz / 2000000);
 	if (cpu_status < 0)
 		printf("cpu: switch refused/failed (%d), staying at 400\n", cpu_status);
+	us48_fan_boot();
 	return 0;
 }
 

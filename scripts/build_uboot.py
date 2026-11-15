@@ -69,6 +69,8 @@ FILES = {
     "board/ubiquiti/us48/MAINTAINERS": "board/ubiquiti/us48/MAINTAINERS",
     "board/ubiquiti/us48/board.c": "board/ubiquiti/us48/board.c",
     "board/ubiquiti/us48/sram_clk.c": "board/ubiquiti/us48/sram_clk.c",
+    "board/ubiquiti/us48/fan.c": "board/ubiquiti/us48/fan.c",
+    "board/ubiquiti/us48/us48_fan.h": "board/ubiquiti/us48/us48_fan.h",
     "board/ubiquiti/us48/us48_sram_clk.h": "board/ubiquiti/us48/us48_sram_clk.h",
     "include/configs/us48.h": "include/configs/us48.h",
     "cmd/bcm_cmic.c": "cmd/bcm_cmic.c",
