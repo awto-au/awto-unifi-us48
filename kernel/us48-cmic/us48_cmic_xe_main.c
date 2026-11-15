@@ -153,6 +153,29 @@ static int tscwr_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops tscwr_ops = { .set = tscwr_set };
 module_param_cb(tscwr, &tscwr_ops, NULL, 0200);
 
+/* echo "2000 2004 2008" > .../cmicrd: log unit 1 CMIC registers at those offsets (read only; GP_DATA_IN/OUT/OUT_EN = SFP TX_DISABLE pins, docs/board.md). */
+static int cmicrd_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int off[4], n, i;
+	int ret = -ENODEV;
+
+	n = sscanf(val, "%x %x %x %x", &off[0], &off[1], &off[2], &off[3]);
+	if (!n)
+		return -EINVAL;
+	mutex_lock(&dump_lock);
+	for (i = 0; dump_u && i < n; i++) {
+		if (off[i] & 3 || off[i] > 0x3ffff)
+			continue;
+		dev_info(dump_u->dev, "unit 1 CMIC 0x%05x = 0x%08x\n", off[i], readl(dump_u->cmic + off[i]));
+		ret = 0;
+	}
+	mutex_unlock(&dump_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops cmicrd_ops = { .set = cmicrd_set };
+module_param_cb(cmicrd, &cmicrd_ops, NULL, 0200);
+
 static const struct kernel_param_ops rx_restart_ops = { .set = rx_restart_set };
 module_param_cb(rx_restart, &rx_restart_ops, NULL, 0200);
 
