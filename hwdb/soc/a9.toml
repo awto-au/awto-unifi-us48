@@ -31,25 +31,35 @@ conf = "C"
 
 [block.gic_cpu.reg.CTLR]
 offset = 0x0
-src = "ARM GIC architecture spec (GICC_CTLR)"
-conf = "I"
+sdk = "IHOST_GICCPU_CONTROL"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICC_CTLR; regdb"
+conf = "C"
 
 [block.gic_cpu.reg.PMR]
 offset = 0x4
-src = "ARM GIC architecture spec (GICC_PMR)"
-conf = "I"
+sdk = "IHOST_GICCPU_PRIORITY_MASK"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICC_PMR; regdb"
+conf = "C"
+
+[block.gic_cpu.reg.BPR]
+offset = 0x8
+sdk = "IHOST_GICCPU_BIN_PT"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICC_BPR; regdb"
+conf = "C"
 
 [block.gic_cpu.reg.IAR]
 offset = 0xc
 access = "ro"
-src = "ARM GIC architecture spec (GICC_IAR)"
-conf = "I"
+sdk = "IHOST_GICCPU_INT_ACK"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICC_IAR; regdb"
+conf = "C"
 
 [block.gic_cpu.reg.EOIR]
 offset = 0x10
 access = "wo"
-src = "ARM GIC architecture spec (GICC_EOIR)"
-conf = "I"
+sdk = "IHOST_GICCPU_EOI"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICC_EOIR; regdb"
+conf = "C"
 
 [block.gtimer]
 space = "axi0"
@@ -128,14 +138,87 @@ conf = "C"
 
 [block.gic_dist.reg.CTLR]
 offset = 0x0
-src = "ARM GIC architecture spec (GICD_CTLR)"
-conf = "I"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_CTLR"
+conf = "C"
 
 [block.gic_dist.reg.TYPER]
 offset = 0x4
 access = "ro"
-src = "ARM GIC architecture spec (GICD_TYPER)"
-conf = "I"
+sdk = "IHOST_GICDIST_IC_TYPE_REG"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_TYPER; regdb"
+conf = "C"
+
+[block.gic_dist.reg.IIDR]
+offset = 0x8
+access = "ro"
+sdk = "IHOST_GICDIST_DIST_IDENT_REG"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_IIDR; regdb"
+conf = "C"
+
+# Per-IRQ arrays sized to the 256-IRQ scope the regdb names (ENABLE_SET0..7, PRIORITY_LEVEL0..63, SPI_TARGET0..63, INT_CONFIG0..15). Real max = GICD_TYPER ITLinesNumber (I).
+[block.gic_dist.reg.ISENABLER]
+offset = 0x100
+count = 8
+stride = 4
+sdk = "IHOST_GICDIST_ENABLE_SET0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ISENABLERn; regdb"
+conf = "C"
+
+[block.gic_dist.reg.ICENABLER]
+offset = 0x180
+count = 8
+stride = 4
+sdk = "IHOST_GICDIST_ENABLE_CLR0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICENABLERn; regdb"
+conf = "C"
+
+[block.gic_dist.reg.ISPENDR]
+offset = 0x200
+count = 8
+stride = 4
+sdk = "IHOST_GICDIST_PENDING_SET0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ISPENDRn; regdb"
+conf = "C"
+
+[block.gic_dist.reg.ICPENDR]
+offset = 0x280
+count = 8
+stride = 4
+sdk = "IHOST_GICDIST_PENDING_CLR0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICPENDRn; regdb"
+conf = "C"
+
+# 256 IRQs x 8 bit = 64 words (uboot-1 FUN_1c001dc8 writes words 16-63 at +0x440..0x4fc, docs/hwdb.md).
+[block.gic_dist.reg.IPRIORITYR]
+offset = 0x400
+count = 64
+stride = 4
+sdk = "IHOST_GICDIST_PRIORITY_LEVEL0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_IPRIORITYRn; regdb; uboot1 emu trace (#72 comment 6887363127)"
+conf = "C"
+
+[block.gic_dist.reg.ITARGETSR]
+offset = 0x800
+count = 64
+stride = 4
+sdk = "IHOST_GICDIST_SPI_TARGET0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ITARGETSRn; regdb"
+conf = "C"
+
+[block.gic_dist.reg.ICFGR]
+offset = 0xc00
+count = 16
+stride = 4
+sdk = "IHOST_GICDIST_INT_CONFIG0"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_ICFGRn; regdb"
+conf = "C"
+
+[block.gic_dist.reg.SGIR]
+offset = 0xf00
+access = "wo"
+sdk = "IHOST_GICDIST_STI_CONTROL"
+src = "ARM GIC v1 architecture spec (IHI 0048) GICD_SGIR; regdb"
+conf = "C"
 
 [block.pl310]
 space = "axi0"
@@ -152,10 +235,33 @@ fields = ["ENABLE 0"]
 src = "ARM PL310 TRM register summary"
 conf = "I"
 
+[block.pl310.reg.LOCKDOWN_D]
+offset = 0x900
+count = 8
+stride = 8
+desc = "Data lockdown by way, master n at +0x900 + 8n (0x900..0x938)"
+src = "ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked)"
+conf = "C"
+
+[block.pl310.reg.LOCKDOWN_I]
+offset = 0x904
+count = 8
+stride = 8
+desc = "Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c)"
+src = "ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked)"
+conf = "C"
+
 [block.pl310.reg.LOCKDOWN_BY_LINE]
 offset = 0x950
 desc = "uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM)"
-src = "docs/sram.md (L2C+0x950)"
+src = "docs/sram.md (L2C+0x950); ARM CoreLink L2C-310 TRM (lockdown by line enable)"
+conf = "C"
+
+[block.pl310.reg.UNLOCK_ALL_LINES]
+offset = 0x954
+access = "wo"
+desc = "Unlock all lines; uboot-1 FUN_1c0020f8 writes it ('Unlocking L2 Cache') (#72 comment 6887363127)"
+src = "ARM CoreLink L2C-310 TRM (unlock all lines); uboot1 disassembly PC 0x6ffa2104 (#72)"
 conf = "C"
 
 [block.cs_debug0]
@@ -179,6 +285,13 @@ offset = 0x80
 sdk = "IHOST_A9CPU0_DTRRX"
 src = "rust/a2ctl DTRRX; regdb"
 
+[block.cs_debug0.reg.DTRTX]
+offset = 0x8c
+desc = "external read = DBGDTRTX; the DCC console byte of a2 (CP14 c0,c5,0 write sets DSCR.DTRTXfull, this read clears it)"
+sdk = "IHOST_A9CPU0_DTRTX"
+src = "regdb; ARMv7 debug architecture (DBGDTRTXext); docs/a2-linux.md"
+conf = "I"
+
 [block.cs_debug0.reg.ITR_PCSR]
 offset = 0x84
 desc = "write = ITR (instruction transfer), read = PCSR (PC sample); same offset (docs/pci-layer.md unknown 4)"
@@ -188,7 +301,7 @@ src = "rust/a2ctl ITR; scripts/a2_force_pc.py; regdb"
 [block.cs_debug0.reg.DSCR]
 offset = 0x88
 sdk = "IHOST_A9CPU0_DSCR"
-fields = ["HALTED 0", "RESTARTED 1", "ITREN 13", "HDBGEN 14", "INSTRCOMPL 24"]
+fields = ["HALTED 0", "RESTARTED 1", "ITREN 13", "HDBGEN 14", "INSTRCOMPL 24", "DTRTXFULL 29", "DTRRXFULL 30"]
 src = "docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch)"
 
 [block.cs_debug0.reg.DRCR]

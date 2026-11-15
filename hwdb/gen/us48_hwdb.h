@@ -63,6 +63,9 @@
 /* region a2_initrd (axi1): a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses [I] */
 #define HW_A2_INITRD_BASE	0x0a000000U
 #define HW_A2_INITRD_SIZE	0x2000000U
+/* region a2_shared (axi1): Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there [I] */
+#define HW_A2_SHARED_BASE	0x0bf00000U
+#define HW_A2_SHARED_SIZE	0x100000U
 /* region a2_sram (axi1): Unit 1 SRAM 16 KiB (size assumed equal to unit 0; 0x1b004000 not probed). a2 stub: mailbox +0x100, payload +0x200, stack top +0x3ff0 [I] */
 #define HW_A2_SRAM_BASE	0x1b000000U
 #define HW_A2_SRAM_SIZE	0x4000U
@@ -211,6 +214,43 @@
 #define HW_UART1_LSR	0x5U
 #define HW_UART1_MSR	0x6U
 #define HW_UART1_SCR	0x7U
+
+/* block ddr_ctl (axi0): DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride [C] */
+#define HW_DDR_CTL_BASE	0x18010000U
+#define HW_DDR_CTL_SIZE	0x400U
+#define HW_DDR_CTL_CTL	0x0U
+#define HW_DDR_CTL_CTL_COUNT	218
+#define HW_DDR_CTL_CTL_STRIDE	4
+
+/* block ddr_phy (axi0): DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) [C] */
+#define HW_DDR_PHY_BASE	0x18010800U
+#define HW_DDR_PHY_SIZE	0x400U
+#define HW_DDR_PHY_REVISION	0x0U
+#define HW_DDR_PHY_PLL_STATUS	0x10U
+#define HW_DDR_PHY_PLL_CONFIG	0x14U
+#define HW_DDR_PHY_PLL_CONTROL	0x18U
+#define HW_DDR_PHY_PLL_DIVIDERS	0x1cU
+#define HW_DDR_PHY_VDL_OVRIDE_BYTE_CTL	0x30U
+#define HW_DDR_PHY_VDL_OVRIDE_BIT_CTL	0x34U
+#define HW_DDR_PHY_IDLE_PAD_CONTROL	0x38U
+#define HW_DDR_PHY_ZQ_PVT_COMP_CTL	0x3cU
+#define HW_DDR_PHY_DRIVE_PAD_CTL	0x40U
+#define HW_DDR_PHY_VDL_CALIBRATE	0x48U
+#define HW_DDR_PHY_VDL_CALIB_STATUS	0x4cU
+#define HW_DDR_PHY_VREF_DAC_CONTROL	0x6cU
+#define HW_DDR_PHY_STRAP_CONTROL	0xb0U
+#define HW_DDR_PHY_STRAP_CONTROL2	0xb4U
+#define HW_DDR_PHY_WL0_UNK_318	0x318U
+#define HW_DDR_PHY_WL0_UNK_31C	0x31cU
+#define HW_DDR_PHY_WL0_UNK_320	0x320U
+#define HW_DDR_PHY_WL0_UNK_324	0x324U
+#define HW_DDR_PHY_WL0_UNK_340	0x340U
+#define HW_DDR_PHY_WL0_UNK_344	0x344U
+#define HW_DDR_PHY_WL0_READ_DATA_DLY	0x360U
+#define HW_DDR_PHY_WL0_READ_CONTROL	0x364U
+#define HW_DDR_PHY_WL0_UNK_368	0x368U
+#define HW_DDR_PHY_WL0_UNK_36C	0x36cU
+#define HW_DDR_PHY_WL0_WR_PREAMBLE_MODE	0x3acU
 
 /* block paxb0 (axi0): Root complex PAXB of unit 0 (brcm,iproc-pcie) [C] */
 #define HW_PAXB0_BASE	0x18012000U
@@ -624,6 +664,11 @@
 #define HW_CS_DEBUG0_DSCR_HDBGEN_MASK	0x4000U
 #define HW_CS_DEBUG0_DSCR_INSTRCOMPL_SHIFT	24
 #define HW_CS_DEBUG0_DSCR_INSTRCOMPL_MASK	0x1000000U
+#define HW_CS_DEBUG0_DSCR_DTRTXFULL_SHIFT	29
+#define HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK	0x20000000U
+#define HW_CS_DEBUG0_DSCR_DTRRXFULL_SHIFT	30
+#define HW_CS_DEBUG0_DSCR_DTRRXFULL_MASK	0x40000000U
+#define HW_CS_DEBUG0_DTRTX	0x8cU
 #define HW_CS_DEBUG0_DRCR	0x90U
 #define HW_CS_DEBUG0_DRCR_REQ_HALT_SHIFT	0
 #define HW_CS_DEBUG0_DRCR_REQ_HALT_MASK	0x1U
@@ -664,6 +709,7 @@
 #define HW_GIC_CPU_SIZE	0x100U
 #define HW_GIC_CPU_CTLR	0x0U
 #define HW_GIC_CPU_PMR	0x4U
+#define HW_GIC_CPU_BPR	0x8U
 #define HW_GIC_CPU_IAR	0xcU
 #define HW_GIC_CPU_EOIR	0x10U
 
@@ -706,6 +752,29 @@
 #define HW_GIC_DIST_SIZE	0x1000U
 #define HW_GIC_DIST_CTLR	0x0U
 #define HW_GIC_DIST_TYPER	0x4U
+#define HW_GIC_DIST_IIDR	0x8U
+#define HW_GIC_DIST_ISENABLER	0x100U
+#define HW_GIC_DIST_ISENABLER_COUNT	8
+#define HW_GIC_DIST_ISENABLER_STRIDE	4
+#define HW_GIC_DIST_ICENABLER	0x180U
+#define HW_GIC_DIST_ICENABLER_COUNT	8
+#define HW_GIC_DIST_ICENABLER_STRIDE	4
+#define HW_GIC_DIST_ISPENDR	0x200U
+#define HW_GIC_DIST_ISPENDR_COUNT	8
+#define HW_GIC_DIST_ISPENDR_STRIDE	4
+#define HW_GIC_DIST_ICPENDR	0x280U
+#define HW_GIC_DIST_ICPENDR_COUNT	8
+#define HW_GIC_DIST_ICPENDR_STRIDE	4
+#define HW_GIC_DIST_IPRIORITYR	0x400U
+#define HW_GIC_DIST_IPRIORITYR_COUNT	64
+#define HW_GIC_DIST_IPRIORITYR_STRIDE	4
+#define HW_GIC_DIST_ITARGETSR	0x800U
+#define HW_GIC_DIST_ITARGETSR_COUNT	64
+#define HW_GIC_DIST_ITARGETSR_STRIDE	4
+#define HW_GIC_DIST_ICFGR	0xc00U
+#define HW_GIC_DIST_ICFGR_COUNT	16
+#define HW_GIC_DIST_ICFGR_STRIDE	4
+#define HW_GIC_DIST_SGIR	0xf00U
 
 /* block pl310 (axi0): L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM [C] */
 #define HW_PL310_BASE	0x19022000U
@@ -713,7 +782,14 @@
 #define HW_PL310_CTRL	0x100U
 #define HW_PL310_CTRL_ENABLE_SHIFT	0
 #define HW_PL310_CTRL_ENABLE_MASK	0x1U
+#define HW_PL310_LOCKDOWN_D	0x900U
+#define HW_PL310_LOCKDOWN_D_COUNT	8
+#define HW_PL310_LOCKDOWN_D_STRIDE	8
+#define HW_PL310_LOCKDOWN_I	0x904U
+#define HW_PL310_LOCKDOWN_I_COUNT	8
+#define HW_PL310_LOCKDOWN_I_STRIDE	8
 #define HW_PL310_LOCKDOWN_BY_LINE	0x950U
+#define HW_PL310_UNLOCK_ALL_LINES	0x954U
 
 /* block cmic0 (axi0): Unit 0 CMIC (CMICd), AXI [C] */
 #define HW_CMIC0_BASE	0x48000000U

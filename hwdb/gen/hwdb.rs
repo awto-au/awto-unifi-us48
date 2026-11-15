@@ -62,6 +62,9 @@ pub const HW_A2_ZIMAGE_SIZE: u32 = 0x1000000;
 // region a2_initrd (axi1) [I]
 pub const HW_A2_INITRD_BASE: u32 = 0x0a000000;
 pub const HW_A2_INITRD_SIZE: u32 = 0x2000000;
+// region a2_shared (axi1) [I]
+pub const HW_A2_SHARED_BASE: u32 = 0x0bf00000;
+pub const HW_A2_SHARED_SIZE: u32 = 0x100000;
 // region a2_sram (axi1) [I]
 pub const HW_A2_SRAM_BASE: u32 = 0x1b000000;
 pub const HW_A2_SRAM_SIZE: u32 = 0x4000;
@@ -210,6 +213,43 @@ pub const HW_UART1_MCR: u32 = 0x4;
 pub const HW_UART1_LSR: u32 = 0x5;
 pub const HW_UART1_MSR: u32 = 0x6;
 pub const HW_UART1_SCR: u32 = 0x7;
+
+// block ddr_ctl (axi0) [C]
+pub const HW_DDR_CTL_BASE: u32 = 0x18010000;
+pub const HW_DDR_CTL_SIZE: u32 = 0x400;
+pub const HW_DDR_CTL_CTL: u32 = 0x0;
+pub const HW_DDR_CTL_CTL_COUNT: u32 = 218;
+pub const HW_DDR_CTL_CTL_STRIDE: u32 = 4;
+
+// block ddr_phy (axi0) [C]
+pub const HW_DDR_PHY_BASE: u32 = 0x18010800;
+pub const HW_DDR_PHY_SIZE: u32 = 0x400;
+pub const HW_DDR_PHY_REVISION: u32 = 0x0;
+pub const HW_DDR_PHY_PLL_STATUS: u32 = 0x10;
+pub const HW_DDR_PHY_PLL_CONFIG: u32 = 0x14;
+pub const HW_DDR_PHY_PLL_CONTROL: u32 = 0x18;
+pub const HW_DDR_PHY_PLL_DIVIDERS: u32 = 0x1c;
+pub const HW_DDR_PHY_VDL_OVRIDE_BYTE_CTL: u32 = 0x30;
+pub const HW_DDR_PHY_VDL_OVRIDE_BIT_CTL: u32 = 0x34;
+pub const HW_DDR_PHY_IDLE_PAD_CONTROL: u32 = 0x38;
+pub const HW_DDR_PHY_ZQ_PVT_COMP_CTL: u32 = 0x3c;
+pub const HW_DDR_PHY_DRIVE_PAD_CTL: u32 = 0x40;
+pub const HW_DDR_PHY_VDL_CALIBRATE: u32 = 0x48;
+pub const HW_DDR_PHY_VDL_CALIB_STATUS: u32 = 0x4c;
+pub const HW_DDR_PHY_VREF_DAC_CONTROL: u32 = 0x6c;
+pub const HW_DDR_PHY_STRAP_CONTROL: u32 = 0xb0;
+pub const HW_DDR_PHY_STRAP_CONTROL2: u32 = 0xb4;
+pub const HW_DDR_PHY_WL0_UNK_318: u32 = 0x318;
+pub const HW_DDR_PHY_WL0_UNK_31C: u32 = 0x31c;
+pub const HW_DDR_PHY_WL0_UNK_320: u32 = 0x320;
+pub const HW_DDR_PHY_WL0_UNK_324: u32 = 0x324;
+pub const HW_DDR_PHY_WL0_UNK_340: u32 = 0x340;
+pub const HW_DDR_PHY_WL0_UNK_344: u32 = 0x344;
+pub const HW_DDR_PHY_WL0_READ_DATA_DLY: u32 = 0x360;
+pub const HW_DDR_PHY_WL0_READ_CONTROL: u32 = 0x364;
+pub const HW_DDR_PHY_WL0_UNK_368: u32 = 0x368;
+pub const HW_DDR_PHY_WL0_UNK_36C: u32 = 0x36c;
+pub const HW_DDR_PHY_WL0_WR_PREAMBLE_MODE: u32 = 0x3ac;
 
 // block paxb0 (axi0) [C]
 pub const HW_PAXB0_BASE: u32 = 0x18012000;
@@ -623,6 +663,11 @@ pub const HW_CS_DEBUG0_DSCR_HDBGEN_SHIFT: u32 = 14;
 pub const HW_CS_DEBUG0_DSCR_HDBGEN_MASK: u32 = 0x4000;
 pub const HW_CS_DEBUG0_DSCR_INSTRCOMPL_SHIFT: u32 = 24;
 pub const HW_CS_DEBUG0_DSCR_INSTRCOMPL_MASK: u32 = 0x1000000;
+pub const HW_CS_DEBUG0_DSCR_DTRTXFULL_SHIFT: u32 = 29;
+pub const HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK: u32 = 0x20000000;
+pub const HW_CS_DEBUG0_DSCR_DTRRXFULL_SHIFT: u32 = 30;
+pub const HW_CS_DEBUG0_DSCR_DTRRXFULL_MASK: u32 = 0x40000000;
+pub const HW_CS_DEBUG0_DTRTX: u32 = 0x8c;
 pub const HW_CS_DEBUG0_DRCR: u32 = 0x90;
 pub const HW_CS_DEBUG0_DRCR_REQ_HALT_SHIFT: u32 = 0;
 pub const HW_CS_DEBUG0_DRCR_REQ_HALT_MASK: u32 = 0x1;
@@ -663,6 +708,7 @@ pub const HW_GIC_CPU_BASE: u32 = 0x19020100;
 pub const HW_GIC_CPU_SIZE: u32 = 0x100;
 pub const HW_GIC_CPU_CTLR: u32 = 0x0;
 pub const HW_GIC_CPU_PMR: u32 = 0x4;
+pub const HW_GIC_CPU_BPR: u32 = 0x8;
 pub const HW_GIC_CPU_IAR: u32 = 0xc;
 pub const HW_GIC_CPU_EOIR: u32 = 0x10;
 
@@ -705,6 +751,29 @@ pub const HW_GIC_DIST_BASE: u32 = 0x19021000;
 pub const HW_GIC_DIST_SIZE: u32 = 0x1000;
 pub const HW_GIC_DIST_CTLR: u32 = 0x0;
 pub const HW_GIC_DIST_TYPER: u32 = 0x4;
+pub const HW_GIC_DIST_IIDR: u32 = 0x8;
+pub const HW_GIC_DIST_ISENABLER: u32 = 0x100;
+pub const HW_GIC_DIST_ISENABLER_COUNT: u32 = 8;
+pub const HW_GIC_DIST_ISENABLER_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_ICENABLER: u32 = 0x180;
+pub const HW_GIC_DIST_ICENABLER_COUNT: u32 = 8;
+pub const HW_GIC_DIST_ICENABLER_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_ISPENDR: u32 = 0x200;
+pub const HW_GIC_DIST_ISPENDR_COUNT: u32 = 8;
+pub const HW_GIC_DIST_ISPENDR_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_ICPENDR: u32 = 0x280;
+pub const HW_GIC_DIST_ICPENDR_COUNT: u32 = 8;
+pub const HW_GIC_DIST_ICPENDR_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_IPRIORITYR: u32 = 0x400;
+pub const HW_GIC_DIST_IPRIORITYR_COUNT: u32 = 64;
+pub const HW_GIC_DIST_IPRIORITYR_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_ITARGETSR: u32 = 0x800;
+pub const HW_GIC_DIST_ITARGETSR_COUNT: u32 = 64;
+pub const HW_GIC_DIST_ITARGETSR_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_ICFGR: u32 = 0xc00;
+pub const HW_GIC_DIST_ICFGR_COUNT: u32 = 16;
+pub const HW_GIC_DIST_ICFGR_STRIDE: u32 = 4;
+pub const HW_GIC_DIST_SGIR: u32 = 0xf00;
 
 // block pl310 (axi0) [C]
 pub const HW_PL310_BASE: u32 = 0x19022000;
@@ -712,7 +781,14 @@ pub const HW_PL310_SIZE: u32 = 0x1000;
 pub const HW_PL310_CTRL: u32 = 0x100;
 pub const HW_PL310_CTRL_ENABLE_SHIFT: u32 = 0;
 pub const HW_PL310_CTRL_ENABLE_MASK: u32 = 0x1;
+pub const HW_PL310_LOCKDOWN_D: u32 = 0x900;
+pub const HW_PL310_LOCKDOWN_D_COUNT: u32 = 8;
+pub const HW_PL310_LOCKDOWN_D_STRIDE: u32 = 8;
+pub const HW_PL310_LOCKDOWN_I: u32 = 0x904;
+pub const HW_PL310_LOCKDOWN_I_COUNT: u32 = 8;
+pub const HW_PL310_LOCKDOWN_I_STRIDE: u32 = 8;
 pub const HW_PL310_LOCKDOWN_BY_LINE: u32 = 0x950;
+pub const HW_PL310_UNLOCK_ALL_LINES: u32 = 0x954;
 
 // block cmic0 (axi0) [C]
 pub const HW_CMIC0_BASE: u32 = 0x48000000;

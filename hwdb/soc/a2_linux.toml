@@ -1,0 +1,11 @@
+# Linux on a2: layout facts local to the a2 kernel side. Base/size of the a2 RAM itself: memmap.toml a2_carveout.
+
+[region.a2_shared]
+space = "axi1"
+base = 0x0bf00000
+size = 0x100000
+kind = "ram"
+unit = 1
+desc = "Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there"
+src = "docs/a2-linux.md; mainline/a2/us48-a2.dts"
+conf = "I"

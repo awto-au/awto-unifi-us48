@@ -38,6 +38,7 @@
 | `a2_dtb` | axi1 | `0x08b00000` | `0x100000` | ram | I | a2 Linux: DTB (offset 0x00b00000 in the a2 RAM) | docs/a2-design.md |
 | `a2_zimage` | axi1 | `0x09000000` | `0x1000000` | ram | I | a2 Linux: zImage (offset 0x01000000; the kernel decompresses to RAM base + 0x8000 and must not reach it) | docs/a2-design.md |
 | `a2_initrd` | axi1 | `0x0a000000` | `0x2000000` | ram | I | a2 Linux: initramfs (offset 0x02000000, up to 32 MiB); the a2 DTS chosen node carries these addresses | docs/a2-design.md |
+| `a2_shared` | axi1 | `0x0bf00000` | `0x100000` | ram | I | Last MiB of the a2 RAM: resource table, trace ring, vrings. no-map in the a2 DTB. The kernel is decompressed at RAM base + 0x8000 and uses the first MiB, so persistent a1<->a2 state cannot live there | docs/a2-linux.md; mainline/a2/us48-a2.dts |
 | `a2_sram` | axi1 | `0x1b000000` | `0x4000` | ram | I | Unit 1 SRAM 16 KiB (size assumed equal to unit 0; 0x1b004000 not probed). a2 stub: mailbox +0x100, payload +0x200, stack top +0x3ff0 Note: base C (probe), size I | docs/sram.md (probe 2026-11-13, #53); docs/a2.md |
 | `a2_ddr_hazard` | axi1 | `0x60000000` | `0x10000000` | hazard | C | Unused DDR controller on unit 1: any access stalls a2, cannot be halted; recover with CRU_CONTROL.ARM_RST_N | docs/sram.md (routing pitfall, #53) |
 | `bar0_axi_win` | bar0u1 | `0x00007000` | `0x1000` | window | C | 4 KiB AXI page of unit 1 selected by PAXB IMAP0_7 (BAR0+0x2c1c) | docs/a2.md; rust/a2ctl/src/main.rs WIN |
@@ -50,6 +51,8 @@
 | `cca` | axi0 | `0x18000000` | `0x100` | 0 | 5 | C | ChipcommonA: chip id, core control, GPIO | regdb/hr2_regs.tsv CHIPCOMMONA_*; docs/board.md GPIO map |
 | `uart0` | axi0 | `0x18000300` | `0x100` | 0 | 8 | C | UART0 (same layout as uart1); stock firmware references both | tmp/linux-mainline bcm-hr2.dtsi serial@300; scripts/stock_uart_order.py |
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
+| `ddr_ctl` | axi0 | `0x18010000` | `0x400` | 0 | 1 | C | DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride | D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md |
+| `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 26 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 29 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 0 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL Note: register layout not transcribed yet (CMICm BSPI regs at cmic0+0x1680 in regdb: CMICM_BSPI_*) | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
 | `bspi_raf` | axi0 | `0x18027100` | `0x24` | 0 | 0 | C | BSPI RAF (read-ahead FIFO) regs, tail of the bspi window | us48-uboot.dts comment (bspi_raf = bspi + 0x100) |
@@ -67,16 +70,16 @@
 | `idm_pcie_s0` | axi0 | `0x1810b000` | `0x1000` | 0 | 1 | C | AXI_PCIE_S0 IDM wrapper (PAXB AXI slave, register port) | regdb AXI_PCIE_S0_IDM_* |
 | `ccu` | axi0 | `0x19000000` | `0x1000` | 0 | 16 | C | IHOST CCU: ARM PLL, clock policy, clock gates | docs/clocks.md Register map; docs/clock-audit.md s2 |
 | `ccu_rst` | axi0 | `0x19000f00` | `0x100` | 0 | 1 | I | IHOST reset control (A9 core reset) Note: only WR_ACCESS is named in regdb; +8 meaning from the script, not decoded | scripts/u2_lut_reset_test.py (core: 0x19000f00 key, 0x19000f08 = 2); regdb IHOST_PROC_RST_WR_ACCESS |
-| `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 7 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
+| `cs_debug0` | axi0 | `0x19010000` | `0x1000` | 0 | 8 | C | CoreSight debug of A9 CPU0 (a2 sees its own at the same address in axi1) | docs/a2.md; rust/a2ctl DBG; regdb IHOST_A9CPU0_* |
 | `cs_pmu0` | axi0 | `0x19011000` | `0x1000` | 0 | 0 | C | CoreSight PMU of A9 CPU0 | regdb IHOST_A9PMU0_* lowest offset 0x19011000 |
 | `cs_ptm0` | axi0 | `0x19012000` | `0x1000` | 0 | 0 | C | CoreSight PTM (program trace) of A9 CPU0 | regdb IHOST_A9PTM0_* lowest offset 0x19012000 |
 | `cs_cti0` | axi0 | `0x19013000` | `0x1000` | 0 | 1 | C | CoreSight CTI of A9 CPU0 | regdb IHOST_A9CTI0_* lowest offset 0x19013000 |
 | `scu` | axi0 | `0x19020000` | `0x100` | 0 | 2 | I | Snoop control unit (PERIPHBASE + 0) Note: architectural: SCU at PERIPHBASE+0; not accessed by repo code | task #72 (SCU 0x19020000); ARM Cortex-A9 MPCore TRM |
-| `gic_cpu` | axi0 | `0x19020100` | `0x100` | 0 | 4 | C | GIC CPU interface | us48-uboot.dts gic reg <0x20100 0x100>; bcm-hr2.dtsi |
+| `gic_cpu` | axi0 | `0x19020100` | `0x100` | 0 | 5 | C | GIC CPU interface | us48-uboot.dts gic reg <0x20100 0x100>; bcm-hr2.dtsi |
 | `gtimer` | axi0 | `0x19020200` | `0x100` | 0 | 3 | C | A9 global timer on PERIPHCLK = ARM/2 (200 MHz at 400 MHz ARM); counter lo/hi, control at +8 | us48-uboot.dts timer@20200; scripts/a2_bench.py TIMER; docs/clocks.md |
 | `twd` | axi0 | `0x19020600` | `0x40` | 0 | 5 | C | A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm | bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2 |
-| `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 2 | C | GIC distributor | us48-uboot.dts gic reg <0x21000 0x1000>; bcm-hr2.dtsi |
-| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 2 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
+| `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | us48-uboot.dts gic reg <0x21000 0x1000>; bcm-hr2.dtsi |
+| `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
 | `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 24 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 12 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
 | `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
@@ -114,6 +117,43 @@ Same registers as `uart1`.
 | `0x5` | `LSR` | 8 | ro | `0x60` |  | C |  | regdb |
 | `0x6` | `MSR` | 8 | ro |  |  | C |  | regdb |
 | `0x7` | `SCR` | 8 | rw |  |  | C |  | regdb |
+
+### ddr_ctl (`0x18010000`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `CTL[218]` | 32 | rw |  |  | C | DENALI_CTL_00..217 (regdb max CTL_217 at 0x18010364); unnamed gaps = reserved in regdb | regdb DDR_DENALI_CTL_* |
+
+### ddr_phy (`0x18010800`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x0` | `REVISION` | 32 | ro |  |  | C |  | regdb; socregs.h |
+| `0x10` | `PLL_STATUS` | 32 | ro |  |  | C |  | regdb; socregs.h |
+| `0x14` | `PLL_CONFIG` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x18` | `PLL_CONTROL` | 32 | rw |  |  | C |  | regdb |
+| `0x1c` | `PLL_DIVIDERS` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x30` | `VDL_OVRIDE_BYTE_CTL` | 32 | rw |  |  | C |  | regdb; docs/ddr.md shmoo targets (0x18010830) |
+| `0x34` | `VDL_OVRIDE_BIT_CTL` | 32 | rw |  |  | C |  | regdb; socregs.h; docs/ddr.md shmoo targets (0x18010834) |
+| `0x38` | `IDLE_PAD_CONTROL` | 32 | rw |  |  | C |  | regdb |
+| `0x3c` | `ZQ_PVT_COMP_CTL` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x40` | `DRIVE_PAD_CTL` | 32 | rw |  |  | C |  | regdb |
+| `0x48` | `VDL_CALIBRATE` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x4c` | `VDL_CALIB_STATUS` | 32 | ro |  |  | C |  | regdb; socregs.h |
+| `0x6c` | `VREF_DAC_CONTROL` | 32 | rw |  |  | C |  | regdb; docs/ddr.md shmoo targets (0x1801086c) |
+| `0xb0` | `STRAP_CONTROL` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0xb4` | `STRAP_CONTROL2` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x318` | `WL0_UNK_318` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x31c` | `WL0_UNK_31C` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x320` | `WL0_UNK_320` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x324` | `WL0_UNK_324` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x340` | `WL0_UNK_340` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x344` | `WL0_UNK_344` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x360` | `WL0_READ_DATA_DLY` | 32 | rw |  |  | C |  | regdb; socregs.h |
+| `0x364` | `WL0_READ_CONTROL` | 32 | rw |  |  | C |  | regdb |
+| `0x368` | `WL0_UNK_368` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x36c` | `WL0_UNK_36C` | 32 | rw |  |  | C |  Note: name and fields unknown | uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb |
+| `0x3ac` | `WL0_WR_PREAMBLE_MODE` | 32 | rw |  |  | C |  | regdb; socregs.h |
 
 ### paxb0 (`0x18012000`)
 
@@ -273,7 +313,8 @@ Same registers as `sp804_0`.
 | `0x0` | `DIDR` | 32 | ro | `0x35137030` |  | C |  | regdb; docs/sram.md (a2 reads 0x35137041) |
 | `0x80` | `DTRRX` | 32 | rw |  |  | C |  | rust/a2ctl DTRRX; regdb |
 | `0x84` | `ITR_PCSR` | 32 | rw |  |  | C | write = ITR (instruction transfer), read = PCSR (PC sample); same offset (docs/pci-layer.md unknown 4) | rust/a2ctl ITR; scripts/a2_force_pc.py; regdb |
-| `0x88` | `DSCR` | 32 | rw |  | HALTED[0], RESTARTED[1], ITREN[13], HDBGEN[14], INSTRCOMPL[24] | C |  | docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch) |
+| `0x88` | `DSCR` | 32 | rw |  | HALTED[0], RESTARTED[1], ITREN[13], HDBGEN[14], INSTRCOMPL[24], DTRTXFULL[29], DTRRXFULL[30] | C |  | docs/a2.md; docs/pci-layer.md unknown 3 (ARMv7 debug arch) |
+| `0x8c` | `DTRTX` | 32 | rw |  |  | I | external read = DBGDTRTX; the DCC console byte of a2 (CP14 c0,c5,0 write sets DSCR.DTRTXfull, this read clears it) | regdb; ARMv7 debug architecture (DBGDTRTXext); docs/a2-linux.md |
 | `0x90` | `DRCR` | 32 | rw |  | REQ_HALT[0], REQ_REST[1], CLR_STK_EXC[2], CLR_STK_PIPE[3] | C |  | regdb; docs/a2.md |
 | `0xfb0` | `LAR` | 32 | wo |  |  | C | write 0xC5ACCE55 to unlock | docs/a2.md; rust/a2ctl LAR |
 | `0xfb8` | `AUTHSTATUS` | 32 | ro |  |  | C | 0xff on a2 = debug authorised | docs/sram.md (a2) |
@@ -295,10 +336,11 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CTLR` | 32 | rw |  |  | I |  | ARM GIC architecture spec (GICC_CTLR) |
-| `0x4` | `PMR` | 32 | rw |  |  | I |  | ARM GIC architecture spec (GICC_PMR) |
-| `0xc` | `IAR` | 32 | ro |  |  | I |  | ARM GIC architecture spec (GICC_IAR) |
-| `0x10` | `EOIR` | 32 | wo |  |  | I |  | ARM GIC architecture spec (GICC_EOIR) |
+| `0x0` | `CTLR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_CTLR; regdb |
+| `0x4` | `PMR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_PMR; regdb |
+| `0x8` | `BPR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_BPR; regdb |
+| `0xc` | `IAR` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_IAR; regdb |
+| `0x10` | `EOIR` | 32 | wo |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICC_EOIR; regdb |
 
 ### gtimer (`0x19020200`)
 
@@ -322,15 +364,27 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
-| `0x0` | `CTLR` | 32 | rw |  |  | I |  | ARM GIC architecture spec (GICD_CTLR) |
-| `0x4` | `TYPER` | 32 | ro |  |  | I |  | ARM GIC architecture spec (GICD_TYPER) |
+| `0x0` | `CTLR` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_CTLR |
+| `0x4` | `TYPER` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_TYPER; regdb |
+| `0x8` | `IIDR` | 32 | ro |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_IIDR; regdb |
+| `0x100` | `ISENABLER[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ISENABLERn; regdb |
+| `0x180` | `ICENABLER[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICENABLERn; regdb |
+| `0x200` | `ISPENDR[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ISPENDRn; regdb |
+| `0x280` | `ICPENDR[8]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICPENDRn; regdb |
+| `0x400` | `IPRIORITYR[64]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_IPRIORITYRn; regdb; uboot1 emu trace (#72 comment 6887363127) |
+| `0x800` | `ITARGETSR[64]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ITARGETSRn; regdb |
+| `0xc00` | `ICFGR[16]` | 32 | rw |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_ICFGRn; regdb |
+| `0xf00` | `SGIR` | 32 | wo |  |  | C |  | ARM GIC v1 architecture spec (IHI 0048) GICD_SGIR; regdb |
 
 ### pl310 (`0x19022000`)
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
 | `0x100` | `CTRL` | 32 | rw |  | ENABLE[0] | I |  | ARM PL310 TRM register summary |
-| `0x950` | `LOCKDOWN_BY_LINE` | 32 | rw |  |  | C | uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM) | docs/sram.md (L2C+0x950) |
+| `0x900` | `LOCKDOWN_D[8]` | 32 | rw |  |  | C | Data lockdown by way, master n at +0x900 + 8n (0x900..0x938) | ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked) |
+| `0x904` | `LOCKDOWN_I[8]` | 32 | rw |  |  | C | Instruction lockdown by way, master n at +0x904 + 8n (0x904..0x93c) | ARM CoreLink L2C-310 TRM, lockdown by way registers (section not checked) |
+| `0x950` | `LOCKDOWN_BY_LINE` | 32 | rw |  |  | C | uboot-1 lowlevel_init sets it @0x1c000630, clears @0x1c000658 while filling 0x50000000 (L2 RAM) | docs/sram.md (L2C+0x950); ARM CoreLink L2C-310 TRM (lockdown by line enable) |
+| `0x954` | `UNLOCK_ALL_LINES` | 32 | wo |  |  | C | Unlock all lines; uboot-1 FUN_1c0020f8 writes it ('Unlocking L2 Cache') (#72 comment 6887363127) | ARM CoreLink L2C-310 TRM (unlock all lines); uboot1 disassembly PC 0x6ffa2104 (#72) |
 
 ### cmic0 (`0x48000000`)
 

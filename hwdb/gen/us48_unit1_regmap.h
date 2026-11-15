@@ -11,6 +11,8 @@
 static const struct regmap_range us48_unit1_rd_ranges[] = {
 	regmap_reg_range(0x18000000, 0x180000ff),
 	regmap_reg_range(0x18000300, 0x180004ff),
+	regmap_reg_range(0x18010000, 0x180103ff),
+	regmap_reg_range(0x18010800, 0x18010bff),
 	regmap_reg_range(0x18012000, 0x18012fff),
 	regmap_reg_range(0x18027000, 0x18027123),
 	regmap_reg_range(0x18027200, 0x18027383),
@@ -37,6 +39,8 @@ static const struct regmap_access_table us48_unit1_rd_table = {
 static const struct regmap_range us48_unit1_wr_ranges[] = {
 	regmap_reg_range(0x18000000, 0x180000ff),
 	regmap_reg_range(0x18000300, 0x180004ff),
+	regmap_reg_range(0x18010000, 0x180103ff),
+	regmap_reg_range(0x18010800, 0x18010bff),
 	regmap_reg_range(0x18012000, 0x18012fff),
 	regmap_reg_range(0x18027200, 0x18027383),
 	regmap_reg_range(0x18034000, 0x18035fff),
@@ -61,6 +65,8 @@ static const struct regmap_access_table us48_unit1_wr_table = {
 static const struct regmap_range us48_unit1_volatile_ranges[] = {
 	regmap_reg_range(0x18000000, 0x180000ff),
 	regmap_reg_range(0x18000300, 0x180004ff),
+	regmap_reg_range(0x18010000, 0x180103ff),
+	regmap_reg_range(0x18010800, 0x18010bff),
 	regmap_reg_range(0x18012000, 0x18012fff),
 	regmap_reg_range(0x18027000, 0x18027123),
 	regmap_reg_range(0x18027200, 0x18027383),
