@@ -42,7 +42,7 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 | want stock | — | from awto-uboot: `sf read` kernel1 + `bootm`, or restore the default env |
 
 - **No serial escape at uboot-1 with `bootdelay=0`.** Every recovery other than JTAG goes through a working awto-uboot or a failed `bootm`.
-- awto-uboot needs `sf write` access to `0xc0000` (64 KiB, env only) to re-write or restore the env. Today its window is kernel0 only.
+- awto-uboot has `sf write` access to `0xc0000` (64 KiB, env only) to re-write or restore the env.
 
 ## Speed levers (measure each stage on the first auto boot)
 
@@ -65,18 +65,35 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 - 12.5 and 25 MHz give the same time (clamp); default = 50 MHz. Exact size saves nothing measurable.
 - `bootm` from RAM: -> "Starting kernel" 0.51-0.54 s (verify 0.22 s, load 0.25 s). Path total: 0.02 + 0.18 + 0.52 = ~0.72 s.
 - `bootm 0x1c0e0000` (XIP window covers `0xe0000`): -> "Starting kernel" 0.80 s (verify 0.38 s, load 0.38 s). Slower; not used.
-- Chosen bootcmd: `sf probe 0 50000000; sf read 0x01000000 0xe0000 0xcdbf0; bootm 0x01000000` (image 842736 B incl. 64 B header).
+- Chosen bootcmd: `sf probe 0 50000000; sf read 0x01000000 0xe0000 0xce4f8; bootm 0x01000000` (image 845048 B incl. 64 B header).
 - Typing the three commands on one line at the prompt loses characters after `sf read` (16 B UART FIFO, CPU busy); irrelevant for env bootcmd.
 - Cold power-up (relay ON call = t0, includes ~1 s relay API latency): uboot-1 banner +1.0 s, DDR done +1.2 s, PCIe line +1.65 s, countdown +1.8 s.
 - Both cold and warm uboot-1 print "port 0 is not active!!" (#67).
 
-## BLOCKER: env not written (2026-11-15)
+## Env in place (2026-11-15, #63, #76)
 
-- `autochain_boot.py --manual` (cold power-cycle, abort countdown, `sf read` + `bootm`, no env write): awto-uboot (11:50 build) prints `fan: probing unit 1 BAR at 0x08040000` and hangs. Same after a warm reboot from mainline Linux.
-  - Cause: no PCIe link to unit 1 (#67). SP805 resets after ~10 s -> uboot-1 again.
-- With `bootdelay=0` this is an endless reset loop and no serial escape (see above). Env stays stock until awto-uboot survives a down PCIe link.
-- Built env (not written): `scripts/autochain_env.py --base private/backups/20261012T055324Z/mtd1-u-boot-env.bin --size 842736 --hz 50000000`.
-  - Live `0xc0000` = backup `mtd1` byte-identical (crc32 `893a81cd`). Format: u32 LE CRC32 over bytes 4..64K, vars, `0xff` fill, no redundant flag.
-  - Diff: `bootcmd` and `bootdelay` only; 9 other vars unchanged.
+- Written from awto-uboot: TFTP (ge1) -> RAM, `sf erase 0xc0000 0x10000`, `sf write`, read-back crc32 `ee76b962` = host image. Live env before the write = backup `mtd1` (crc32 `893a81cd`).
+- awto-uboot `sf` window (patch 0004): kernel0 `0xe0000..0xfe0000` and exactly `0xc0000` + `0x10000` (env). Nothing else.
+- Image in the slot: `tmp/uboot/us48-uboot-chain.bin`, 845048 B incl. header, crc32 `87ab6737`. Env built with `--size 845048 --hz 50000000`; rebuild the env whenever the image size changes.
+- Diff vs backup: `bootcmd`, `bootdelay` only (9 other vars unchanged).
+- Written env image only: `scripts/autochain_env.py` output (this doc); no other env content (Dan 2026-11-15).
+- Recovery from the awto-uboot prompt: `tftpboot 0x01000000 us48-env-restore.bin` (backup `mtd1`, `autochain_env.py --restore`), `sf erase 0xc0000 0x10000`, `sf write 0x01000000 0xc0000 0x10000`.
+
+## Timings, power-cycle without a manual step (`scripts/autochain_boot.py`, t0 = relay ON call, 2026-11-15, image 845048 B)
+
+| Stage | Boot 1 | Boot 2 |
+|---|---|---|
+| uboot-1 banner | +1.02 s | +1.03 s |
+| DDR done | +1.23 | +1.23 |
+| uboot-1 PCIe line | +1.63 | +1.65 |
+| countdown line (`bootdelay` 0) | +1.79 | +1.79 |
+| bootm verify | +1.99 | +2.00 |
+| bootm start | +2.47 | +2.48 |
+| awto-uboot banner | +2.51 | +2.52 |
+| `pcie:` PERST# cycled / link up | +2.67 / `10210 us` | +2.68 / `10211 us` |
+| fans ok, temperatures | +2.82 | +2.82 |
+| `awto-uboot>` prompt | +2.92 | +2.92 |
+
+- `autochain_boot.py --manual` (abort countdown, typed commands) and `--warm` (`reset` at the prompt, no relay) exist for testing without the env; image size is read from the built image.
 
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).

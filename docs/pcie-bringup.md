@@ -1,6 +1,6 @@
 # PCIe RC bring-up: link to unit 1 from a cold power-up (#76)
 
-- Offline result (static RE + emulator), not yet run on the board. Test plan at the end.
+- Offline result (static RE + emulator); board-tested 2026-11-15: cold x2, warm, and via the env auto-chain, link up ~10.2 ms after PERST# release (#76).
 - Registers: hwdb blocks `paxb0`, `rccfg0`, `idm_pcie_m0/s0` (`hwdb/soc/paxb.toml`); uboot-1 labels in `hwdb/fw/uboot1.toml`.
 
 ## Root cause
