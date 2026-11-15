@@ -147,4 +147,16 @@
 
 - `paxb_order` 0 vs 1: identical (29.3 / 274.5). 400 MHz = 1000 MHz (latency-bound). a2 issues one miss at a time, so serialising inbound reads costs it nothing here.
 - The #80 row above (cached rd 113 MB/s) is not reproduced: now 29.3 at AXI 200 (module default `axi_mhz` 200; unit 1 power-on is 400).
-- `us48_bustest` a2 columns do not work since the CMA carveout (#84): it looks for the removed `ubnt,us48-a2-carveout` node ("no a2 carveout").
+- `us48_bustest` takes the a2 pool from `us48_a2` (`us48_a2_region_get`/`_put`, symbol_get; #89): `pcie_harness.py smoke` a2 rows pass again (debug image RAM-booted, 2026-11-16).
+
+## a2 bustest vs unit 1 AXI clock (#80, #89; 2026-11-16)
+
+- Conditions: debug a1 image (RAM boot), a2 `us48-a2-bustest.elf` at 1000 MHz (ticks = ARM/2 = 500 MHz), `paxb_order=1`, `rx_arid=0`, a1 idle, no DCC. `scripts/a2_bus_arid.py --values 0 --axi 200 400 --reps 3`, median of 3 passes after a cold one. Unit 1 powers on at AXI 400, module default `axi_mhz` 200.
+
+| axi_mhz | cached rd / wr / cpy MB/s | uncached rd / wr MB/s | uncached lat / line fill ns |
+|---|---|---|---|
+| 200 | 29.3 / 274.4 / 28.8 | 3.9 / 66.5 | 1008 / 1085 |
+| 400 | 32.7 / 274.4 / 32.3 | 4.3 / 66.5 | 937 / 990 |
+
+- AXI 400 = +12 % on read-bound rows, writes unchanged; the 113 MB/s row of the first #80 run is not reproduced at either clock (cause open).
+- Stale-read check at AXI 400 (`a2_cap.py LINUX 1000 --axi 400 --skip --limit-ms 6000`, a2 Linux normal zImage, a1 idle): 1 fault in 18 runs (first run of the set: wild PC 0x2dc4 in svc mode, DFSR 0x180c, not the maple-tree DFAR 0x4 signature); AXI 200 control: 0/4.

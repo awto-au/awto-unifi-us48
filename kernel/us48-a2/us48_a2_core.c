@@ -140,6 +140,31 @@ struct us48_a2 {
 	u32 dt_off[3];	/* kernel, dtb, initrd offsets from the DT, U32_MAX if absent */
 };
 
+/* Pool mapping for the bus test (us48_a2_region_get): region_lock is held between get and put and by prepare/unprepare. */
+static DEFINE_MUTEX(region_lock);
+static struct us48_a2 *region_owner;
+
+void *us48_a2_region_get(size_t *size)
+{
+	struct us48_a2 *a;
+
+	mutex_lock(&region_lock);
+	a = region_owner;
+	if (!a || !a->va) {
+		mutex_unlock(&region_lock);
+		return ERR_PTR(-ENODEV);
+	}
+	*size = a->size;
+	return a->va;
+}
+EXPORT_SYMBOL_GPL(us48_a2_region_get);
+
+void us48_a2_region_put(void)
+{
+	mutex_unlock(&region_lock);
+}
+EXPORT_SYMBOL_GPL(us48_a2_region_put);
+
 static int a2_wait(struct us48_a2 *a, u32 mask, u32 want, const char *what)
 {
 	u32 d;
@@ -514,7 +539,9 @@ static int us48_a2_prepare(struct rproc *rproc)
 	int ret;
 
 	/* The whole pool: cma_alloc fails (logged, no fallback) while movable pages in it are pinned. */
+	mutex_lock(&region_lock);
 	a->va = dma_alloc_wc(a->dev, a->size, &a->dma, GFP_KERNEL);
+	mutex_unlock(&region_lock);
 	if (!a->va)
 		return dev_err_probe(a->dev, -ENOMEM, "dma_alloc_wc %zu B from the a2 pool failed (pinned pages?)\n", a->size);
 	if (a->dma != a->phys) {
@@ -542,8 +569,10 @@ static int us48_a2_prepare(struct rproc *rproc)
 unmap:
 	us48_pci_outbound_unmap(a->p);
 free:
+	mutex_lock(&region_lock);
 	dma_free_wc(a->dev, a->size, a->va, a->dma);
 	a->va = NULL;
+	mutex_unlock(&region_lock);
 	return ret;
 }
 
@@ -552,8 +581,10 @@ static int us48_a2_unprepare(struct rproc *rproc)
 	struct us48_a2 *a = rproc->priv;
 
 	us48_pci_outbound_unmap(a->p);
+	mutex_lock(&region_lock);
 	dma_free_wc(a->dev, a->size, a->va, a->dma);
 	a->va = NULL;
+	mutex_unlock(&region_lock);
 	return 0;
 }
 
@@ -1146,6 +1177,13 @@ static void a2_rmem_release(void *dev)
 	of_reserved_mem_device_release(dev);
 }
 
+static void a2_region_exit(void *data)
+{
+	mutex_lock(&region_lock);
+	region_owner = NULL;
+	mutex_unlock(&region_lock);
+}
+
 static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_device_id *id)
 {
 	struct device *dev = &adev->dev;
@@ -1204,6 +1242,10 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if ((a->phys & (SZ_64M - 1)) + a->size > SZ_64M)
 		return dev_err_probe(dev, -EINVAL, "carveout %pa+%zx crosses a 64 MiB boundary\n", &a->phys, a->size);
 	a->da = HW_A2_HOST_WIN_BASE + (a->phys & (SZ_64M - 1));
+	region_owner = a;
+	ret = devm_add_action_or_reset(dev, a2_region_exit, NULL);
+	if (ret)
+		return ret;
 	dev_info(dev, "carveout %pa+%zx, a2 AXI %#x\n", &a->phys, a->size, a->da);
 	/* created before rproc_add: devres releases it after rproc_del, which may still call stop() */
 	a->dcc = us48_a2_dcc_create(dev, a->map);

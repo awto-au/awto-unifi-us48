@@ -62,7 +62,7 @@ struct us48_bt {
 	spinlock_t st_lock;		/* link counters */
 	struct bcm_cmic_unit u0;
 	void __iomem *u0_map;
-	void *a2_res, *a2_xy;	/* carveout WC mappings: results page, x/y buffers */
+	void *a2_res, *a2_xy;	/* results page, x/y buffers in the a2 pool; valid only between a2_get and a2_put (run_lock held) */
 	/* link counters */
 	u64 polls, link_down, ep_chg, rc_chg, lt_seen, dl_inactive, perm_err;
 	u64 ep_cor, ep_unc, rc_cor, rc_unc, ep_stat_err, rc_stat_err, rc_sec_err;
@@ -460,6 +460,41 @@ static void t_pat(struct us48_bt *b, int kind, unsigned long rounds, struct tctx
 
 /* --- a1 <-> a2 carveout --- */
 
+/* a2 pool from us48_a2 (soft dependency: symbol_get); the pool exists only while a2 is prepared. */
+static void *(*a2_region_get)(size_t *size);
+static void (*a2_region_put)(void);
+
+static int a2_get(struct us48_bt *b)
+{
+	size_t size;
+	void *va;
+
+	a2_region_get = symbol_get(us48_a2_region_get);
+	if (!a2_region_get)
+		return -ENODEV;
+	a2_region_put = symbol_get(us48_a2_region_put);
+	va = a2_region_get(&size);
+	if (IS_ERR(va) || !a2_region_put || size < BT_XBUF_OFF + 2 * (BT_YBUF_OFF - BT_XBUF_OFF)) {
+		symbol_put(us48_a2_region_get);
+		if (a2_region_put)
+			symbol_put(us48_a2_region_put);
+		return IS_ERR(va) ? PTR_ERR(va) : -ENODEV;
+	}
+	b->a2_res = va + BT_RES_OFF;
+	b->a2_xy = va + BT_XBUF_OFF;
+	return 0;
+}
+
+static void a2_put(struct us48_bt *b)
+{
+	if (!b->a2_res)
+		return;
+	b->a2_res = b->a2_xy = NULL;
+	a2_region_put();
+	symbol_put(us48_a2_region_put);
+	symbol_put(us48_a2_region_get);
+}
+
 static struct bt_results *a2r(struct us48_bt *b)
 {
 	return b->a2_res;
@@ -548,13 +583,18 @@ static ssize_t cmd_write(struct file *f, const char __user *ubuf, size_t len, lo
 		for (k = 0; strcmp(kind_name[k], name + 4); k++)
 			;
 		t_pat(b, k, n ? n : 1, &c);
-	} else if (!strcmp(name, "a2push"))
+	} else if (!strcmp(name, "a2push")) {
+		a2_get(b);
 		t_a2push(b);
-	else if (!strcmp(name, "a2xverify"))
+		a2_put(b);
+	} else if (!strcmp(name, "a2xverify")) {
+		a2_get(b);
 		t_a2xverify(b);
-	else if (!strcmp(name, "a2clear")) {
-		if (b->a2_res)
+		a2_put(b);
+	} else if (!strcmp(name, "a2clear")) {
+		if (!a2_get(b))
 			memset(b->a2_res, 0, sizeof(struct bt_results));
+		a2_put(b);
 		set_res(b, "test=a2clear status=ok");
 	} else {
 		set_res(b, "test=%s status=fail err=unknown_test", name);
@@ -624,11 +664,17 @@ static int a2_show(struct seq_file *m, void *unused)
 	struct us48_bt *b = m->private;
 	struct bt_results r;
 
+	mutex_lock(&b->run_lock);
+	a2_get(b);
 	if (!a2_magic_ok(b)) {
+		a2_put(b);
+		mutex_unlock(&b->run_lock);
 		seq_puts(m, "a2=absent\n");
 		return 0;
 	}
 	memcpy(&r, b->a2_res, sizeof(r));
+	a2_put(b);
+	mutex_unlock(&b->run_lock);
 	seq_printf(m, "a2=running tick_hz=%u", BT_TICK_HZ);
 #define BT_P(n) seq_printf(m, " " #n "=%u", r.n);
 	BT_FIELDS(BT_P)
@@ -659,9 +705,6 @@ static int bt_probe(struct auxiliary_device *adev, const struct auxiliary_device
 {
 	struct device *dev = &adev->dev;
 	struct us48_bt *b;
-	struct device_node *np;
-	struct resource res;
-	phys_addr_t base;
 
 	b = devm_kzalloc(dev, sizeof(*b), GFP_KERNEL);
 	if (!b)
@@ -679,17 +722,6 @@ static int bt_probe(struct auxiliary_device *adev, const struct auxiliary_device
 		b->u0_map = devm_ioremap(dev, HW_CMIC0_BASE + 0x1000, PVT_U0_CMC1 + 0x100);
 		b->u0.base = b->u0_map;
 	}
-	np = of_find_compatible_node(NULL, NULL, "ubnt,us48-a2-carveout");
-	if (np && !of_address_to_resource(np, 0, &res)) {
-		base = res.start;
-		b->a2_res = devm_memremap(dev, base + BT_RES_OFF, BT_RES_SIZE, MEMREMAP_WC);
-		b->a2_xy = devm_memremap(dev, base + BT_XBUF_OFF, 2 * (BT_YBUF_OFF - BT_XBUF_OFF), MEMREMAP_WC);
-		if (IS_ERR(b->a2_res) || IS_ERR(b->a2_xy))
-			b->a2_res = b->a2_xy = NULL;
-	}
-	of_node_put(np);
-	if (!b->a2_res)
-		dev_warn(dev, "no a2 carveout: a2 tests unavailable\n");
 	b->dir = debugfs_create_dir("us48_bustest", NULL);
 	debugfs_create_file("cmd", 0200, b->dir, b, &cmd_fops);
 	debugfs_create_file("result", 0444, b->dir, b, &result_fops);

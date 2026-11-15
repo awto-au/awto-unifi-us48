@@ -64,4 +64,12 @@ int us48_pci_link_ok(struct us48_pci *p);
 int us48_pci_outbound_map(struct us48_pci *p, phys_addr_t host, size_t len, u32 *axi);
 void us48_pci_outbound_unmap(struct us48_pci *p);
 
+/*
+ * a2 memory pool (implemented by us48_a2, looked up with symbol_get by the bus test): returns the WC mapping of the
+ * pool base while a2 is prepared (firmware loaded or running), else ERR_PTR(-ENODEV). Holds a lock that blocks
+ * a2 stop/unprepare until _put; keep it short. *size = pool size.
+ */
+void *us48_a2_region_get(size_t *size);
+void us48_a2_region_put(void);
+
 #endif /* US48_PCI_H */
