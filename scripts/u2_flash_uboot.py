@@ -2,7 +2,7 @@
 """u2_flash_uboot — at the uboot-2 prompt: TFTP the uboot-2 chain image, write the kernel0 uboot slot, verify.
 
 Usage: scripts/u2_flash_uboot.py [--image FILE]   (default tmp/uboot/us48-uboot-chain.bin; board at the awto-uboot> prompt)
-- Writes flash 0xe0000.. only (kernel0 uboot slot); uboot-2's `sf` refuses anything outside 0xe0000..0x1e0000.
+- Writes flash 0xe0000.. only (kernel0 uboot slot); uboot-2's `sf` refuses anything outside 0xe0000..0xfe0000 (+ env 0xc0000/0x10000).
 - Read-back at 0x02000000 and crc32 vs the RAM copy. Log: tmp/logs/u2_flash_uboot.log
 """
 import shutil

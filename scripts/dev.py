@@ -541,10 +541,10 @@ CAPTURE_HINT = "tmp/logs/console/ (newest us48-*.log)"
 # Backup slot only. kernel1 (stock, active) and the bootsel record at 0x1ee0000 are never written.
 KERNEL0_OFF = 0xE0000
 KERNEL0_LEN = 0xF00000
-# kernel0 holds two images: our U-Boot (< 1 MiB, uImage) at the slot start and OpenWrt (< 14 MiB) after it.
+# kernel0 holds two images: our U-Boot (uImage, 2 MiB slot, Dan 2026-11-15) at the slot start and the kernel (13 MiB) after it.
 # Stock U-Boot loads either with sf read + bootm; u-boot, bootsel (0x1ee0000), kernel1, EEPROM stay untouched.
-SLOTS = {"uboot": (0x0, 0x100000, REPO / "tmp/uboot/us48-uboot-chain.bin"),
-         "openwrt": (0x100000, 0xE00000, None)}
+SLOTS = {"uboot": (0x0, 0x200000, REPO / "tmp/uboot/us48-uboot-chain.bin"),
+         "openwrt": (0x200000, 0xD00000, None)}
 
 
 def _slot(extra: list[str]) -> tuple[str, int, int, Path]:

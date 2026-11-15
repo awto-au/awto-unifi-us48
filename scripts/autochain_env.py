@@ -61,7 +61,7 @@ def build(base: bytes, bootcmd: str, bootdelay: str) -> bytes:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base", required=True, type=Path)
-    ap.add_argument("--size", type=int, help="exact uImage size incl. 64 B header")
+    ap.add_argument("--size", type=lambda x: int(x, 0), help="exact uImage size incl. 64 B header")
     ap.add_argument("--hz", type=int, default=0, help="sf probe 0 <hz>; 0 = no hz argument")
     ap.add_argument("--xip", action="store_true", help="bootm straight from the BSPI window instead of sf read")
     ap.add_argument("--restore", action="store_true", help="output the base unchanged")

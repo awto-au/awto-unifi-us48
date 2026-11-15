@@ -54,8 +54,8 @@ STAGING = OUTDIR / "staging"
 MKUIMAGE = ROOT / "scripts/mkuimage.py"
 LOADADDR = 0x04000000  # = CONFIG_TEXT_BASE in us48_defconfig, checked after the build
 DEFCONFIG = "us48_defconfig"
-ENV_READ = 845048  # `sf read` size in the flashed env bootcmd (docs/autochain.md); a larger image fails bootm
-MAX_IMAGE = 1 << 20  # ~1 MiB at 9.9 KiB/s loady = ~100 s; room below the 0x04000000..0x07030000 free area
+ENV_READ = 0x200000  # `sf read` size in the flashed env bootcmd = the 2 MiB uboot slot (docs/autochain.md)
+MAX_IMAGE = ENV_READ  # no serial loads any more; the slot is the limit
 # worktree add: ~9k files, seconds; store git calls are local
 GIT_TIMEOUT = 120
 # stall guard (awto-dan#53): no output for STALL_S = hung; backstop = 3x a ~2 min cold build
@@ -294,7 +294,7 @@ def pack() -> None:
     if OUT.stat().st_size > ENV_READ:
         log(f"WARN: image {OUT.stat().st_size} B > {ENV_READ} B read by the env bootcmd: do NOT flash (bootm CRC fails), RAM boot only (#78)")
     if OUT.stat().st_size > MAX_IMAGE:
-        die(f"chain image over the {MAX_IMAGE} B budget (loady time + stock bootm window)")
+        die(f"chain image over the {MAX_IMAGE} B budget (2 MiB uboot slot)")
 
 
 def main() -> int:

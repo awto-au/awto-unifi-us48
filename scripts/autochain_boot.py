@@ -24,7 +24,7 @@ STAGES = [(b"U-Boot usw", "uboot-1 banner"), (b"DDR Tune Completed", "DDR done")
           (b"Starting kernel", "bootm start"), (b"awto-uboot 20", "awto-uboot banner"), (b"awto-uboot> ", "prompt")]
 OVERALL_S = 40.0
 STALL_S = 15.0
-SIZE = (Path(__file__).resolve().parent.parent / "tmp/uboot/us48-uboot-chain.bin").stat().st_size  # uImage incl. header = flashed bytes
+SIZE = 0x200000  # the env reads the whole 2 MiB uboot slot; bootm checks only the header length
 
 
 def main() -> int:

@@ -96,4 +96,11 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 
 - `autochain_boot.py --manual` (abort countdown, typed commands) and `--warm` (`reset` at the prompt, no relay) exist for testing without the env; image size is read from the built image.
 
+## 2 MiB slot (Dan 2026-11-15)
+
+- kernel0 layout: awto-uboot slot `0xe0000..0x2dffff` (2 MiB), kernel slot `0x2e0000..0xfdffff` (13 MiB). dev.py `SLOTS`.
+- Env rewritten 2026-11-15 13:41 with `scripts/u2_flash_env.py --expect-live ee76b962`: `sf read 0x01000000 0xe0000 0x200000`, crc32 `5e0fbaf4`, read-back OK. `bootm` checks only the header length, so image growth up to 2 MiB needs no env change.
+- Cold power-cycle ×2: prompt at +3.31 s (was +2.92 s with the exact-size read; the extra 1.2 MiB read costs ~0.4 s).
+- The kernel at the old offset `0x1e0000` is now inside the uboot slot: re-flash mainline to `0x2e0000` before booting it from flash.
+
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).
