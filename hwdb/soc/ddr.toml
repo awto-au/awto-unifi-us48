@@ -1,0 +1,187 @@
+# DDR3 controller (Denali) and PHY, axi0 unit 0. Named PHY subset only; full set is regdb DDR_PHY_* (docs/ddr.md).
+
+[block.ddr_ctl]
+space = "axi0"
+base = 0x18010000
+size = 0x400
+unit = 0
+desc = "DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride"
+src = "D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md"
+conf = "C"
+
+[block.ddr_ctl.reg.CTL]
+offset = 0x0
+count = 218
+stride = 4
+desc = "DENALI_CTL_00..217 (regdb max CTL_217 at 0x18010364); unnamed gaps = reserved in regdb"
+src = "regdb DDR_DENALI_CTL_*"
+conf = "C"
+
+[block.ddr_phy]
+space = "axi0"
+base = 0x18010800
+size = 0x400
+unit = 0
+desc = "DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff)"
+src = "D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md"
+conf = "C"
+
+[block.ddr_phy.reg.REVISION]
+offset = 0x000
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_REVISION"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.PLL_STATUS]
+offset = 0x010
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_PLL_STATUS"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.PLL_CONFIG]
+offset = 0x014
+sdk = "DDR_PHY_CONTROL_REGS_PLL_CONFIG"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.PLL_CONTROL]
+offset = 0x018
+sdk = "DDR_PHY_CONTROL_REGS_PLL_CONTROL"
+src = "regdb"
+conf = "C"
+
+[block.ddr_phy.reg.PLL_DIVIDERS]
+offset = 0x01c
+sdk = "DDR_PHY_CONTROL_REGS_PLL_DIVIDERS"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.VDL_OVRIDE_BYTE_CTL]
+offset = 0x030
+sdk = "DDR_PHY_CONTROL_REGS_VDL_OVRIDE_BYTE_CTL"
+src = "regdb; docs/ddr.md shmoo targets (0x18010830)"
+conf = "C"
+
+[block.ddr_phy.reg.VDL_OVRIDE_BIT_CTL]
+offset = 0x034
+sdk = "DDR_PHY_CONTROL_REGS_VDL_OVRIDE_BIT_CTL"
+src = "regdb; socregs.h; docs/ddr.md shmoo targets (0x18010834)"
+conf = "C"
+
+[block.ddr_phy.reg.IDLE_PAD_CONTROL]
+offset = 0x038
+sdk = "DDR_PHY_CONTROL_REGS_IDLE_PAD_CONTROL"
+src = "regdb"
+conf = "C"
+
+[block.ddr_phy.reg.ZQ_PVT_COMP_CTL]
+offset = 0x03c
+sdk = "DDR_PHY_CONTROL_REGS_ZQ_PVT_COMP_CTL"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.DRIVE_PAD_CTL]
+offset = 0x040
+sdk = "DDR_PHY_CONTROL_REGS_DRIVE_PAD_CTL"
+src = "regdb"
+conf = "C"
+
+[block.ddr_phy.reg.VDL_CALIBRATE]
+offset = 0x048
+sdk = "DDR_PHY_CONTROL_REGS_VDL_CALIBRATE"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.VDL_CALIB_STATUS]
+offset = 0x04c
+access = "ro"
+sdk = "DDR_PHY_CONTROL_REGS_VDL_CALIB_STATUS"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.VREF_DAC_CONTROL]
+offset = 0x06c
+sdk = "DDR_PHY_CONTROL_REGS_VREF_DAC_CONTROL"
+src = "regdb; docs/ddr.md shmoo targets (0x1801086c)"
+conf = "C"
+
+[block.ddr_phy.reg.STRAP_CONTROL]
+offset = 0x0b0
+sdk = "DDR_PHY_CONTROL_REGS_STRAP_CONTROL"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.STRAP_CONTROL2]
+offset = 0x0b4
+sdk = "DDR_PHY_CONTROL_REGS_STRAP_CONTROL2"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.WL0_READ_DATA_DLY]
+offset = 0x360
+sdk = "DDR_PHY_WORD_LANE_0_READ_DATA_DLY"
+src = "regdb; socregs.h"
+conf = "C"
+
+[block.ddr_phy.reg.WL0_READ_CONTROL]
+offset = 0x364
+sdk = "DDR_PHY_WORD_LANE_0_READ_CONTROL"
+src = "regdb"
+conf = "C"
+
+[block.ddr_phy.reg.WL0_WR_PREAMBLE_MODE]
+offset = 0x3ac
+sdk = "DDR_PHY_WORD_LANE_0_WR_PREAMBLE_MODE"
+src = "regdb; socregs.h"
+conf = "C"
+
+# Unnamed in regdb and socregs.h: addresses from uboot-1 single reads at PC 0x6ffa331c (emu trace, #72 comment 6887363127). Field meaning I.
+[block.ddr_phy.reg.WL0_UNK_318]
+offset = 0x318
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_31C]
+offset = 0x31c
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_320]
+offset = 0x320
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_324]
+offset = 0x324
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_340]
+offset = 0x340
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_344]
+offset = 0x344
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_368]
+offset = 0x368
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
+
+[block.ddr_phy.reg.WL0_UNK_36C]
+offset = 0x36c
+src = "uboot1 emu trace, PC 0x6ffa331c (#72); not in regdb"
+conf = "C"
+note = "name and fields unknown"
