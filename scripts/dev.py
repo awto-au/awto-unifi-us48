@@ -684,8 +684,8 @@ def _session_at_uboot(extra: list[str]) -> tuple[console.Session | None, int]:
 # awto-uboot (uboot-2). The old prompt is still accepted by the expect lists until the flash slot holds the new image.
 U2_PROMPT = b"awto-uboot> "
 U2_PROMPTS = [b"awto-uboot> ", b"uboot-2> "]
-# ge1: GPHY AN <= 4 s in start() + sw1 STP forwarding ~2 s + ARP; 12 s = 1.4x that, expiry = warn and try the transfer anyway.
-U2_PING_S = 12.0
+# ge1 first start after power-up: cold init ~7 s + GPHY AN ~3.2 s + ARP = ~11.5 s measured 2026-11-15; 15 s = 1.3x, expiry = warn and try anyway.
+U2_PING_S = 15.0
 U2_IP = "192.168.25.207"
 TFTP_SERVE = REPO / "scripts/tftp_serve.py"
 TFTP_DIR = REPO / "tmp/tftp"
@@ -762,6 +762,7 @@ def _u2_tftp(s: console.Session, name: str) -> bool:
                 log(str(e), "WARN")
             s.send_line("")
             s.expect(U2_PROMPTS, BAUD_REPLY_S, "prompt after ping")
+            s.write(b"\x03\x03")  # the first 1-2 bytes after the prompt are dropped (seen 2026-11-15); ^C is a no-op at the prompt
             s.send_line(f"setenv tftpdstp {port}; tftpboot {LOAD_ADDR} {name}")
             t0 = last = time.monotonic()
             seen = b""

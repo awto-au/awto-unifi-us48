@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """u2_ge_test — one pass at the uboot-2 prompt: ping the host, TFTP an image, crc32 vs host, rate.
 
-Usage: scripts/u2_ge_test.py [--image FILE]   (default tmp/tftp/us48-initramfs.bin; board at the awto-uboot> prompt)
+Usage: scripts/u2_ge_test.py [--image FILE] [--no-ping]   (--no-ping: TFTP is the first network op after boot)   (default tmp/tftp/us48-initramfs.bin; board at the awto-uboot> prompt)
 - Active port = uboot-2 `ethact` (ge1 default); set it by hand first to test xe1.
 - Single transfer, no repeats (Dan: no soaks). Log: tmp/logs/u2_ge_test.log
 """
@@ -32,7 +32,7 @@ def main() -> int:
         with dev._tftp_server() as (host, port):
             s.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip {host}")
             s.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
-            for attempt in (1, 2):  # the first ping after boot can die in the sw1 STP forwarding delay
+            for attempt in (() if "--no-ping" in args else (1, 2)):  # the first ping after boot can die in the sw1 STP forwarding delay
                 s.send_line(f"ping {host}")
                 try:
                     hit = s.expect([b"is alive", b"not alive", b"ping failed"], PING_S, "ping")
