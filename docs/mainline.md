@@ -74,6 +74,9 @@
   - `Failed to allocate 14680064 bytes for node 0 memory map`: FLATMEM memmap over the hole -> SPARSEMEM.
   - `UBSAN shift-out-of-bounds` + `dump_page` storm in `memmap_init_reserved_range`: stackdepot bug, KASAN sets the hash order to the maximum (1M entries), `alloc_large_system_hash()` returns 512K, `init_stack_table()` initialised the requested count and overwrote 4 MiB past the table (the `struct page` array). Fix `mainline/0022` (init `stack_hash_mask + 1` entries). Not specific to this board; upstream candidate.
   - OOM in `dma_debug_create_entries` ("System is deadlocked on memory"): with 3G/1G only ~56 MiB of non-movable lowmem was left (128 MiB lowmem - 64 MiB movable-only a2 pool - 8 MiB CMA) for kernel 23 MiB + shadow 16 MiB + debug heap -> `VMSPLIT_1G`.
+- Module reload under KASAN: `KASAN_VMALLOC=y` + `ARM_MODULE_PLTS=y` (#84). Without it ARM maps the module-area shadow statically and never clears it on `rmmod`: the second `insmod` of the same module (`dmatest`) gave `global-out-of-bounds in load_module` (stale redzones), and the report disables lockdep and masks later KASAN reports (one-shot).
+- Test runner: `scripts/debug_exercise.py [a2|dma|net|reload|modules|leak]` (dmesg diff per step, kmemleak scan). Never `dmesg -c` during a run.
+- `rmmod dmatest` while copies are in flight: dmatest frees its buffers before `dmaengine_terminate_sync()`, DMA then writes the freed pages (`pagealloc: memory corruption`). Wait for the `summary` lines first. Mainline dmatest ordering, not patched.
 - Not enabled:
   - KASAN inline: not tried (outline only).
   - KCSAN, KMSAN, KASAN_SW_TAGS/HW_TAGS: no ARM32 support.
