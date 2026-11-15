@@ -11,6 +11,7 @@
 
 struct bcm_cmic_unit {
 	void __iomem *base;	/* unit 0: AXI 0x48000000; unit 1: PCIe BAR2 */
+	void (*pre_top_release)(struct bcm_cmic_unit *u);	/* optional: CPS_RESET hook, run with BCM_HR2_INIT_CPS (#78) */
 };
 
 /* CMC0 offsets, driver-internals 1 */
@@ -134,6 +135,7 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
  * Returns 0; without BCM_HR2_INIT_FORCE the init is skipped (*ops = 0) if the SBUS ring map is already set; *errs = failed ops.
  */
 extern unsigned int bcm_hr2_init_gaps;	/* 1 = also sleep the stock trace gaps (cat 0xfe), default 0 */
+void bcm_hr2_cmic_setup(struct bcm_cmic_unit *u);
 int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs);
 /* Dropped stock writes (bcm_cmic_hr2_init_x.h), groups = bits of xmask (see gen_bcm_hr2_init.py XGROUPS). */
 int bcm_hr2_u0_extra(struct bcm_cmic_unit *u, unsigned int xmask, int *ops, int *errs);
@@ -155,6 +157,7 @@ int bcm_hr2_u1_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int f
 size_t bcm_hr2_u1_replay_entries(void);
 /* Cold init flag: run the full init even if the SBUS ring map is already set (Linux modules: every load). */
 #define BCM_HR2_INIT_FORCE	0x10000
+#define BCM_HR2_INIT_CPS	0x20000	/* unit 0: CMIC_CPS_RESET at stock's place in the TOP reset order (#78) */
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
 int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);

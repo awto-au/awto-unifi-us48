@@ -179,21 +179,37 @@ int bcm_hr2_u1_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int f
 	return replay(u, hr2_init1, ARRAY_SIZE(hr2_init1), mask, first, last, ops, errs);
 }
 
-int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs)
-{
-	static const u32 ring[4] = { 0x11122200, 0x00430000, 0x00005004, 0 };	/* driver-internals 1: rings per SBUS block */
-	size_t i = 0;
-	int n = 0, bad = 0, k;
+static const u32 sbus_ring[4] = { 0x11122200, 0x00430000, 0x00005004, 0 };	/* driver-internals 1: rings per SBUS block */
 
-	*ops = *errs = 0;
-	if (!(mask & BCM_HR2_INIT_FORCE) && rd(u, CMIC_SBUS_RING_MAP(0)) == ring[0])
-		return 0;			/* already initialised (stock or an earlier run) */
-	bcm_hr2_init_gaps = env_get_hex("us48_init_gaps", bcm_hr2_init_gaps);
+/* SBUS ring map, timeout and MIIM rate: CMIC state that CPS_RESET returns to default. */
+static void cmic_sbus_setup(struct bcm_cmic_unit *u)
+{
+	int k;
+
 	for (k = 0; k < 4; k++)
-		wr(u, CMIC_SBUS_RING_MAP(k), ring[k]);
+		wr(u, CMIC_SBUS_RING_MAP(k), sbus_ring[k]);
 	wr(u, CMIC_SBUS_TIMEOUT, 0x7d0);
 	wr(u, CMIC_RATE_ADJUST, 1 << 16 | 40);		/* MIIM MDC 5 MHz from 200 MHz (driver-internals 2 init 5) */
 	wr(u, CMIC_RATE_ADJUST_INT, 1 << 16 | 40);
+}
+
+/* Ring map, timeout, MIIM rate: for a caller's CPS_RESET hook, which must redo them after the reset. */
+void bcm_hr2_cmic_setup(struct bcm_cmic_unit *u) { cmic_sbus_setup(u); }
+
+#define TOP_SOFT_RESET_REG	0x02030400
+#define TOP_RESET_ALL_RELEASED	0x000fffff
+
+int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs)
+{
+	size_t i = 0;
+	int n = 0, bad = 0, k;
+	bool cps = (mask & BCM_HR2_INIT_CPS) && u->pre_top_release;
+
+	*ops = *errs = 0;
+	if (!(mask & BCM_HR2_INIT_FORCE) && rd(u, CMIC_SBUS_RING_MAP(0)) == sbus_ring[0])
+		return 0;			/* already initialised (stock or an earlier run) */
+	bcm_hr2_init_gaps = env_get_hex("us48_init_gaps", bcm_hr2_init_gaps);
+	cmic_sbus_setup(u);
 	while (i < ARRAY_SIZE(hr2_init)) {
 		u32 h = hr2_init[i];
 
@@ -213,6 +229,11 @@ int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, i
 
 			for (k = 0; k < words && k < BCM_CMIC_SCHAN_MSG_WORDS - 2; k++)
 				data[k] = hr2_init[i + 2 + k];
+			if (cps && blk == 16 && hr2_init[i + 1] == TOP_SOFT_RESET_REG && data[0] == TOP_RESET_ALL_RELEASED) {
+				/* stock's place for CMIC_CPS_RESET: after REG_2 0x3f00 + wait, before TOP_SOFT_RESET_REG 0xfffff (#78) */
+				u->pre_top_release(u);
+				cps = false;
+			}
 			if (init_op(u, op, blk, hr2_init[i + 1], data, words))
 				bad++;
 			n++;

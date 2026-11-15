@@ -178,3 +178,60 @@ desc = "Unit 1 CMIC = PCIe BAR2 as placed by Linux (GP1 = 0x0a002000)"
 src = "scripts/fan_gpio_probe.py GP1; docs/clock-audit.md s3 (Linux boot logs)"
 conf = "I"
 note = "uboot-1/2 enumerate BAR2 at 0x08040000 (region cmic1_uboot); placement is not fixed by hardware"
+
+[block.cmic0.reg.CPS_RESET]
+offset = 0x10220
+sdk = "CMIC_CPS_RESET"
+desc = "bit 0 CPS_RESET: pulse resets the CMIC core (ring map, GP, strap back to default); stock writes 1 once between TOP_SOFT_RESET_REG_2 0x3f00 and TOP_SOFT_RESET_REG 0xfffff"
+src = "docs/init-phases-u0.md (mmio_trace); docs/driver-internals.md 1"
+conf = "C"
+
+[block.cmic0.reg.PCIE_PIO_ENDIANESS]
+offset = 0x101ec
+sdk = "CMIC_COMMON_PCIE_PIO_ENDIANESS"
+desc = "PIO endianness, stock writes 0 (little) first thing and again after CPS_RESET"
+src = "docs/init-phases-u0.md (mmio_trace)"
+conf = "C"
+
+[block.cmic0.reg.UC0_PIO_ENDIANESS]
+offset = 0x101f0
+sdk = "CMIC_COMMON_UC0_PIO_ENDIANESS"
+desc = "uC PIO endianness, stock writes 0"
+src = "docs/init-phases-u0.md (mmio_trace)"
+conf = "C"
+
+[block.cmic0.reg.I2CM_CFG]
+offset = 0x0
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) enable/reset; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"
+
+[block.cmic0.reg.I2CM_TIM_CFG]
+offset = 0x4
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) clock timing; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"
+
+[block.cmic0.reg.I2CM_S_CFG_SMBUS_ADDR]
+offset = 0x8
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) slave address; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"
+
+[block.cmic0.reg.I2CM_M_FIFO_CTRL]
+offset = 0xc
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) master FIFO; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"
+
+[block.cmic0.reg.I2CM_S_FIFO_CTRL]
+offset = 0x10
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) slave FIFO; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"
+
+[block.cmic0.reg.I2CM_IE]
+offset = 0x38
+desc = "iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) interrupt enable; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it"
+src = "tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c"
+conf = "C"

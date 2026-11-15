@@ -57,7 +57,7 @@
 
 | Block | Space | Base | Size | Unit | Regs | conf | Description | Source |
 |---|---|---|---|---|---|---|---|---|
-| `cmic1` | axi0 | `0x0a000000` | `0x40000` | 1 | 24 | I | Unit 1 CMIC = PCIe BAR2 as placed by Linux (GP1 = 0x0a002000) Note: uboot-1/2 enumerate BAR2 at 0x08040000 (region cmic1_uboot); placement is not fixed by hardware | scripts/fan_gpio_probe.py GP1; docs/clock-audit.md s3 (Linux boot logs) |
+| `cmic1` | axi0 | `0x0a000000` | `0x40000` | 1 | 33 | I | Unit 1 CMIC = PCIe BAR2 as placed by Linux (GP1 = 0x0a002000) Note: uboot-1/2 enumerate BAR2 at 0x08040000 (region cmic1_uboot); placement is not fixed by hardware | scripts/fan_gpio_probe.py GP1; docs/clock-audit.md s3 (Linux boot logs) |
 | `cca` | axi0 | `0x18000000` | `0x100` | 0 | 5 | C | ChipcommonA: chip id, core control, GPIO | regdb/hr2_regs.tsv CHIPCOMMONA_*; docs/board.md GPIO map |
 | `uart0` | axi0 | `0x18000300` | `0x100` | 0 | 8 | C | UART0 (same layout as uart1); stock firmware references both | tmp/linux-mainline bcm-hr2.dtsi serial@300; scripts/stock_uart_order.py |
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
@@ -99,7 +99,7 @@
 | `twd` | axi0 | `0x19020600` | `0x40` | 0 | 5 | C | A9 private timer (+0x00) and private watchdog (+0x20); wdt armed by uboot-1 board_init_r, stopped at bootm | ARM DDI 0407I Table 1-3 (0x0600-0x06FF); bcm-hr2.dtsi twd-timer@20600 / twd-watchdog@20620; docs/uboot.md s2 |
 | `gic_dist` | axi0 | `0x19021000` | `0x1000` | 0 | 11 | C | GIC distributor | ARM DDI 0407I Table 1-3 (0x1000-0x1FFF); us48-uboot.dts gic reg <0x21000 0x1000> |
 | `pl310` | axi0 | `0x19022000` | `0x1000` | 0 | 5 | C | L2 cache controller PL310 (128 KiB); disabled at uboot-1 handoff; lockdown-by-line used for L2 RAM Note: base is SoC-level, not in ARM DDI 0246H; register offsets checked against DDI 0246H r3p3 (CACHE_ID 0x410000C9) | docs/sram.md (L2C @0x19022000); bcm-hr2.dtsi cache-controller@22000; docs/uboot.md s5 |
-| `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 24 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
+| `cmic0` | axi0 | `0x48000000` | `0x40000` | 0 | 33 | C | Unit 0 CMIC (CMICd), AXI | common/bcm-cmic/bcm_cmic.h; us48-uboot.dts ethernet@48000000 |
 | `cmic_mspi` | axi0 | `0x48001500` | `0x184` | 0 | 13 | I | CMICm MSPI board IO (fan, PoE LED, port LED chains); same layout as iProc QSPI MSPI, TXRAM +0x40. Same pads as boot-flash QSPI is I Note: SDK uses unit 0 CMIC space; alias of the flash QSPI block unproven (docs/board.md) | docs/board.md MSPI board IO (SPCR0_LSB 0x1500, STATUS 0x1520, TXRAM 0x1540, RXRAM 0x15c0, CDRAM 0x1640); scripts/mspi_capture.py |
 | `paxb1_ep` | bar0u1 | `0x00002000` | `0x1000` | 1 | 29 | C | Unit 1 (endpoint) PAXB through its own BAR0: BAR0 + 0x2000 + PAXB offset | docs/driver-internals.md 14.2 (BDE offsets); docs/a2.md |
 | `rccfg0` | rccfg0 | `0x00000000` | `0x1000` | 0 | 15 | C | Config space of unit 0's root port (bus 0 dev 0 fn 0), reached through PAXB CONFIG_IND_ADDR/DATA | uboot-1 soc_pcie_hw_init 0x1c0244b0-0x1c0248a0; stock log C083748:569; pcie-iproc.c:776-860 |
@@ -684,11 +684,20 @@ Same registers as `sp804_0`.
 
 | Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
 |---|---|---|---|---|---|---|---|---|
+| `0x0` | `I2CM_CFG` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) enable/reset; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
+| `0x4` | `I2CM_TIM_CFG` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) clock timing; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
+| `0x8` | `I2CM_S_CFG_SMBUS_ADDR` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) slave address; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
+| `0xc` | `I2CM_M_FIFO_CTRL` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) master FIFO; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
+| `0x10` | `I2CM_S_FIFO_CTRL` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) slave FIFO; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
+| `0x38` | `I2CM_IE` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) interrupt enable; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
 | `0x2000` | `GP_DATA_IN` | 32 | ro |  |  | C | CMIC GP pins; GP0/GP1 select the MSPI board-IO chain (fans/LEDs) | scripts/fan_gpio_probe.py GP0; scripts/fan_frame.py; docs/board.md MSPI |
 | `0x2004` | `GP_DATA_OUT` | 32 | rw |  |  | C | fan select pins; written by kernel/us48-fan frames via us48-cmic-gpio | scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004) |
 | `0x2008` | `GP_OUT_EN` | 32 | rw |  |  | C |  | scripts/fan_gpio_probe.py (GP0 + 8); docs/edgeswitch.md (soc_reg 0x1860) |
 | `0x10094` | `SBUS_TIMEOUT` | 32 | rw |  |  | C |  | common/bcm-cmic/bcm_cmic_hr2_init.c CMIC_SBUS_TIMEOUT |
 | `0x100a0` | `SBUS_RING_MAP_16_23` | 32 | rw |  |  | C | low nibble 4 routes TOP (stock/OpenMDK 0x00005004); precondition for TOP S-channel access | docs/clock-audit.md s3 |
+| `0x101ec` | `PCIE_PIO_ENDIANESS` | 32 | rw |  |  | C | PIO endianness, stock writes 0 (little) first thing and again after CPS_RESET | docs/init-phases-u0.md (mmio_trace) |
+| `0x101f0` | `UC0_PIO_ENDIANESS` | 32 | rw |  |  | C | uC PIO endianness, stock writes 0 | docs/init-phases-u0.md (mmio_trace) |
+| `0x10220` | `CPS_RESET` | 32 | rw |  |  | C | bit 0 CPS_RESET: pulse resets the CMIC core (ring map, GP, strap back to default); stock writes 1 once between TOP_SOFT_RESET_REG_2 0x3f00 and TOP_SOFT_RESET_REG 0xfffff | docs/init-phases-u0.md (mmio_trace); docs/driver-internals.md 1 |
 | `0x10224` | `DEV_REV_ID` | 32 | ro |  |  | C | 0x8342..0x8344 on 53342/3/4; uboot-1 reads it for the SKU | docs/uboot.md s5 (0x48010224); docs/clock-audit.md s4 |
 | `0x10234` | `OVERRIDE_STRAP` | 32 | rw |  |  | C |  | regdb; docs/board.md MSPI (SDK claims the bus with it) |
 | `0x11000` | `RATE_ADJUST` | 32 | rw | `0x10018` | DIVISOR[15:0], DIVIDEND[31:16] | I | MIIM MDC rate. Docs disagree on MDC: 5 MHz (driver-internals) vs 2.5 MHz (#22) Note: MDC 5 vs 2.5 MHz conflict, resolve with a live read + scope | docs/clocks.md MIIM MDC row; common/bcm-cmic/bcm_cmic_hr2_init.c |

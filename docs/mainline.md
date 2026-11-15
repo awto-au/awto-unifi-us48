@@ -48,7 +48,7 @@
 - Board 2026-11-16 (#78, normal profile):
   - `us48_cmic_xe` reload x3: clean (2.7 s each, ge1/ssh stay up, unit 1 cold init + TSC download 1.6 s + CRC a081, no WARN, no leaks).
   - `us48_cmic` (unit 0) reload FAILS: chip init + link up OK, ssh does not return, TX dead (TX counter frozen, `TX stuck: DMA_STAT 00000320` from the netdev watchdog; ch0 abort "still active"). RX still counts. Same with `gaps=1`.
-  - Same signature on the warm path (awto-uboot already initialised the chip, then Linux's forced init): any second full unit 0 init after a first one leaves TX hung; only a power cycle clears it. Open (#78).
+  - Same signature on the warm path (awto-uboot already initialised the chip, then Linux's forced init): any second full unit 0 init after a first one leaves TX hung; only a power cycle clears it. Fixed: CMIC_CPS_RESET hook in the unit 0 init (#78).
   - Module param `gaps` (#34) exists since 2026-11-16 (was documented, not wired).
 - `us48_cmic` cannot go while `us48_cmic_xe` is loaded (symbols); `scripts/mod_reload.py` handles the chain.
 - `scripts/mod_reload.py <module> [args]`: one detached `rmmod; insmod` script on the board (log `/tmp/mod_reload.log`), waits for ssh (30 s first-run limit), fetches the log; console-socket fallback. Log `tmp/logs/mod_reload.log`.

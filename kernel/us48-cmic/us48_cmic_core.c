@@ -23,6 +23,7 @@
 
 #include "us48_cmic.h"
 #include "bcm_cmic.h"
+#include "us48_hwdb.h"
 
 const struct port_cfg us48_unit1_cfgs[] = {
 	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 },
@@ -1081,9 +1082,43 @@ void us48_remove_common(struct us48_cmic *u)
 }
 EXPORT_SYMBOL_GPL(us48_remove_common);
 
+/*
+ * Stock's CMIC_CPS_RESET (init-phases-u0.md), run between TOP_SOFT_RESET_REG_2 and _REG release. Without it a second
+ * full init leaves CPU TX hung (#78). The reset also clears the GP pins and the MSPI strap override the fan/board-IO
+ * chain uses and the kernel's SMBus master (xfer fails after 50 s): carry them over, then redo ring map/timeout/rate.
+ */
+#define CPS_RESET_WAIT_MS	9		/* OpenMDK _bmd_reset 10 ms, delay rule -10 % */
+
+static void us48_cps_reset(struct bcm_cmic_unit *cu)
+{
+	void __iomem *b = cu->base;
+	u32 gp_out = readl(b + HW_CMIC0_GP_DATA_OUT), gp_en = readl(b + HW_CMIC0_GP_OUT_EN);
+	u32 strap = readl(b + HW_CMIC0_OVERRIDE_STRAP);
+	static const u32 i2c_regs[] = { HW_CMIC0_I2CM_CFG, HW_CMIC0_I2CM_TIM_CFG, HW_CMIC0_I2CM_S_CFG_SMBUS_ADDR,
+					HW_CMIC0_I2CM_M_FIFO_CTRL, HW_CMIC0_I2CM_S_FIFO_CTRL, HW_CMIC0_I2CM_IE };
+	u32 i2c[ARRAY_SIZE(i2c_regs)];
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(i2c_regs); i++)
+		i2c[i] = readl(b + i2c_regs[i]);
+
+	writel(0, b + HW_CMIC0_RXBUF_EP_RLS_CRED);
+	writel(1, b + HW_CMIC0_RXBUF_EP_RLS_CRED);
+	writel(1, b + HW_CMIC0_CPS_RESET);
+	mdelay(CPS_RESET_WAIT_MS);
+	writel(0, b + HW_CMIC0_PCIE_PIO_ENDIANESS);
+	writel(0, b + HW_CMIC0_UC0_PIO_ENDIANESS);
+	writel(gp_out, b + HW_CMIC0_GP_DATA_OUT);
+	writel(gp_en, b + HW_CMIC0_GP_OUT_EN);
+	writel(strap, b + HW_CMIC0_OVERRIDE_STRAP);
+	for (i = 0; i < ARRAY_SIZE(i2c_regs); i++)
+		writel(i2c[i], b + i2c_regs[i]);
+	bcm_hr2_cmic_setup(cu);
+}
+
 int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 {
-	struct bcm_cmic_unit cu = { .base = cmic };
+	struct bcm_cmic_unit cu = { .base = cmic, .pre_top_release = us48_cps_reset };
 	int ch, ops = 0, errs = 0;
 
 	/* The bootloader may leave a channel running into RAM Linux now owns: log it, abort + wait (bounded), then reset. */
@@ -1099,7 +1134,7 @@ int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 	if (unit)
 		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE, &ops, &errs);
 	else
-		bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE, &ops, &errs);
+		bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE | BCM_HR2_INIT_CPS, &ops, &errs);
 	/* The RX credit release must follow the pipe reset (#46, #34). */
 	bcm_hr2_dma_init(&cu);
 	if (errs)
