@@ -65,6 +65,14 @@ config US48_STOCKBOOT
 	  RAM-load variant only, never flashed (build_uboot.py --stock). Reads kernel1 with sf read, sets stock's bootargs,
 	  stops the SP805 (stock has no feeder) and boots it. Writes nothing. Power cycle returns to the normal auto-chain.
 
+config US48_STOCK_NO_U1
+	bool "Stock variant: no unit 1 access before us48stock (#78 clean control)"
+	depends on US48_STOCKBOOT
+	default n
+	help
+	  Skips the PCIe bring-up (no PERST# cycle), the unit 1 CMIC probe/marker and all fan frames (they need unit 1).
+	  xe1 and `bcm_cmic 1` refuse (us48_pcie_up false). Unit 0 untouched (TFTP). RAM-only, never flashed.
+
 config US48_ICACHE
 	bool "Enable the L1 I-cache after relocation (#75)"
 	default y

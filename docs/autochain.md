@@ -109,6 +109,8 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 - `us48stock`: `sf read` kernel1 (`0xfe0000`, header + data, read only), stock's bootargs (docs/uboot.md section 4), `machid bb8`, `bi_boot_params` 0x8000 (without it stock gets no cmdline and builds a 4-partition MTD map), SP805 off (stock has no feeder), `bootm`.
 - `scripts/stock_ramboot.py [--cycle|--reboot|--reset|--here]`: catch the awto-uboot window, TFTP the variant, crc check, `bootm`, catch its window (1 s autoboot), read bootsel `0x1ee0000` + env `0xc0000` (crc32 `7c56c6ae`, `5e0fbaf4`), `us48stock`. Stock ready (`switchdrvr_ready`) ~1 min after the kernel starts.
 - Bootsel record and env read-back after stock ran twice: unchanged. Stock wrote its own `cfg` (cfgmtd) as always.
+- Clean-control variant: `build_uboot.py --stock --stock-no-u1` (`CONFIG_US48_STOCK_NO_U1`) -> `us48-uboot-stock-nou1.bin`, `stock_ramboot.py --no-u1`. The variant skips PCIe/PERST#, the unit 1 CMIC probe and all fan frames; the flashed awto-uboot that TFTPs it still does them first (uboot slot is not changed). Control result: #78.
+- `stock_wait_ready.py` (init timeline), `stock_clean_control.py` (sw1 hold + bounces). `switchdrvr_ready` + `.poe_ready` exist ~55 s after the kernel starts; CPU stays ~50 % sirq (traffic), so no idle signal.
 - Power cycle returns to the normal chain. Stock's ssh: `ubnt@192.168.25.206`.
 
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).

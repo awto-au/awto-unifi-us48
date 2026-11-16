@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """stock_ramboot — RAM-only: get the us48stock awto-uboot variant to its prompt, record flash state (reads), boot stock from kernel1 (#78).
 
-Usage: scripts/stock_ramboot.py [--cycle | --reboot | --reset | --here] [--no-boot]
+Usage: scripts/stock_ramboot.py [--cycle | --reboot | --reset | --here] [--no-boot] [--no-u1]
   --here    already at an awto-uboot prompt (flashed or variant): no reset
   --cycle   relay power cycle first (default)      --reboot  `reboot` in mainline Linux over ssh (no power cycle)
 Flow: catch the 1 s window of the flashed awto-uboot (spaces from the banner, as u2_run.py) -> TFTP tmp/uboot/us48-uboot-stock.bin
@@ -20,7 +20,7 @@ import dev  # noqa: E402
 import u2_run  # noqa: E402
 from dev import console, log  # noqa: E402
 
-IMG = dev.REPO / "tmp/uboot/us48-uboot-stock.bin"
+IMG = dev.REPO / ("tmp/uboot/us48-uboot-stock-nou1.bin" if "--no-u1" in sys.argv else "tmp/uboot/us48-uboot-stock.bin")
 # after Linux `reboot`: shutdown ~2 s + uboot-1 + awto-uboot banner (docs/autochain.md ~3 s) -> same 15 s window as u2_run
 CMD_S = 10.0   # one sf read of 64 KiB / crc32: ~0.1 s; 10 s = log-and-fail margin
 

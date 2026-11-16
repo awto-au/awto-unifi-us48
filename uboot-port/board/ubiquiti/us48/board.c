@@ -186,7 +186,7 @@ int board_init(void)
 	       us48_cpu_status, hz / 1000000, hz / 2000000);
 	if (us48_cpu_status < 0)
 		printf("cpu: switch refused/failed (%d), staying at 400\n", us48_cpu_status);
-	if (IS_ENABLED(CONFIG_US48_PCIE))
+	if (IS_ENABLED(CONFIG_US48_PCIE) && !IS_ENABLED(CONFIG_US48_STOCK_NO_U1))
 		us48_pcie_init();	/* unit 1 link first: fan group 0/1 and the eth probe need it (#76) */
 	if (IS_ENABLED(CONFIG_US48_FAN))
 		us48_fan_boot();

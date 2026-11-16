@@ -363,6 +363,8 @@ def main() -> int:
     ap.add_argument("--tree", type=Path, help="private U-Boot worktree (default tmp/u-boot-TAG); for builds in parallel")
     ap.add_argument("--stock", action="store_true",
                     help="RAM-load variant with the us48stock command (reads kernel1, boots stock, #78); out tmp/uboot/us48-uboot-stock.bin, never flash")
+    ap.add_argument("--stock-no-u1", action="store_true",
+                    help="with --stock: no unit 1 access before us48stock (no PCIe/PERST#, no CMIC probe, no fan frames); out tmp/uboot/us48-uboot-stock-nou1.bin")
     ap.add_argument("--cpu-mhz", type=int, help="RAM-boot variant: CONFIG_US48_CPU_MHZ=N + CPU_REENTRY, out tmp/uboot/us48-uboot-cpuN.bin (docs/cpu-sweep.md)")
     a = ap.parse_args()
     global BUILD, OUT, TREE, DEFCONFIG, LOADADDR, A2
@@ -375,6 +377,9 @@ def main() -> int:
         BUILD, OUT = ROOT / "tmp/uboot-build-stock", OUTDIR / "us48-uboot-stock.bin"
         CFG_OPTS.append(["--enable", "US48_STOCKBOOT"])
         CFG_OPTS.append(["--enable", "LZMA"])  # stock kernel1 is an lzma uImage
+        if a.stock_no_u1:
+            BUILD, OUT = ROOT / "tmp/uboot-build-stock-nou1", OUTDIR / "us48-uboot-stock-nou1.bin"
+            CFG_OPTS.append(["--enable", "US48_STOCK_NO_U1"])
     if a.cpu_mhz:
         BUILD = ROOT / f"tmp/uboot-build-cpu{a.cpu_mhz}"
         OUT = OUTDIR / f"us48-uboot-cpu{a.cpu_mhz}.bin"

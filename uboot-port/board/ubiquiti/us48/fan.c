@@ -258,6 +258,12 @@ void us48_fan_boot(void)
 {
 	int hot = 0;
 
+	if (IS_ENABLED(CONFIG_US48_STOCK_NO_U1)) {	/* #78 clean control: no unit 1 access, no fan frame */
+		puts("fan: STOCK_NO_U1, no unit 1 access, no fan frame\n");
+		lm75_show(&hot);
+		pvt_show("unit 0", &unit0, &hot);
+		return;
+	}
 	if (us48_unit1_cmic_arm()) {
 		printf("fan: probing unit 1 BAR at 0x%08x\n", CONFIG_BCM_CMIC_UNIT1_BASE);
 		unit1_ok = readl(unit1.base + RING_MAP_16_23) != 0xffffffff;
