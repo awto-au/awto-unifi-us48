@@ -1156,7 +1156,7 @@ int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 	}
 	/* Every load: full cold init (chip reset via the TOP resets of the list), whatever state the chip is in. */
 	if (unit)
-		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE, &ops, &errs);
+		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE | BCM_HR2_INIT_CPS, &ops, &errs);
 	else
 		bcm_hr2_u0_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE | BCM_HR2_INIT_CPS, &ops, &errs);
 	/* The RX credit release must follow the pipe reset (#46, #34). */

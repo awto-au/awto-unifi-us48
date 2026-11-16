@@ -137,12 +137,16 @@ static size_t replay_entries(const u32 *tab, size_t len)
 size_t bcm_hr2_u0_replay_entries(void) { return replay_entries(hr2_init, ARRAY_SIZE(hr2_init)); }
 size_t bcm_hr2_u1_replay_entries(void) { return replay_entries(hr2_init1, ARRAY_SIZE(hr2_init1)); }
 
+#define TOP_SOFT_RESET_REG	0x02030400
+#define TOP_RESET_ALL_RELEASED	0x000fffff
+
 /* Replay entries [first, last] (ordinal over all entries incl. delays) of the categories in mask; no init guard, no CMIC setup. */
 static int replay(struct bcm_cmic_unit *u, const u32 *tab, size_t len, unsigned int mask, unsigned int first,
 		  unsigned int last, int *ops, int *errs)
 {
 	size_t i = 0, ord = 0;
 	int n = 0, bad = 0, k;
+	bool cps = (mask & BCM_HR2_INIT_CPS) && u->pre_top_release;
 
 	while (i < len && ord <= last) {
 		u32 h = tab[i];
@@ -158,6 +162,10 @@ static int replay(struct bcm_cmic_unit *u, const u32 *tab, size_t len, unsigned 
 		if (cur >= first && (cat & mask)) {
 			for (k = 0; k < words && k < BCM_CMIC_SCHAN_MSG_WORDS - 2; k++)
 				data[k] = tab[i + 2 + k];
+			if (cps && ((h >> 8) & 0xff) == 16 && tab[i + 1] == TOP_SOFT_RESET_REG && data[0] == TOP_RESET_ALL_RELEASED) {
+				u->pre_top_release(u);	/* stock's place for CMIC_CPS_RESET, same as unit 0 (#78, #106) */
+				cps = false;
+			}
 			if (init_op(u, (h >> 16) & 0xff, (h >> 8) & 0xff, tab[i + 1], data, words))
 				bad++;
 			n++;
@@ -195,9 +203,6 @@ static void cmic_sbus_setup(struct bcm_cmic_unit *u)
 
 /* Ring map, timeout, MIIM rate: for a caller's CPS_RESET hook, which must redo them after the reset. */
 void bcm_hr2_cmic_setup(struct bcm_cmic_unit *u) { cmic_sbus_setup(u); }
-
-#define TOP_SOFT_RESET_REG	0x02030400
-#define TOP_RESET_ALL_RELEASED	0x000fffff
 
 int bcm_hr2_u0_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, int *errs)
 {
@@ -291,10 +296,11 @@ int bcm_hr2_u1_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, i
 	wr(u, CMIC_SBUS_TIMEOUT, 0x7d0);
 	wr(u, CMIC_RATE_ADJUST, 1 << 16 | 40);
 	wr(u, CMIC_RATE_ADJUST_INT, 1 << 16 | 40);
-	/* DMA to host RAM over PCIe: remap case A (docs/driver-internals.md 14.1): AXI bit 32 for every host address */
+	replay(u, hr2_init1, ARRAY_SIZE(hr2_init1), mask, 0, ~0U, ops, errs);
+	/* DMA to host RAM over PCIe: remap case A (docs/driver-internals.md 14.1): AXI bit 32 for every host address; after the CPS_RESET of the replay */
 	wr(u, 0x31474, 0x144d2450);
 	wr(u, 0x31478, 0x19617595);
 	wr(u, 0x3147c, 0x1e75c6da);
 	wr(u, 0x314ac, 0x1f);
-	return replay(u, hr2_init1, ARRAY_SIZE(hr2_init1), mask, 0, ~0U, ops, errs);
+	return 0;
 }

@@ -23,7 +23,7 @@
 | 0 | host: PCIe up, BAR0 mapped, CMIC PIO endianness regs 0x101ec/0x101f0 = 0 | n/a (MMIO, u1 untraced) | n/a | S-channel word order (u0 trace; u1 assumed equal) |
 | 1 | CMIC: SBUS_TIMEOUT 0x10094 = 0x7d0; RING_MAP 0x10098.. = 11122200 00430000 00005004 0 | n/a (MMIO; u0 order: after TOP steps 1-33, before first XLPORT op ord 39) | 5 writes | blocks IPIPE/EPIPE/MMU/XLPORT/GPORT unreachable without it (TOP answers on the reset-default map, which is why ops 1-33 work first) |
 | 2 | TOP PLL/soft reset, verbatim incl. the 10-11 ms gaps (ords 24->25, 27->28, 28->29) | A1 ord 1-38 | 15 of 38 | releases IP/EP/MMU/XLP/GP from reset; TS/BS PLL + PVTMON writes dropped (unused feature) |
-| 3 | CMIC_CPS_RESET pulse between ords 27 and 28 (u0 MMIO ~1181 ms) | n/a | 1 write | optional on a cold chip with a fresh ring map; if used, the ring map and RELEASE_ALL_CREDITS must come after it |
+| 3 | CMIC_CPS_RESET pulse between ords 27 and 28 (u0 MMIO ~1181 ms) | n/a | 1 write | required for a reload (#106: without it CPU TX is dead after a second init); ring map and RELEASE_ALL_CREDITS after it (`us48_cps_reset` hook) |
 | 4 | XLPORT0 XGXS power-up: e0, a0, +10 ms, a4, ac, ae; MAC_CONTROL 1,0 | A2 ord 39-54 (blk5 half) | 8 of 16 | TSC PLL/clock for xe49/xe50; the SerDes microcode load is NOT here (MIIM, untraced) |
 | 5 | pipe table reset, poll DONE (bit 18 of *_HW_RESET_CONTROL_2/_1) after each range | A3 ord 55-100 | 46 of 46 | IPIPE/EPIPE tables undefined until cleared; stock does 12 reads |
 | 6 | CMIC RELEASE_ALL_CREDITS pulse 0 then 1 (edge) AFTER step 5 | n/a (MMIO) | 2 writes | CPU RX path credits to EP; before step 5 it is lost (#46) |

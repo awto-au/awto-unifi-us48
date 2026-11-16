@@ -49,12 +49,12 @@ static int pvt_op(struct pvt *p, u32 op, u32 addr, u32 *v)
 }
 
 /* Sensor is in reset after power-on until something runs the init sequence (clock-audit s3). */
-static int pvt_start(struct pvt *p)
+static int pvt_start(struct pvt *p, bool force)
 {
 	u32 v, z = 0, run = HW_TOP_PVTMON_CTRL_1_RESET_N_MASK, ctrl0 = PVT_CTRL_0_INIT;
 	int ret = pvt_op(p, BCM_SCHAN_READ_REG, PVT_CTRL_1, &v);
 
-	if (ret || (v & HW_TOP_PVTMON_CTRL_1_RESET_N_MASK))
+	if (ret || (!force && (v & HW_TOP_PVTMON_CTRL_1_RESET_N_MASK)))
 		return ret;
 	ret = pvt_op(p, BCM_SCHAN_WRITE_REG, PVT_CTRL_0, &ctrl0);
 	if (!ret)
@@ -73,8 +73,9 @@ static int pvt_get_temp(struct thermal_zone_device *tz, int *temp)
 	if (ret)
 		return ret;
 	code = FIELD_GET(HW_TOP_PVTMON_RESULT_0_TEMP_DATA_MASK, v);
-	if (!code) {	/* no conversion: sensor in reset or not yet running */
-		pvt_start(p);
+	/* 0 = in reset / not running; 0x3ff = saturated, seen after a chip reset that left RESET_N set (CPS_RESET, #106) */
+	if (!code || code == FIELD_MAX(HW_TOP_PVTMON_RESULT_0_TEMP_DATA_MASK)) {
+		pvt_start(p, code);
 		return -EIO;
 	}
 	mc = (HW_CONST_PVTMON_CALC_OFFSET - HW_CONST_PVTMON_CALC_SLOPE * (int)code) / HW_CONST_PVTMON_CALC_DIV;
@@ -94,7 +95,7 @@ static int pvt_register(struct device *dev, struct pvt *p)
 	int ret;
 
 	p->dev = dev;
-	ret = pvt_start(p);
+	ret = pvt_start(p, false);
 	if (ret)
 		return dev_err_probe(dev, ret, "PVTMON init failed\n");
 	tz = devm_thermal_of_zone_register(dev, 0, p, &pvt_ops);
