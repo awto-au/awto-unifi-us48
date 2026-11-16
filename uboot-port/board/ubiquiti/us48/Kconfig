@@ -25,10 +25,10 @@ config US48_FAN
 config US48_FAN_BOOT_LEVEL
 	int "Fan preset applied at boot (0 = 50 %, 1 = 70 %, 2 = 90 %, 3 = 100 %)"
 	depends on US48_FAN
-	default 3
+	default 0
 	range 0 3
 	help
-	  Dan 2026-11-15: 100 % by default; 0 = quiet rule (docs/fan.md). Emergency logic is independent.
+	  Dan 2026-11-16: quiet rule by default (0); 3 = 100 % (docs/fan.md). Emergency logic is independent.
 
 config US48_ARM_SP805
 	bool "Arm the SP805 watchdog before the CPU clock switch if it is not running"

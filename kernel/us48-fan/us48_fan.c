@@ -23,14 +23,14 @@
 /* Sensor check period (WATCH_MS): LM75 and die temperatures move by degrees per minute. */
 #define WATCH_MS	2000
 
-/* quiet=0 restores the old fail-safe: level 3 on probe, sensor loss and write errors (docs/fan.md) */
-static bool quiet;
+/* quiet=0 restores the fail-safe: level 3 on probe, sensor loss and write errors (docs/fan.md) */
+static bool quiet = true;
 module_param(quiet, bool, 0644);
-MODULE_PARM_DESC(quiet, "quiet rule (lab noise): level 0 unless a DT emergency trip fires (default 0)");
+MODULE_PARM_DESC(quiet, "quiet rule (lab noise): level 0 unless a DT emergency trip fires (default 1)");
 
-static uint level = LEVEL_FULL;
+static uint level = 0;
 module_param(level, uint, 0644);
-MODULE_PARM_DESC(level, "level floor from probe on (thermal trips raise it), 0..3 = 50/70/90/100 % (default 3); 0 with quiet");
+MODULE_PARM_DESC(level, "level floor from probe on (thermal trips raise it), 0..3 = 50/70/90/100 % (default 0, quiet rule)");
 
 /* Failure log once per minute: a dead sensor is noted, not spammed */
 #define LOG_MS		60000

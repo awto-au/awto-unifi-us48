@@ -70,11 +70,11 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
 - `0x48002000–0x200c` (CMIC GP block: DATA_OUT `+4`, OUT_EN `+8` as written by the old fand) unchanged between levels: select pins don't depend on the level.
 - SPCR0 `0x1500` = `0x8d`, `0x1504` = `0x83` (mode/baud, decode vs OpenBCM `mspi.c`).
 
-## Fan default (Dan 2026-11-15): 100 %, quiet rule switchable
+## Fan default (Dan 2026-11-16): quiet rule, 100 % switchable
 
-- Default: 100 % (level 3) from power-on. Replaces the quiet rule until Dan says otherwise.
-- awto-uboot: Kconfig `US48_FAN_BOOT_LEVEL` (default 3, range 0..3), applied in `us48_fan_boot` before the temperature report; emergency logic unchanged.
-- `kernel/us48-fan`: module param `level` (default 3) = floor in automatic mode (thermal governor asks 0 with no trip active, so the driver keeps max(req, level)); `quiet` default 0. `pwm1_enable=1` manual overrides the floor.
+- Default: quiet rule (level 0 = 50 %, no off). 100 % (level 3) is `US48_FAN_BOOT_LEVEL=3` + `us48_fan.level=3 us48_fan.quiet=0` (the 2026-11-15 default).
+- awto-uboot: Kconfig `US48_FAN_BOOT_LEVEL` (default 0, range 0..3), applied in `us48_fan_boot` before the temperature report; emergency logic unchanged.
+- `kernel/us48-fan`: module param `level` (default 0) = floor in automatic mode (thermal governor asks 0 with no trip active, so the driver keeps max(req, level)); `quiet` default 1. Both writable at runtime. `pwm1_enable=1` manual overrides the floor.
 - Quiet rule = `US48_FAN_BOOT_LEVEL=0` + `us48_fan.level=0 us48_fan.quiet=1`:
   - level 0 (50 %, no off) at boot and on failure; sensor failure or bogus value (outside -40..150 C) stays at 0, log once per minute in Linux.
   - Emergency: die (PVTMON) >= 110 C ([clock-audit.md](clock-audit.md)) or any LM75 >= 80 C -> 100 %; back to 0 at die <= 100 C and LM75 <= 70 C.
