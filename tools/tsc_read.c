@@ -79,12 +79,12 @@ static int swrite(unsigned words, unsigned addr, uint32_t lo, uint32_t hi)
 	return i;
 }
 
-static int sread(unsigned words, unsigned addr, uint32_t *ack, uint32_t *lo, uint32_t *hi)
+static int sread(unsigned blk, unsigned words, unsigned addr, uint32_t *ack, uint32_t *lo, uint32_t *hi)
 {
 	int i;
 
 	wr(SCTRL, 0);
-	wr(SMSG, 0x2c500000 | words * 4 << 7);
+	wr(SMSG, 0x2c000000 | blk << 20 | words * 4 << 7);
 	wr(SMSG + 4, addr);
 	wr(SCTRL, 1);
 	for (i = 0; i < SPOLLS; i++)
@@ -140,9 +140,19 @@ int main(int argc, char **argv)
 		if (kind[0] == 'S') {
 			if (scanf("%u %x", &a, &reg) != 2)
 				break;
-			if (sread(a, reg, &ack, &lo, &hi))
+			if (sread(5, a, reg, &ack, &lo, &hi))
 				ack = lo = hi = 0xffffffff;
 			printf("S %u %x %x %x %x\n", a, reg, ack, lo, hi);
+			continue;
+		}
+		if (kind[0] == 'B') {	/* "B blk words addr": S-channel register read in block blk (TOP = 16); prints "B blk addr ack lo hi" */
+			unsigned blk;
+
+			if (scanf("%u %u %x", &blk, &a, &reg) != 3)
+				break;
+			if (sread(blk, a, reg, &ack, &lo, &hi))
+				ack = lo = hi = 0xffffffff;
+			printf("B %u %x %x %x %x\n", blk, reg, ack, lo, hi);
 			continue;
 		}
 		if (scanf("%u %x", &aer, &reg) != 2)

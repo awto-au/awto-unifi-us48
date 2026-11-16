@@ -39,6 +39,10 @@
 | 16 | our code: EPC_LINK_BMAP bits 26/27 on link, private VLAN, PORT_TAB vid, static L2X to CPU | n/a (bcm_hr2_xe1_bringup) | n/a | stock does this in phase C (EPC_LINK_BMAP final 0x30060001 on u1) |
 
 - Not in either trace: TSC/PHY init over MIIM (PLL lock check, SerDes ucode, lane config), CMC0 DMA page, u1 CMIC MMIO. Cold xe1 needs the TSC part; `tsc enable` only works warm (docs/uboot-second-stage.md).
+- TOP state after the unit-1 replay vs unit 0 (S-channel reads from a1, `tools/tsc_read.c` `B 16 1 addr`, 2026-11-17, 9713149, #91). C
+  - Equal: `TOP_SOFT_RESET_REG` 0xfffff (TS_RST_L, MMU_RST_L released), `_2` 0x13f00, `TOP_TS_PLL_STATUS` 0x80000102 (locked), `TOP_TS_PLL_CTRL_0..4`, `TOP_PLL_BYP_AND_REFCLK_CONTROL` 0, `TOP_XG_PLL*_STATUS`, `TOP_MISC_CONTROL_2` 1.
+  - Differ (dropped writes, unit 1 = reset default): `TOP_BS_PLL0/1_CTRL_0` 0x197d1996/0x197d1096 vs ...19af/...10af, `_CTRL_1` 0x60c000 vs 0x662040, `TOP_BROAD_SYNC0/1_LCPLL_FBDIV_CTRL_1` 0x4000 vs 0x8c00, `TOP_MISC_CONTROL_1` 0x5001e080 vs 0x5001e880 (bit 11).
+  - CMIC TIMESYNC `0x48010600-0x4801091f` answers on unit 1 from a2 with this state (91 registers, no stall); the earlier hang was a chip with no unit-1 init run. No BS/TS PLL write is needed for it.
 - Dropped on purpose (harmless unless forwarding features are used): A6 parity/ECC/SER, EEE, TS/BS PLL, IPMC zeroing, MIB/debug counter clears, pass C (FP/VLAN/L2/DOS/DSCP churn).
 - Do not carry over: CPU-port MAXBUCKETCONFIG[0] (phase C, 0x4808d), see Questionable writes.
 

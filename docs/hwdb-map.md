@@ -128,9 +128,9 @@
 | `CMICM_BSPI` | 7 | 7 | 7 | 5 | 2 | 0 | 0 | 0 |
 | `CMICM_COMMON` | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
 | `CMICM_REVID` | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
-| `CMIC_BROADSYNC` | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
-| `CMIC_BS0` | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |
-| `CMIC_BS1` | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |
+| `CMIC_BROADSYNC` | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
+| `CMIC_BS0` | 12 | 12 | 12 | 12 | 0 | 0 | 0 | 0 |
+| `CMIC_BS1` | 12 | 12 | 12 | 12 | 0 | 0 | 0 | 0 |
 | `CMIC_CMC0` | 232 | 232 | 232 | 229 | 3 | 0 | 0 | 0 |
 | `CMIC_CMC1` | 232 | 232 | 232 | 230 | 2 | 0 | 0 | 0 |
 | `CMIC_CMC2` | 232 | 232 | 232 | 230 | 2 | 0 | 0 | 0 |
@@ -162,7 +162,7 @@
 | `CMIC_SW` | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
 | `CMIC_TIM0` | 24 | 24 | 24 | 24 | 0 | 0 | 0 | 0 |
 | `CMIC_TIM1` | 24 | 24 | 24 | 24 | 0 | 0 | 0 | 0 |
-| `CMIC_TIMESYNC` | 68 | 0 | 0 | 0 | 0 | 0 | 2 | 66 |
+| `CMIC_TIMESYNC` | 68 | 66 | 66 | 66 | 0 | 0 | 2 | 0 |
 | `CMIC_TXBUF` | 15 | 15 | 15 | 14 | 1 | 0 | 0 | 0 |
 | `CMIC_UART0` | 44 | 27 | 27 | 25 | 2 | 0 | 17 | 0 |
 | `CMIC_UART1` | 44 | 27 | 27 | 25 | 2 | 0 | 17 | 0 |
@@ -194,13 +194,13 @@
 | `ROM` | 13 | 13 | 13 | 12 | 1 | 0 | 0 | 0 |
 | `SRAM` | 33 | 33 | 33 | 33 | 0 | 0 | 0 | 0 |
 | `UNIMAC0` | 29 | 0 | 0 | 0 | 0 | 0 | 0 | 29 |
-| **all** | 6681 | 4701 | 4699 | 4285 | 414 | 2 | 1666 | 314 |
+| **all** | 6681 | 4792 | 4790 | 4376 | 414 | 2 | 1666 | 223 |
 
 Blocked ranges:
 
 - `dmac` `0x18020000`-`0x18020fff` (in reset): PL330 DMAC in IDM reset: DMAC_M0_IDM_RESET_CONTROL (0x18114800) = 1 cold and warm, IO_CONTROL_DIRECT = 0xc003f003; first read DMAC_PL330_DS stalls
 - `amac` `0x18022000`-`0x18025fff` (in reset): AMAC (GMAC0/UNIMAC0) in IDM reset: AMAC_IDM0_IDM_RESET_CONTROL (0x18110800) = 1 cold and warm, IO_CONTROL_DIRECT = 0x3fff07c5; first read GMAC0_DEVCONTROL stalls
-- `cmic_timesync` `0x48010600`-`0x4801091f` (hang): CMIC TIMESYNC/BroadSync (offsets 0x10600-0x1091c): cold hang; SDK releases TOP_SOFT_RESET_REG.TS_RST_L + TOP_SOFT_RESET_REG_2 TS_PLL_RST_L/POST_RST_L and programs TOP_TS_PLL_CTRL_*, our init drops TS/BS PLL writes (I, not read out)
+- `cmic_timesync` `0x48010600`-`0x4801091f` (answered): unit 1 read from a2 on the 9713149 init: TOP_SOFT_RESET_REG 0xfffff, _2 0x13f00, TOP_TS_PLL_STATUS 0x80000102, same as unit 0; 91 registers, no stall, no abort, all = regdb reset (2026-11-17, #91). The earlier hang was a chip with no unit 1 init run (TS block in reset)
 - `cmic_mmu_coslc` `0x48023000`-`0x48023007` (hang): CMIC_MMU_COSLC_COUNT_ADDR/DATA (indirect MMU counter access, 0x23000): hangs cold and warm (MMU released by init); warm hang also wedged a1 (power cycle)
 
 Gap probe (unit 1, read-only from a2, #86 phase 2): 256 B windows over the unnamed words of the pages of blocks whose IDM reset reads released.
@@ -309,7 +309,7 @@ Gap probe (unit 1, read-only from a2, #86 phase 2): 256 B windows over the unnam
 
 Blocked ranges:
 
-- `cmic_timesync` `0x48010600`-`0x4801091f` (answered): unit 0 awto-uboot state: TOP_SOFT_RESET_REG = 0x000fffff (TS_RST_L released), TOP_SOFT_RESET_REG_2 = 0x00013f00 (TS_PLL_RST_L, TS_PLL_POST_RST_L released), TOP_TS_PLL_STATUS = 0x80000102 (PLL_LOCK); 0x48010600-0x4801091f read in 0x40 B windows, 83 registers, no stall (2026-11-16, #91). Unit 1 hang = TS block in reset
+- `cmic_timesync` `0x48010600`-`0x4801091f` (answered): unit 0 awto-uboot state: TOP_SOFT_RESET_REG = 0x000fffff (TS_RST_L released), TOP_SOFT_RESET_REG_2 = 0x00013f00 (TS_PLL_RST_L, TS_PLL_POST_RST_L released), TOP_TS_PLL_STATUS = 0x80000102 (PLL_LOCK); 0x48010600-0x4801091f read in 0x40 B windows, 83 registers, no stall (2026-11-16, #91).
 - `cmic_mmu_coslc` `0x48023000`-`0x48023007` (mapped): unit 1: COSLC count addr/data hang cold and warm, wedged the CMIC AXI slave (#91); on unit 0 that wedges a1's own CMIC
 - `dmac` `0x18020000`-`0x18020fff` (in reset): uboot state: DMAC_M0_IDM_RESET_CONTROL (0x18114800) = 1 read by a1 (same as unit 1); Linux releases it (us48_idm_reset), read in the linux pass
 - `amac` `0x18022000`-`0x18025fff` (in reset): AMAC_IDM0_IDM_RESET_CONTROL (0x18110800) = 1 read by a1 in the uboot and the linux state (same as unit 1): GMAC0 is not released on this board

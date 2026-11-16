@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hwdb_probe — read-only register validation of unit 1 from a2 (#86 phase 1).
 
-Usage: hwdb_probe.py [--unit 0|1] gen|build [--suspect NAME] | run PHASE | report   (no --suspect = main pass; results merge by key into tmp/hwprobe/PHASE.json)
+Usage: hwdb_probe.py [--unit 0|1] [--only LO HI] [--unblock NAME] gen|build [--suspect NAME] | run PHASE | report   (no --suspect = main pass; results merge by key into tmp/hwprobe/PHASE.json)
   gen     list from regdb (iprocreg at its AXI address, cpureg at cmic0 + offset) -> tmp/hwprobe/list.tsv + tmp/a2fw/regprobe_list.h
           (skipped rows: write-only, read side effects; blocked rows: hwdb/validation/u1-blocked.toml)
   build   gen + scripts/build_a2fw.py us48-a2-regprobe
@@ -365,6 +365,15 @@ def main():
     if "--unit" in a:
         i = a.index("--unit")
         set_unit(int(a[i + 1]))
+        del a[i:i + 2]
+    global ONLY, UNBLOCK
+    if "--only" in a:  # --only LO HI: probe just this address range (hex)
+        i = a.index("--only")
+        ONLY = (int(a[i + 1], 0), int(a[i + 2], 0))
+        del a[i:i + 3]
+    if "--unblock" in a:  # --unblock NAME: try that blocked entry once
+        i = a.index("--unblock")
+        UNBLOCK = (a[i + 1],)
         del a[i:i + 2]
     sus = a[a.index("--suspect") + 1] if "--suspect" in a else None
     if a[0] == "gen":

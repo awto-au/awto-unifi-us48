@@ -20,11 +20,11 @@ src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, suspect amac, idx 0"
 
 [[blocked]]
 name = "cmic_timesync"
-state = "hang"
+state = "answered"
 lo = 0x48010600
 hi = 0x4801091f
-why = "CMIC TIMESYNC/BroadSync (offsets 0x10600-0x1091c): cold hang; SDK releases TOP_SOFT_RESET_REG.TS_RST_L + TOP_SOFT_RESET_REG_2 TS_PLL_RST_L/POST_RST_L and programs TOP_TS_PLL_CTRL_*, our init drops TS/BS PLL writes (I, not read out)"
-src = "tmp/logs/hwdb_probe.log 2026-11-16 cold run, suspect cmic, idx 287"
+why = "unit 1 read from a2 on the 9713149 init: TOP_SOFT_RESET_REG 0xfffff, _2 0x13f00, TOP_TS_PLL_STATUS 0x80000102, same as unit 0; 91 registers, no stall, no abort, all = regdb reset (2026-11-17, #91). The earlier hang was a chip with no unit 1 init run (TS block in reset)"
+src = "tmp/logs/hwdb_probe.log 2026-11-17 run cold --only 0x48010600 0x4801091f --unblock cmic_timesync"
 
 [[blocked]]
 name = "cmic_mmu_coslc"

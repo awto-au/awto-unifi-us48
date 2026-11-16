@@ -9,7 +9,7 @@ state = "answered"
 phase = "uboot"
 lo = 0x48010600
 hi = 0x4801091f
-why = "unit 0 awto-uboot state: TOP_SOFT_RESET_REG = 0x000fffff (TS_RST_L released), TOP_SOFT_RESET_REG_2 = 0x00013f00 (TS_PLL_RST_L, TS_PLL_POST_RST_L released), TOP_TS_PLL_STATUS = 0x80000102 (PLL_LOCK); 0x48010600-0x4801091f read in 0x40 B windows, 83 registers, no stall (2026-11-16, #91). Unit 1 hang = TS block in reset"
+why = "unit 0 awto-uboot state: TOP_SOFT_RESET_REG = 0x000fffff (TS_RST_L released), TOP_SOFT_RESET_REG_2 = 0x00013f00 (TS_PLL_RST_L, TS_PLL_POST_RST_L released), TOP_TS_PLL_STATUS = 0x80000102 (PLL_LOCK); 0x48010600-0x4801091f read in 0x40 B windows, 83 registers, no stall (2026-11-16, #91)."
 src = "tmp/logs/hwdb_probe_u0.log 2026-11-16 uboot --unblock cmic_timesync"
 
 [[blocked]]
