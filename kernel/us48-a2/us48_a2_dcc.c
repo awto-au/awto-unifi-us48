@@ -50,15 +50,35 @@ struct us48_a2_dcc {
 	spinlock_t lock;	/* both fifos */
 	bool running;
 	u32 polls, words, dscr;	/* debugfs dcc_stats: polls run, DTRTX words drained, last DSCR seen */
+	char win[32];		/* last bytes of the stream, so a marker split over two drains is found */
+	int wl, mark;		/* mark: see dcc_scan() */
 	DECLARE_KFIFO(log, u8, DCC_LOG_SZ);
 	DECLARE_KFIFO(in, u8, DCC_IN_SZ);
 };
+
+/* dcc_stats `mark`: 1 = "Run /init" line seen, -1 = oops/panic text seen since the last start (#103 post-mortem tooling, scripts/a2_pm.py) */
+static void dcc_scan(struct us48_a2_dcc *d, const u8 *buf, int n)
+{
+	char tmp[sizeof(d->win) + DCC_BURST + 1];
+	int len = d->wl + n;
+
+	memcpy(tmp, d->win, d->wl);
+	memcpy(tmp + d->wl, buf, n);
+	tmp[len] = 0;
+	if (strnstr(tmp, "Unable to handle kernel", len) || strnstr(tmp, "Kernel panic", len))
+		WRITE_ONCE(d->mark, -1);
+	else if (strnstr(tmp, "Run /init as init", len) && READ_ONCE(d->mark) == 0)
+		WRITE_ONCE(d->mark, 1);
+	d->wl = min_t(int, len, sizeof(d->win) - 1);
+	memcpy(d->win, tmp + len - d->wl, d->wl);
+}
 
 static void dcc_deliver(struct us48_a2_dcc *d, const u8 *buf, int n)
 {
 	struct tty_struct *tty;
 	unsigned long fl;
 
+	dcc_scan(d, buf, n);
 	spin_lock_irqsave(&d->lock, fl);
 	while (kfifo_avail(&d->log) < n)
 		kfifo_skip(&d->log);
@@ -122,6 +142,8 @@ static enum hrtimer_restart dcc_timer(struct hrtimer *t)
 
 void us48_a2_dcc_start(struct us48_a2_dcc *d)
 {
+	d->wl = 0;
+	WRITE_ONCE(d->mark, 0);
 	WRITE_ONCE(d->running, true);
 	hrtimer_start(&d->timer, 0, HRTIMER_MODE_REL);
 }
@@ -272,8 +294,8 @@ static int dcc_stats_show(struct seq_file *m, void *unused)
 {
 	struct us48_a2_dcc *d = m->private;
 
-	seq_printf(m, "running %d polls %u words %u last_dscr %#x\n", READ_ONCE(d->running), READ_ONCE(d->polls),
-		   READ_ONCE(d->words), READ_ONCE(d->dscr));
+	seq_printf(m, "running %d polls %u words %u last_dscr %#x mark %d\n", READ_ONCE(d->running), READ_ONCE(d->polls),
+		   READ_ONCE(d->words), READ_ONCE(d->dscr), READ_ONCE(d->mark));
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(dcc_stats);

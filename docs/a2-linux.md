@@ -294,3 +294,23 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Normal image, 1000 MHz, ping marker, blocks of 15: ctl 2/30, `dcc_late_us=20000` 1/30, DSCR-only poll (`dscr_only=1`, DTB `cap1000-l2.dtb` = no earlycon) 0/30; poll 100 ms makes a2 `/init` die (no hvc0), not an oops. Mechanism is not the DTRTX reads, the rate, or earlycon blocking.
 - Clock (debug a1, L2 on, ping marker, 15-boot blocks): 1000 MHz 1/30, 1200 0/30, 1400 0/30, 1600 1/120 (the 1600 oops: same NULL write at 0x4, pc `0xc0423d5c`, but at 0.66 s after the timers, not at `NR_IRQS`). `a2_cap.py LINUX 1600 --skip` under two a1 `dd` tmpfs loops: 6 clean (userspace, limit expiry), 2 module-load prefetch aborts at 0xbf00004c (known false positive), 2 runs ENOMEM on a1 (load too large; rerun with 16 MiB loops).
 - Tools: `a2_ram` (sysfs bin file of the `us48_pci.a2.0` device, raw a2 pool read while a2 is started) and `scripts/a2_dmesg.py` (finds the printk ring in a 16 MiB dump, prints the text). a2's dirty D-cache lines are not in DDR: after an oops the ring is incomplete from a1's side, so `a2_ram` shows the log of a boot that ran, not a post-mortem. `a2_boot_cycles.py --diag` prints PCSR (debug image) and RAM milestones for each non-ok boot.
+
+## #103 root cause: first line of a new maple node reads stale zeros in a2's L1 (2026-11-17)
+- Method: `scripts/a2_catch.py` (vector catch armed for kernel NULL data aborts, `capture` arm `vc null`) caught 0 in 250 boots at 1000 MHz (expected about 10): the flat-out DSCR polling of the capture thread hides the fault. Not used for the counts.
+- Post-mortem instead (`scripts/a2_pm.py`, DCC poll on, debug a1 image): a2 sits in the panic loop after the oops text; debugfs `capture` accepts `inspect <hex va>...` (halt, dump registers, 256 B window + 4 KiB page + struct page of each pointer, a2 view through its caches vs DDR in a1's WC mapping, L1 clean/invalidate and PL310 clean+inv by PA per differing line, flush of a2's caches to DDR, reset). Module params `cap_l2x0`, `cap_memmap` = System.map VAs of `l2x0_base`, `mem_map` of the a2 image.
+- Fault: `mas_wr_node_store` + 0x3ac, `ldr r2,[r3]` reads word 0 (parent) of the NEW node (r0 = node + 0xc), r2 = 0, so `r1 = 0` and `str r0,[r1+4]` writes at 4. NR_IRQS stage, L2 not yet enabled (`l2x0_base` = 0).
+- 5 catches with the node values (1000 MHz, `paxb_order=1`, `rx_arid=0`): new node first line (32 B): a2 view `00000000 x8`, DDR `c06a4ea5 0 1 2 3 4 5 6` = the copy of the old node's first line; a2 L1 line is clean (L1 clean leaves DDR unchanged); after L1 invalidate a2 re-reads the DDR value. The second line (offset 0x20..) is dirty in a2 (normal). Verdict (b): stale read in a2's L1, refill returned the data from before a2's own write (the node's memset zeros), the write reached DDR afterwards. Not a lost write, not L2. Two more catches (no pointers parsed) and one (nodes c081b600/700) show no stale line post-mortem (the panic path refetched it).
+- a1 at the catches: only the DCC reader (5 ms poll), pvtmon, fan; no vnet, loadavg 2.2 (kernel threads); a2 ring dump (`a2_dmesg.py --tail 100`) = the oops text, identical to the DCC text.
+- Mitigation (named regdb fields, `PAXB_0_PAXB_TX_DEBUG_CFG` unit 1, regdb/hr2_regs.tsv:5690), 1000 MHz, DCC poll on, blocks of 50 alternating one session:
+
+| Config | Boots | Oops |
+|---|---|---|
+| control (`paxb_order=1`, `rx_arid=0`) | 100 + 150 + 150 | 4 + 7 + 1 |
+| `EP_TX_WR_CMD_BUF_DEPTH_1` (bit 0) | 100 + 150 | 0 + 0 |
+| `EP_TX_RD_CMD_BUF_DEPTH_1` (bit 1) | 100 + 150 | 0 + 0 |
+| module defaults after the change (WR depth 1) | 150 | 0 |
+
+- Cost: a2 boot to "Run /init" 1.40-1.48 s with WR depth 1 (control 1.42-1.48 s), 1.91-1.96 s with RD depth 1 (line fills serialised): default is the WR bit, RD bit stays a param (`paxb_rd_depth1`, default 0).
+- Dropped: `AXIIC_PCIE0_S0_FN_MOD_BM_ISS` 0x1a004008 written through the unit 1 regmap: start fails with -EIO (`can't start rproc: -5`), a2 never runs.
+- Dropped: start retry inside `start()` (stop a2, reset, release again without reloading the payload): a2 prints nothing on the retry (the decompressed kernel overwrote the stub MiB), 2 retries then -EIO. A retry would have to go through `rproc_shutdown` + `rproc_boot` (reload). Not needed with the fix.
+- Tools: `a2_pm.py` (boot loop, oops post-mortem, `--count-only`), `a2_pm_ab.py` (alternating blocks), `a2_catch.py` (vector catch loop). `dcc_stats` shows `mark` (1 = "Run /init" seen, -1 = oops/panic text seen since the start).
