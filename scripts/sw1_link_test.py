@@ -63,7 +63,7 @@ def sds(lan: str) -> str:
         row[k.strip()] = v.split()
     try:
         w = row["WDIG"]
-        return f"serdes.{idx} WDIG02={w[2]} WDIG14={w[0x14]} (RX_IDLE bit0={int(w[0x14], 16) & 1}) TGR_STD_1[0]={row['TGR_STD_1'][0]}"
+        return f"serdes.{idx} WDIG02={w[2]} WDIG14={w[0x14]} (RX_IDLE bit0={int(w[0x14], 16) & 1}) TGR_STD_1[0]={row['TGR_STD_1'][0]} [1]={row['TGR_STD_1'][1]}"
     except (KeyError, IndexError, ValueError):
         return f"serdes.{idx} read failed: {out[:120]}"
 

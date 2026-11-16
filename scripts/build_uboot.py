@@ -15,7 +15,7 @@
   output tmp/uboot/us48-a2-uboot.bin = raw u-boot-dtb.bin (load = entry = hwdb a2_carveout base).
   The DT header us48-a2-hwdb.h is generated from hwdb here.
 
-Usage: build_uboot.py [--target us48|us48-a2] [--tree DIR] [--clean] [--save-patches] [--jobs N] [--cpu-mhz N]
+Usage: build_uboot.py [--target us48|us48-a2] [--tree DIR] [--clean] [--save-patches] [--jobs N] [--cpu-mhz N] [--stock]
   --save-patches   write the tree's tracked-file diffs to uboot-port/patches/000N-*.patch (PATCH_SETS), then exit
   --clean          remove the build dir first
 """
@@ -361,6 +361,8 @@ def main() -> int:
     ap.add_argument("--target", choices=("us48", "us48-a2"), default="us48",
                     help="us48-a2: awto-uboot for unit 1's A9, out tmp/uboot/us48-a2-uboot.bin (docs/a2-uboot.md)")
     ap.add_argument("--tree", type=Path, help="private U-Boot worktree (default tmp/u-boot-TAG); for builds in parallel")
+    ap.add_argument("--stock", action="store_true",
+                    help="RAM-load variant with the us48stock command (reads kernel1, boots stock, #78); out tmp/uboot/us48-uboot-stock.bin, never flash")
     ap.add_argument("--cpu-mhz", type=int, help="RAM-boot variant: CONFIG_US48_CPU_MHZ=N + CPU_REENTRY, out tmp/uboot/us48-uboot-cpuN.bin (docs/cpu-sweep.md)")
     a = ap.parse_args()
     global BUILD, OUT, TREE, DEFCONFIG, LOADADDR, A2
@@ -369,6 +371,10 @@ def main() -> int:
     if a.target == "us48-a2":
         A2, DEFCONFIG, BUILD, OUT = True, "us48_a2_defconfig", ROOT / "tmp/uboot-build-a2", OUTDIR / "us48-a2-uboot.bin"
         LOADADDR = 0x08000000  # = CONFIG_TEXT_BASE of us48_a2_defconfig = hwdb a2_carveout base, both checked
+    if a.stock:
+        BUILD, OUT = ROOT / "tmp/uboot-build-stock", OUTDIR / "us48-uboot-stock.bin"
+        CFG_OPTS.append(["--enable", "US48_STOCKBOOT"])
+        CFG_OPTS.append(["--enable", "LZMA"])  # stock kernel1 is an lzma uImage
     if a.cpu_mhz:
         BUILD = ROOT / f"tmp/uboot-build-cpu{a.cpu_mhz}"
         OUT = OUTDIR / f"us48-uboot-cpu{a.cpu_mhz}.bin"

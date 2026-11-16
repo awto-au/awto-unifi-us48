@@ -58,6 +58,13 @@ config US48_CPU_REENTRY
 	  Relaxes the E0 gate (fid 6/7, any start rate); needs US48_CPU_MHZ 1000..1999 (relock).
 	  For clock sweeps: docs/cpu-sweep.md. Never for the flash image (cold entry is at 400).
 
+config US48_STOCKBOOT
+	bool "us48stock command: read kernel1 (read-only) and bootm stock from RAM (#78)"
+	default n
+	help
+	  RAM-load variant only, never flashed (build_uboot.py --stock). Reads kernel1 with sf read, sets stock's bootargs,
+	  stops the SP805 (stock has no feeder) and boots it. Writes nothing. Power cycle returns to the normal auto-chain.
+
 config US48_ICACHE
 	bool "Enable the L1 I-cache after relocation (#75)"
 	default y

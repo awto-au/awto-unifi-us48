@@ -39,7 +39,7 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 | awto-uboot image corrupt (data/header CRC) | `bootm` fails → `u-boot>` prompt, WDT petted by getc/putc | serial: `sf read` + `bootm` a good image, or rewrite the image from stock |
 | env CRC bad | default env (stock `bootcmd`, `bootdelay` 3) and rewrites `mtd1` with it (seen in `scripts/uboot1_emu.py`) → stock boots | re-write our env |
 | awto-uboot boots but is broken (hang after jump) | `bootm` stopped the uboot-1 WDT; awto-uboot arms SP805 (10 s) → reset → same path | serial at awto-uboot if it reaches the prompt; else JTAG / SPI clip |
-| want stock | — | from awto-uboot: `sf read` kernel1 + `bootm`, or restore the default env |
+| want stock | — | RAM only: `scripts/stock_ramboot.py` (`us48stock` variant, below), or restore the default env |
 
 - **No serial escape at uboot-1 with `bootdelay=0`.** Every recovery other than JTAG goes through a working awto-uboot or a failed `bootm`.
 - awto-uboot has `sf write` access to `0xc0000` (64 KiB, env only) to re-write or restore the env.
@@ -102,6 +102,14 @@ Decision: Dan, 2026-11-15. Replaces the kernel1-head plan. Stock stays intact in
 - Env rewritten 2026-11-15 13:41 with `scripts/u2_flash_env.py --expect-live ee76b962`: `sf read 0x01000000 0xe0000 0x200000`, crc32 `5e0fbaf4`, read-back OK. `bootm` checks only the header length, so image growth up to 2 MiB needs no env change.
 - Cold power-cycle ×2: prompt at +3.31 s (was +2.92 s with the exact-size read; the extra 1.2 MiB read costs ~0.4 s).
 - The kernel at the old offset `0x1e0000` is now inside the uboot slot: re-flash mainline to `0x2e0000` before booting it from flash.
+
+## Stock from RAM (#78, Dan 2026-11-16)
+
+- `scripts/build_uboot.py --stock` -> `tmp/uboot/us48-uboot-stock.bin` (`CONFIG_US48_STOCKBOOT` + LZMA, command `us48stock` in `uboot-port/cmd/us48boot.c`). Never flashed (not the slot image); off by default.
+- `us48stock`: `sf read` kernel1 (`0xfe0000`, header + data, read only), stock's bootargs (docs/uboot.md section 4), `machid bb8`, `bi_boot_params` 0x8000 (without it stock gets no cmdline and builds a 4-partition MTD map), SP805 off (stock has no feeder), `bootm`.
+- `scripts/stock_ramboot.py [--cycle|--reboot|--reset|--here]`: catch the awto-uboot window, TFTP the variant, crc check, `bootm`, catch its window (1 s autoboot), read bootsel `0x1ee0000` + env `0xc0000` (crc32 `7c56c6ae`, `5e0fbaf4`), `us48stock`. Stock ready (`switchdrvr_ready`) ~1 min after the kernel starts.
+- Bootsel record and env read-back after stock ran twice: unchanged. Stock wrote its own `cfg` (cfgmtd) as always.
+- Power cycle returns to the normal chain. Stock's ssh: `ubnt@192.168.25.206`.
 
 Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot-second-stage.md).
 

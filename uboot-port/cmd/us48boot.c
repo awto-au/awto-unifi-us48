@@ -53,3 +53,60 @@ static int do_us48boot(struct cmd_tbl *cmdtp, int flag, int argc, char *const ar
 
 U_BOOT_CMD(us48boot, 1, 0, do_us48boot, "boot the kernel slot (0x2e0000) from flash",
 	   "- uImage header magic + CRC, exact-length read, bootm; stops at the prompt on any failure");
+
+#ifdef CONFIG_US48_STOCKBOOT
+/*
+ * us48stock (#78): RAM-load variant only. Read stock kernel1 (never written), stock's bootargs and machine ID, stop the SP805, bootm.
+ * Stock facts: docs/uboot.md section 4 (cmdline, machid 3000, load/entry 0x18000), autochain.md (kernel1 = 0xfe0000, record 0x1ee0000 not read).
+ */
+#include <env.h>
+#include <asm/global_data.h>
+#include <asm/io.h>
+
+DECLARE_GLOBAL_DATA_PTR;
+
+#define US48_K1_OFF	0xfe0000
+#define US48_K1_SIZE	0xf00000	/* kernel1 without the bootsel record (last 64 KiB), as uboot-1 reads it */
+#define US48_SP805	0x18039000	/* DT us48-uboot.dts watchdog; unlock 0x1acce551 at +0xc00, control at +8 */
+
+static int do_us48stock(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	struct legacy_img_hdr *hdr = (struct legacy_img_hdr *)US48_LOADBUF;
+	char cmd[64];
+	u32 len;
+	int ret;
+
+	ret = run_command("sf probe 0", 0);
+	if (ret)
+		return us48_fail("sf probe", ret);
+	snprintf(cmd, sizeof(cmd), "sf read 0x%x 0x%x 0x%x", US48_LOADBUF, US48_K1_OFF, (u32)sizeof(*hdr));
+	ret = run_command(cmd, 0);
+	if (ret)
+		return us48_fail("sf read kernel1 header", ret);
+	if (!image_check_magic(hdr) || !image_check_hcrc(hdr))
+		return us48_fail("kernel1: bad uImage magic or header CRC", be32_to_cpu(hdr->ih_magic));
+	len = image_get_data_size(hdr);
+	if (!len || len > US48_K1_SIZE - sizeof(*hdr))
+		return us48_fail("kernel1: data length outside the slot", len);
+	printf("us48stock: kernel1 '%s' %u B, load %08x\n", image_get_name(hdr), len, image_get_load(hdr));
+	snprintf(cmd, sizeof(cmd), "sf read 0x%x 0x%x 0x%x", US48_LOADBUF, US48_K1_OFF, (u32)sizeof(*hdr) + len);
+	ret = run_command(cmd, 0);
+	if (ret)
+		return us48_fail("sf read kernel1", ret);
+	env_set("bootargs", "console=ttyS0,115200 mem=128M@0x0 mem=128M@0x68000000 "
+		"mtdparts=spi1.0:768k(u-boot),64k(u-boot-env),64k(shmoo),15360k(kernel0),15424k(kernel1),1024k(cfg),64k(EEPROM) "
+		"ubntbootid=1 ubnt_active_slot=1 ubnt_current_slot=1 ubootver=usw-v1.1.6.122-gd2310f3e");
+	env_set("machid", "bb8");
+	gd->bd->bi_boot_params = 0x8000;	/* ATAG list address uboot-1 uses (docs/uboot.md section 4); unset here = no cmdline, stock then guesses its mtd map */
+	puts("us48stock: image read, SP805 off, bootm\n");
+	snprintf(cmd, sizeof(cmd), "bootm 0x%x", US48_LOADBUF);
+	run_command("wdt stop", 0);
+	writel(0x1acce551, US48_SP805 + 0xc00);
+	writel(0, US48_SP805 + 0x8);
+	ret = run_command(cmd, 0);	/* returns only on failure */
+	return us48_fail("bootm returned (SP805 is off: power cycle if the console hangs)", ret);
+}
+
+U_BOOT_CMD(us48stock, 1, 0, do_us48stock, "RAM-only: read kernel1 and boot stock",
+	   "- #78 stock-warm capture variant; never in the flash image");
+#endif

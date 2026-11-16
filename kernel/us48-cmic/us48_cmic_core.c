@@ -476,6 +476,21 @@ static void link_work_fn(struct work_struct *w)
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 }
 
+/*
+ * TX credits (TX_X4_CREDIT0.CREDITENABLE) take effect only when re-armed once the MAC is up: the TX PCS then
+ * encodes (ENCODE_STATUS_0 != 0) and the far end stops sending RF on the optic lane (#78, driver-internals 13.7).
+ */
+static void tx_credit_cycle(struct us48_cmic *u, u32 lane)
+{
+	int ret;
+
+	mutex_lock(&u->mdio);
+	ret = us48_tsc_wr(u, 0xffde, lane) ?: us48_tsc_wr(u, 0xc100, 0x0000) ?: us48_tsc_wr(u, 0xc100, 0x4021);
+	mutex_unlock(&u->mdio);
+	if (ret)
+		dev_warn(u->dev, "tsc lane %u: TX credit cycle failed (%d)\n", lane, ret);
+}
+
 /* Undo stock's port disable on one xe lane: verified order, driver-internals 13.5. */
 static void port_enable(struct us48_port *p)
 {
@@ -498,6 +513,7 @@ static void port_enable(struct us48_port *p)
 	/* Only from stock's parked state: re-crediting a running port is not known safe. */
 	if (!sbus(u, 0x0b, BLK_XLPORT, 0x60000 | a, v, 2) && (v[0] & 0x43) == 0x03) {
 		dev_info(u->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip enable\n", p->cfg->name, v[0]);
+		tx_credit_cycle(u, a);
 		return;
 	}
 	mutex_lock(&u->mdio);
@@ -517,6 +533,7 @@ static void port_enable(struct us48_port *p)
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | a, v, 2);
 	v[0] = 0;
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | a, v, 2);
+	tx_credit_cycle(u, a);
 	dev_info(u->dev, "%s: enable sequence done\n", p->cfg->name);
 }
 

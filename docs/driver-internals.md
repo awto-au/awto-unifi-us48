@@ -650,6 +650,18 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 - xe49 optic - sw1 lan6, via `tscwr`, 40 s each, reverted after: FIR 0xcad0 only; FIR 0xcad0 + ANATX 0x2220; ANATX 0x2220 only. sw1 TGR_STD_1 reg0/reg1 = 000C/0000, no carrier in all three (#78). C
 - TX PCS regs match the SDK 10G encode path (`cfg_seq.c:2398-2408`, `:2584-2620`, `tscmod_tx_lane_control :4408`): `0xc111`=0x0014 (mode 5), `0xc113`=0xc1cb (scr 3, LI/LF/RF, rstb+enable), `0xa003`=0x0002 (SDK writes 2), `0xc100`=0x4021. The SDK has no scrambler seed register. C
 
+### 13.7 Stock-warm capture and TX credit re-arm (#78, #87, 2026-11-16)
+- Stock booted once from RAM (`us48stock`, docs/autochain.md "Stock from RAM"); lane/MAC dumps of stock vs our cold init: `scripts/tsc_lane_dump.py` (TSC, 2600 regs/lane pair), `scripts/xlport_dump.py` (XLPORT/XLMAC), reader `tools/tsc_read.c` (MIIM + S-channel through `/dev/mem`, unit 1 at `0x0a000000`). Dumps under `tmp/tsc_dump/`, not committed.
+- Microcode: stock = ours: `0xf010` VERSION `0xa042`, `0xf015` CRC `0xa081`.
+- Control: sw1 locks neither stock's xe49 TX (optic, lan6) nor xe50 TX (DAC, lan3): carrier 0, TGR_STD_1 reg0/reg1 `000C/0000` (lan8 linked = `100D/8000`), "RX calibration did not pass -67" every ~30 s, same as with our init. So sw1 never reaches carrier with either init; the PCS-level state is the comparison left.
+- Stock xe49 lane 0 PCS_LIVE `0003` (no RF) with sw1 lan6 up or down; stock xe50 `0083` (RF from sw1, lan3 down or up).
+- Stock vs our cold init (init-relevant, reads only): `0xc101` 0 vs 0084, `0xf014` 0x1256 vs 0xa2a6, `0x9001` 0 vs 0xaa00 (lanes 1/3 analog reset released), `0xc260` FIRMWARE_MODE 2 on both lanes vs 0 on the optic lane, AN ability regs `0xc181/0xc186`, CL37 timers `0x9250-52`; XLMAC: SA regs (`0x60500/0x60700`), RX_MAX_SIZE 0x5f2, PAUSE_CTRL RX/TX pause off. None changes the link result (`0x9001` and `0xc101` tested on the board).
+- **Real difference: TX_X4 ENCODE_STATUS_0 (`0xc120`) = 0 on both lanes after our init, `0x4871`/`0x4811` on stock.** Our TX PCS encoder never ran; the far end then answered RF (`PCS_LIVE` b7).
+  - Re-arming TX credits after the MAC is up fixes it: `TX_X4_CREDIT0` (`0xc100`) 0 then `0x4021`, AER = lane. xe49: `0xc120` 0x4811, PCS_LIVE `0083` -> `0003` = stock. xe50 (DAC, sw1 lan3): `0xc120` 0x4011, RF stays (stock xe50 also keeps RF).
+  - An XLMAC SOFT_RESET pulse (`0x1041` then `0x1003`) alone does not do it (tested at init and after).
+  - Driver: `tx_credit_cycle()` after the enable sequence (`us48_cmic_core.c`), also on the "MAC already enabled" path.
+- MIIM write trace (`mmio_trace`, unit 1 mapping `-p 0x0a000000`, `-w 0x31000`, `-k 0x3f000`, `-q 0x31000,0x31080`): tracer `STEPERR st=57f pc=TRAMP+4` after 706 lines (8 s), switchdrvr stays stopped, no MIIM write captured. Same failure signature as the 2026-11-15 unit-0 run. A power cycle is the way out. The tracer needs a fix before MIIM can be trapped.
+
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
 Symptom was: RX ch1 armed, `CURR_DESC` advanced, nothing written. Resolved in 14.4 (VLAN/STG membership, not PCIe).
