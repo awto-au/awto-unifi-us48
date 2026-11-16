@@ -121,6 +121,7 @@
 | a2 Linux own RAM, 1000 MHz, L2 on (PL310 128 KiB, aux 0x4e120001, same session) | lat 4K 4.4, 32K 5.6, 64K 34, 128K 411, 256K 1120, 2M 1260 ns; rd/wr/cp 16K 2110/961/675, 256K 71/275/67, 8M 67/254/66 MB/s | | reads x3 (22 -> 67 MB/s), 64 KiB working set at L2 latency; writes unchanged |
 | a2 Linux own RAM, 1000 MHz, L2 off (2026-11-16, 3c820ff, a1 normal image cold boot from kernel0, `scripts/a2_bw.py`) | rd/wr/cp 16K 378/361/166, 256K 20/224/22, 8M 23/230/23 MB/s | | same as the debug-a1 row: a1 profile does not change the a2 path |
 | a2 Linux own RAM, 1000 MHz, L2 on (same session and image) | rd/wr/cp 16K 2041/534/293, 256K 67/264/67, 8M 67/254/66 MB/s | | 8M reads x2.9; vnet and halt rows in a2-linux.md "a2 L2" |
+| a2 Linux own RAM, 1600 MHz, L2 on (2026-11-16, f4ce402, a1 normal image cold boot from kernel0, `scripts/a2_bw.py`, #85, #88) | rd/wr/cp 16K 3332/647/597, 256K 69/248/67, 8M 67/256/66 MB/s | | 8M equal to 1000 MHz: memory-bound (PCIe round trip); 16K reads x1.6 with the core clock; vnet rows in a2-linux.md "a2 L2" |
 
 ## RX_FREE_ARID_COUNT cost (#79, #88; a1 ARM 1000 MHz, L2 on; 2026-11-16, base 8224728 + rx_arid default 0)
 

@@ -277,6 +277,13 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 | L2 on | 1.5 s | 0.76 / 1.08 (cold), 0.77 / 1.00 (RAM boot) | 5.04 / 4.35 (cold), 5.12 / 4.33 (RAM boot) | 67 / 254 / 66 |
 | L2 off | 2.3 s | 1.02 / 1.95 | 2.03 / 2.07 | 23 / 230 / 23 |
 
+- a2 1600 MHz, L2 on (f4ce402, 2026-11-16, normal image from kernel0 crc d8f3e289, awto-uboot slot crc 79637aa2, two cold boots, `vnet_test.py` + `a2_bw.py`, 10 pings, 10 MiB TCP; cpu_mhz default 1600, DTB `us48-a2-1600-l2.dtb`):
+
+| a2 | start to vnet up | ping a1->a2 / a2->a1 avg ms | TCP a1->a2 / a2->a1 MB/s | us48bench 8M rd/wr/cp MB/s |
+|---|---|---|---|---|
+| cold boot 1 | 1.49 s | 0.70 / 1.25 | 5.43 / 4.48 | 67 / 256 / 66 |
+| cold boot 2 | 1.48 s | 0.73 / 1.10 | 5.55 / 4.52 | not run |
+
 - Normal image has no debugfs: halt stats come from the debug image, same commit, a2 1000 MHz L2 on, `a2_halt_cycles.py` 30 cycles: `halt_n` 60, `halt_fail` 0, `halt_max_us` 204 (typical 15-25 us, one 93). 10 more stop/start cycles with a 10 MiB TCP transfer running: n 83, fail 0, max 204.
 - Seen once, normal image, a2 L2 on: `a2 halt: DSCR 0x3004002, limit 3700 us, elapsed 8980 us, ret -110` on a start after a stop; the next start worked, no power cycle. The a2 shell had been stuck on an `nc` (console only; vnet still pinging) before that stop. Elapsed exceeds the 3700 us limit by 2.4x, so it is a slow halt, not the persistent wedge (#102).
 - Seen once, debug a1 (a2 normal zImage, L2 on, 1000 MHz): a2 oops in `irq` setup at boot (`NR_IRQS`, NULL write at 0x4, pc `0xc0423d5c`), next boot clean. About 14 L2-on a2 boots this session.
