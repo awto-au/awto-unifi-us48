@@ -6,6 +6,7 @@
  */
 #include <linux/delay.h>
 #include <linux/firmware.h>
+#include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/sched.h>
 
@@ -223,6 +224,49 @@ static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lan
 	return ret;
 }
 
+/*
+ * Module in cage <front> (SFF-8472 Table 4-1/5-3, A0h: byte 0 id, byte 8 bit 2 = passive cable). I2C = PCA9548
+ * channel front-49 (board.md), adapter found by mux name, no bus numbers. Read-only.
+ * Returns 1 passive cable, 0 optic/other, -errno unreadable (logged; the optic path is then left as is).
+ */
+static int tsc_sfp_passive_chan(struct device *dev, int chan)
+{
+	char want[40];
+	int nr;
+
+	snprintf(want, sizeof(want), "-mux (chan_id %d)", chan);
+	for (nr = 0; nr < 32; nr++) {
+		struct i2c_adapter *ad = i2c_get_adapter(nr);
+		u8 off = 0, a0[11];
+		struct i2c_msg m[2] = { { .addr = 0x50, .len = 1, .buf = &off },
+					{ .addr = 0x50, .flags = I2C_M_RD, .len = sizeof(a0), .buf = a0 } };
+		int ret;
+
+		if (!ad)
+			continue;
+		if (strncmp(ad->name, "i2c-", 4) || !strstr(ad->name, want)) {
+			i2c_put_adapter(ad);
+			continue;
+		}
+		ret = i2c_transfer(ad, m, 2);
+		if (ret != 2) {
+			dev_err(dev, "sfp chan %d: A0h read failed on %s: %d\n", chan, ad->name, ret);
+			i2c_put_adapter(ad);
+			return ret < 0 ? ret : -EIO;
+		}
+		dev_info(dev, "sfp chan %d (%s): id %02x conn %02x b3 %02x b8 %02x\n", chan, ad->name, a0[0], a0[2], a0[3], a0[8]);
+		i2c_put_adapter(ad);
+		return a0[0] == 0x03 && (a0[8] & BIT(2));
+	}
+	dev_err(dev, "sfp chan %d: no PCA9548 channel adapter\n", chan);
+	return -ENODEV;
+}
+
+static int tsc_sfp_passive(struct us48_cmic *u, int front)
+{
+	return tsc_sfp_passive_chan(u->dev, front - 49);
+}
+
 int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 {
 	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0 };
@@ -240,13 +284,17 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 			continue;
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
 		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
-		/* SFP+ 1 (lane 0) has a passive DAC: FIRMWARE_MODE 2 = OM's CR mode; with 0 the RX never block-syncs (#78, board). */
-		if (!ret && u->cfgs[i].lane == 0)
-			ret = tsc_uc_cmd(u, 0, 0) ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc260, .mask = 0xffff, .val = 2 }, 0) ?:
-			      tsc_uc_cmd(u, 0, 2) ?: us48_tsc_uc_ram_wr(u, 0, 0x04d0, 0x0d00) ?:
-			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc137, .mask = BIT(0) }, 0) ?:	/* RSTB_LANE 0 */
-			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc21e, .mask = BIT(15), .val = BIT(15) }, 0) ?:	/* RXSEQSTART */
-			      us48_tsc_uc_ram_wr(u, 0, 0x04d0, 0x0e00);
+		/* Passive cable in the cage: OM CR mode (FIRMWARE_MODE 2) + RX restart; optic = OM SFI = FIRMWARE_MODE 0 (stage 0 value). */
+		if (!ret && tsc_sfp_passive(u, u->cfgs[i].front) == 1) {
+			u8 l = u->cfgs[i].lane;
+
+			dev_info(u->dev, "tsc %s: passive cable (SFF-8472 A0h byte 8 bit 2): FIRMWARE_MODE 2\n", u->cfgs[i].name);
+			ret = tsc_uc_cmd(u, l, 0) ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc260, .mask = 0xffff, .val = 2 }, l) ?:
+			      tsc_uc_cmd(u, l, 2) ?: us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0d00) ?:
+			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc137, .mask = BIT(0) }, l) ?:	/* RSTB_LANE 0 */
+			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc21e, .mask = BIT(15), .val = BIT(15) }, l) ?:	/* RXSEQSTART */
+			      us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0e00);
+		}
 		if (!ret)
 			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);
 	}

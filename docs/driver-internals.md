@@ -642,6 +642,10 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 - Local PCS loopback on lane 0 (0x9009 bit 4, credits/TX/RX off around it): PCS_LIVE 0x0003, no RF: our TX stream decodes in our own RX. C
 - sw1 `SerDes 7` is **lan6** (pcs phandle map lan1..8 = SerDes 2..9), not lan3. The 30.3 s `RX calibration did not pass` loop belongs to lan6 (SFP+ 2 light); lan3 (SerDes 4) never logs, i.e. its calibration worker keeps waiting in `rxcal_ready`. C (sw1 DT, `pcs-rtl-otto.c`)
 - Lane map tests (TX map swaps 0<->1/2/3, analog regs follow the swap: AER 0 `0xc0xx` hits the swapped-in lane): no change. C
+- Media follows the module (2026-11-16): `us48_tsc_init` reads SFF-8472 A0h (id byte 0, byte 8 bit 2 = passive cable) per cage over the PCA9548 channel `front-49` and applies FIRMWARE_MODE 2 + RX restart only for a passive cable. Optic = OM `SFI` = FIRMWARE_MODE 0 (stage 0 value; OM sets 2 only for `PHY_IF_CR`, `bcmi_tsc_xgxs_drv.c` speed_set 10G). C
+- Pairs after the module swap (#87), both fail: xe49 (lane 0) optic - sw1 lan6: sw1 calibration runs and logs `-67` every ~30 s; xe50 (lane 2) DAC - sw1 lan3: no sw1 log at all. Same per-media/per-sw1-port symptom as before the swap (lane 0 DAC - lan3, lane 2 optic - lan6), so it follows the far-end port/media, not our lane or cage. Board side both: PCS_LIVE `0083` (sync + RF from sw1). C
+- sw1 `WDIG` reg 0x14 bit 0 is not an RX_IDLE flag: linked lan8 (10G up) reads the same bit as the idle ports. Discard the old RX_IDLE readings. C
+- TX_X1 PI `0x1_9200..0x1_9212` reads 0 on lane 0 and 2 (`0x1920f` = 0x920f echo); SDK `tscmod_tx_pi_control` only writes TX_PI_EN 0 / CONTROL3 0 (reset), i.e. what we have. Live TX FIR `0xc252` = `0x5a54` on both lanes = the stock value. Neither differs. C
 
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
