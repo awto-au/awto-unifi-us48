@@ -117,7 +117,7 @@ def rows(suspect=None):
     bl = blocked()
     for x in out:
         for b in bl:
-            if b.get("phase", PHASE) != PHASE or b["name"] in UNBLOCK:
+            if b.get("phase", PHASE) != PHASE or b["name"] in UNBLOCK or b.get("state") == "answered":
                 continue
             if b["lo"] <= x["addr"] <= b["hi"] and not x["skip"]:
                 x["skip"] = f"blocked ({b.get('state', 'hang')}): {b['name']}"

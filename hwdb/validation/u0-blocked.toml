@@ -1,14 +1,16 @@
 # Unit 0 register ranges not read (a1 view, #86). lo/hi inclusive (AXI address), same a1 reads as scripts/hwdb_probe.py --unit 0.
-# state = "mapped" (hung or in reset on unit 1, taken over without a unit 0 read: u1-blocked.toml, cause in #91),
+# state = "answered" (read on unit 0, no longer blocked; kept as the record),
+#         "mapped" (hung or in reset on unit 1, taken over without a unit 0 read: u1-blocked.toml, cause in #91),
 #         "in reset" (unit 0 IDM RESET_CONTROL = 1 read on the board), "hang" (read stalled a1: power cycle).
 
 [[blocked]]
 name = "cmic_timesync"
-state = "mapped"
+state = "answered"
+phase = "uboot"
 lo = 0x48010600
 hi = 0x4801091f
-why = "unit 1: CMIC TIMESYNC hang (#91); unit 0 init has the same dropped TS/BS PLL writes"
-src = "hwdb/validation/u1-blocked.toml"
+why = "unit 0 awto-uboot state: TOP_SOFT_RESET_REG = 0x000fffff (TS_RST_L released), TOP_SOFT_RESET_REG_2 = 0x00013f00 (TS_PLL_RST_L, TS_PLL_POST_RST_L released), TOP_TS_PLL_STATUS = 0x80000102 (PLL_LOCK); 0x48010600-0x4801091f read in 0x40 B windows, 83 registers, no stall (2026-11-16, #91). Unit 1 hang = TS block in reset"
+src = "tmp/logs/hwdb_probe_u0.log 2026-11-16 uboot --unblock cmic_timesync"
 
 [[blocked]]
 name = "cmic_mmu_coslc"

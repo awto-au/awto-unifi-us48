@@ -57,7 +57,7 @@
   - Payload `a1fw/regprobe_u0.c` (+ `_asm.S`, `.ld`): TFTP to 0x01000000, `dcache flush` + `icache flush`, `go`. Own vectors (VBAR), data abort flagged and skipped, UART1 stream of 8-hex tokens; a stalled read = output stops (hang bound 1 s).
   - Not `dcache off/on`: `on` rebuilds the page table and drops the uncached DMA regions of the eth driver (TFTP then fails).
 - linux state: `python3 scripts/hwdb_probe_u0.py run linux [--suspect NAME]`: `a1fw/regprobe_linux.c` (static musl, `/dev/mem` O_SYNC mmap, SIGBUS = external abort) over ssh.
-- Suspect ranges (`SUSPECT`, plus `dmac`) run one per pass; blocked entries with `phase = "uboot"` apply to that state only; `--unblock NAME --only LO HI` tries one blocked range.
+- Suspect ranges (`SUSPECT`, plus `dmac`) run one per pass; blocked entries with `phase = "uboot"` apply to that state only; `--unblock NAME --only LO HI` tries one blocked range. `--top` logs TOP_SOFT_RESET_REG/_2, TOP_MISC_CONTROL_1, TOP_TS_PLL_STATUS (S-channel) after the TFTP bring-up, before `go`; `--top-only` stops there. Blocked `state = "answered"` = read on unit 0, no longer blocked.
 
 ## Lint
 - `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry. Report only.

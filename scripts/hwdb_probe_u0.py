@@ -26,6 +26,9 @@ ROOT = hp.ROOT
 LOG = ROOT / "tmp/logs/hwdb_probe_u0.log"
 # Payload prints ~40 KiB at 115200 baud (3.5 s, expected). A register read is < 1 ms, so no byte for 1.0 s = stalled read (x1000).
 HANG_S = 1.0
+TOP = False  # --top: log TOP reset/PLL registers over S-channel before `go`
+TOP_REGS = [("TOP_SOFT_RESET_REG", 0x2030400), ("TOP_SOFT_RESET_REG_2", 0x2030800), ("TOP_MISC_CONTROL_1", 0x2031400),
+            ("TOP_TS_PLL_STATUS", 0x204ac00)]
 # 3956 tokens x 9 chars = 36 KB = 3.1 s of UART time; backstop = 4x
 RUN_CAP_S = 14.0
 
@@ -60,6 +63,17 @@ def run(phase, suspect=None, only=None):
         for c in ("dcache flush", "icache flush"):
             s.send_line(c)
             s.expect(dev.U2_PROMPTS, 5.0, c)
+        if TOP:  # read-only S-channel reads of the TS/BS reset + PLL state (#91), after the TFTP bring-up
+            for nm, a in TOP_REGS:
+                s.buf = b""
+                s.send_line(f"schan r 16 {a:#x}")
+                t1 = time.monotonic()
+                while not any(p in s.buf for p in dev.U2_PROMPTS) and time.monotonic() - t1 < 5.0:  # schan answers in ms
+                    s._pump(0.05)
+                m = re.search(r"\[0\] = 0x([0-9a-f]{8})", s.buf.decode("latin1", "replace"))
+                log(f"TOP {nm} {a:#x} = {"0x" + m.group(1) if m else '?'}")
+        if TOP == "only":
+            return 0
         s.write(b"\x03")
         s.buf = b""
         s.send_line("go 0x01000000")
@@ -229,6 +243,8 @@ def main():
         temp()
         return 0
     if a[0] == "run":
+        global TOP
+        TOP = "only" if "--top-only" in a else "--top" in a
         sus = a[a.index("--suspect") + 1] if "--suspect" in a else None
         if "--unblock" in a:
             hp.UNBLOCK = (a[a.index("--unblock") + 1],)
