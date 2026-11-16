@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import hwdb  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 HEAD = re.compile(r"^// ==== (\S+) @ ([0-9a-f]+) ====$", re.M)
 RAW = re.compile(r"(?:Ram|DAT|_DAT|UNK)_([0-9a-f]{8})\b")
@@ -89,4 +90,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

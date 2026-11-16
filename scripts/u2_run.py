@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import console
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RELAY = ["/mnt/2tb/git/awto-terminal/.venv/bin/python3", str(ROOT / "scripts/relay_native.py"), "192.168.25.208"]
@@ -78,4 +79,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--no-cycle',))
     sys.exit(main())

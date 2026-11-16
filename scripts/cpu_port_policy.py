@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from _cli import help_guard  # noqa: E402
 
 LOG_DIR = None
 
@@ -103,4 +104,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

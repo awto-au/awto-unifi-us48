@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 import u2_regsync as rs  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 PULSE = ["cmic w 0x1a000 0", "cmic w 0x1a000 1"]
 CPS = "cmic w 0x10220 1"
@@ -66,4 +67,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--here',))
     sys.exit(main())

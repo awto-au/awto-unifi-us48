@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 import u2_cold  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 RANGES = [(0x10000, 0x14000), (0x1a000, 0x1a200), (0x31000, 0x31600)]
 CHUNK = 64  # words per command: keeps each reply short
@@ -46,4 +47,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

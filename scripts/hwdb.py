@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
+from _cli import help_guard  # noqa: E402
 
 CONF = ("C", "I")
 SDK_IPROC, SDK_CMIC = "sdk_iproc", "sdk_cmic"
@@ -478,4 +479,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main(sys.argv))

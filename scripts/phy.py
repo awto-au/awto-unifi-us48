@@ -16,6 +16,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import console  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 BASES = {"u0": 0x48000000, "u1": 0x08040000}
 B = BASES["u1"]
@@ -80,4 +81,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

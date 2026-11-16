@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import time
+from _cli import help_guard  # noqa: E402
 
 LOG = pathlib.Path(__file__).resolve().parent.parent / "tmp/logs/sfp_ddm.log"
 HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
@@ -58,4 +59,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

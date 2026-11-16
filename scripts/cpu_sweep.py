@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 REPO = dev.REPO
 LOG = REPO / "tmp/logs/cpu_sweep.log"
@@ -175,4 +176,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--l2off',))
     sys.exit(main())

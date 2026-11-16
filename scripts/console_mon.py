@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import console  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 CAPTURE_DIR = console.ROOT / "tmp/logs/console"
 
@@ -79,5 +80,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     os.chdir(console.ROOT)
     sys.exit(main())

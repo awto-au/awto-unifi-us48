@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/a2_sram_sweep.log"
@@ -72,4 +73,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

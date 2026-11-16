@@ -12,6 +12,7 @@
 import os
 import sys
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(os.environ.get("US48_REPO") or Path(__file__).resolve().parent.parent)
 GHIDRA = Path(os.environ.get("GHIDRA_INSTALL_DIR", Path.home() / ".local/opt/ghidra_12.2_DEV"))
@@ -45,4 +46,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

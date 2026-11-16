@@ -23,6 +23,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import console  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 LOG = REPO / "tmp/logs/a2_loader.log"
@@ -176,4 +177,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

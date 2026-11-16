@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 PING_S = 15.0  # ARP + ICMP; GPHY AN up to 4 s in start(), sw1 STP may add more; expiry = no answer, logged
 
@@ -63,4 +64,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--image', '--no-ping'))
     sys.exit(main())

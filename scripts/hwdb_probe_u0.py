@@ -20,7 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import console  # noqa: E402
 import dev  # noqa: E402
 import hwdb_probe as hp  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
+help_guard(__doc__, strict=True, known=('--cycle', '--only', '--suspect', '--top', '--top-only', '--unblock'))
 hp.set_unit(0)
 ROOT = hp.ROOT
 LOG = ROOT / "tmp/logs/hwdb_probe_u0.log"

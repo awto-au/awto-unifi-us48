@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/uboot1_emu_regcheck.log"
@@ -55,4 +56,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

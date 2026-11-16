@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 ROOT = hwdb.repo_root()
 GEN = ROOT / "hwdb/gen"
@@ -464,4 +465,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main(sys.argv))

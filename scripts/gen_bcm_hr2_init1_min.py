@@ -10,6 +10,7 @@ Usage: scripts/gen_bcm_hr2_init1_min.py   (input: python3 scripts/init_phases.py
 import re
 import sys
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "tmp/u1_min_init.txt"
@@ -50,4 +51,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

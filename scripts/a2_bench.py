@@ -10,6 +10,8 @@ import struct
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _cli import help_guard  # noqa: E402
+help_guard(__doc__)
 import a2_loader as L  # noqa: E402
 import console  # noqa: E402
 

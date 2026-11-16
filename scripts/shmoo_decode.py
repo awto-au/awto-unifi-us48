@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dev import REPO  # noqa: E402  (3-tier repo root)
+from _cli import help_guard  # noqa: E402
 
 LOGF = REPO / "tmp/logs/shmoo_decode.log"
 OUT = REPO / "tmp/ddr/shmoo_decoded.md"
@@ -85,4 +86,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

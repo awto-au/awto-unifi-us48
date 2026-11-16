@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "tmp/mainline/build-normal"
@@ -60,4 +61,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

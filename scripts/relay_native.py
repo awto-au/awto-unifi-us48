@@ -10,6 +10,10 @@ import pathlib
 import sys
 import time
 
+from _cli import help_guard
+
+help_guard(__doc__, strict=True)
+
 from aioesphomeapi import APIClient
 
 LOG = pathlib.Path(__file__).resolve().parent.parent / "tmp/logs/relay_native.log"

@@ -13,6 +13,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import console  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 B = 0x08040000
 PARAM, RDATA, ADDR, CTRL = B + 0x31080, B + 0x31084, B + 0x31088, B + 0x3108C
@@ -51,4 +52,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

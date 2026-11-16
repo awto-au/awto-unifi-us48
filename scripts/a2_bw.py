@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vnet_test as V  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 BENCH = V.ROOT / "tmp/rootfs/tools-bin/us48bench"
 V.LOG = V.ROOT / "tmp/logs/a2_bw.log"
@@ -29,4 +30,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

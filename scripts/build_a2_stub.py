@@ -4,6 +4,10 @@ import pathlib
 import subprocess
 import sys
 
+from _cli import help_guard
+
+help_guard(__doc__)
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 T = REPO / "private/tools/arm-linux-musleabi-cross/bin/arm-linux-musleabi-"
 OUT = REPO / "tmp/a2"

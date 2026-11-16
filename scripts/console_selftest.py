@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import console
+from _cli import help_guard  # noqa: E402
 
 LOG = Path(__file__).resolve().parent.parent / "tmp/logs/console_selftest.log"
 
@@ -66,4 +67,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

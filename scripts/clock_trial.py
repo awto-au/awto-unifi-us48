@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import console  # noqa: E402
 import dev  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 LOGF = dev.LOGS / "clock_trial.log"
 BOARD_IP = dev.U2_IP
@@ -261,4 +262,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--mhz', '--soak'))
     sys.exit(main())

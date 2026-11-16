@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_mainline as bm  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 S04 = """#!/bin/sh
 # cold-state image (#86): unit 0 cmic + us48_pci + ge1 only; us48_cmic_xe (unit 1 init) is loaded by hand after the cold read
@@ -58,4 +59,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

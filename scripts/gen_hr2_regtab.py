@@ -8,6 +8,7 @@ Usage: scripts/gen_hr2_regtab.py
 """
 import csv
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "regdb/hr2_regs.tsv"
@@ -46,4 +47,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     main()

@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 BOOT_S = 8.0  # bootm copy ~0.25 s + banner + PCIe warm no-op + fans ~0.5 s (autochain.md timings) x ~5: log-and-fail on expiry
 
@@ -62,4 +63,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--image',))
     sys.exit(main())

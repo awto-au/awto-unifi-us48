@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 LX = Path(__file__).resolve().parent / "lx.py"
 CMD = 'for h in /sys/class/hwmon/hwmon*; do echo "$(cat $h/name) $(cat $h/temp1_input)"; done'
@@ -25,4 +26,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

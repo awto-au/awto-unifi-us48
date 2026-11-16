@@ -9,6 +9,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 V = ROOT / "hwdb/validation"
@@ -51,4 +52,5 @@ def main():
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

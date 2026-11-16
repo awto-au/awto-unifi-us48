@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 import u2_run  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 IMG = dev.REPO / ("tmp/uboot/us48-uboot-stock-nou1.bin" if "--no-u1" in sys.argv else "tmp/uboot/us48-uboot-stock.bin")
 # after Linux `reboot`: shutdown ~2 s + uboot-1 + awto-uboot banner (docs/autochain.md ~3 s) -> same 15 s window as u2_run
@@ -120,4 +121,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__, strict=True, known=('--here', '--no-boot', '--no-u1', '--reboot', '--reset'))
     sys.exit(main())

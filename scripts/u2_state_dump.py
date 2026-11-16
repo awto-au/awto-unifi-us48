@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 import u2_cold  # noqa: E402
 from dev import console, log  # noqa: E402
+from _cli import help_guard  # noqa: E402
 
 DATA = dev.REPO / "common/bcm-cmic/bcm_cmic_hr2_init_data.h"
 
@@ -55,4 +56,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())

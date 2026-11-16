@@ -1503,6 +1503,11 @@ def cmd_selftest(_extra: list[str]) -> int:
     check("--help lists commands", all(c in h.stdout for c in COMMANDS))
     u = subprocess.run([sys.executable, __file__, "no-such-command"], capture_output=True, text=True, cwd=REPO)
     check("unknown command exits 2", u.returncode == 2)
+    # static AST check (#107): board-touching scripts guard -h/--help before any action
+    st = subprocess.run([sys.executable, str(REPO / "scripts/script_help_selftest.py")], capture_output=True, text=True, cwd=REPO)
+    check("scripts/*.py help guards (script_help_selftest)", st.returncode == 0)
+    if st.returncode:
+        log(st.stdout.strip(), "ERROR")
     # --help / parse errors of every board command print the usage and exit before any console access.
     for name, meta in COMMANDS.items():
         if meta["kind"] == "step":

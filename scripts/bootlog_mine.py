@@ -12,6 +12,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+from _cli import help_guard  # noqa: E402
 
 
 def repo_root() -> Path:
@@ -432,4 +433,5 @@ def facts(boots):
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())
