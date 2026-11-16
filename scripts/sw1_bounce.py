@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""sw1_bounce: start-up order experiments for one 10G pair (US-48 xe49/xe50 <-> sw1 lan6/lan3) (#78, #87).
+"""sw1_bounce: start-up order experiments for one 10G pair (US-48 xe49/xe50 <-> sw1 lan7/lan3) (#78, #87).
 
 Usage: scripts/sw1_bounce.py --pair 49|50 [--exp a,b,c,d,e] [--wait-s 40]
-- 49 = xe49 (lane 0) - sw1 lan6;  50 = xe50 (lane 2) - sw1 lan3. lan5 is never touched. Admin state of lan3/lan6 is
+- 49 = xe49 (lane 0) - sw1 lan7;  50 = xe50 (lane 2) - sw1 lan3. lan5 is never touched. Admin state of lan3/lan6/lan7 is
   recorded first and restored in a finally block.
 - a: sw1 port down 3 s, up.  b: sw1 up, board module us48_cmic_xe reloaded (scripts/mod_reload.py).
   c: 5x (sw1 down 1 s, up, 3 s apart).  d: 100 s idle, sw1 up (3 calibration cycles of ~30.4 s).
@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_bounce.log"
 SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
-PAIRS = {"49": ("xe49", "lan6", 0), "50": ("xe50", "lan3", 2)}
-RESTORE = ("lan3", "lan6")
+PAIRS = {"49": ("xe49", "lan7", 0), "50": ("xe50", "lan3", 2)}
+RESTORE = ("lan3", "lan6", "lan7")
 POLL_S = 0.5
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]

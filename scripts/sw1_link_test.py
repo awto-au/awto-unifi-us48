@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """sw1_link_test: bring one sw1 port up against one US-48 xe port, watch both carriers + sw1 RX state, restore sw1 (#78, #87).
 
-Usage: scripts/sw1_link_test.py --sw1 lan6 --xe xe49 [--wait-s 40] [--ping] [--no-board-dump]
-- sw1 = root@192.168.25.48 (ssh key). lan5 is refused (Selwyn's route). Admin state of lan3 and lan6 is recorded first and
+Usage: scripts/sw1_link_test.py --sw1 lan7 --xe xe49 [--wait-s 40] [--ping] [--no-board-dump]
+- sw1 = root@192.168.25.48 (ssh key). lan5 is refused (Selwyn's route). Admin state of lan3, lan6 and lan7 is recorded first and
   restored in a finally block (up stays up, down goes down); only the --sw1 port is changed.
 - SerDes index on sw1: lanN = SerDes N+1 (pcs phandle map lan1..8 = SerDes 2..9, driver-internals 13.6); RX_IDLE = WDIG reg 0x14 bit 0.
 - Wait bound: sw1 runs RX calibration 3x per cycle, verdict every ~30.3 s (#78); 40 s covers one verdict + margin. Expiry = "no".
 - Carrier = sw1 /sys/class/net/<lan>/carrier (polled 0.5 s). Board side: carrier + PCS_LIVE (tsc param dump) at the end.
 - --ping: private /30 10.48.1.0/30 (US-48 .1 on the xe port, sw1 .2 on the lan port; no house LAN), 3 pings from the board
-  (the ARP/ICMP source MAC is what sw1 learns), then `bridge fdb show` lines for the board's xe MAC. Addresses removed in finally.
+  (the ARP/ICMP source MAC is what sw1 learns), then the sw1 FDB check: which sw1 port learned the xe MAC (reported, compared with PEER and --sw1). Addresses removed in finally.
 - Log: tmp/logs/sw1_link_test.log
 """
 import argparse
@@ -23,7 +23,8 @@ LOG = ROOT / "tmp/logs/sw1_link_test.log"
 SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
 POLL_S = 0.5
-RESTORE = ("lan3", "lan6")
+RESTORE = ("lan3", "lan6", "lan7")
+PEER = {"xe49": "lan7", "xe50": "lan3"}  # expected far end (hwdb/board/ports.toml); the FDB check below verifies it, never trust it
 MAC = {"xe49": "02:75:73:34:38:31", "xe50": "02:75:73:34:38:32"}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
@@ -53,6 +54,20 @@ def admin_up(lan: str) -> bool:
     return "UP" in m.group(1).split(",")
 
 
+def fdb_port(mac: str) -> str:
+    """sw1 port that learned `mac` (bridge fdb, non-self entry), or '' when none."""
+    out = ssh(SW1, f"bridge fdb show | grep -i {mac}")
+    for ln in out.splitlines():
+        m = re.search(r"dev (lan\d)\b", ln)
+        if m and "self" not in ln.split():
+            return m.group(1)
+    for ln in out.splitlines():
+        m = re.search(r"dev (lan\d)\b", ln)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def sds(lan: str) -> str:
     """sw1 SerDes debugfs of this lan: WDIG reg 0x14 bit 0 = RX_IDLE (valid while WDIG reg 0x02 selects RX_STATUS), 10GBASE-R PCS status."""
     idx = int(lan[3:]) + 1
@@ -70,7 +85,7 @@ def sds(lan: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--sw1", required=True, help="sw1 port, e.g. lan6")
+    ap.add_argument("--sw1", required=True, help="sw1 port, e.g. lan7")
     ap.add_argument("--xe", required=True, help="US-48 port, e.g. xe49")
     ap.add_argument("--wait-s", type=float, default=40.0)
     ap.add_argument("--ping", action="store_true")
@@ -108,6 +123,9 @@ def main() -> int:
             ssh(SW1, f"ip addr add 10.48.1.2/30 dev {a.sw1}")
             log("ping: " + ssh(BOARD, "ping -c 3 -W 1 10.48.1.2 | tail -3", 15))
             log(f"sw1 fdb for {MAC[a.xe]}:\n" + ssh(SW1, f"bridge fdb show | grep -i {MAC[a.xe]}; echo rc=$?"))
+            got = fdb_port(MAC[a.xe])
+            log(f"FDB: {a.xe} MAC learned on sw1 port {got or 'NONE'} (tested {a.sw1}, expected {PEER[a.xe]})"
+                + ("" if got == a.sw1 else "  *** MISMATCH: the far end is not the port under test ***"))
     finally:
         if a.ping:
             ssh(SW1, f"ip addr del 10.48.1.2/30 dev {a.sw1}")

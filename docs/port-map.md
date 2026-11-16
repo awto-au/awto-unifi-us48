@@ -73,6 +73,7 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 
 ## Current cabling
 - Lives in [scripts/cabling.json](../scripts/cabling.json) (module, far end, link state per port); this doc is the fixed map only.
+- sw1 far ends (FDB-verified, hwdb `sw1_peer`): ge1 - lan2, xe49 - lan7, xe50 (DAC) - lan3.
 - sw1 has three links to the US-48 (1G copper, SFP, SFP+): stock bridges them with STP off. Test with one link up, or set the others down on sw1 (runtime). Carrier is independent of forwarding.
 
 ## Which software drives which chip

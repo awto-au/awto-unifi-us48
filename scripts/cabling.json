@@ -1,20 +1,20 @@
 {
   "_doc": "Current bench cabling of the US-48. Edit when a cable moves; docs/port-map.md describes the fixed port map only. Ports by panel label + stock front number.",
-  "updated": "2026-11-13",
+  "updated": "2026-11-16",
   "ports": [
     {
       "label": "SFP+ 1",
       "front": 49,
-      "module": "Cisco DAC P3410UD05000-1 SN JPC223107Q1, 10G, 5 m",
-      "far_end": "sw1 lan3",
-      "link": "down at both ends in stock (2026-11-13)"
+      "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic)",
+      "far_end": "sw1 lan7 (optic SN F2220031785); confirmed by sw1 FDB (xe49 MAC 02:75:73:34:38:31 learned on lan7), 2026-11-16, #87",
+      "link": "10G up with the flashed kernel slot (tx_credit_cycle), #78"
     },
     {
       "label": "SFP+ 2",
       "front": 50,
-      "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic), read via swctrl sfp show",
-      "far_end": "sw1 lan6 (light seen at lan6 RX ~-2.4 dBm, no carrier either end)",
-      "link": "no link: stock port disabled; OpenWrt us48_cmic 'enable sequence done' still NO-CARRIER (2026-11-13)"
+      "module": "Cisco DAC P3410UD05000-1 SN JPC223107Q1, 10G, 5 m",
+      "far_end": "sw1 lan3 (same SN on ethtool -m lan3)",
+      "link": "no link: sw1 TGR_STD_1 000C/0000, xe50 sees RF (2026-11-16, #78)"
     },
     {
       "label": "SFP 1",

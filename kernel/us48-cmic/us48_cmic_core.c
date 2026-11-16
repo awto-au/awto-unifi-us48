@@ -472,6 +472,11 @@ static void link_work_fn(struct work_struct *w)
 				netif_carrier_off(p->ndev);
 			netdev_info(p->ndev, "link %s%s\n", up ? "up" : "down", up && p->cfg->copper ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
 		}
+		/* The RX adaptation of the boot init leaves 2-13 % PCS link drops and FCS errors on the optic lane; a restart once linked clears them (#87). */
+		if (up && !p->cfg->copper && !p->rx_tuned) {
+			p->rx_tuned = true;
+			us48_tsc_rx_restart(u, p->cfg);
+		}
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 }

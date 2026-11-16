@@ -1,5 +1,5 @@
 # Front-panel port map: one [[port]] per front port 1-52 plus internal HiGig 28/29 on both chips (front = 0).
-# Fields: front, id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
+# Fields: front, sw1_peer (xe49/xe50 only: sw1 port on the far end), id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
 # Sources: docs/board.md Port map, docs/driver-internals.md s13, OpenBCM p2l_mapping_24_2_2; switchdrvr FastPath table VA 0x1d8ecb4 checked by scripts/us48_portmap.py.
 
 [[port]]
@@ -704,6 +704,7 @@ sdk = "xe0"
 linux = "xe49"
 src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
 conf = "C"
+sw1_peer = "lan7"  # verified by sw1 bridge fdb (scripts/sw1_link_test.py --ping), #87
 
 [[port]]
 front = 50
@@ -718,6 +719,7 @@ sdk = "xe1"
 linux = "xe50"
 src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
 conf = "C"
+sw1_peer = "lan3"  # verified by sw1 bridge fdb (scripts/sw1_link_test.py --ping), #87
 
 [[port]]
 front = 51

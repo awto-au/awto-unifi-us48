@@ -92,6 +92,7 @@ struct us48_port {
 	u16 vid;			/* private VLAN id = front port number */
 	bool open;
 	bool registered;
+	bool rx_tuned;			/* xe: one RX restart after the first link up (#87) */
 };
 
 struct us48_cmic {
