@@ -23,6 +23,7 @@
 #include <linux/seq_file.h>
 #include <linux/sizes.h>
 #include <linux/string.h>
+#include <linux/sysfs.h>
 #include <linux/uaccess.h>
 #include "remoteproc_internal.h"
 #include "us48_hwdb.h"
@@ -51,7 +52,7 @@
  * GO and PLL lock: ~10 us / tens of us expected (I, unmeasured on unit 1); 1 ms limit, expiry = log + restore.
  */
 /* Default 100 (sys clk, ROM state): a2 corrupts memory above 100 MHz, Dan 2026-11-15, #79 */
-static uint cpu_mhz = 100;
+static uint cpu_mhz = 1600;	/* Dan 2026-11-16 (#88); highest clean step is tracked in #103/#88 */
 module_param(cpu_mhz, uint, 0644);
 MODULE_PARM_DESC(cpu_mhz, "a2 ARM clock set at start: 100 (sys clk), 400..600 (VCO 4x) or 700..1999 (VCO 2x), VCO a multiple of 25 MHz; 0 = leave");
 /*
@@ -370,8 +371,8 @@ static int us48_a2_load(struct rproc *rproc, const struct firmware *fw)
 	}
 	if (ret || !payload)
 		return ret;
-	if (cpu_mhz > 100)
-		dev_warn(a->dev, "Linux payload at cpu_mhz %u: memory corruption seen above 100 MHz (#70, #79)\n", cpu_mhz);
+	if (cpu_mhz > 1600)
+		dev_warn(a->dev, "Linux payload at cpu_mhz %u: above the 1600 MHz run value, 1650 MHz hangs (#79, #88)\n", cpu_mhz);
 	ret = a2_blob(a, kernel_fw, koff, "kernel", false) ?: a2_blob(a, dtb_fw, doff, "dtb", false) ?:
 	      a2_blob(a, initrd_fw, ioff, "initrd", true);
 	if (ret || ub)
@@ -1290,6 +1291,32 @@ static const struct rproc_ops us48_a2_ops = {
 	.sanity_check		= a2_sanity_check,
 };
 
+/*
+ * sysfs a2_ram: raw read of the a2 pool (host DDR) while a2 is prepared (running or stopped-after-oops, not offline).
+ * No a2 debug-register access: lets a1 read a2's printk ring / stall evidence after the fact (#103).
+ */
+static ssize_t a2_ram_read(struct file *f, struct kobject *kobj, const struct bin_attribute *attr, char *buf, loff_t off, size_t count)
+{
+	ssize_t n = -ENODEV;
+
+	mutex_lock(&region_lock);
+	if (region_owner && region_owner->va) {
+		n = 0;
+		if (off < region_owner->size) {
+			n = min_t(size_t, count, region_owner->size - off);
+			memcpy(buf, region_owner->va + off, n);
+		}
+	}
+	mutex_unlock(&region_lock);
+	return n;
+}
+static BIN_ATTR_RO(a2_ram, 0);
+
+static void a2_ram_exit(void *dev)
+{
+	sysfs_remove_bin_file(&((struct device *)dev)->kobj, &bin_attr_a2_ram);
+}
+
 static void a2_rmem_release(void *dev)
 {
 	of_reserved_mem_device_release(dev);
@@ -1365,6 +1392,11 @@ static int us48_a2_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if (ret)
 		return ret;
 	dev_info(dev, "carveout %pa+%zx, a2 AXI %#x\n", &a->phys, a->size, a->da);
+	ret = sysfs_create_bin_file(&dev->kobj, &bin_attr_a2_ram);
+	if (!ret)
+		ret = devm_add_action_or_reset(dev, a2_ram_exit, dev);
+	if (ret)
+		return ret;
 	/* created before rproc_add: devres releases it after rproc_del, which may still call stop() */
 	a->dcc = us48_a2_dcc_create(dev, a->map);
 	if (IS_ERR(a->dcc))

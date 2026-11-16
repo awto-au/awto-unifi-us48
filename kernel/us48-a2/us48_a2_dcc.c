@@ -33,6 +33,9 @@ MODULE_PARM_DESC(poll_us, "DCC idle poll interval in us (a2 hvc_dcc_check gives 
 static uint busy_us = 5000;
 module_param(busy_us, uint, 0644);
 MODULE_PARM_DESC(busy_us, "DCC poll interval in us after a poll that drained data");
+static bool dscr_only;
+module_param(dscr_only, bool, 0644);
+MODULE_PARM_DESC(dscr_only, "poll DSCR only, never read DTRTX / write DTRRX (#103 mechanism test)");
 #define DCC_BURST	256
 #define DCC_LOG_SZ	8192
 #define DCC_IN_SZ	256
@@ -81,6 +84,8 @@ static void dcc_work(struct work_struct *w)
 		if (ret)
 			break;
 		WRITE_ONCE(d->dscr, dscr);
+		if (dscr_only)
+			break;
 		if (dscr & HW_CS_DEBUG0_DSCR_DTRTXFULL_MASK) {
 			ret = regmap_read(d->map, DBG(DTRTX), &v);
 			if (ret)

@@ -4,7 +4,7 @@
 - Board: any a1 image with us48_a2 + us48_vnet (normal image: no debugfs). Stages modules, a2 zImage, DTB, boot stub; one ssh call runs the loop.
 - Each cycle: start; wait for `vnet0 10.48.0.2/30 up` (a2 /init) or an oops/panic line; stop. Oops text kept in /tmp/oops.<n> on a1, printed.
 - Wait limit: a2 normal boot 1.5 s (L2 on) / 2.3 s (L2 off) to vnet up, docs/a2-linux.md; 4.5 s = ~2x (a failed boot ends it earlier on the oops line).
-Usage: a2_boot_cycles.py <label> [--cycles 30] [--mhz 1000] [--dtb NAME] [--profile normal] [--no-stage] [--ko FILE] [--no-vnet] [--load] [--ping] [k=v ...]
+Usage: a2_boot_cycles.py <label> [--cycles 30] [--mhz 1000] [--dtb NAME] [--profile normal] [--no-stage] [--ko FILE] [--no-vnet] [--load] [--ping] [--diag] [k=v ...]
 - Each boot reads sysfs paxb_state (us48_a2 read-back of the #79 bits) after the marker; the summary counts boots where it was not wr_rd_order=1 rx_arid=0.
 Log: tmp/logs/a2_boot_cycles.log
 """
@@ -42,6 +42,15 @@ if [ @LOAD@ = 1 ]; then
 fi
 [ -f /tmp/a2.pid ] && kill $(cat /tmp/a2.pid) 2>/dev/null
 setsid sh -c 'echo $$ > /tmp/a2.pid; exec cat /dev/ttyA20 > /tmp/a2.out' < /dev/null > /dev/null 2>&1 &
+RAM=/sys/bus/auxiliary/devices/us48_pci.a2.0/a2_ram; T=/sys/kernel/debug/remoteproc/remoteproc0
+diag() {
+  [ @DIAG@ = 1 ] || return
+  P=$(grep -h pcsr $T/pcsr 2>/dev/null | tr '\n' ' ')
+  dd if=$RAM of=/tmp/ram.bin bs=4096 count=16384 2>/dev/null
+  M=$(strings -n 10 /tmp/ram.bin | grep -F -o -e 'NR_IRQS: 16' -e 'Switched to clocksource arm_global' -e 'Run /init as' -e 'Unable to handle kernel NULL' -e 'Unable to handle kernel paging' -e 'Internal error: Oops' -e 'Attempted to kill' | sort -u | tr '\n' '|')
+  rm -f /tmp/ram.bin
+  echo "  DIAG pcsr=[$P] ram=[$M]"
+}
 BAD='Unable to handle\|Internal error\|Oops\|Kernel panic\|BUG:\|UBSAN'
 ok=0; bad=0; none=0; i=0; pbad=0
 while [ $i -lt @N@ ]; do
@@ -49,10 +58,10 @@ while [ $i -lt @N@ ]; do
   echo start > $D/state 2>/tmp/err; rc=$?
   t0=$(u)
   if [ @PING@ = 1 ]; then
-    while ! ping -c 1 -W 1 10.48.0.2 > /dev/null 2>&1 && [ $(( $(u) - t0 )) -lt 450 ]; do :; done
-    [ $(( $(u) - t0 )) -lt 450 ] && echo "vnet0 10.48.0.2/30 up" > /tmp/a2.out
+    while ! ping -c 1 -W 1 10.48.0.2 > /dev/null 2>&1 && [ $(( $(u) - t0 )) -lt @WAIT@ ]; do :; done
+    [ $(( $(u) - t0 )) -lt @WAIT@ ] && echo "vnet0 10.48.0.2/30 up" > /tmp/a2.out
   else
-  while ! grep -q "vnet0 10.48.0.2/30 up\|$BAD" /tmp/a2.out && [ $(( $(u) - t0 )) -lt 450 ]; do read -t 0.05 x <&3; done
+  while ! grep -q "vnet0 10.48.0.2/30 up\|$BAD" /tmp/a2.out && [ $(( $(u) - t0 )) -lt @WAIT@ ]; do read -t 0.05 x <&3; done
   fi
   cs=$(( $(u) - t0 ))
   ps=$(cat /sys/module/us48_a2/parameters/paxb_state 2>&1)
@@ -61,6 +70,7 @@ while [ $i -lt @N@ ]; do
     read -t 0.3 x <&3; cp /tmp/a2.out /tmp/oops.$i; bad=$((bad+1)); r=OOPS
   elif grep -q "vnet0 10.48.0.2/30 up" /tmp/a2.out; then ok=$((ok+1)); r=ok
   else none=$((none+1)); r=NOMARKER; cp /tmp/a2.out /tmp/oops.$i; fi
+  [ $r = ok ] || diag
   echo stop > $D/state 2>>/tmp/err; src=$?
   [ @GAP@ -gt 0 ] && { g0=$(u); while [ $(( $(u) - g0 )) -lt @GAP@ ]; do read -t 0.05 x <&3; done; }
   echo "cycle $i start_rc=$rc $r cs=$cs paxb=[$ps] stop_rc=$src $(cat /tmp/err | tr '\n' ' ')"; : > /tmp/err
@@ -88,6 +98,8 @@ def main() -> int:
     ap.add_argument("--ko", help="us48_a2.ko to load instead of the staged normal-profile one (a2_build_ko.py output)")
     ap.add_argument("--no-vnet", action="store_true", help="do not load us48_vnet on a1 (older a2 modules lack its exports)")
     ap.add_argument("--load", action="store_true", help="a1 dd to tmpfs in a loop while a2 boots (DDR write load)")
+    ap.add_argument("--diag", action="store_true", help="on a non-ok boot print pcsr (debug image) and the milestone/oops strings found in the a2 RAM (a2_ram, before the stop)")
+    ap.add_argument("--wait-cs", type=int, default=450, help="marker wait limit in centiseconds (default 450 = 2x the 2.1 s a2 boot to vnet; 900 for the no-poll boots that take 3-4 s)")
     ap.add_argument("kv", nargs="*", help="us48_a2 module params k=v")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -101,7 +113,7 @@ def main() -> int:
             if r.returncode:
                 sys.exit(f"put {src}: {r.stderr}")
     params = "\n".join(f"echo {k.split('=')[1]} > /sys/module/us48_a2/parameters/{k.split('=')[0]}" for k in a.kv)
-    cmd = REMOTE.replace("@N@", str(a.cycles)).replace("@MHZ@", str(a.mhz)).replace("@PARAMS@", params).replace("@GAP@", str(a.gap_cs)).replace("@PING@", "1" if a.ping else "0").replace("@VNET@", "0" if a.no_vnet else "1").replace("@LOAD@", "1" if a.load else "0")
+    cmd = REMOTE.replace("@N@", str(a.cycles)).replace("@MHZ@", str(a.mhz)).replace("@PARAMS@", params).replace("@GAP@", str(a.gap_cs)).replace("@PING@", "1" if a.ping else "0").replace("@VNET@", "0" if a.no_vnet else "1").replace("@LOAD@", "1" if a.load else "0").replace("@WAIT@", str(a.wait_cs)).replace("@DIAG@", "1" if a.diag else "0")
     r = subprocess.run([sys.executable, str(LX), cmd], capture_output=True, text=True)
     out = r.stdout + r.stderr
     with LOG.open("a") as f:

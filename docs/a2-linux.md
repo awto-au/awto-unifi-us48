@@ -57,7 +57,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 ## Clock and boot speed (#70, #79, 2026-11-15)
 - Unit 1 power-on: `POLICY_DBG` 0x2222 = fid 2 (sys clk, 100 MHz row), PLLARMA 0x01004010 (PLL in reset, unlocked), ch0 mdiv 4, ch1 mdiv 2, ARM_DIV 0x2012. PERIPHCLK 50 MHz (heartbeat 25 beats/s x 2e6 ticks).
-- `us48_a2` `cpu_mhz` (default 100 since 2026-11-15, #79; 0 = leave): E2 sequence of `us48_cpu_switch` through the regmap in `start()` before the halt. 400..600 = fid 6 (VCO 4x, ch0 mdiv 4), 700+ = fid 7 (VCO 2x, ch1 mdiv 2). 1000: GO + lock in 149 us, PERIPHCLK 500 MHz host-timed. debugfs `remoteproc0/ccu` = registers + computed MHz.
+- `us48_a2` `cpu_mhz` (default 1600 since 2026-11-16, Dan's choice, #88; 100 was the default 2026-11-15; 0 = leave): E2 sequence of `us48_cpu_switch` through the regmap in `start()` before the halt. 400..600 = fid 6 (VCO 4x, ch0 mdiv 4), 700+ = fid 7 (VCO 2x, ch1 mdiv 2). 1000: GO + lock in 149 us, PERIPHCLK 500 MHz host-timed. debugfs `remoteproc0/ccu` = registers + computed MHz.
 - Standalone firmware (bustest, selftest) at 800/1000: no mismatch, link clean (`us48_bustest stats`).
 - Linux payload (debug and normal profile, with and without L2): early memory corruption (UBSAN in `memblock_free_all`, page-struct oops) at 500/600/800/1000; 400 fails about 3 in 5; 100 MHz boots every time. `cachepolicy=` is ignored on ARMv7 (`Only cachepolicy=writeback supported`): not a test. Poll rate of the DCC reader (5 ms, 1 ms, 20 ms, burst) does not change it. Open in #79.
 - `a2_boot_time.py <label> [--param k=v]` = start a2 Linux and time it (a1 uptime in centiseconds); a2 text in `tmp/logs/a2_boot_<label>.txt`.
@@ -236,7 +236,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 - Both set, no capture: Linux shell 3.3-3.6 s after start, 3/3 at 1000 MHz and 6/6 with the module params; 1600 MHz 2/2 (capture: 0/4 faults at 800, 1200, 1400, 1600). 1650 and 1700 MHz: kernel pointers go wild (garbage DFAR / PC 0x1c000010), a2 hangs; SRAM-only code is clean to 1700 (above).
 - Unfixed a1 load at 600 MHz (order off): 1/6 fault (+ 0/4 idle), same stale-line signature.
-- Fix in `us48_a2`: `paxb_order` (default 1) sets EP_TX_WR_RD_ORDER before the release; `rx_arid` (default 0 since the sweep below; -1 = leave 3) sets unit 0 RX_FREE_ARID_COUNT while a2 runs and restores 3 in stop. debugfs `remoteproc0/paxb_tx` reads/writes the unit 1 register. `cpu_mhz` default stays 100.
+- Fix in `us48_a2`: `paxb_order` (default 1) sets EP_TX_WR_RD_ORDER before the release; `rx_arid` (default 0 since the sweep below; -1 = leave 3) sets unit 0 RX_FREE_ARID_COUNT while a2 runs and restores 3 in stop. debugfs `remoteproc0/paxb_tx` reads/writes the unit 1 register. `cpu_mhz` default is 1600 (Dan 2026-11-16, #88).
 - Open: the 1650 MHz failure is not stale lines (not captured with the dump).
 
 ### RX_FREE_ARID_COUNT sweep (#79, #88, 2026-11-16, base 8224728)
@@ -280,3 +280,10 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Normal image has no debugfs: halt stats come from the debug image, same commit, a2 1000 MHz L2 on, `a2_halt_cycles.py` 30 cycles: `halt_n` 60, `halt_fail` 0, `halt_max_us` 204 (typical 15-25 us, one 93). 10 more stop/start cycles with a 10 MiB TCP transfer running: n 83, fail 0, max 204.
 - Seen once, normal image, a2 L2 on: `a2 halt: DSCR 0x3004002, limit 3700 us, elapsed 8980 us, ret -110` on a start after a stop; the next start worked, no power cycle. The a2 shell had been stuck on an `nc` (console only; vnet still pinging) before that stop. Elapsed exceeds the 3700 us limit by 2.4x, so it is a slow halt, not the persistent wedge (#102).
 - Seen once, debug a1 (a2 normal zImage, L2 on, 1000 MHz): a2 oops in `irq` setup at boot (`NR_IRQS`, NULL write at 0x4, pc `0xc0423d5c`), next boot clean. About 14 L2-on a2 boots this session.
+
+## a2 boot oops at 1000 MHz and the DCC poll (#103, 2026-11-16)
+- The 6 % NULL write (pc `0xc0423d5c` = `mas_wr_node_store`, after `NR_IRQS`) ends in the panic delay loop: all 8 PCSR samples = `0xc04136d8` (`__loop_delay`, System.map of build-normal), identical for oops boots with DCC text and for `dcc_poll=0` no-marker boots. A no-marker boot without DCC is an oops (debug a1 RAM boot, 60 boots per config, blocks of 15: ctl 5 oops, `dcc_poll=0` 2 no-marker, all at that PC; no hang or other failure).
+- Pooled with the earlier normal-image counts: poll on 12/180, `dcc_poll=0` 5/180 (Fisher p about 0.14): no demonstrated DCC effect.
+- Normal image, 1000 MHz, ping marker, blocks of 15: ctl 2/30, `dcc_late_us=20000` 1/30, DSCR-only poll (`dscr_only=1`, DTB `cap1000-l2.dtb` = no earlycon) 0/30; poll 100 ms makes a2 `/init` die (no hvc0), not an oops. Mechanism is not the DTRTX reads, the rate, or earlycon blocking.
+- Clock (debug a1, L2 on, ping marker, 15-boot blocks): 1000 MHz 1/30, 1200 0/30, 1400 0/30, 1600 1/120 (the 1600 oops: same NULL write at 0x4, pc `0xc0423d5c`, but at 0.66 s after the timers, not at `NR_IRQS`). `a2_cap.py LINUX 1600 --skip` under two a1 `dd` tmpfs loops: 6 clean (userspace, limit expiry), 2 module-load prefetch aborts at 0xbf00004c (known false positive), 2 runs ENOMEM on a1 (load too large; rerun with 16 MiB loops).
+- Tools: `a2_ram` (sysfs bin file of the `us48_pci.a2.0` device, raw a2 pool read while a2 is started) and `scripts/a2_dmesg.py` (finds the printk ring in a 16 MiB dump, prints the text). a2's dirty D-cache lines are not in DDR: after an oops the ring is incomplete from a1's side, so `a2_ram` shows the log of a boot that ran, not a post-mortem. `a2_boot_cycles.py --diag` prints PCSR (debug image) and RAM milestones for each non-ok boot.
