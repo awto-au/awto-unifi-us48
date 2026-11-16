@@ -45,6 +45,17 @@
 #define DBG_WAIT_US	1000
 /* a2_halt wait: 1.25 x the worst of 220 measured halts (2.9 ms), typical 15-20 us; see #102 */
 #define HALT_WAIT_US	3700
+/*
+ * a2 reset pulse (CRU_CONTROL.ARM_RST_N low): back-to-back writes (<1 us) left a2 at the data-abort vector, deaf to halt, 12 % of starts;
+ * read-back (~2.5 us) 1 %; 10 us 0 of 100 (#102). 25 us = 2.5x the shortest clean pulse. After the pulse a start gets a2 halt retried
+ * (reset again) up to START_TRIES times: wedge cause is the pulse, not the clocks; each try costs <= HALT_WAIT_US.
+ */
+#define RESET_HOLD_US	25
+#define START_TRIES	3
+/* DBGPRSR offset (ARM ARM ARMv7-A C11.11.x), not in hwdb; read-only, a read clears its sticky bits */
+#define A2_DBG_PRSR	(HW_CS_DEBUG0_BASE + 0x314)
+#define BANNER		"Booting Linux on physical CPU"
+#define BANNER_SCAN	(8 << 20)	/* the printk ring is in kernel .bss, inside the first MiBs of the pool */
 
 /*
  * a2 ARM clock: same sequence as awto-uboot us48_cpu_switch (uboot-port/board/ubiquiti/us48/board.c, docs/clock-audit.md 2),
@@ -231,9 +242,24 @@ static int a2_wait(struct us48_a2 *a, u32 mask, u32 want, const char *what)
 /* Pulse CRU_CONTROL.ARM_RST_N (RMW: unit 1 has other bits set): a2 returns to the boot ROM loop. */
 static int a2_reset(struct us48_a2 *a)
 {
+	u32 v;
 	int ret = regmap_clear_bits(a->map, A2_CRU_CONTROL, HW_CRU_CONTROL_ARM_RST_N_MASK);
 
+	ret = ret ?: regmap_read(a->map, A2_CRU_CONTROL, &v);	/* flush the write: the pulse starts here */
+	udelay(RESET_HOLD_US);
 	return ret ?: regmap_set_bits(a->map, A2_CRU_CONTROL, HW_CRU_CONTROL_ARM_RST_N_MASK);
+}
+
+/* Failed halt: where a2 sits (PCSR, 4 samples: constant = stuck), for #102 */
+static void a2_halt_pcsr(struct us48_a2 *a)
+{
+	u32 pc[4] = {}, d = 0, prsr = 0, i;
+
+	for (i = 0; i < 4; i++)
+		regmap_read(a->map, A2_DBG(ITR_PCSR), &pc[i]);
+	regmap_read(a->map, A2_DBG(DSCR), &d);
+	regmap_read(a->map, A2_DBG_PRSR, &prsr);
+	dev_err(a->dev, "a2 halt fail: PCSR %08x %08x %08x %08x DSCR %#x PRSR %#x\n", pc[0], pc[1], pc[2], pc[3], d, prsr);
 }
 
 static int a2_halt(struct us48_a2 *a)
@@ -255,6 +281,7 @@ static int a2_halt(struct us48_a2 *a)
 	if (ret) {
 		a->halt_fail++;
 		dev_err(a->dev, "a2 halt: DSCR %#x, limit %d us, elapsed %u us, ret %d\n", d, HALT_WAIT_US, a->halt_last_us, ret);
+		a2_halt_pcsr(a);
 	}
 	return ret;
 }
@@ -736,12 +763,18 @@ static int a2_cap_pre_spawn(struct us48_a2 *a);
 static int us48_a2_start(struct rproc *rproc)
 {
 	struct us48_a2 *a = rproc->priv;
-	int ret = a2_reset(a);
+	int ret, try;
 
-	ret = ret ?: a2_set_axi(a, axi_mhz);
-	ret = ret ?: a2_set_cpu(a, cpu_mhz);
-	ret = ret ?: a2_paxb_cfg(a);
-	ret = ret ?: a2_halt(a);
+	for (try = 1; try <= START_TRIES; try++) {
+		ret = a2_reset(a);
+		ret = ret ?: a2_set_axi(a, axi_mhz);
+		ret = ret ?: a2_set_cpu(a, cpu_mhz);
+		ret = ret ?: a2_paxb_cfg(a);
+		ret = ret ?: a2_halt(a);
+		if (ret != -ETIMEDOUT)
+			break;
+		dev_warn(a->dev, "a2 start: halt after reset timed out, try %d of %d\n", try, START_TRIES);
+	}
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);
 	ret = ret ?: a2_cap_pre_vcr(a);
 	if (!ret && dcc_poll && !dcc_late_us)
@@ -768,6 +801,22 @@ static int us48_a2_start(struct rproc *rproc)
 
 static void a2_cap_disarm(struct us48_a2 *a);
 
+/* A start that ran but never printed the kernel banner (the unexplained no-marker boot of #103): leave evidence at the stop. */
+static void a2_banner_check(struct us48_a2 *a)
+{
+	size_t n = min_t(size_t, a->size, BANNER_SCAN), len = sizeof(BANNER) - 1;
+	u8 *p = a->va, *end = a->va + n - len;
+	ktime_t t0 = ktime_get();
+
+	while (p && (p = memchr(p, 'B', end - p))) {
+		if (!memcmp(p, BANNER, len))
+			return;
+		p++;
+	}
+	dev_warn(a->dev, "a2 stop: no kernel banner in the first %zu MiB of a2 RAM (scan %lld us)\n", n >> 20, ktime_to_us(ktime_sub(ktime_get(), t0)));
+	a2_halt_pcsr(a);
+}
+
 /* Halt is best effort (a stalled a2 never halts); the reset is what stops it. */
 static int us48_a2_stop(struct rproc *rproc)
 {
@@ -776,6 +825,7 @@ static int us48_a2_stop(struct rproc *rproc)
 	int ret;
 
 	a2_cap_disarm(a);
+	a2_banner_check(a);
 	us48_a2_dcc_stop(a->dcc);	/* before the halt: DSCR is shared with the debug sequences */
 	if (a2_halt(a))
 		dev_warn(a->dev, "a2 did not halt, resetting\n");
