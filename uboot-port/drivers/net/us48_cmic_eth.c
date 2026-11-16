@@ -8,6 +8,7 @@
 #include <dm.h>
 #include <env.h>
 #include <net.h>
+#include <time.h>
 #include <malloc.h>
 #include <asm/io.h>
 #include <asm/system.h>
@@ -77,6 +78,34 @@ static int us48_ge_wait_link(struct us48_eth_priv *p)
 	return -ENETDOWN;
 }
 
+/*
+ * Frames queued in the chip while the DMA was off arrive in one burst at arm, 3 us apart (58 in 180 us).
+ * A burst past the 32-slot ring while the CPU is elsewhere stalls the engine for seconds: take them first (#104).
+ * Quiet 50 us = 8x the widest gap seen (6 us); backstop 2 ms = 10x the 58-frame drain. Expiry = log, go on.
+ */
+#define FLUSH_QUIET_US	50
+#define FLUSH_MAX_US	2000
+
+static void us48_rx_flush(struct us48_eth_priv *p)
+{
+	ulong t0 = timer_get_us(), last = t0, now;
+	unsigned int n = 0;
+	u8 *pkt;
+
+	while ((now = timer_get_us()) - last < FLUSH_QUIET_US) {
+		if (now - t0 > FLUSH_MAX_US) {
+			printf("us48-eth: rx flush not quiet after %u us, %u frames taken\n", FLUSH_MAX_US, n);
+			break;
+		}
+		if (bcm_hr2_rx_next(&p->unit, &p->dma, &pkt) > 0) {
+			bcm_hr2_rx_done(&p->unit, &p->dma);
+			n++;
+			last = timer_get_us();
+		}
+	}
+	bcm_hr2_rx_arm(&p->unit, &p->dma);	/* clean ring and engine for the caller */
+}
+
 static int us48_eth_start(struct udevice *dev)
 {
 	struct us48_eth_priv *p = dev_get_priv(dev);
@@ -129,6 +158,7 @@ static int us48_eth_start(struct udevice *dev)
 		return ret;
 	p->dma.tx_len = 0;
 	bcm_hr2_rx_arm(&p->unit, &p->dma);
+	us48_rx_flush(p);
 	return 0;
 }
 

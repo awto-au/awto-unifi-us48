@@ -498,3 +498,9 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 - Needed: fresh stock-initialised chip + a U-Boot built after the `CML_FLAGS = 0` change (a stale 17:29 build kept CML 1 and failed).
 - Open: `iminfo` checksum / `bootm` of the RAM image reset the board (SP805 armed by `dev.py` for 20 s); not yet diagnosed. Speed ~100 kB/s, lock-step TX.
 - U-Boot has no `ping` command in this build.
+
+## ge1 first ping/TFTP dead after a long gap (#104, 2026-11-17)
+- Cause: not flash. Any gap of tens of s with the DMA off (`sf erase`/`write`, or `sleep 45`) queues 30-60 frames in the chip CPU queue. At arm they land in 3 us steps (58 in 180 us); the 32-slot ring overflows before the CPU polls (it is sending the ARP request). The RX engine then stalls for seconds and the ARP/echo replies arrive 5-10 s late or are lost. Next `start` re-arms and works.
+- Repro without flash: `scripts/u2_net_probe.py --gap 40` (dead in ~50 % of gap pings before the fix). Flash shape: `scripts/u2_sf_repro.py --len 0x980000 --flashlike` (3 of 3 dead after the 9.5 MiB erase before the fix).
+- Fix: `us48_rx_flush` in `us48_cmic_eth.c`: after `rx_arm`, take frames until 50 us quiet (backstop 2 ms, logged), then re-arm clean. After the fix 0 dead in 4 gap pings + 9.5 MiB erase/write + 2 `flash-kernel0` runs (RAM-loaded image; flashed uboot slot still the old image).
+- Not the cause: SP805 (fed from `schedule()` in the flash wait loop), link/PHY state (BMSR, GPORT CC, DMA_CTRL/STAT/credit regs identical before and after), RELOAD DONE clearing (kernel parity change did not help, reverted).

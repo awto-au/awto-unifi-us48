@@ -6,6 +6,7 @@ Usage: scripts/u2_ramboot.py [--image FILE]   (default tmp/uboot/us48-uboot-chai
 - The image may exceed the env's `sf read` size (autochain.md); only a flash boot needs the size to fit.
 """
 import shutil
+import time
 import sys
 import zlib
 from pathlib import Path
@@ -40,7 +41,17 @@ def main() -> int:
             return 1
         s.write(b"\x03\x03")
         s.send_line(f"bootm {dev.LOAD_ADDR}")
-        s.expect([b"awto-uboot> "], BOOT_S, "new image prompt")
+        # new image autoboots after 1 s: a space every 20 ms from its banner until its prompt (any key aborts)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < BOOT_S:
+            s._pump(dev.AUTOBOOT_KEY_S)
+            if b"awto-uboot 20" in s.buf:
+                s.write(b" ")
+            if s.buf.rstrip().endswith(b"awto-uboot>") and b"Hit any key" in s.buf:
+                break
+        else:
+            raise console.Timeout("new image prompt not seen in %.0f s" % BOOT_S)
+        s.buf = b""
         log("ramboot: new image at its prompt", "ALERT")
         return 0
     except console.Timeout as e:
