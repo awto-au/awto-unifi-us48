@@ -255,6 +255,28 @@ int bcm_hr2_l2_cpu(struct bcm_cmic_unit *u, const u8 *mac, bool add)
 	return sbus(u, add ? BCM_SCHAN_TABLE_INSERT : BCM_SCHAN_TABLE_DELETE, BLK_IPIPE, L2X, e, 4);
 }
 
+/*
+ * CPU port (physical 0) membership of private VLAN `vid`: VLAN_TAB PORT_BITMAP bit 0 (IPIPE, 0:30, EVEN_PARITY bit 126),
+ * the field ge_vlan_init/private_vlan_init write (regdb/hr2_mems.tsv VLAN_TAB). Flood/broadcast copies are masked with it
+ * in the IPIPE, so with the bit clear no frame is queued for the CPU (#104). Returns the previous state, or -EIO.
+ */
+int bcm_hr2_cpu_vlan(struct bcm_cmic_unit *u, u32 vid, bool member)
+{
+	u32 e[4];
+	bool was;
+
+	if (bcm_cmic_mem_read(u, BLK_IPIPE, VLAN_TAB(vid), e, 4, NULL))
+		return -EIO;
+	was = e[0] & 1;
+	if (was != member) {
+		e[0] = (e[0] & ~1u) | member;
+		set_even_parity(e, 126);
+		if (bcm_cmic_mem_write(u, BLK_IPIPE, VLAN_TAB(vid), e, 4))
+			return -EIO;
+	}
+	return was;
+}
+
 void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch)
 {
 	u32 ctrl = rd(u, DMA_CTRL(ch)), stat = 0;

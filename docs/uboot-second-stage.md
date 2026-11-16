@@ -504,3 +504,10 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 - Repro without flash: `scripts/u2_net_probe.py --gap 40` (dead in ~50 % of gap pings before the fix). Flash shape: `scripts/u2_sf_repro.py --len 0x980000 --flashlike` (3 of 3 dead after the 9.5 MiB erase before the fix).
 - Fix: `us48_rx_flush` in `us48_cmic_eth.c`: after `rx_arm`, take frames until 50 us quiet (backstop 2 ms, logged), then re-arm clean. After the fix 0 dead in 4 gap pings + 9.5 MiB erase/write + 2 `flash-kernel0` runs (RAM-loaded image; flashed uboot slot still the old image).
 - Not the cause: SP805 (fed from `schedule()` in the flash wait loop), link/PHY state (BMSR, GPORT CC, DMA_CTRL/STAT/credit regs identical before and after), RELOAD DONE clearing (kernel parity change did not help, reverted).
+
+### Quiesce around flash erase/write (#104, 2026-11-17)
+- `sf erase|write` (patch 0004 hook) calls `us48_net_quiesce()`: CPU port removed from the private VLAN (`bcm_hr2_cpu_vlan`, VLAN_TAB PORT_BITMAP bit 0 of vid 101 / 48, IPIPE, EVEN_PARITY bit 126; same field `ge_vlan_init` writes; regdb/hr2_mems.tsv VLAN_TAB). Resume = next `us48_eth_start` (before arm + flush) or `remove` (bootm). Idempotent; only restores what it cleared.
+- Manual: `us48quiesce on|off|stat`. Test knobs (env, default 1): `us48_quiesce` (sf hook), `us48_flush` (rx flush).
+- CPU egress off (`EGR_ENABLE[0].PRT_ENABLE`, regdb EGR_ENABLE) does NOT work: flush still takes 50-59 frames after it, quiesce-only 4/6 dead. Removed.
+- Measured 2026-11-17 (45 s gap, `u2_net_probe.py`, RAM image): backlog taken by the flush with VLAN quiesce 0-15 frames (no quiesce: 52-59). Residual = frames copied to the CPU by reason, not by VLAN flood (not identified).
+- Results and counts: issue #104.

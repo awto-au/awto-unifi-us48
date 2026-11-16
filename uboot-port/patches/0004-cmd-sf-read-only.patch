@@ -6,7 +6,7 @@ diff --git a/cmd/sf.c b/cmd/sf.c
 index b5b7f671fb9..82e77f92690 100644
 --- a/cmd/sf.c
 +++ b/cmd/sf.c
-@@ -601,6 +601,51 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
+@@ -601,6 +601,55 @@ static int do_spi_flash(struct cmd_tbl *cmdtp, int flag, int argc,
  	if (strcmp(cmd, "probe") == 0)
  		return do_spi_flash_probe(argc, argv);
  
@@ -15,6 +15,7 @@ index b5b7f671fb9..82e77f92690 100644
 +	 * (exactly 0xc0000, 64 KiB, #63); elsewhere could hit u-boot, bootsel, kernel1 or EEPROM.
 +	 */
 +	if (strcmp(cmd, "read") && strcmp(cmd, "scur")) {
++		extern void us48_net_quiesce(void) __attribute__((weak));
 +		ulong off = 0, len = 0;
 +		bool ok = false;
 +
@@ -31,6 +32,9 @@ index b5b7f671fb9..82e77f92690 100644
 +			printf("sf %s: disabled in this build (read-only), erase/write only 0xc0000+0x10000 or inside 0xe0000..0xfe0000\n", cmd);
 +			return CMD_RET_FAILURE;
 +		}
++		/* #104: no frames queue in the chip for the CPU during the long erase/write; the next net start resumes */
++		if (us48_net_quiesce)
++			us48_net_quiesce();
 +	}
 +
 +	/* us48: print the Macronix security register; bit 2 = flash is in 4-byte address mode (should be 0) */

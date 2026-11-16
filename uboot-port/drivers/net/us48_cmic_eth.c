@@ -6,6 +6,7 @@
  * Select with `setenv ethact <node name>`; ge1 is probed first and is the default. M3 in docs/uboot-second-stage.md.
  */
 #include <dm.h>
+#include <command.h>
 #include <env.h>
 #include <net.h>
 #include <time.h>
@@ -56,7 +57,12 @@ struct us48_eth_priv {
 	bool up;		/* bring-up done (once, first start) */
 	const struct bcm_hr2_ge *ge;	/* copper port, NULL for xe1 */
 	bool linkup;
+	bool quiesced;		/* CPU removed from the VLAN by us48_net_quiesce (#104) */
 };
+
+/* Started devices, for the sf hook and `us48quiesce` (one per unit). */
+static struct us48_eth_priv *us48_privs[2];
+static unsigned int us48_flush_n, us48_flush_us;	/* last flush: frames taken, time */
 
 /* Unit 0 (host SoC, AXI CMIC): front 1 = logical 2, GPORT0 (block 2) lane 7, GPHY 9; VLAN 101 as the Linux driver. */
 static const struct bcm_hr2_ge ge1 = { .blk = 2, .lane = 7, .phy = 9, .lport = 2, .modid = 0, .vid = 101 };
@@ -92,6 +98,10 @@ static void us48_rx_flush(struct us48_eth_priv *p)
 	unsigned int n = 0;
 	u8 *pkt;
 
+	if (!env_get_ulong("us48_flush", 10, 1)) {	/* test knob: 0 = arm only */
+		us48_flush_n = us48_flush_us = 0;
+		return;
+	}
 	while ((now = timer_get_us()) - last < FLUSH_QUIET_US) {
 		if (now - t0 > FLUSH_MAX_US) {
 			printf("us48-eth: rx flush not quiet after %u us, %u frames taken\n", FLUSH_MAX_US, n);
@@ -103,7 +113,41 @@ static void us48_rx_flush(struct us48_eth_priv *p)
 			last = timer_get_us();
 		}
 	}
+	us48_flush_n = n;
+	us48_flush_us = last - t0;
 	bcm_hr2_rx_arm(&p->unit, &p->dma);	/* clean ring and engine for the caller */
+}
+
+/*
+ * Quiesce (#104): CPU removed from the private VLAN (bcm_hr2_cpu_vlan) while the DMA is off, so a long flash erase/write
+ * leaves almost no backlog in the chip CPU queue. Resume (start, remove) restores exactly what was changed. Idempotent.
+ * CPU egress off (EGR_ENABLE[0]) was tried: the backlog stays (docs/uboot-second-stage.md #104).
+ */
+static void us48_quiesce(struct us48_eth_priv *p, bool on)
+{
+	u32 vid;
+
+	if (!p || !p->up || p->quiesced == on)
+		return;
+	vid = p->ge ? p->ge->vid : BCM_HR2_PRIVATE_VID;
+	if (on) {
+		p->quiesced = bcm_hr2_cpu_vlan(&p->unit, vid, false) == 1;
+	} else if (bcm_hr2_cpu_vlan(&p->unit, vid, true) >= 0) {
+		p->quiesced = false;
+	} else {
+		printf("us48-eth: CPU VLAN membership resume failed\n");
+	}
+}
+
+/* Called from `sf erase|write` (patch 0004): weak-linked, so builds without this driver still link. */
+void us48_net_quiesce(void)
+{
+	int i;
+
+	if (!env_get_ulong("us48_quiesce", 10, 1))	/* test knob */
+		return;
+	for (i = 0; i < ARRAY_SIZE(us48_privs); i++)
+		us48_quiesce(us48_privs[i], true);
 }
 
 static int us48_eth_start(struct udevice *dev)
@@ -147,6 +191,7 @@ static int us48_eth_start(struct udevice *dev)
 		}
 		p->up = true;
 	}
+	us48_privs[p->ge ? 0 : 1] = p;
 	if (p->ge) {
 		ret = bcm_hr2_ge_l2_cpu(&p->unit, p->ge, pdata->enetaddr, true);
 		if (!ret && !p->linkup)
@@ -157,6 +202,7 @@ static int us48_eth_start(struct udevice *dev)
 	if (ret)
 		return ret;
 	p->dma.tx_len = 0;
+	us48_quiesce(p, false);
 	bcm_hr2_rx_arm(&p->unit, &p->dma);
 	us48_rx_flush(p);
 	return 0;
@@ -209,6 +255,7 @@ static int us48_eth_remove(struct udevice *dev)
 {
 	struct us48_eth_priv *p = dev_get_priv(dev);
 
+	us48_quiesce(p, false);		/* the next stage (Linux) must find the CPU port as init left it */
 	if (p->up)
 		us48_eth_dma_off(p);
 	return 0;
@@ -327,3 +374,32 @@ U_BOOT_DRIVER(us48_cmic_ge) = {
 	.plat_auto	= sizeof(struct eth_pdata),
 	.flags		= DM_FLAG_ALLOC_PRIV_DMA | DM_FLAG_ACTIVE_DMA,
 };
+
+/* us48quiesce on|off|stat: manual quiesce/resume of the started units (tests, #104). */
+static int do_us48quiesce(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+{
+	int i, n = 0;
+	ulong t0;
+
+	if (argc != 2)
+		return CMD_RET_USAGE;
+	if (!strcmp(argv[1], "stat")) {
+		printf("us48quiesce: last rx flush %u frames in %u us\n", us48_flush_n, us48_flush_us);
+		for (i = 0; i < ARRAY_SIZE(us48_privs); i++)
+			if (us48_privs[i])
+				printf("us48quiesce: %s quiesced=%d\n", i ? "xe1" : "ge1", us48_privs[i]->quiesced);
+		return CMD_RET_SUCCESS;
+	}
+	if (strcmp(argv[1], "on") && strcmp(argv[1], "off"))
+		return CMD_RET_USAGE;
+	t0 = timer_get_us();
+	for (i = 0; i < ARRAY_SIZE(us48_privs); i++) {
+		us48_quiesce(us48_privs[i], argv[1][1] == 'n');
+		n += us48_privs[i] && us48_privs[i]->quiesced == (argv[1][1] == 'n');
+	}
+	printf("us48quiesce: %s, %d unit(s) in that state, %lu us\n", argv[1], n, timer_get_us() - t0);
+	return CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(us48quiesce, 2, 0, do_us48quiesce, "CPU out of/in the VLAN while the DMA is off",
+	   "on|off|stat - on: no frames queue in the chip for the CPU (resumed at the next net start and before bootm)");
