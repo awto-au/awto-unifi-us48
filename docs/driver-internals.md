@@ -646,6 +646,9 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 - Pairs after the module swap (#87), both fail: xe49 (lane 0) optic - sw1 lan6: sw1 calibration runs and logs `-67` every ~30 s; xe50 (lane 2) DAC - sw1 lan3: no sw1 log at all. Same per-media/per-sw1-port symptom as before the swap (lane 0 DAC - lan3, lane 2 optic - lan6), so it follows the far-end port/media, not our lane or cage. Board side both: PCS_LIVE `0083` (sync + RF from sw1). C
 - sw1 `WDIG` reg 0x14 bit 0 is not an RX_IDLE flag: linked lan8 (10G up) reads the same bit as the idle ports. Discard the old RX_IDLE readings. C
 - TX_X1 PI `0x1_9200..0x1_9212` reads 0 on lane 0 and 2 (`0x1920f` = 0x920f echo); SDK `tscmod_tx_pi_control` only writes TX_PI_EN 0 / CONTROL3 0 (reset), i.e. what we have. Live TX FIR `0xc252` = `0x5a54` on both lanes = the stock value. Neither differs. C
+- SDK TX defaults for 10G SFI (2026-11-16): optical `tx_drive[TXDRV_SFI_INX]` and DAC `TXDRV_SFIDAC_INX` are identical: post 0x12, main 0x2d, pre 0, force 1, post2 2, idrive 2, ipredrive 2 (`tscmod_src_tscmod.c:950-968`; index chosen `:3000-3010`; applied by `tscmod_tx_tap_control` / `tscmod_tx_amp_control`, `tscmod_src_tscmod_cfg_seq.c:7698-7722`, `:7850-7954`). = FIR `0xc252` 0xcad0, ANATX `0xc017` 0x2220 (ours: 0x5a54, 0x2020). C
+- xe49 optic - sw1 lan6, via `tscwr`, 40 s each, reverted after: FIR 0xcad0 only; FIR 0xcad0 + ANATX 0x2220; ANATX 0x2220 only. sw1 TGR_STD_1 reg0/reg1 = 000C/0000, no carrier in all three (#78). C
+- TX PCS regs match the SDK 10G encode path (`cfg_seq.c:2398-2408`, `:2584-2620`, `tscmod_tx_lane_control :4408`): `0xc111`=0x0014 (mode 5), `0xc113`=0xc1cb (scr 3, LI/LF/RF, rstb+enable), `0xa003`=0x0002 (SDK writes 2), `0xc100`=0x4021. The SDK has no scrambler seed register. C
 
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
