@@ -99,6 +99,10 @@ static bool dcc_poll = true;
 module_param(dcc_poll, bool, 0644);
 MODULE_PARM_DESC(dcc_poll, "a1 DCC reader polls a2's DSCR/DTRTX while a2 runs (0 = never touch a2 debug regs after the release, #79)");
 /* #79: a2's line fill passes its own eviction write on the way to host DDR: stale clean lines above ~700 MHz */
+static uint dcc_late_us;
+module_param(dcc_late_us, uint, 0644);
+MODULE_PARM_DESC(dcc_late_us, "start the DCC poll this many us after the release instead of before it (0 = before; #103 test, a2 hvc_dcc gives up after 100 ms)");
+
 static bool paxb_order = true;
 module_param(paxb_order, bool, 0644);
 MODULE_PARM_DESC(paxb_order, "unit 1 PAXB TX_DEBUG_CFG.EP_TX_WR_RD_ORDER: a2 reads wait for its earlier writes (reset 0 = a read may pass a write)");
@@ -647,6 +651,49 @@ static int a2_rx_arid(int cnt)
 	return 0;
 }
 
+/* Read-back of the #79 bits, no writes: unit 1 TX_DEBUG_CFG.EP_TX_WR_RD_ORDER, unit 0 RX_DEBUG_CONTROL_0.RX_FREE_ARID_COUNT (#103). */
+static int a2_paxb_state(struct us48_a2 *a, u32 *tx, u32 *rx)
+{
+	void __iomem *va;
+	int ret = regmap_read(a->map, HW_PAXB0_BASE + HW_PAXB0_TX_DEBUG_CFG, tx);
+
+	if (ret)
+		return ret;
+	va = ioremap(HW_PAXB0_BASE + HW_PAXB0_RX_DEBUG_CONTROL_0, 4);
+	if (!va)
+		return -ENOMEM;
+	*rx = readl(va);
+	iounmap(va);
+	return 0;
+}
+
+static void a2_paxb_log(struct us48_a2 *a, const char *when)
+{
+	u32 tx = 0, rx = 0;
+	int ret = a2_paxb_state(a, &tx, &rx);
+
+	dev_info(a->dev, "paxb %s: ret %d wr_rd_order %u rx_arid %u (tx_cfg %#x rx_ctl0 %#x)\n", when, ret,
+		 !!(tx & HW_PAXB0_TX_DEBUG_CFG_EP_TX_WR_RD_ORDER_MASK), rx & HW_PAXB0_RX_DEBUG_CONTROL_0_RX_FREE_ARID_COUNT_MASK, tx, rx);
+}
+
+/* sysfs paxb_state: live read-back (normal image has no debugfs) */
+static int a2_paxb_state_get(char *buf, const struct kernel_param *kp)
+{
+	u32 tx = 0, rx = 0;
+	int ret;
+
+	if (!region_owner)
+		return -ENODEV;
+	ret = a2_paxb_state(region_owner, &tx, &rx);
+	if (ret)
+		return ret;
+	return sysfs_emit(buf, "wr_rd_order=%u rx_arid=%u\n", !!(tx & HW_PAXB0_TX_DEBUG_CFG_EP_TX_WR_RD_ORDER_MASK),
+			  rx & HW_PAXB0_RX_DEBUG_CONTROL_0_RX_FREE_ARID_COUNT_MASK);
+}
+
+static const struct kernel_param_ops a2_paxb_state_ops = { .get = a2_paxb_state_get };
+module_param_cb(paxb_state, &a2_paxb_state_ops, NULL, 0444);
+
 /* Before the release: AXI -> PCIe write-before-read order of unit 1, inbound read concurrency of unit 0 (restored in stop). */
 static int a2_paxb_cfg(struct us48_a2 *a)
 {
@@ -671,9 +718,15 @@ static int us48_a2_start(struct rproc *rproc)
 	ret = ret ?: a2_halt(a);
 	ret = ret ?: a2_set_pc(a, rproc->bootaddr);
 	ret = ret ?: a2_cap_pre_vcr(a);
-	if (!ret && dcc_poll)
+	if (!ret && dcc_poll && !dcc_late_us)
 		us48_a2_dcc_start(a->dcc);	/* before the release: a2's hvc_dcc gives up after 100 ms */
 	ret = ret ?: a2_release(a);
+	if (!ret && dcc_poll && dcc_late_us) {
+		fsleep(dcc_late_us);
+		us48_a2_dcc_start(a->dcc);
+	}
+	if (!ret)
+		a2_paxb_log(a, "at release");
 	if (!ret && hdbgen_off && !a->cap_pre)
 		ret = regmap_clear_bits(a->map, A2_DBG(DSCR), HW_CS_DEBUG0_DSCR_HDBGEN_MASK);
 	if (!ret)
