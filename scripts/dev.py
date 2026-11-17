@@ -1508,6 +1508,11 @@ def cmd_selftest(_extra: list[str]) -> int:
     check("scripts/*.py help guards (script_help_selftest)", st.returncode == 0)
     if st.returncode:
         log(st.stdout.strip(), "ERROR")
+    dma = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests",
+                          "-p", "test_cmic_handoff.py", "-v"], capture_output=True, text=True, cwd=REPO)
+    check("CMIC handoff source + host MMIO regression checks", dma.returncode == 0)
+    if dma.returncode:
+        log((dma.stdout + dma.stderr).strip(), "ERROR")
     # --help / parse errors of every board command print the usage and exit before any console access.
     for name, meta in COMMANDS.items():
         if meta["kind"] == "step":

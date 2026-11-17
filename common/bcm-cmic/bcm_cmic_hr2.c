@@ -277,6 +277,18 @@ int bcm_hr2_cpu_vlan(struct bcm_cmic_unit *u, u32 vid, bool member)
 	return was;
 }
 
+void bcm_hr2_dma_read_state(struct bcm_cmic_unit *u, struct bcm_hr2_dma_state *s)
+{
+	int ch;
+
+	s->stat_before = rd(u, DMA_STAT);
+	for (ch = 0; ch < 2; ch++) {
+		s->ctrl[ch] = rd(u, DMA_CTRL(ch));
+		s->desc[ch] = rd(u, DMA_DESC(ch));
+	}
+	s->stat_after = rd(u, DMA_STAT);
+}
+
 void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch)
 {
 	u32 ctrl = rd(u, DMA_CTRL(ch)), stat = 0;

@@ -98,6 +98,11 @@ struct bcm_hr2_dma {
 void bcm_hr2_dma_init(struct bcm_cmic_unit *u);
 /* Abort one channel (0 TX, 1 RX); safe on idle channels. */
 void bcm_hr2_dma_abort(struct bcm_cmic_unit *u, int ch);
+/* Read-only, non-atomic sample of both owned channels; STAT brackets the register reads. */
+struct bcm_hr2_dma_state {
+	u32 stat_before, ctrl[2], desc[2], stat_after;
+};
+void bcm_hr2_dma_read_state(struct bcm_cmic_unit *u, struct bcm_hr2_dma_state *s);
 /* CPU port in/out of private VLAN vid (VLAN_TAB PORT_BITMAP bit 0); returns the previous membership, -EIO on an S-channel error. */
 int bcm_hr2_cpu_vlan(struct bcm_cmic_unit *u, u32 vid, bool member);
 /* xe1 MAC/serdes enable (skipped if already enabled), link bitmap, EGR_ENABLE, private VLAN, PORT_VID. */

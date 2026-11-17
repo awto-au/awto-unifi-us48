@@ -1140,11 +1140,27 @@ static void us48_cps_reset(struct bcm_cmic_unit *cu)
 	bcm_hr2_cmic_setup(cu);
 }
 
+static bool handoff_diag;
+module_param(handoff_diag, bool, 0444);
+MODULE_PARM_DESC(handoff_diag, "Read-only DMA snapshots before/after inherited-channel abort (default off)");
+
+static void us48_handoff_state(struct device *dev, struct bcm_cmic_unit *cu, int unit, const char *phase)
+{
+	struct bcm_hr2_dma_state s;
+
+	if (!handoff_diag)
+		return;
+	bcm_hr2_dma_read_state(cu, &s);
+	dev_info(dev, "handoff: unit %d %s CTRL %08x/%08x DESC %08x/%08x STAT %08x/%08x\n",
+		 unit, phase, s.ctrl[0], s.ctrl[1], s.desc[0], s.desc[1], s.stat_before, s.stat_after);
+}
+
 int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 {
 	struct bcm_cmic_unit cu = { .base = cmic, .pre_top_release = us48_cps_reset };
 	int ch, ops = 0, errs = 0;
 
+	us48_handoff_state(dev, &cu, unit, "probe-before-abort");
 	/* The bootloader may leave a channel running into RAM Linux now owns: log it, abort + wait (bounded), then reset. */
 	for (ch = 0; ch < 2; ch++) {
 		u32 ctrl = ioread32(cmic + DMA_CTRL(ch));
@@ -1154,6 +1170,7 @@ int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 				 ioread32(cmic + DMA_DESC(ch)), ioread32(cmic + DMA_STAT));
 		bcm_hr2_dma_abort(&cu, ch);
 	}
+	us48_handoff_state(dev, &cu, unit, "probe-after-abort");
 	/* Every load: full cold init (chip reset via the TOP resets of the list), whatever state the chip is in. */
 	if (unit)
 		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE | BCM_HR2_INIT_CPS, &ops, &errs);

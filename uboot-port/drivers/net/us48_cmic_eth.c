@@ -250,14 +250,34 @@ static void us48_eth_dma_off(struct us48_eth_priv *p)
 	bcm_hr2_dma_abort(&p->unit, 0);
 }
 
+/* Optional read-only evidence at removal; never dereference an unstarted unit. */
+static void us48_eth_handoff_state(struct udevice *dev, const char *phase)
+{
+	struct us48_eth_priv *p = dev_get_priv(dev);
+	struct bcm_hr2_dma_state s;
+
+	if (!env_get_ulong("us48_handoff_diag", 10, 0))
+		return;
+	/* Probe alone does not establish safe MMIO, especially with a down PCIe link. */
+	if (!p->up) {
+		printf("us48-handoff: %s %s up=0 MMIO skipped\n", dev->name, phase);
+		return;
+	}
+	bcm_hr2_dma_read_state(&p->unit, &s);
+	printf("us48-handoff: %s %s up=1 CTRL %08x/%08x DESC %08x/%08x STAT %08x/%08x\n",
+	       dev->name, phase, s.ctrl[0], s.ctrl[1], s.desc[0], s.desc[1], s.stat_before, s.stat_after);
+}
+
 /* bootm calls remove on DM_FLAG_ACTIVE_DMA devices (eth_halt only reaches the current device, and only with NETCONSOLE). */
 static int us48_eth_remove(struct udevice *dev)
 {
 	struct us48_eth_priv *p = dev_get_priv(dev);
 
+	us48_eth_handoff_state(dev, "remove-before");
 	us48_quiesce(p, false);		/* the next stage (Linux) must find the CPU port as init left it */
 	if (p->up)
 		us48_eth_dma_off(p);
+	us48_eth_handoff_state(dev, "remove-after");
 	return 0;
 }
 
