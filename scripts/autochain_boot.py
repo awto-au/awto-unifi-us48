@@ -66,6 +66,7 @@ def main() -> int:
     a = ap.parse_args()
     a.manual = a.manual or a.warm
     s = console.Session()
+    relay_err: list[str] = []	# set by the relay-on thread: stop at once, the board may be off (#111)
     try:
         s.read_idle(0.2, 1.0)
         if a.warm:
@@ -73,10 +74,21 @@ def main() -> int:
             t0 = time.monotonic()  # t=0 = `reset` sent
         else:
             host = dev.os.environ.get("US48_RELAY", dev.RELAY_DEFAULT)
-            log(f"relay {host}: off -> {dev._relay_post(host, 'off')}", "WARN")
+            try:
+                log(f"relay {host}: off -> {dev.relay_set(host, False)}", "WARN")
+            except OSError as e:
+                log(f"{e}", "FATAL")
+                return 1
             threading.Event().wait(dev.RELAY_GAP_S)
             t0 = time.monotonic()  # t=0 = start of the relay ON call (the POST itself is part of the power-up)
-            threading.Thread(target=lambda: log(f"relay on -> {dev._relay_post(host, 'on')}", "ALERT"), daemon=True).start()
+
+            def relay_on() -> None:
+                try:
+                    log(f"relay on -> {dev.relay_set(host, True)}", "ALERT")
+                except OSError as e:
+                    relay_err.append(str(e))
+                    log(f"{e}", "FATAL")
+            threading.Thread(target=relay_on, daemon=True).start()
         seen: dict[str, float] = {}
         if a.full:
             threading.Thread(target=probe_net, args=(t0, seen), daemon=True).start()
@@ -86,6 +98,9 @@ def main() -> int:
         manual_step = 0
         limit, stall = (FULL_OVERALL_S, FULL_STALL_S) if a.full else (OVERALL_S, STALL_S)
         while time.monotonic() - t0 < limit:
+            if relay_err:
+                log(f"STOP: relay on failed ({relay_err[0]}); board may be powered OFF", "FATAL")
+                return 1
             if s._pump(0.02):
                 last = time.monotonic()
             if time.monotonic() - last > stall and not (a.full and "ping answers" in seen):

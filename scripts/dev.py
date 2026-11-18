@@ -440,12 +440,44 @@ RELAY_PY = "/mnt/2tb/git/awto-terminal/.venv/bin/python3"  # has aioesphomeapi
 RELAY_DEFAULT = "192.168.25.208"  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
 
 
+RELAY_TRIES = 3	# #111: one relay_native call timed out once (TimeoutError) and left the board off
+
+
 def _relay_post(host: str, action: str) -> str:
-    r = subprocess.run([RELAY_PY, str(REPO / "scripts/relay_native.py"), host, action],
-                       capture_output=True, text=True, timeout=RELAY_HTTP_S + 8)
+    # relay_native: connect 5 s + apply 1 s + state 2 s = 8 s worst case; + RELAY_HTTP_S margin
+    try:
+        r = subprocess.run([RELAY_PY, str(REPO / "scripts/relay_native.py"), host, action],
+                           capture_output=True, text=True, timeout=RELAY_HTTP_S + 8)
+    except subprocess.TimeoutExpired:
+        raise OSError(f"relay_native {action} exceeded {RELAY_HTTP_S + 8} s") from None
     if r.returncode:
         raise OSError(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "relay_native failed")
     return r.stdout.strip()
+
+
+def _relay_state(out: str) -> bool | None:
+    """relay_native prints '<host> switch <name>: <op> -> state True|False|None'."""
+    tail = out.rsplit("state", 1)[-1].strip()
+    return {"True": True, "False": False}.get(tail)
+
+
+def relay_set(host: str, on: bool) -> str:
+    """Switch the relay, read the state back; up to RELAY_TRIES tries, each failure logged with its reason.
+    Raises OSError when the relay is not in the wanted state afterwards (board power unknown: say so loudly)."""
+    want = "on" if on else "off"
+    for i in range(1, RELAY_TRIES + 1):
+        try:
+            out = _relay_post(host, want)
+            st = _relay_state(out)
+            if st is None:	# no state report in the command's window: ask once more
+                out = _relay_post(host, "state")
+                st = _relay_state(out)
+            if st == on:
+                return out
+            log(f"relay {host}: {want} try {i}/{RELAY_TRIES}: state reads {st} ({out})", "WARN")
+        except OSError as e:
+            log(f"relay {host}: {want} try {i}/{RELAY_TRIES} failed: {e}", "WARN")
+    raise OSError(f"relay {host} is not {want} after {RELAY_TRIES} tries: board power state unknown, check it")
 
 
 def _relay_cycle() -> bool:
@@ -453,9 +485,9 @@ def _relay_cycle() -> bool:
     if not host:
         return False
     try:
-        log(f"relay {host}: off -> {_relay_post(host, 'off')}", "WARN")
+        log(f"relay {host}: off -> {relay_set(host, False)}", "WARN")
         threading.Event().wait(RELAY_GAP_S)
-        log(f"relay {host}: on -> {_relay_post(host, 'on')}", "ALERT")
+        log(f"relay {host}: on -> {relay_set(host, True)}", "ALERT")
     except OSError as e:
         log(f"relay {host} unreachable: {e}; power is NOT cycled", "FATAL")
         return False
