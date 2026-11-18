@@ -448,10 +448,20 @@ static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg)
 	return ret;
 }
 
+/* EPIPE EGR_PORT_CREDIT_RESET[phys]: EP->port credits; without the pulse the MMU queue never drains (#57). */
+#define EGR_PORT_CREDIT_RESET(phys)	(0x340c0000 + (phys))
+#define HG_PHYS(l)		(30 + (l))	/* XLPORT1 lane 0/2 = phys 30/32 */
+
+static int ep_credit(struct us48_cmic *u, u8 l, u32 v)
+{
+	return us48_sbus(u, 0x09, BLK_EPIPE, EGR_PORT_CREDIT_RESET(HG_PHYS(l)), &v, 1);
+}
+
+/* Stock trace order (unit 0 ords 11919-11922; SDK xlmac.c "Reset EP credit before de-assert SOFT_RESET"). */
 static int hg_mac(struct us48_cmic *u, u8 l)
 {
-	return hg_wr(u, XLPORT_ENABLE_REG, 5 & ~BIT(l), 0, 1) ?:
-	       hg_wr(u, XLPORT_TXFIFO_CTRL(l), 7, 0, 1) ?: hg_wr(u, XLPORT_TXFIFO_CTRL(l), 4, 0, 1) ?:
+	return hg_wr(u, XLPORT_ENABLE_REG, 5 & ~BIT(l), 0, 1) ?: ep_credit(u, l, 1) ?:
+	       hg_wr(u, XLPORT_TXFIFO_CTRL(l), 7, 0, 1) ?: ep_credit(u, l, 0) ?: hg_wr(u, XLPORT_TXFIFO_CTRL(l), 4, 0, 1) ?:
 	       hg_wr(u, XLPORT_ENABLE_REG, 5, 0, 1) ?:
 	       hg_wr(u, XLMAC_CTRL(l), 0x1800, 0, 2) ?: hg_wr(u, XLMAC_RX_CTRL(l), 0x400, 0, 2) ?:
 	       hg_wr(u, XLMAC_TX_CTRL(l), 0x8802, 0x10, 2) ?: hg_wr(u, XLMAC_RX_MAX_SIZE(l), 0x3fe8, 0, 2) ?:
