@@ -22,8 +22,8 @@
   - `sdk = "SDK_REG_NAME"`: `check` fails if hwdb address differs from the regdb address (cross-check against the bulk source).
 - `[binary.NAME]` (`desc, base, arch`), `[binary.NAME.func.FN]`: `name, addr, size?, role, regs = ["block.REG" | ...], src, conf`; `[[binary.NAME.comment]]`: `addr, kind (eol|pre), text, src, conf`.
 - `[[port]]`: `front` (0 = internal), `id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus?, phy_addr?, lane, sdk?, linux?, src, conf`.
-  - Cabling (fixed lab facts): `loop_peer?` (front on the other end of a loop cable, reciprocal, checked), `sw1_peer?` (sw1 port on the far end of an SFP/SFP+), `role?` (`"management"`). Link state per port stays in `scripts/cabling.json`.
-  - Python lookups (`hwdb.lite()`): `netdev(front)`, `port_of(netdev)`, `gport(front)`, `lane(front)`, `pvid(front)`, `loop_pairs()`, `loop_peer`, `sw1_peer`, `sw1_ports()`, `mgmt_front()`, `mgmt_netdev()`, `higig(unit)`; `hwdb.mac(front)`.
+  - Cabling (fixed lab facts): `loop_peer?` (front on the other end of a loop cable, reciprocal, checked), `sw1_peer?` (sw1 port on the far end of an SFP/SFP+), `role?` (`"management"`, `"unit1_probe"` = unit 1 copper netdev checked next to xe49/xe50 by selftest and `mod_reload.py`); a far end that is not verified has no `sw1_peer`. Link state per port stays in `scripts/cabling.json`.
+  - Python lookups (`hwdb.lite()`): `netdev(front)`, `port_of(netdev)`, `gport(front)`, `lane(front)`, `pvid(front)`, `loop_pairs()`, `loop_peer`, `sw1_peer`, `sw1_ports()`, `mgmt_front()`, `mgmt_netdev()`, `higig(unit)`, `probe_netdevs(unit)`; `hwdb.mac(front)`. `mac_prefix` (top level of ports.toml) is the one source of the driver MAC rule, generated as `US48_MAC_PREFIX` in `us48_ports.h`.
 - SDK merge (loader): `sdk_iproc` (absolute AXI offsets, regtype iprocreg), `sdk_cmic` (offsets from `cmic0`), S-channel regs/memories in `db.sdk_sbus_regs` / `db.sdk_sbus_mems`.
 
 ## Use

@@ -30,7 +30,7 @@ import hwdb  # noqa: E402
 
 _DB = hwdb.lite()
 MGMT = _DB.mgmt_netdev()
-NETDEVS = {"us48_cmic": [MGMT], "us48_cmic_xe": [p["linux"] for p in _DB.ports if p["unit"] == 1 and "linux" in p and p["front"]] + ["ge40"]}
+NETDEVS = {"us48_cmic": [MGMT], "us48_cmic_xe": [p["linux"] for p in _DB.ports if p["unit"] == 1 and "linux" in p and p["front"]] + _DB.probe_netdevs(1)}
 DEFAULT_ARGS = {"us48_cmic": ["unit0=1"]}
 # One ssh round trip on the LAN is < 1 s; connect 2 s = the board is rebooting/reloading, not slow.
 CONNECT_S = 2

@@ -363,6 +363,8 @@ def gen_ports_c(db):
         rows.sort(key=lambda p: (p["phy"] in ("gphy", "octal"), p["front"]))
         o += ["", "#define US48_PORTS_UNIT%d \\" % unit]
         o += ["\t%s, \\" % port_cfg(p) for p in rows[:-1]] + ["\t%s" % port_cfg(rows[-1])]
+    o += ["", "/* Driver MAC = US48_MAC_PREFIX, front (ports.toml mac_prefix) */",
+          "#define US48_MAC_PREFIX %s" % ", ".join("0x" + b for b in db.mac_prefix.split(":"))]
     o += ["", "#endif /* US48_PORTS_H */"]
     put(GEN / "us48_ports.h", "\n".join(o) + "\n")
 

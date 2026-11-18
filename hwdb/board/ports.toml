@@ -1,6 +1,9 @@
 # Front-panel port map: one [[port]] per front port 1-52 plus internal HiGig 28/29 on both chips (front = 0).
-# Fields: front, sw1_peer (sw1 port on the far end), loop_peer (front on the other end of a loop cable), role, id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
+# Fields: front, sw1_peer (sw1 port on the far end), loop_peer (front on the other end of a loop cable), role (management|unit1_probe), id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
+# Top level: mac_prefix (driver MAC = prefix:<front hex>, generated into us48_ports.h).
 # Sources: docs/board.md Port map, docs/driver-internals.md s13, OpenBCM p2l_mapping_24_2_2; switchdrvr FastPath table VA 0x1d8ecb4 checked by scripts/us48_portmap.py.
+
+mac_prefix = "02:75:73:34:38"  # locally administered; kernel/us48-cmic eth_hw_addr_set, last byte = front
 
 [[port]]
 front = 1
@@ -603,6 +606,7 @@ phy_bus = "int0"
 phy_addr = 0x13
 lane = "QSGMII1 lane 7"
 sdk = "ge15"
+role = "unit1_probe"  # selftest + mod_reload check this unit 1 copper netdev next to xe49/xe50
 src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
@@ -760,7 +764,7 @@ sw1_peer = "lan3"  # verified by sw1 bridge fdb (scripts/sw1_link_test.py --ping
 [[port]]
 front = 51
 id = "f51"
-sw1_peer = "lan6"  # optic far end per scripts/cabling.json; not FDB-verified (#109)
+# far end unknown (sw1 lan6 is not verified; lan6 lowerlayerdown 2026-11-19), #120
 label = "SFP 1"
 unit = 0
 logical = 26
