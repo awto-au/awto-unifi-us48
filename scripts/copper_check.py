@@ -21,10 +21,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
 import _board  # noqa: E402
+import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/copper_check.log"
-PAIRS = [("ge8", "ge17", "ge18"), ("ge32", "ge41", "ge42")]	# (GPHY end, octal end, second port of that octal)
+_DB = hwdb.lite()
+# (GPHY end, octal end, second port of that octal): loop cables from hwdb/board/ports.toml
+PAIRS = [(_DB.netdev(g), _DB.netdev(o), _DB.netdev(o + 1)) for _, g, o in _DB.loop_pairs()]
 # 1000BASE-T AN + master/slave training ~3 s (IEEE 802.3 cl. 28/40, typical) + 1 s link poll = 4 s; 1.25x.
 LINK_LIMIT_S = 5.0
 LINK_POLL_S = 1.0	# driver LINK_POLL_MS
@@ -128,8 +131,8 @@ def main() -> int:
         log(f"STOP: {hot}")
         return 1
     names = set(sh("ls /sys/class/net").split())
-    want = {f"ge{i}" for i in range(1, 49)} | {"xe49", "xe50"}
-    check("netdevs", want <= names, f"{len(want & names)}/50 present" + (f", missing {sorted(want - names)}" if want - names else ""))
+    want = {_DB.netdev(p["front"]) for p in _DB.ports if p["front"] and (p["phy"] in ("gphy", "octal") or "linux" in p)}
+    check("netdevs", want <= names, f"{len(want & names)}/{len(want)} present" + (f", missing {sorted(want - names)}" if want - names else ""))
     test_ports = []
     for gphy, octal, second in PAIRS:
         sh(f"ip link set {gphy} up; ip link set {octal} up")
@@ -168,9 +171,10 @@ def main() -> int:
             how = f"block_ready before {int(pre[1])}, copper_ready after {int(post[0])}, bring-up {brought}"
         check(f"octal {second} vs {octal}", not drops and not down and no_blk,
               f"carrier drops {len(drops)}, link-down lines {down}, {how}")
-    c = carrier("xe49", "xe50", "ge1")
-    log(f"info xe/ge1 carrier: {c}")
-    check("ge1", c.get("ge1") == "1", "management carrier")
+    mg = _DB.mgmt_netdev()
+    c = carrier(*[n for n in sorted(want) if n.startswith("xe")], mg)
+    log(f"info xe/{mg} carrier: {c}")
+    check(mg, c.get(mg) == "1", "management carrier")
     bad = [ln for ln in dmesg_lines() if any(k in ln for k in ("WARNING", "BUG", "Oops", "FAILED", "Call trace", "Call Trace"))]
     check("dmesg", not bad, f"{len(bad)} WARN/BUG/FAILED lines" + (f": {bad[:3]}" if bad else ""))
     t = _board.temps()

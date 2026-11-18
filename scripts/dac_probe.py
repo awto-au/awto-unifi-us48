@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import xe49_traffic as t  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/dac_probe.log"
-RESTORE = ("lan3", "lan6", "lan7")
+RESTORE = t._DB.sw1_ports()
 PARAM = "/sys/module/us48_cmic_xe/parameters"
 # name -> list of (reg, mask, val) applied in order; "pulse" entries: ("pulse", reg, mask, set, clear, ...) handled below
 EXPS = {
@@ -89,7 +89,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--exp", required=True)
     ap.add_argument("--xe", default="xe50")
-    ap.add_argument("--lan", default="lan3")
+    ap.add_argument("--lan", default=t.SW1_PEER["xe50"])
     ap.add_argument("--hold-s", type=float, default=40.0)
     a = ap.parse_args()
     front = int(a.xe[2:])

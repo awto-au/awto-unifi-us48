@@ -35,10 +35,12 @@ from _cli import help_guard
 help_guard(__doc__, strict=True, known=("--apply",))
 
 import _board
+import hwdb
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/stp_loop_test.log"
-PAIRS = {"u0": ("ge8", "ge17"), "u1": ("ge32", "ge41")}
+_DB = hwdb.lite()
+PAIRS = {"u%d" % u: (_DB.netdev(g), _DB.netdev(o)) for u, g, o in _DB.loop_pairs()}
 BR = "brstp"
 FD_CS, HELLO_CS, MAXAGE_CS = 200, 100, 600   # kernel minimum with STP on, centiseconds
 SETTLE_S = 1.25 * (2 * FD_CS / 100 + HELLO_CS / 100)
