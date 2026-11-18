@@ -41,6 +41,11 @@
 #define POLL_NS			(1000 * 1000)
 /* Carrier from the TSC PCS once a second: a link change needs no faster reaction. */
 #define LINK_POLL_MS		1000
+/*
+ * xe open + link down: SFP A0h re-read every 2 link polls (#105). SFP MSA t_init <= 300 ms before A0h answers, so a
+ * swap is seen within ~2.3 s; cost one 11-byte I2C read per 2 s.
+ */
+#define MEDIA_POLL_TICKS	2
 
 #define TX_CH			0
 #define RX_CH			1
@@ -96,6 +101,9 @@ struct us48_port {
 	bool registered;
 	bool rx_tuned;			/* xe: one RX restart after the first link up (#87) */
 	bool copper_ready;		/* copper: MAC/PHY/VLAN bring-up done (first ndo_open) */
+	s8 fw_mode;			/* xe: lane FIRMWARE_MODE set (0 optic, 2 passive cable); -1 = TSC not initialised */
+	s8 media;			/* xe: last A0h result (1 passive, 0 other, -1 absent/unreadable), #105 */
+	u8 media_tick;			/* xe: link polls since the last media check while open + link down */
 };
 
 struct us48_cmic {
@@ -167,6 +175,8 @@ void us48_tsc_dump(struct us48_cmic *u);
 
 /* Per-lane RX restart without firmware download (13.3b): signal present but PCS unlocked. */
 int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c);
+/* SFP hot-plug: re-read A0h, re-set FIRMWARE_MODE + RX restart on a type change (force: always); link_lock held (#105). */
+int us48_tsc_media_check(struct us48_port *p, bool force);
 
 void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u32 lo, u32 hi, int aer);
 

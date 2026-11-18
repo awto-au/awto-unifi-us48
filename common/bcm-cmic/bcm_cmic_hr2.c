@@ -43,6 +43,7 @@
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
 #define EGR_ENABLE(phys)	(0x345c0000 + (phys))	/* physical port index (#124) */
+#define UMC_BLOCK_MASK(p)	(0x44000200 + (p))	/* UNKNOWN_MCAST_BLOCK_MASK_64, logical ingress port */
 #define L2X			0x1c000000	/* hashed: TABLE_INSERT, no index */
 #define UNIT1_MODID		1
 #define XE1_PORT		BCM_HR2_XE1_PORT
@@ -477,6 +478,21 @@ static void ge_port_tab(struct bcm_cmic_unit *u, int lport, u32 vid, bool cml_of
 }
 
 /*
+ * UNKNOWN_MCAST_BLOCK_MASK_64[lport].BLK_BITMAP bit 0 (CPU) <- 0 = regdb reset value. Stock writes 1 on every front port
+ * (trace ords 60045+ u0, 62231+ u1): no 33:33 / 01:00:5e frame (IPv6 NDP) reaches the CPU in the private VLAN (#127).
+ */
+int bcm_hr2_umc_cpu_unblock(struct bcm_cmic_unit *u, int lport)
+{
+	u32 v;
+	int ret = bcm_cmic_reg_read(u, BLK_IPIPE, UMC_BLOCK_MASK(lport), &v, 1, NULL);
+
+	if (ret || !(v & BIT(0)))
+		return ret;
+	v &= ~BIT(0);
+	return bcm_cmic_reg_write(u, BLK_IPIPE, UMC_BLOCK_MASK(lport), &v, 1);
+}
+
+/*
  * Stock meters the CPU port (MMU blk 12, MAXBUCKETCONFIG addr 0x19c00 + cos << 8, port 0): cos0 0x0004808d,
  * cos1-3 0x0001802f. That caps frames to the CPU at ~130/s (TFTP 185 KiB/s, #34). 0 = no limit, as stock writes for
  * every front port.
@@ -571,6 +587,7 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	cpu_meter_off(u);
 	ge_vlan_init(u, ge);
 	ge_port_tab(u, ge->lport, ge->vid, true);
+	bcm_hr2_umc_cpu_unblock(u, ge->lport);
 	if (!bcm_cmic_reg_read(u, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2, NULL)) {
 		link[0] |= BIT(0) | BIT(ge->lport);
 		bcm_cmic_reg_write(u, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);

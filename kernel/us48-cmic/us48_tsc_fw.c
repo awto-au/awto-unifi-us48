@@ -230,7 +230,7 @@ static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lan
  * channel front-49 (board.md), adapter found by mux name, no bus numbers. Read-only.
  * Returns 1 passive cable, 0 optic/other, -errno unreadable (logged; the optic path is then left as is).
  */
-static int tsc_sfp_passive_chan(struct device *dev, int chan)
+static int tsc_sfp_passive_chan(struct device *dev, int chan, bool quiet)
 {
 	char want[40];
 	int nr;
@@ -251,11 +251,14 @@ static int tsc_sfp_passive_chan(struct device *dev, int chan)
 		}
 		ret = i2c_transfer(ad, m, 2);
 		if (ret != 2) {
-			dev_err(dev, "sfp chan %d: A0h read failed on %s: %d\n", chan, ad->name, ret);
+			if (!quiet)
+				dev_err(dev, "sfp chan %d: A0h read failed on %s: %d\n", chan, ad->name, ret);
 			i2c_put_adapter(ad);
 			return ret < 0 ? ret : -EIO;
 		}
-		dev_info(dev, "sfp chan %d (%s): id %02x conn %02x b3 %02x b8 %02x\n", chan, ad->name, a0[0], a0[2], a0[3], a0[8]);
+		if (!quiet)
+			dev_info(dev, "sfp chan %d (%s): id %02x conn %02x b3 %02x b8 %02x\n", chan, ad->name, a0[0], a0[2],
+				 a0[3], a0[8]);
 		i2c_put_adapter(ad);
 		return a0[0] == 0x03 && (a0[8] & BIT(2));
 	}
@@ -265,15 +268,75 @@ static int tsc_sfp_passive_chan(struct device *dev, int chan)
 
 static int tsc_sfp_passive(struct us48_cmic *u, int front)
 {
-	return tsc_sfp_passive_chan(u->dev, front - 49);
+	return tsc_sfp_passive_chan(u->dev, front - 49, false);
 }
+
+/*
+ * Lane media mode (caller holds mdio): FIRMWARE_MODE 0xc260 = 2 (passive cable, OM PHY_IF_CR) or 0 (optic, OM SFI =
+ * stage-0 value) inside a uC stop/resume, then the per-lane RX restart (13.3b). Same sequence as the load-time DAC path.
+ */
+static int tsc_fw_mode_set(struct us48_cmic *u, u8 l, u16 mode)
+{
+	return tsc_uc_cmd(u, l, 0) ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc260, .mask = 0xffff, .val = mode }, l) ?:
+	       tsc_uc_cmd(u, l, 2) ?: us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0d00) ?:
+	       tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc137, .mask = BIT(0) }, l) ?:	/* RSTB_LANE 0 */
+	       tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc21e, .mask = BIT(15), .val = BIT(15) }, l) ?:	/* RXSEQSTART */
+	       us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0e00);
+}
+
+static struct us48_port *xe_port(struct us48_cmic *u, int i)
+{
+	return u->port[i] && u->port[i]->cfg == &u->cfgs[i] ? u->port[i] : NULL;
+}
+
+/*
+ * SFP hot-plug (#105): re-read A0h (read-only) and, when the module type no longer matches the lane's FIRMWARE_MODE,
+ * set the mode as at load + RX restart. force = re-apply the detected mode even if unchanged (test knob).
+ * Unreadable/absent module: lane left as is, logged once. Caller holds link_lock (vs open and the link poll).
+ */
+int us48_tsc_media_check(struct us48_port *p, bool force)
+{
+	struct us48_cmic *u = p->u;
+	int passive, ret;
+	u16 mode;
+
+	if (p->cfg->copper || p->fw_mode < 0)
+		return -EINVAL;
+	passive = tsc_sfp_passive_chan(u->dev, p->cfg->front - 49, true);
+	if (passive < 0) {
+		if (p->media != -1)
+			netdev_info(p->ndev, "sfp: module absent or A0h unreadable (%d): FIRMWARE_MODE %d kept\n", passive,
+				    p->fw_mode);
+		p->media = -1;
+		return passive;
+	}
+	mode = passive ? 2 : 0;
+	if (p->media != passive)
+		netdev_info(p->ndev, "sfp: module %s (A0h byte 8 bit 2 = %d), lane FIRMWARE_MODE %d\n",
+			    passive ? "passive cable" : "optic/other", passive, p->fw_mode);
+	p->media = passive;
+	if (mode == p->fw_mode && !force)
+		return 0;
+	tsc_sfp_passive_chan(u->dev, p->cfg->front - 49, false);	/* log the A0h bytes of the module we switch to */
+	mutex_lock(&u->mdio);
+	ret = tsc_fw_mode_set(u, p->cfg->lane, mode);
+	mutex_unlock(&u->mdio);
+	netdev_info(p->ndev, "sfp: FIRMWARE_MODE %d -> %d (%s)%s: %d\n", p->fw_mode, mode, passive ? "passive cable" : "optic",
+		    force ? ", forced" : "", ret);
+	if (!ret) {
+		p->fw_mode = mode;
+		p->rx_tuned = false;		/* one RX restart after the next link up, as after load (#87) */
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(us48_tsc_media_check);
 
 static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg);
 
 int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 {
 	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0 };
-	int i, ret;
+	int i, ret, passive;
 
 	if (!fw) {
 		dev_err(u->dev, "us48-tsc.bin not loaded: 10G SerDes microcode missing, xe links stay down\n");
@@ -294,18 +357,18 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
 		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
 		/* Passive cable in the cage: OM CR mode (FIRMWARE_MODE 2) + RX restart; optic = OM SFI = FIRMWARE_MODE 0 (stage 0 value). */
-		if (!ret && tsc_sfp_passive(u, u->cfgs[i].front) == 1) {
-			u8 l = u->cfgs[i].lane;
-
+		passive = ret ? -1 : tsc_sfp_passive(u, u->cfgs[i].front);
+		if (passive == 1) {
 			dev_info(u->dev, "tsc %s: passive cable (SFF-8472 A0h byte 8 bit 2): FIRMWARE_MODE 2\n", u->cfgs[i].name);
-			ret = tsc_uc_cmd(u, l, 0) ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc260, .mask = 0xffff, .val = 2 }, l) ?:
-			      tsc_uc_cmd(u, l, 2) ?: us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0d00) ?:
-			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc137, .mask = BIT(0) }, l) ?:	/* RSTB_LANE 0 */
-			      tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc21e, .mask = BIT(15), .val = BIT(15) }, l) ?:	/* RXSEQSTART */
-			      us48_tsc_uc_ram_wr(u, l, 0x04d0 + 0x100 * l, 0x0e00);
+			ret = tsc_fw_mode_set(u, u->cfgs[i].lane, 2);
 		}
-		if (!ret)
+		if (!ret) {
 			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);
+			if (xe_port(u, i)) {		/* hot-plug state (#105) */
+				xe_port(u, i)->fw_mode = passive == 1 ? 2 : 0;
+				xe_port(u, i)->media = passive < 0 ? -1 : passive;
+			}
+		}
 	}
 	mutex_unlock(&u->mdio);
 	return ret;

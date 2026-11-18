@@ -26,7 +26,7 @@ v6: 2001:db8:48:10::/64 and 2001:db8:48:20::/64 (::1 router, ::2 hosts)
 - nft: `fwd` is a keyword (chain `rnf_fwd`); `masquerade` takes options, so `}` goes on its own line.
 - Per transfer: temps before/after (stop die >= 108 C, LM75 >= 78 C), `/proc/stat` CPU busy + softirq, router rx pps (ge17+ge41, `/proc/1/net/dev`).
 - Teardown verifies: snapshot state equal (link-local addresses ignored), ge8/ge32 in the root ns, no holders/listeners, no `rnf_` tables, no `/tmp/rnf`.
-- IPv6 on the unit 0 cable fails: NDP multicast does not reach the CPU (#127); use `--no-v6` until fixed.
+- IPv6 on both cables passes since the unknown-multicast CPU block was cleared per port (#127, driver-internals 14.5); `--no-v6` is only a skip switch.
 - Modules (`modprobe`, `modules.dep` from host `depmod`, built by `build_mainline.py`): nf_conntrack, nf_nat, nf_tables, nft_ct, nft_chain_nat, nft_nat, nft_masq, nft_limit, nft_log, nft_reject(_inet), nf_flow_table(_inet), nft_flow_offload. They stay loaded after teardown until reboot.
 - TCP test: `dd` 10 MiB through busybox `nc` between the namespaces, receiver counts bytes (must be exactly N MiB), MB/s from `/proc/uptime` (10 ms resolution).
 - Limits: 15 s per board command, 30 s per 10 MiB transfer; expiry = step fails, logged with the command, restore runs.

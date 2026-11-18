@@ -23,6 +23,7 @@ Design and bench plan for the all-copper target: [#4](https://github.com/awto-au
 
 ## Stages
 1. CPU-path baseline (diagnostic only): bridge two copper ports on different chips in Linux; frames cross the CPU, proves both CMIC paths, not ASIC switching. Keep `ge1` reachable.
+   - Kernel STP over one loop cable through the CPU: `scripts/stp_loop_test.py u0|u1|all` (both cable ends in `brstp`, STP on first, kernel-minimum timers, storm guards host + board side). 2026-11-18, RAM image of #127 fix: the second-joined port (ge17 / ge41) blocks within 0.5 s, the first forwards after 4.3-4.8 s (fd 2 s), 4 pps while held, flood leaves by the forwarding port only.
 2. PHY inventory + representative links: done (above).
 3. ASIC forwarding, same chip, then across HiGig, with the Linux bridge out of the path.
    - Per test VLAN, set and read back: ingress membership (VLAN_TAB), egress membership/untagged (EGR_VLAN), PORT_VID (PORT_TAB), STP state (STG_TAB/EGR_VLAN_STG), EGR_ENABLE, EPC_LINK_BMAP. Do not assume VLAN 1.

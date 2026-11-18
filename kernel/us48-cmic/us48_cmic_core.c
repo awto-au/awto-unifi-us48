@@ -727,6 +727,13 @@ static void link_work_fn(struct work_struct *w)
 			p->rx_tuned = true;
 			us48_tsc_rx_restart(u, p->cfg);
 		}
+		/* Hot-plug: a swapped module may need the other FIRMWARE_MODE before it can link (#105). */
+		if (!up && p->fw_mode >= 0 && READ_ONCE(p->open) && ++p->media_tick >= MEDIA_POLL_TICKS) {
+			p->media_tick = 0;
+			mutex_lock(&u->link_lock);
+			us48_tsc_media_check(p, false);
+			mutex_unlock(&u->link_lock);
+		}
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 }
@@ -1261,6 +1268,8 @@ static int us48_open(struct net_device *nd)
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
 	mutex_lock(&u->link_lock);
+	if (!p->cfg->copper && p->fw_mode >= 0)
+		us48_tsc_media_check(p, false);		/* module may have changed while down (#105) */
 	p->open = true;
 	mutex_unlock(&u->link_lock);
 	if (u->nopen++ == 0) {
@@ -1549,6 +1558,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		p->ndev = nd;
 		p->cfg = &u->cfgs[i];
 		p->vid = u->cfgs[i].vid;
+		p->fw_mode = -1;
+		p->media = -1;
 		u->port[i] = p;
 		SET_NETDEV_DEV(nd, dev);
 		nd->netdev_ops = &us48_netdev_ops;
@@ -1576,6 +1587,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 			continue;
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);
+		bcm_hr2_umc_cpu_unblock(&u->cu, p->cfg->lport);	/* #127 */
 	}
 	if (!sbus(u, 0x0b, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2)) {
 		for (i = 0; i < u->nports; i++)

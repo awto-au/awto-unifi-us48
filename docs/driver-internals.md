@@ -653,6 +653,7 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
 - sw1 `SerDes 7` is **lan6** (pcs phandle map lan1..8 = SerDes 2..9), not lan3. The 30.3 s `RX calibration did not pass` loop belongs to lan6 (SFP+ 2 light); lan3 (SerDes 4) never logs, i.e. its calibration worker keeps waiting in `rxcal_ready`. C (sw1 DT, `pcs-rtl-otto.c`)
 - Lane map tests (TX map swaps 0<->1/2/3, analog regs follow the swap: AER 0 `0xc0xx` hits the swapped-in lane): no change. C
 - Media follows the module (2026-11-16): `us48_tsc_init` reads SFF-8472 A0h (id byte 0, byte 8 bit 2 = passive cable) per cage over the PCA9548 channel `front-49` and applies FIRMWARE_MODE 2 + RX restart only for a passive cable. Optic = OM `SFI` = FIRMWARE_MODE 0 (stage 0 value; OM sets 2 only for `PHY_IF_CR`, `bcmi_tsc_xgxs_drv.c` speed_set 10G). C
+- Hot-plug (#105, 2026-11-18): `us48_tsc_media_check()` re-reads A0h at `ndo_open` and every 2 link polls while the xe port is open with link down (`MEDIA_POLL_TICKS`; SFP MSA t_init <= 300 ms). On a type change: the load-time sequence (`tsc_fw_mode_set`: uC stop, `0xc260` = 2 or 0, uC resume, lane RX restart), logged, plus one RX restart after the next link up. Absent/unreadable module: lane kept, logged once. Test knob `echo "50 [force]" > /sys/module/us48_cmic_xe/parameters/media_check` (force = re-apply as if changed). C
 - Pairs after the module swap (#87): the `-67` loop on sw1 SerDes 7 belongs to lan6, which is not connected to us. xe49 optic = sw1 **lan7** (SerDes 8), see 13.8. xe50 (lane 2) DAC - sw1 lan3: no sw1 log. C
 - sw1 RX_IDLE = `WDIG` reg 0x14 bit 0 (even SerDes; bit 1 for the odd SerDes of a pair), valid only while WDIG reg 2 = 0x35 (the sw1 driver writes it every rxcal poll, `pcs-rtl-otto.c` l.1562-1590). Readings taken without that check are void; use `scripts/dac_probe.py`. C
 - TX_X1 PI `0x1_9200..0x1_9212` reads 0 on lane 0 and 2 (`0x1920f` = 0x920f echo); SDK `tscmod_tx_pi_control` only writes TX_PI_EN 0 / CONTROL3 0 (reset), i.e. what we have. Live TX FIR `0xc252` = `0x5a54` on both lanes = the stock value. Neither differs. C
@@ -751,6 +752,12 @@ Sources: OM `cdk/.../bcm56150_a0_cmic.h:9743-10025` (RDB descriptions), OM `libb
   - Each adds an even bit count, so `EVEN_PARITY` stays valid. `PORT_TAB[27]` PORT_VID = 1, EN_IFILTER 0. C
 - First frame: 68 B ARP broadcast, `w12` src port 27, DONE/start/end set, err 0, VLAN 1 tag kept (`81 00 00 01`), within 100 ms of arming. C
 - Abort the channel before any `rmmod` (section 5 abort) so the engine never writes into freed RAM.
+
+### 14.5 Unknown multicast to the CPU (#127, 2026-11-18)
+- `UNKNOWN_MCAST_BLOCK_MASK_64[lport]` (IPIPE 0x44000200 + lport, `BLK_BITMAP` 0:30) blocks unknown-multicast copies from that ingress port to the bitmap ports. Stock writes 1 (CPU bit 0) on every front port of both units (`tmp/schan_stock_writes.txt` ords 60045+ u0, 62231+ u1). C
+- Unit 0's cold init replays it, unit 1's does not: on unit 0 no `33:33:*` / `01:00:5e:*` frame reached the CPU in a private VLAN, so IPv6 NDP failed on ge8 <-> ge17 while ge32 <-> ge41 worked. Broadcast uses another path (ARP fine). C
+- Driver: `bcm_hr2_umc_cpu_unblock()` clears bit 0 (= regdb reset value, = unit 1 live) at copper bring-up and in the xe VLAN init. `IUNKNOWN_MCAST_BLOCK_MASK_64` (0x44000300) read 1 before and 0 after, with no write of its own: it follows the UNKNOWN register. C
+- Diff tool: `scripts/mcast_cpu_diff.py` (read only, unit 0 vs unit 1: VLAN/profile/L2MC/PORT_TAB/per-port and global multicast-to-CPU controls). C
 
 ## 15. HiGig links between the chips (#57, 2026-11-18)
 
