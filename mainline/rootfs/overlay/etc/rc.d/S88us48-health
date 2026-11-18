@@ -1,0 +1,3 @@
+#!/bin/sh
+# Boot health line in the background (console + syslog + RAM record); never blocks boot. Fields: docs/selftest.md (#35).
+/usr/sbin/us48-health >/dev/console 2>&1 &

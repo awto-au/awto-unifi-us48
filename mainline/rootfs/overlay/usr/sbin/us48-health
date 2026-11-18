@@ -1,0 +1,181 @@
+#!/bin/sh
+# us48-health: one boot health line (awto-unifi-us48#35, #18). Fields + sources: docs/selftest.md.
+#   us48-health          boot: print the line (console + syslog + /run/us48-health.last) and append it to the RAM record
+#   us48-health --show   print a fresh line only (host health_check.py)
+#   us48-health --clean  shutdown hook: mark the RAM record clean
+# Read-only except /dev/pmsg0 (pstore, RAM). No flash write. US48_ROOT = fake tree prefix for host tests.
+
+R=${US48_ROOT:-}
+. "$R/etc/us48.conf" || exit 1
+MODE=${1:-boot}
+PMSG=$R/dev/pmsg0
+PSTORE=$R/sys/fs/pstore
+# uImage slots in kernel0 (docs/autochain.md): awto-uboot at +0, mainline kernel at +2 MiB
+UB_OFF=0
+K_OFF=2097152
+POE_CHIPS=12		# docs/poe.md: 12 BCM59111, FW_REV reg 0x41
+
+rd() { cat "$1" 2>/dev/null; }
+c1() {	# millidegrees -> C with one decimal
+	t=$1; s=
+	[ "$t" -lt 0 ] && { s=-; t=$((-t)); }
+	echo "$s$((t / 1000)).$((t % 1000 / 100))"
+}
+mtd_dev() {
+	n=$(grep "\"$1\"" "$R/proc/mtd" | cut -d: -f1)
+	[ -n "$n" ] && echo "$R/dev/${n}ro"
+}
+# 32-bit big-endian word at byte offset $2 of $1, hex (uImage header is big-endian)
+word() { dd if="$1" bs=4 skip=$(($2 / 4)) count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n'; }
+slot() {	# slot NAME DEV OFFSET: uImage header magic ok? -> name, data size, header data crc
+	m=$(word "$2" "$3")
+	if [ "$m" != 27051956 ]; then echo "$1 bad_magic=${m:-none}"; return 1; fi
+	SZ=$((0x$(word "$2" $(($3 + 12))))); DCRC=$(word "$2" $(($3 + 24)))
+	NAME=$(dd if="$2" bs=32 skip=$(($3 / 32 + 1)) count=1 2>/dev/null | tr -d '\000' | tr ' ' '_')
+	return 0
+}
+
+cfg_b() { dd if="$1/config" bs=1 skip="$2" count=1 2>/dev/null | od -An -tu1 | tr -d ' '; }
+lnksta() {	# PCIe capability (id 0x10) Link Status = cap + 0x12, config space read via sysfs
+	c=$(cfg_b "$1" 52); n=0
+	while [ "${c:-0}" -ne 0 ] && [ $n -lt 16 ]; do
+		if [ "$(cfg_b "$1" "$c")" = 16 ]; then
+			printf '0x%04x' $(($(cfg_b "$1" $((c + 19))) * 256 + $(cfg_b "$1" $((c + 18)))))
+			return
+		fi
+		c=$(cfg_b "$1" $((c + 1))); n=$((n + 1))
+	done
+	echo none
+}
+
+collect() {
+	up=$(cut -d' ' -f1 "$R/proc/uptime")
+	kern=$(uname -r)
+	kbuild=$(uname -v | sed 's/^#\([0-9]*\).*/\1/')
+
+	# U-Boot ident + flash slot CRCs: read-only mtd reads
+	k0=$(mtd_dev kernel0); ubn=none; ubcrc=none; kcrc=none; kdcrc=none; kname=none
+	if [ -n "$k0" ]; then
+		if slot uboot "$k0" $UB_OFF; then
+			ubn=$NAME
+			ubcrc=$(head -c $((SZ + 64)) "$k0" | crc32 | cut -d' ' -f1)
+		fi
+		if slot kernel "$k0" $K_OFF; then
+			kname=$NAME; kdcrc=$DCRC
+			kcrc=$(dd if="$k0" bs=64 skip=$((K_OFF / 64)) count=1 2>/dev/null | crc32 | cut -d' ' -f1)
+		fi
+	fi
+	jedec=$(rd "$(echo "$R"/sys/bus/spi/devices/*/spi-nor/jedec_id | cut -d' ' -f1)")
+
+	# reset cause: DMU_PCU_IPROC_RESET_REASON bit0 watchdog, bit1 DMU soft reset, bit2 PCIe slave (regdb hr2_regs.tsv)
+	rr=$(devmem "$RESET_REASON_ADDR" 32 2>/dev/null)
+	cru=$(devmem "$CRU_REASON_ADDR" 32 2>/dev/null)
+	rrv=$((${rr:-0}))
+	rrn=
+	[ $((rrv & 1)) -ne 0 ] && rrn=${rrn}wdt,
+	[ $((rrv & 2)) -ne 0 ] && rrn=${rrn}soft,
+	[ $((rrv & 4)) -ne 0 ] && rrn=${rrn}pcie,
+	rrn=${rrn%,}
+
+	# thermal zones from the DT: lm75-48..4b, die0, die1
+	lm=; die=
+	for z in "$R"/sys/class/thermal/thermal_zone*; do
+		ty=$(rd "$z/type")
+		case "$ty" in lm75-*|die*) ;; *) continue ;; esac
+		if t=$(cat "$z/temp" 2>/dev/null) && [ -n "$t" ]; then t=$(c1 "$t"); else t=err; fi
+		case "$ty" in lm75-*) lm="$lm,${ty#lm75-}:$t" ;; *) die="$die,$ty:$t" ;; esac
+	done
+
+	# fan: last frame acked by spi_write (us48_fan wire_level / frame_errors); the MSPI has no RX
+	fd=$(echo "$R"/sys/bus/spi/drivers/us48_fan/spi*)
+	if [ -e "${fd%% *}/wire_level" ]; then
+		fd=${fd%% *}; wl=$(rd "$fd/wire_level")
+		if [ "$wl" -ge 0 ]; then fan=L$wl/$(printf '0x%02x' $((wl << 4))); else fan=unknown; fi
+		fanerr=$(rd "$fd/frame_errors")
+	else
+		fan=none; fanerr=na
+	fi
+	fq=$(rd "$R/sys/module/us48_fan/parameters/quiet")
+
+	# PCIe: RC Link Status (0x9012 = active) + unit 1 endpoint (14e4:8346) speed/width
+	rc=; ep=
+	for d in "$R"/sys/bus/pci/devices/*; do
+		[ -e "$d/vendor" ] || continue
+		case "$(rd "$d/class")" in 0x0604*) rc=$d ;; esac
+		[ "$(rd "$d/vendor"):$(rd "$d/device")" = 0x14e4:0x8346 ] && ep=$d
+	done
+	pcie=none
+	if [ -n "$rc" ]; then
+		pcie=rc:$(lnksta "$rc")
+		if [ -n "$ep" ]; then
+			pcie=$pcie,ep:$(rd "$ep/current_link_speed" | tr ' ' '_')_x$(rd "$ep/current_link_width")
+		else
+			pcie=$pcie,ep:none
+		fi
+	fi
+
+	# PoE: only with the bcm59111 driver bound; FW_REV is a plain register read (reg 0x41)
+	pd=$R/sys/bus/i2c/drivers/bcm59111
+	if [ -d "$pd" ]; then
+		n=0; fw=
+		for l in "$pd"/*-00*; do
+			[ -e "$l" ] || continue
+			b=${l##*/}; n=$((n + 1))
+			v=$(i2cget -y -f "${b%-*}" "0x${b#*-00}" 0x41 2>/dev/null) || v=err
+			fw="$fw $v"
+		done
+		fw=$(echo $fw | tr ' ' '\n' | sort | uniq -c | awk '{printf "%s%s:%s", (NR > 1 ? "," : ""), $2, $1}')
+		poe="$n/$POE_CHIPS fw=${fw:-none}"
+	else
+		poe="skip(no_bcm59111)"
+	fi
+}
+
+# RAM record (pstore pmsg of the previous boot): boot counter + clean-shutdown flag
+prev_record() {
+	PREV=none; BOOT=1; REC=none
+	[ -e "$PMSG" ] || { REC=no_pstore; return; }
+	REC=ram
+	mountpoint -q "$PSTORE" || mount -t pstore pstore "$PSTORE" 2>/dev/null
+	[ -e "$PSTORE/pmsg-ramoops-0" ] || return
+	last=$(tr -cd '\11\12\40-\176' < "$PSTORE/pmsg-ramoops-0" | grep '^us48-health ' | tail -n 1)
+	[ -n "$last" ] || return
+	case "$last" in "us48-health clean "*) PREV=clean ;; *) PREV=unclean ;; esac
+	b=$(echo "$last" | sed -n 's/.* boot=\([0-9]*\).*/\1/p')
+	[ -n "$b" ] && BOOT=$((b + 1))
+}
+
+cause() {	# register + previous record -> one word
+	case "$rrn" in
+	*wdt*) echo wdt ;;
+	*pcie*) echo pcie ;;
+	*soft*) case $PREV in clean) echo reboot ;; unclean) echo soft_unclean ;; *) echo soft ;; esac ;;
+	*) case $PREV in none) echo power_on ;; *) echo reg_clear ;; esac ;;
+	esac
+}
+
+case "$MODE" in
+--clean)
+	[ -e "$PMSG" ] || exit 0
+	echo "us48-health clean boot=${2:-$(sed -n 's/.* boot=\([0-9]*\).*/\1/p' "$R/run/us48-health.last")}" > "$PMSG"
+	exit 0 ;;
+--show)
+	collect
+	BOOT=$(sed -n 's/.* boot=\([0-9]*\).*/\1/p' "$R/run/us48-health.last" 2>/dev/null)
+	PREV=na; REC=na ;;
+boot)
+	collect
+	prev_record ;;
+*) echo "usage: us48-health [--show|--clean]" >&2; exit 2 ;;
+esac
+
+line="us48-health up=$up boot=${BOOT:-na} cause=$(cause) rst=${rr:-na}(${rrn:-none}) cru=${cru:-na} prev=$PREV rec=$REC \
+img=$IMAGE_ID kern=$kern#$kbuild uboot=$ubn ubcrc=$ubcrc kslot=$kname kcrc=$kcrc kdcrc=$kdcrc \
+jedec=${jedec:-none} pcie=$pcie die=${die#,} lm75=${lm#,} fan=$fan fanerr=$fanerr quiet=${fq:-na} poe=$poe"
+echo "$line"
+if [ "$MODE" = boot ]; then
+	echo "$line" > "$R/run/us48-health.last"
+	logger -t us48-health "${line#us48-health }"
+	[ -e "$PMSG" ] && echo "$line" > "$PMSG"
+fi
+exit 0

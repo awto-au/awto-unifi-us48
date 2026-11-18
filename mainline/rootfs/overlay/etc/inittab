@@ -2,3 +2,4 @@
 ::sysinit:/etc/rc.sh
 ::askfirst:-/bin/sh
 ::ctrlaltdel:/sbin/reboot
+::shutdown:/usr/sbin/us48-health --clean

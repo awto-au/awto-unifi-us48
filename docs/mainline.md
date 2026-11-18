@@ -108,6 +108,7 @@
 | 19 | ... Add the on-chip SRAM as mmio-sram | `sram@1b000000` 16 KiB, one `dma-desc` pool; `CONFIG_SRAM=y` (#84 item 12) |
 | 24 | PCI: iproc: Keep PERST# released at shutdown on Hurricane 2 | `CLK_CTRL` survives the chip reset; shutdown PERST# made the next boot's first unit 1 access stall until the SP805 bit (#67, #98). Keyed on `brcm,iproc-hr2-pcie`; vendor kernel never asserts it |
 | 22 | lib/stackdepot: Initialise only the hash table entries that were allocated | `init_stack_table()` ran over the requested count, not the allocated one: overwrote the `struct page` array under KASAN (#84) |
+| 28 | ARM: dts: broadcom: us-48-500w: Add a ramoops region | `ramoops@6fc00000` 1 MiB (record 64 KiB, console 256 KiB, pmsg 256 KiB): RAM record of the boot health line, no flash ([selftest.md](selftest.md#boot-record)). `CONFIG_PSTORE{,_CONSOLE,_PMSG,_RAM}=y` (#35). Numbered 28: 25-27 are on the unmerged sensors/LED branches |
 
 Differences to the old OpenWrt DTS (`openwrt/0001-*.patch` in tag `openwrt-parked`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.
