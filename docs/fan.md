@@ -80,6 +80,7 @@ CMIC unit 0 MSPI @ AXI `0x48001500`. Captured after `swctrl fan set level N`; di
   - Emergency: die (PVTMON) >= 110 C ([clock-audit.md](clock-audit.md)) or any LM75 >= 80 C -> 100 %; back to 0 at die <= 100 C and LM75 <= 70 C.
   - awto-uboot `fan.c` `FAN_QUIET` 1 (die trip 110 C, read failures stay at the boot level); 0 = pre-2026-11-15 policy (die >= 100 C or any read failure = 100 %).
   - DT thermal zones (`mainline/0013`): LM75 trip 80 C hysteresis 10 C; die trip 110 C hysteresis 10 C.
+- `us48_fan` read-only sysfs on the spi device (`/sys/bus/spi/drivers/us48_fan/spi*/`): `wire_level` = last level acked by `spi_write` (-1 after a failed frame), `frame_errors` = failed frames since probe. The MSPI is write-only, so this is the driver's view, not a read-back from the chain (health line + `us48-selftest`, [selftest.md](selftest.md)).
 - `us48-fand` is deleted; emergency escalation exists in awto-uboot (boot time) and in `us48-fan`.
 - Board check 2026-11-15: cold awto-uboot prints `level 3 (100 %)` on both groups (tx byte 0 = 0x30); Linux `pwm1` 255, `pwm1_enable` 2.
 

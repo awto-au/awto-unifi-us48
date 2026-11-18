@@ -160,6 +160,11 @@ CONFIG_WATCHDOG=y
 CONFIG_ARM_SP805_WATCHDOG=y
 # SP805 is armed by awto-uboot (~46 s): built in, and the core feeds it until userspace opens /dev/watchdog (replaces the busybox feeder, #84)
 CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y
+# RAM record of the boot health line (us48-health, mainline/0027 ramoops node, pmsg): boot counter + clean flag, no flash write (#35)
+CONFIG_PSTORE=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_PMSG=y
+CONFIG_PSTORE_RAM=y
 # Core SoC test kit (#84): PL330 as a module (IDM reset must be released first, docs/core-bringup.md); iproc-rng200 does not fit the HR2 RNG layout
 CONFIG_DMADEVICES=y
 CONFIG_PL330_DMA=m

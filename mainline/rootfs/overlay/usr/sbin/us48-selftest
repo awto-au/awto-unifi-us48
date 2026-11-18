@@ -1,9 +1,14 @@
 #!/bin/sh
 # us48-selftest: read-only boot self-test. One line per check: PASS|WARN|FAIL name detail. Exit code = FAIL count.
 # Facts + thresholds: docs/selftest.md (awto-unifi-us48#35). Never scans i2c-0/1 (hangs), never touches 0x28-0x30.
+# US48_ROOT = fake tree prefix for host tests.
 
-LOG=/tmp/us48-selftest.log
-WARN_MC=70000; FAIL_MC=80000   # LM75 millidegrees; FAIL = 80 C quiet-rule emergency trip (docs/fan.md)
+R=${US48_ROOT:-}
+. "$R/etc/us48.conf" || exit 1
+LOG=$R/tmp/us48-selftest.log
+LM_WARN=70000; LM_FAIL=80000	# LM75 mC; 80 C = quiet-rule emergency trip (docs/fan.md)
+DIE_WARN=100000; DIE_FAIL=110000	# die PVTMON mC; 110 C = emergency trip, 100 C = its hysteresis point
+T_MIN=-20000; T_MAX=150000	# outside = bogus reading (pvtmon driver rejects -40..150 C)
 FAILS=0
 
 : > "$LOG"
@@ -12,19 +17,27 @@ res() {  # status name detail
 	logger -t us48-selftest "$1 $2 $3"
 	[ "$1" = FAIL ] && FAILS=$((FAILS + 1))
 }
+rd() { cat "$1" 2>/dev/null; }
 
-# CPU: one Cortex-A9 (MIDR 0x414fc091 = implementer 0x41, part 0xc09), docs/hardware.md
-n=$(grep -c '^processor' /proc/cpuinfo)
-imp=$(sed -n 's/^CPU implementer[^:]*: *//p' /proc/cpuinfo | head -n 1)
-part=$(sed -n 's/^CPU part[^:]*: *//p' /proc/cpuinfo | head -n 1)
+# cpu: one Cortex-A9 (MIDR 0x414fc091, docs/hardware.md); clock = BogoMIPS / 2 (stock 795 BogoMIPS at 400 MHz), +-5 %
+n=$(grep -c '^processor' "$R/proc/cpuinfo")
+imp=$(sed -n 's/^CPU implementer[^:]*: *//p' "$R/proc/cpuinfo" | head -n 1)
+part=$(sed -n 's/^CPU part[^:]*: *//p' "$R/proc/cpuinfo" | head -n 1)
 if [ "$n" = 1 ] && [ "$imp" = 0x41 ] && [ "$part" = 0xc09 ]; then
 	res PASS cpu "1 core, implementer $imp part $part (Cortex-A9)"
 else
 	res FAIL cpu "cores=$n implementer=$imp part=$part, want 1 / 0x41 / 0xc09"
 fi
+bm=$(sed -n 's/^BogoMIPS[^:]*: *\([0-9]*\).*/\1/p' "$R/proc/cpuinfo" | head -n 1)
+mhz=$((${bm:-0} / 2))
+if [ "$mhz" -ge $((EXPECT_CPU_MHZ * 95 / 100)) ] && [ "$mhz" -le $((EXPECT_CPU_MHZ * 105 / 100)) ]; then
+	res PASS clock "~${mhz} MHz (BogoMIPS ${bm}), awto-uboot sets ${EXPECT_CPU_MHZ}"
+else
+	res FAIL clock "~${mhz} MHz (BogoMIPS ${bm:-none}), want ${EXPECT_CPU_MHZ} +-5 %"
+fi
 
-# Memory: 2 x 128 MiB banks minus the 64 MiB a2 carveout (DT reserved-memory); one bank only = second bank not mapped
-kb=$(sed -n 's/^MemTotal: *\([0-9]*\) kB.*/\1/p' /proc/meminfo)
+# mem: 2 x 128 MiB banks minus the 64 MiB a2 carveout (DT reserved-memory) minus 1 MiB ramoops; one bank = bank 2 not mapped
+kb=$(sed -n 's/^MemTotal: *\([0-9]*\) kB.*/\1/p' "$R/proc/meminfo")
 if [ "${kb:-0}" -ge 150000 ]; then
 	res PASS mem "MemTotal ${kb} kB"
 elif [ "${kb:-0}" -ge 100000 ]; then
@@ -33,88 +46,93 @@ else
 	res FAIL mem "MemTotal ${kb:-0} kB"
 fi
 
-# Thermal: LM75 hwmon (i2c-9 0x48..0x4b); fail at the 80 C emergency trip
-seen=0; maxc=-1
-for h in /sys/class/hwmon/hwmon*; do
-	case "$(cat "$h/name" 2>/dev/null)" in lm75*) ;; *) continue;; esac
-	v=$(cat "$h/temp1_input" 2>/dev/null) || continue
-	seen=$((seen + 1))
-	[ "$v" -gt "$maxc" ] && maxc=$v
+# thermal: LM75 x4 + die0/die1 through the DT thermal zones (type lm75-48..4b, die0, die1)
+nl=0; nd=0; lmax=-999999; dmax=-999999; tbad=""
+for z in "$R"/sys/class/thermal/thermal_zone*; do
+	ty=$(rd "$z/type")
+	case "$ty" in lm75-*|die*) ;; *) continue ;; esac
+	t=$(cat "$z/temp" 2>/dev/null)
+	if [ -z "$t" ] || [ "$t" -lt $T_MIN ] || [ "$t" -gt $T_MAX ]; then tbad="$tbad $ty"; continue; fi
+	case "$ty" in
+	lm75-*) nl=$((nl + 1)); [ "$t" -gt $lmax ] && lmax=$t ;;
+	*) nd=$((nd + 1)); [ "$t" -gt $dmax ] && dmax=$t ;;
+	esac
 done
-if [ $seen -eq 0 ]; then
-	res FAIL thermal "no lm75 hwmon (i2c-9 0x48..0x4b)"
-elif [ $maxc -ge $FAIL_MC ]; then
-	res FAIL thermal "max ${maxc} mC over $seen sensors >= $FAIL_MC"
-elif [ $maxc -ge $WARN_MC ]; then
-	res WARN thermal "max ${maxc} mC over $seen sensors >= $WARN_MC"
-elif [ $seen -lt 4 ]; then
-	res WARN thermal "only $seen of 4 sensors, max ${maxc} mC"
+if [ -n "$tbad" ]; then
+	res FAIL thermal "unreadable or out of range:$tbad"
+elif [ $nl -lt 4 ] || [ $nd -lt 2 ]; then
+	res FAIL thermal "lm75 $nl/4, die $nd/2 readable"
+elif [ $lmax -ge $LM_FAIL ] || [ $dmax -ge $DIE_FAIL ]; then
+	res FAIL thermal "lm75 max ${lmax} mC (>= $LM_FAIL), die max ${dmax} mC (>= $DIE_FAIL)"
+elif [ $lmax -ge $LM_WARN ] || [ $dmax -ge $DIE_WARN ]; then
+	res WARN thermal "lm75 max ${lmax} mC (>= $LM_WARN), die max ${dmax} mC (>= $DIE_WARN)"
 else
-	res PASS thermal "max ${maxc} mC over $seen sensors"
+	res PASS thermal "lm75 max ${lmax} mC x$nl, die max ${dmax} mC x$nd"
 fi
 
-# Fan: us48-fan cooling device (thermal) or hwmon pwm1 (kernel/us48-fan, docs/fan.md)
-fan=""
-for c in /sys/class/thermal/cooling_device*; do
-	[ "$(cat "$c/type" 2>/dev/null)" = us48-fan ] && fan=$c
-done
-if [ -z "$fan" ]; then
-	for h in /sys/class/hwmon/hwmon*; do
-		[ -e "$h/pwm1" ] && fan=$h/pwm1
-	done
-fi
-if [ -n "$fan" ]; then
-	res PASS fan "$fan"
+# fan: last frame acked by spi_write (us48_fan wire_level, frame_errors; docs/fan.md); no tach, MSPI has no RX
+fd=$(echo "$R"/sys/bus/spi/drivers/us48_fan/spi*)
+fd=${fd%% *}
+if [ ! -e "$fd/wire_level" ]; then
+	res FAIL fan "us48_fan not bound or without wire_level ($fd)"
 else
-	res FAIL fan "no us48-fan cooling device, no hwmon pwm1 (us48_fan not bound?)"
+	wl=$(rd "$fd/wire_level"); fe=$(rd "$fd/frame_errors")
+	if [ "$wl" -lt 0 ]; then
+		res FAIL fan "no frame acked on the wire (wire_level $wl, errors ${fe:-?})"
+	elif [ "${fe:-1}" -ne 0 ]; then
+		res WARN fan "wire level $wl, $fe failed frame(s) since probe"
+	else
+		res PASS fan "frame acked, wire level $wl, 0 errors"
+	fi
 fi
 
-# I2C tree: i2c-2 = CMIC master, i2c-3..10 = PCA9548 0x70 children (docs/board.md)
+# i2c tree: i2c-2 = CMIC master, mux 2-0070, i2c-3..10 = PCA9548 children, LM75 9-0048..4b (docs/board.md)
 miss=""
 for b in 2 3 4 5 6 7 8 9 10; do
-	[ -e /sys/bus/i2c/devices/i2c-$b ] || miss="$miss i2c-$b"
+	[ -e "$R/sys/bus/i2c/devices/i2c-$b" ] || miss="$miss i2c-$b"
+done
+[ -e "$R/sys/bus/i2c/devices/2-0070" ] || miss="$miss mux-0x70"
+for a in 48 49 4a 4b; do
+	[ -e "$R/sys/bus/i2c/devices/9-00$a" ] || miss="$miss lm75-0x$a"
 done
 if [ -z "$miss" ]; then
-	res PASS i2c-tree "i2c-2..10 present"
+	res PASS i2c-tree "i2c-2..10, mux 0x70, lm75 0x48..0x4b present"
 else
 	res FAIL i2c-tree "missing:$miss"
 fi
 
-# SFP EEPROM 0x50 on i2c-3..6 only; empty cage = WARN (scan is read-only, 2 addresses)
-for b in 3 4 5 6; do
-	if [ ! -e /sys/bus/i2c/devices/i2c-$b ]; then
-		res FAIL sfp-i2c-$b "bus missing"
-		continue
-	fi
-	row=$(i2cdetect -y -r $b 0x50 0x51 2>&1 | grep '^50:')
-	case "$row" in
-	*" 50"*|*UU*) res PASS sfp-i2c-$b "0x50 answers: $row" ;;
-	*)            res WARN sfp-i2c-$b "no 0x50 (cage empty?): $row" ;;
-	esac
-done
-
-# Switch ports from us48_cmic (ge1 mgmt, xe49/xe50 unit 1, ge40)
-if grep -q '^us48_cmic ' /proc/modules; then
-	res PASS module "us48_cmic loaded"
+# poe: bcm59111 chips bound (driver optional; docs/poe.md: 12 chips); skipped without the driver, never probed here
+pd=$R/sys/bus/i2c/drivers/bcm59111
+if [ -d "$pd" ]; then
+	pn=0
+	for l in "$pd"/*-00*; do [ -e "$l" ] && pn=$((pn + 1)); done
+	if [ $pn -eq 12 ]; then res PASS poe "12/12 bcm59111 bound"; else res FAIL poe "$pn/12 bcm59111 bound"; fi
 else
-	res FAIL module "us48_cmic not loaded"
+	res WARN poe "skipped: bcm59111 driver not present"
 fi
-for p in ge1 xe49 xe50 ge40; do
-	if [ -e /sys/class/net/$p ]; then
-		res PASS port-$p "present, operstate $(cat /sys/class/net/$p/operstate 2>/dev/null)"
-	else
-		res FAIL port-$p "netdev missing"
-	fi
+
+# pcie: unit 1 endpoint 14e4:8346 present with a negotiated link
+ep=""
+for d in "$R"/sys/bus/pci/devices/*; do
+	[ "$(rd "$d/vendor"):$(rd "$d/device")" = 0x14e4:0x8346 ] && ep=$d
 done
+if [ -z "$ep" ]; then
+	res FAIL pcie "unit 1 endpoint 14e4:8346 not enumerated"
+else
+	res PASS pcie "unit 1 $(rd "$ep/current_link_speed") x$(rd "$ep/current_link_width")"
+fi
 
-# PoE off: only readable via BCM59111 0x12 on i2c-7/8 0x28..0x2d, which this test must not touch
-res WARN poe-off "not checked: no safe read-only path (docs/poe.md); see us48-poe-off log"
-
-# Flash layout, docs/hardware.md flash map
-nm=$(grep -c '^mtd[0-9]*:' /proc/mtd)
+# flash: JEDEC id from spi-nor sysfs (MX25L25635E = c22019, docs/core-bringup.md) + the 7-partition map (docs/hardware.md)
+jid=$(rd "$(echo "$R"/sys/bus/spi/devices/*/spi-nor/jedec_id | cut -d' ' -f1)")
+if [ "$jid" = c22019 ]; then
+	res PASS flash-id "$jid"
+else
+	res FAIL flash-id "jedec '${jid:-none}', want c22019"
+fi
+nm=$(grep -c '^mtd[0-9]*:' "$R/proc/mtd")
 bad=""
 for name in u-boot u-boot-env shmoo kernel0 kernel1 cfg EEPROM; do
-	grep -q "\"$name\"" /proc/mtd || bad="$bad $name"
+	grep -q "\"$name\"" "$R/proc/mtd" || bad="$bad $name"
 done
 if [ "$nm" -lt 7 ]; then
 	res FAIL mtd "$nm partitions, want >= 7"
@@ -123,6 +141,56 @@ elif [ -n "$bad" ]; then
 else
 	res PASS mtd "$nm partitions, expected names present"
 fi
+
+# sfp cages i2c-3..6 (front 49..52): module present = 0x50 answers (sfp driver sockets counted when it is bound)
+sd=$R/sys/bus/platform/drivers/sfp
+if [ -d "$sd" ]; then
+	sn=0
+	for l in "$sd"/*; do [ -L "$l" ] && sn=$((sn + 1)); done
+	if [ $sn -eq 4 ]; then res PASS sfp-driver "4 sockets bound"; else res FAIL sfp-driver "$sn/4 sockets bound"; fi
+fi
+for b in 3 4 5 6; do
+	if [ ! -e "$R/sys/bus/i2c/devices/i2c-$b" ]; then
+		res FAIL sfp-i2c-$b "bus missing"
+		continue
+	fi
+	row=$(i2cdetect -y -r $b 0x50 0x51 2>&1 | grep '^50:')
+	case "$row" in
+	*" 50"*|*UU*) res PASS sfp-i2c-$b "module present (0x50 answers)" ;;
+	*)            res PASS sfp-i2c-$b "no module (0x50 silent)" ;;
+	esac
+done
+
+# switch units: us48_cmic loaded; unit 0 = mgmt netdev copper_ready + block_ready; unit 1 = SFP+ netdevs + copper probe port
+if grep -q '^us48_cmic ' "$R/proc/modules"; then
+	res PASS module "us48_cmic loaded"
+else
+	res FAIL module "us48_cmic not loaded"
+fi
+for p in $NET_MGMT; do
+	nd=$R/sys/class/net/$p
+	if [ ! -e "$nd" ]; then
+		res FAIL unit0-$p "netdev missing"
+	elif [ "$(rd "$nd/copper_ready")" = 1 ] && [ "$(rd "$nd/block_ready")" = 1 ]; then
+		res PASS unit0-$p "copper_ready 1 block_ready 1, operstate $(rd "$nd/operstate")"
+	else
+		res FAIL unit0-$p "copper_ready $(rd "$nd/copper_ready") block_ready $(rd "$nd/block_ready")"
+	fi
+done
+for p in $NET_SFP; do
+	if [ -e "$R/sys/class/net/$p" ]; then
+		res PASS unit1-$p "present, operstate $(rd "$R/sys/class/net/$p/operstate")"
+	else
+		res FAIL unit1-$p "netdev missing"
+	fi
+done
+for p in $NET_PROBE; do	# not opened at boot: copper_ready 0 is normal, only the netdev is required
+	if [ -e "$R/sys/class/net/$p" ]; then
+		res PASS unit1-$p "present, copper_ready $(rd "$R/sys/class/net/$p/copper_ready")"
+	else
+		res FAIL unit1-$p "netdev missing"
+	fi
+done
 
 if [ $FAILS -eq 0 ]; then
 	res PASS summary "0 FAIL"

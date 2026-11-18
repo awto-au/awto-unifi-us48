@@ -48,6 +48,7 @@ struct fan {
 	bool sensors_ok;		/* every watched zone read OK on the last check */
 	bool wr_err;			/* a frame failed: hold 3 until a write works again */
 	int hw;				/* level on the wire, -1 unknown */
+	unsigned int frame_errs;	/* failed frames since probe */
 	const char **zones;
 	int nzones;
 	struct delayed_work watch;
@@ -63,6 +64,34 @@ static unsigned int fail_level(void)
 {
 	return quiet ? 0 : LEVEL_FULL;
 }
+
+/* Read-only status for the boot health line (#35): last level acked by spi_write (byte 0 = level << 4). The MSPI has no RX. */
+static ssize_t wire_level_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct fan *f = spi_get_drvdata(to_spi_device(dev));
+	int hw;
+
+	mutex_lock(&f->lock);
+	hw = f->hw;
+	mutex_unlock(&f->lock);
+	return sysfs_emit(buf, "%d\n", hw);
+}
+static DEVICE_ATTR_RO(wire_level);
+
+static ssize_t frame_errors_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct fan *f = spi_get_drvdata(to_spi_device(dev));
+	unsigned int n;
+
+	mutex_lock(&f->lock);
+	n = f->frame_errs;
+	mutex_unlock(&f->lock);
+	return sysfs_emit(buf, "%u\n", n);
+}
+static DEVICE_ATTR_RO(frame_errors);
+
+static struct attribute *fan_attrs[] = { &dev_attr_wire_level.attr, &dev_attr_frame_errors.attr, NULL };
+ATTRIBUTE_GROUPS(fan);
 
 static int fan_frame(struct fan *f, unsigned int level)
 {
@@ -97,6 +126,7 @@ static int fan_apply(struct fan *f)
 			    fail_level());
 	f->hw = -1;
 	f->wr_err = true;
+	f->frame_errs++;
 	if (want != fail_level() && !fan_frame(f, fail_level()))
 		f->hw = fail_level();
 	return ret;
@@ -320,7 +350,7 @@ static const struct spi_device_id fan_spi_id[] = {
 MODULE_DEVICE_TABLE(spi, fan_spi_id);
 
 static struct spi_driver fan_driver = {
-	.driver = { .name = "us48_fan", .of_match_table = fan_of_match },
+	.driver = { .name = "us48_fan", .of_match_table = fan_of_match, .dev_groups = fan_groups },
 	.id_table = fan_spi_id,
 	.probe = fan_probe,
 };
