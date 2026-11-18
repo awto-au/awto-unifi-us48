@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """sw1_link_test: bring one sw1 port up against one US-48 xe port, watch both carriers + sw1 RX state, restore sw1 (#78, #87).
 
-Usage: scripts/sw1_link_test.py --sw1 lan7 --xe xe49 [--wait-s 40] [--ping] [--no-board-dump]
+Usage: scripts/sw1_link_test.py --sw1 lan7 --xe xe49 [--wait-s 40] [--fdb] [--no-board-dump]
 - sw1 = root@192.168.25.48 (ssh key). lan5 is refused (Selwyn's route). Admin state of lan3, lan6 and lan7 is recorded first and
   restored in a finally block (up stays up, down goes down); only the --sw1 port is changed.
 - SerDes index on sw1: lanN = SerDes N+1 (pcs phandle map lan1..8 = SerDes 2..9, driver-internals 13.6); RX_IDLE = WDIG reg 0x14 bit 0.
 - Wait bound: sw1 runs RX calibration 3x per cycle, verdict every ~30.3 s (#78); 40 s covers one verdict + margin. Expiry = "no".
 - Carrier = sw1 /sys/class/net/<lan>/carrier (polled 0.5 s). Board side: carrier + PCS_LIVE (tsc param dump) at the end.
-- --ping: private /30 10.48.1.0/30 (US-48 .1 on the xe port, sw1 .2 on the lan port; no house LAN), 3 pings from the board
-  (the ARP/ICMP source MAC is what sw1 learns), then the sw1 FDB check: which sw1 port learned the xe MAC (reported, compared with PEER and --sw1). Addresses removed in finally.
+- --fdb (verdict): the board sends 3 raw frames out the xe port (tools/fwd_pkt, EtherType 0x88b5, SA = xe MAC, DA = sw1
+  bridge MAC, so sw1 keeps them local), then sw1 `bridge fdb` must list the xe MAC on --sw1. No IP addresses (#119: the
+  old /30 ping had no answering peer and always showed 100 % loss).
+- Exit: 0 = carrier (and with --fdb: FDB PASS); 1 = no carrier; 2 = FDB FAIL (MAC on another port or not learned).
 - Log: tmp/logs/sw1_link_test.log
 """
 import argparse
@@ -17,6 +19,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_link_test.log"
@@ -68,6 +73,24 @@ def fdb_port(mac: str) -> str:
     return ""
 
 
+def fdb_verdict(xe: str, lan: str) -> bool:
+    """Raw frames from the board out `xe`, then the sw1 FDB port of its MAC must be `lan`. Logged as FDB PASS/FAIL."""
+    if "ok" not in ssh(BOARD, "test -x /tmp/fwd_pkt && echo ok"):
+        subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"), "--put", str(ROOT / "tmp/fwd_pkt"), "/tmp/fwd_pkt"],
+                       check=True)
+    da = ssh(SW1, "cat /sys/class/net/br0/address 2>/dev/null || cat /sys/class/net/%s/address" % lan).split()[-1]
+    if not re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", da):
+        log(f"FDB: FAIL cannot read the sw1 bridge MAC ({da})")
+        return False
+    # 3 frames at 10/s, 200 ms tail; counting on the xe itself (fwd_pkt needs one RX netdev)
+    log("board tx: " + ssh(BOARD, f"ip link set {xe} up; /tmp/fwd_pkt {xe} 3 10 {MAC[xe]} {da} 200 {xe}", 15).replace("\n", "; "))
+    log(f"sw1 fdb for {MAC[xe]}:\n" + ssh(SW1, f"bridge fdb show | grep -i {MAC[xe]}; echo rc=$?"))
+    got = fdb_port(MAC[xe])
+    ok = got == lan
+    log(f"FDB: {'PASS' if ok else 'FAIL'} {xe} MAC learned on sw1 port {got or 'NONE'} (tested {lan}, expected {PEER[xe]})")
+    return ok
+
+
 def sds(lan: str) -> str:
     """sw1 SerDes debugfs of this lan: WDIG reg 0x14 bit 0 = RX_IDLE (valid while WDIG reg 0x02 selects RX_STATUS), 10GBASE-R PCS status."""
     idx = int(lan[3:]) + 1
@@ -88,7 +111,7 @@ def main() -> int:
     ap.add_argument("--sw1", required=True, help="sw1 port, e.g. lan7")
     ap.add_argument("--xe", required=True, help="US-48 port, e.g. xe49")
     ap.add_argument("--wait-s", type=float, default=40.0)
-    ap.add_argument("--ping", action="store_true")
+    ap.add_argument("--fdb", action="store_true", help="raw frames + sw1 FDB port = the verdict")
     ap.add_argument("--no-board-dump", action="store_true")
     a = ap.parse_args()
     if not re.fullmatch(r"lan[1-8]", a.sw1) or a.sw1 == "lan5":
@@ -98,6 +121,7 @@ def main() -> int:
     orig = {l: admin_up(l) for l in RESTORE}
     log(f"original admin state: {orig}")
     carrier = False
+    fdb_ok = None
     try:
         base = ssh(SW1, "cut -d. -f1 /proc/uptime").strip()
         log(f"sw1 {a.sw1} up: " + ssh(SW1, f"ip link set {a.sw1} up; echo ok"))
@@ -118,23 +142,18 @@ def main() -> int:
             bc = ssh(BOARD, f"cat /sys/class/net/{a.xe}/carrier")
             ssh(BOARD, "dmesg -c >/dev/null; echo 1 > /sys/module/us48_cmic_xe/parameters/tsc")
             log(f"board {a.xe} carrier={bc}\n" + ssh(BOARD, f"dmesg | grep '{a.xe}' | grep -E 'PCS_LIVE|link' | tail -4"))
-        if a.ping and carrier:
-            ssh(BOARD, f"ip addr add 10.48.1.1/30 dev {a.xe}; ip link set {a.xe} up")
-            ssh(SW1, f"ip addr add 10.48.1.2/30 dev {a.sw1}")
-            log("ping: " + ssh(BOARD, "ping -c 3 -W 1 10.48.1.2 | tail -3", 15))
-            log(f"sw1 fdb for {MAC[a.xe]}:\n" + ssh(SW1, f"bridge fdb show | grep -i {MAC[a.xe]}; echo rc=$?"))
-            got = fdb_port(MAC[a.xe])
-            log(f"FDB: {a.xe} MAC learned on sw1 port {got or 'NONE'} (tested {a.sw1}, expected {PEER[a.xe]})"
-                + ("" if got == a.sw1 else "  *** MISMATCH: the far end is not the port under test ***"))
+        if a.fdb and carrier:
+            fdb_ok = fdb_verdict(a.xe, a.sw1)
     finally:
-        if a.ping:
-            ssh(SW1, f"ip addr del 10.48.1.2/30 dev {a.sw1}")
-            ssh(BOARD, f"ip addr del 10.48.1.1/30 dev {a.xe}")
         for l, up in orig.items():
             ssh(SW1, f"ip link set {l} {'up' if up else 'down'}")
         log("restored admin state: " + str({l: admin_up(l) for l in RESTORE}) + f" (want {orig})")
-    return 0 if carrier else 1
+    rc = 1 if not carrier else 2 if fdb_ok is False else 0
+    log(f"=== {'PASS' if rc == 0 else 'FAIL'}: carrier {'yes' if carrier else 'no'}"
+        + (f", FDB {'PASS' if fdb_ok else 'FAIL'}" if fdb_ok is not None else "") + f" (exit {rc})")
+    return rc
 
 
 if __name__ == "__main__":
+    help_guard(__doc__)
     sys.exit(main())
