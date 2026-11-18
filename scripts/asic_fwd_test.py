@@ -35,14 +35,22 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/asic_fwd_test.log"
 RESTORE = ROOT / "tmp/fwd_test/restore.json"
 IPIPE, EPIPE, MMU, XLP1 = 10, 11, 12, 6
-HG_LANE = {28: 0, 29: 2}	# logical 28/29 = phys 30/32 = XLPORT1 lanes 0/2 (docs/port-map.md)
-HG_PHYS = {28: 30, 29: 32}
+_DB = hwdb.lite()
+HG_PHYS = {lp: v[0] for lp, v in _DB.higig().items()}
+HG_LANE = {lp: v[1] for lp, v in _DB.higig().items()}
 TEST_VID = 200
-# Per unit: test port in VLAN 200 (octal end of the loop cable) and the cable's other end (stays private).
-# lport/phys/GPORT block+lane: hwdb/board/ports.toml (front 17/41 = lport 18 phys 18 GPORT2 lane 0; front 8/32 = lport 9 phys 2 GPORT0 lane 0).
-TEST = {0: {"name": "ge17", "lp": 18, "phys": 18, "blk": 4, "lane": 0}, 1: {"name": "ge41", "lp": 18, "phys": 18, "blk": 4, "lane": 0}}
-PEER = {0: {"name": "ge8", "lp": 9, "phys": 2, "blk": 2, "lane": 0}, 1: {"name": "ge32", "lp": 9, "phys": 2, "blk": 2, "lane": 0}}
-GE1 = {"blk": 2, "lane": 7}	# unit 0 front 1 = GPORT0 lane 7 (management)
+
+
+def _end(front):
+    p = _DB.port(front)
+    blk, lane = _DB.gport(front)
+    return {"name": _DB.netdev(front), "lp": p["logical"], "phys": p["phys"], "blk": blk, "lane": lane}
+
+
+# Per unit: test port in VLAN 200 (octal end of the loop cable) and the cable's other end (stays private); all from ports.toml.
+TEST = {u: _end(o) for u, g, o in _DB.loop_pairs()}
+PEER = {u: _end(g) for u, g, o in _DB.loop_pairs()}
+GE1 = dict(zip(("blk", "lane"), _DB.gport(_DB.mgmt_front())))	# management port
 MAC_A, MAC_B = "02:b5:00:00:00:01", "02:b5:00:00:00:02"	# locally administered (U/L bit set), fixed
 STOCK = "docs/driver-internals.md 15.2 (stock-warm capture tmp/higig/stock.txt)"
 # Unit 1 stock-warm PORT_TAB[28/29] (8 words) and EGR_PORT[28/29]: same capture.
@@ -369,7 +377,7 @@ def send(direction: str, count: int, rate: int) -> int:
     if t:
         log(f"STOP: {t}")
         return 1
-    tx, src, dst = ("ge8", MAC_A, MAC_B) if direction == "fwd" else ("ge32", MAC_B, MAC_A)
+    tx, src, dst = (PEER[0]["name"], MAC_A, MAC_B) if direction == "fwd" else (PEER[1]["name"], MAC_B, MAC_A)
     rc, out = _board.ssh("test -x /tmp/fwd_pkt && echo ok")
     if "ok" not in out:
         import subprocess

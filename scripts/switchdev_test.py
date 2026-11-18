@@ -58,11 +58,20 @@ import hwdb  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/switchdev_test.log"
 IPIPE, EPIPE = 10, 11
-# hwdb/board/ports.toml (unit 0): front 8 = lport 9, front 9 = lport 10, front 17 = lport 18; private VLAN 100 + front
-LP = {"ge8": 9, "ge9": 10, "ge17": 18}
-PVID = {"ge8": 108, "ge9": 109, "ge17": 117}
-MIB = {"ge8": (2, 0), "ge17": (4, 0)}    # GPORT S-channel block, lane (asic_fwd_test.py PEER/TEST)
-MAC_GE17 = "02:75:73:34:38:11"           # driver: 02:75:73:34:38:<front>
+_DB = hwdb.lite()
+_LOOP = _DB.loop_pairs()    # [(unit, GPHY end, octal end)]; the bridge's second port is GPHY end + 1 (no cable)
+
+
+def _names(*fronts):
+    return [_DB.netdev(f) for f in fronts]
+
+
+# lport / private VLAN / GPORT block+lane: hwdb/board/ports.toml (unit 0 shown by LP, PVID, MIB)
+_U0 = _LOOP[0]
+LP = {_DB.netdev(f): _DB.port(f)["logical"] for f in (_U0[1], _U0[1] + 1, _U0[2])}
+PVID = {_DB.netdev(f): _DB.pvid(f) for f in (_U0[1], _U0[1] + 1, _U0[2])}
+MIB = {_DB.netdev(f): _DB.gport(f) for f in (_U0[1], _U0[2])}
+MAC_GE17 = hwdb.mac(_U0[2])
 FD_CS, HELLO_CS, MAXAGE_CS = 200, 100, 600   # kernel minimum with STP on, centiseconds
 SETTLE_S = 1.25 * (2 * FD_CS / 100 + HELLO_CS / 100)
 BPDU_FD_CS = 600        # bpdu step: 6 s listening = a 4 s counter window (~4 hellos per port) inside HW SP_TREE 1
@@ -101,10 +110,10 @@ BURST_DEADMAN_S = 90    # burst step ~40 s (setup 10 + probe 2 + burst/resync 4.
 STATE = "/tmp/swd"
 BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg", "brbu", "brld")
 # burst step per unit: bridge ports (second one without cable), host port (netns), lports, private VIDs, dmesg device
-UNITS = {0: {"br": ("ge8", "ge9"), "host": "ge17", "lp": {"ge8": 9, "ge9": 10, "ge17": 18},
-             "pvid": {"ge8": 108, "ge9": 109, "ge17": 117}, "dev": "us48_cmic_u0 us48_cmic_u0:"},
-         1: {"br": ("ge32", "ge33"), "host": "ge41", "lp": {"ge32": 9, "ge33": 10, "ge41": 18},
-             "pvid": {"ge32": 132, "ge33": 133, "ge41": 141}, "dev": "us48_pci.cmic.0:"}}
+_DEV = {0: "us48_cmic_u0 us48_cmic_u0:", 1: "us48_pci.cmic.0:"}
+UNITS = {u: {"br": tuple(_names(g, g + 1)), "host": _DB.netdev(o),
+             "lp": {_DB.netdev(f): _DB.port(f)["logical"] for f in (g, g + 1, o)},
+             "pvid": {_DB.netdev(f): _DB.pvid(f) for f in (g, g + 1, o)}, "dev": _DEV[u]} for u, g, o in _LOOP}
 TOOL = "/tmp/l2_burst"  # tools/l2_burst.c (build_bde_trace.py --l2burst), pushed when missing
 NET_A, NET_BR = "10.48.30.2", "10.48.30.1"
 DB = hwdb.default()

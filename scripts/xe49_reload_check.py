@@ -43,7 +43,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--n", type=int, default=2)
     ap.add_argument("--xe", default="xe49")
-    ap.add_argument("--lan", default="lan7")
+    ap.add_argument("--lan", default=t.SW1_PEER["xe49"])
     ap.add_argument("--ip", default="192.168.25.209")
     a = ap.parse_args()
     if a.lan in ("lan5", "lan8"):

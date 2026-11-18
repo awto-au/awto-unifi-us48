@@ -22,15 +22,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
+import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_link_test.log"
 SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
 POLL_S = 0.5
-RESTORE = ("lan3", "lan6", "lan7")
-PEER = {"xe49": "lan7", "xe50": "lan3", "xe51": "lan6"}  # expected far end (hwdb/board/ports.toml); the FDB check below verifies it, never trust it
-MAC = {"xe49": "02:75:73:34:38:31", "xe50": "02:75:73:34:38:32", "xe51": "02:75:73:34:38:33"}
+RESTORE = hwdb.lite().sw1_ports()
+_DB = hwdb.lite()
+_SFP = [p["front"] for p in _DB.ports if "sw1_peer" in p]
+PEER = {"xe%d" % f: _DB.sw1_peer(f) for f in _SFP}  # expected far end (ports.toml); the FDB check below verifies it, never trust it
+MAC = {"xe%d" % f: hwdb.mac(f) for f in _SFP}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
 

@@ -22,6 +22,8 @@
   - `sdk = "SDK_REG_NAME"`: `check` fails if hwdb address differs from the regdb address (cross-check against the bulk source).
 - `[binary.NAME]` (`desc, base, arch`), `[binary.NAME.func.FN]`: `name, addr, size?, role, regs = ["block.REG" | ...], src, conf`; `[[binary.NAME.comment]]`: `addr, kind (eol|pre), text, src, conf`.
 - `[[port]]`: `front` (0 = internal), `id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus?, phy_addr?, lane, sdk?, linux?, src, conf`.
+  - Cabling (fixed lab facts): `loop_peer?` (front on the other end of a loop cable, reciprocal, checked), `sw1_peer?` (sw1 port on the far end of an SFP/SFP+), `role?` (`"management"`). Link state per port stays in `scripts/cabling.json`.
+  - Python lookups (`hwdb.lite()`): `netdev(front)`, `port_of(netdev)`, `gport(front)`, `lane(front)`, `pvid(front)`, `loop_pairs()`, `loop_peer`, `sw1_peer`, `sw1_ports()`, `mgmt_front()`, `mgmt_netdev()`, `higig(unit)`; `hwdb.mac(front)`.
 - SDK merge (loader): `sdk_iproc` (absolute AXI offsets, regtype iprocreg), `sdk_cmic` (offsets from `cmic0`), S-channel regs/memories in `db.sdk_sbus_regs` / `db.sdk_sbus_mems`.
 
 ## Use
@@ -62,7 +64,8 @@
 ## Lint
 - `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry (report).
   - Base check (exit 1): literal CMIC/IPROC bases (cmic0, cmic1, cmic1_uboot, iproc_axi) in scripts/ and kernel/ outside `scripts/hwdb_lint_allow.txt`. Scripts use `hwdb.cmic_base(unit, uboot=False)`, C uses `HW_CMIC0_BASE`/`HW_CMIC1_BASE`.
-  - `python3 scripts/hwdb_gen.py cabling` syncs `scripts/cabling.json` `label` from ports.toml; bench fields are kept.
+  - Port check (exit 1, same allowlist): quoted loop-cable netdevs, sw1 peers, management netdev and front MACs in `scripts/*.py`.
+  - `python3 scripts/hwdb_gen.py cabling` syncs `scripts/cabling.json` `label` from ports.toml, fails when `far_end` does not name the loop/sw1 peer; bench fields are kept.
 - Context collisions exist (0x1c000000 is also the L2X S-channel table id).
 
 ## Ghidra round-trip (run on uboot-1 and the ubnt app, 2026-11-15, #69)

@@ -8,6 +8,7 @@ Log: tmp/logs/hwdb.log (CLI only).
 import csv
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -318,6 +319,61 @@ class Db:
                 return p
         raise KeyError(front)
 
+    def netdev(self, front):
+        """Linux netdev name of a front port: `linux` if set, else ge<front>."""
+        p = self.port(front)
+        return p.get("linux", "ge%d" % front)
+
+    def port_of(self, netdev):
+        """Port record of a Linux netdev name (xe49, ge8)."""
+        for p in self.ports:
+            if p["front"] and self.netdev(p["front"]) == netdev:
+                return p
+        raise KeyError(netdev)
+
+    def lane(self, front):
+        """SerDes lane number (QSGMII or TSC) of a front port."""
+        return int(re.fullmatch(r"(?:QSGMII\d|TSC) lane (\d)", self.port(front)["lane"]).group(1))
+
+    def sw1_peer(self, front):
+        """sw1 port on the far end of an SFP/SFP+ port, or None."""
+        return self.port(front).get("sw1_peer")
+
+    def sw1_ports(self):
+        """Sorted sw1 ports cabled to the SFP/SFP+ ports (admin state to restore after a test)."""
+        return tuple(sorted(p["sw1_peer"] for p in self.ports if "sw1_peer" in p))
+
+    def gport(self, front):
+        """(GPORT S-channel block, lane) of a QSGMII copper port."""
+        m = re.fullmatch(r"QSGMII(\d) lane (\d)", self.port(front)["lane"])
+        if not m:
+            raise KeyError("front %d is not on a QSGMII lane" % front)
+        return 2 + int(m.group(1)), int(m.group(2))
+
+    def pvid(self, front):
+        """Driver port VLAN: copper 100 + front (VLAN 1 = stock's), xe = front."""
+        return (100 if self.port(front)["phy"] in ("gphy", "octal") else 0) + front
+
+    def loop_peer(self, front):
+        """Front on the other end of the loop cable, or None."""
+        return self.port(front).get("loop_peer")
+
+    def loop_pairs(self):
+        """[(unit, GPHY-end front, octal-end front)] per loop cable, ordered by unit."""
+        return sorted((p["unit"], p["front"], p["loop_peer"]) for p in self.ports
+                      if "loop_peer" in p and p["phy"] == "gphy")
+
+    def higig(self, unit=0):
+        """{logical: (phys, XLPORT1 lane)} of the internal HiGig ports."""
+        return {p["logical"]: (p["phys"], int(re.search(r"XLPORT1 port (\d)", p["lane"]).group(1)))
+                for p in self.ports if p["phy"] == "higig" and p["unit"] == unit}
+
+    def mgmt_front(self):
+        return [p["front"] for p in self.ports if p.get("role") == "management"][0]
+
+    def mgmt_netdev(self):
+        return self.netdev(self.mgmt_front())
+
     def hand_blocks(self):
         return [b for b in self.blocks.values() if b.origin == "hand"]
 
@@ -410,6 +466,8 @@ class Db:
             for k in ("front", "label", "unit", "logical", "phys", "phy", "src", "conf"):
                 if k not in p:
                     err.append("port %s: missing %s" % (p.get("front"), k))
+            if "loop_peer" in p and self.port(p["loop_peer"]).get("loop_peer") != p["front"]:
+                err.append("port %s: loop_peer %s is not reciprocal" % (p["front"], p["loop_peer"]))
         return err
 
 
@@ -445,10 +503,20 @@ _lite = None
 
 def cmic_base(unit, uboot=False):
     """CMIC base for a script: unit 0 = AXI (cmic0); unit 1 = PCIe BAR2 as Linux places it (cmic1), or as uboot-1/2 does (cmic1_uboot)."""
+    return lite().addr("cmic0" if unit == 0 else "cmic1_uboot" if uboot else "cmic1")
+
+
+def lite():
+    """Hand-written facts only (no SDK regdb merge): fast, enough for ports and bases."""
     global _lite
     if _lite is None:
         _lite = load(sdk=False)
-    return _lite.addr("cmic0" if unit == 0 else "cmic1_uboot" if uboot else "cmic1")
+    return _lite
+
+
+def mac(front):
+    """Driver MAC of a front port: 02:75:73:34:38:<front> (kernel/us48-cmic/us48_cmic_core.c)."""
+    return "02:75:73:34:38:%02x" % front
 
 
 def main(argv):

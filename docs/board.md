@@ -344,16 +344,7 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 - SerDes: internal QSGMII block `(phys-2)/8` (3 blocks), lane `(phys-2)%8`; uplinks on TSC4 lanes phys 26, 28 (HiGig phys 30, 32). I: SDK table `_hurricane2_phy_addr_default`.
 - Front port (1..52) -> (unit, logical) from the FastPath table at `0x1d8ecb4` (52 x {slot 0, port-1, unit, logical}; lookup `0x5e35c4`). C.
 
-| Front | Unit (chip) | Logical | PHY (MDIO) |
-|---|---|---|---|
-| 1..8 | 0 (53344) | 2..9 | integrated GPHY, internal bus 0 (front 1 = addr 9; rest TBD) |
-| 9..16 | 0 | 10..17 | integrated GPHY, internal bus 0 (addr per port TBD) |
-| 17..24 | 0 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` |
-| 25..32 | 1 (53346) | 2..9 | integrated GPHY, internal bus 0 (IDs scanned; front/jack mapping inferred) |
-| 33..40 | 1 | 10..17 | integrated GPHY, internal bus 0 (IDs scanned; front/jack mapping inferred) |
-| 41..48 | 1 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` (IDs scanned; front/jack mapping inferred) |
-| 49, 50 | 1 | 26, 27 (`xe0`, `xe1`) | SFP+, no PHY seen |
-| 51, 52 | 0 | 26, 27 (`ge24`, `ge25`) | SFP, no PHY seen |
+- Front -> unit, logical port, PHY, lane: generated table in [port-map.md](port-map.md) (from `hwdb/board/ports.toml`).
 
 - Per-port generator: `scripts/us48_portmap.py`.
 - Port LEDs, corrected: stock DOES load an on-chip LED processor (CMICd LEDUP) program. `0x5fb3cc` (`ubnt_hal_sys.c`, per-board vtable entry at descriptor `+0x14`, all 10 board descriptors `0x1d8bb68..0x1d8ca50`, stride `0x1a8`) calls `0x120f064(unit, prog, 0x100)` -> `0x120ed64(unit, uc 0, prog, 256)`. C. Two-chip board types (switch cases `0x33`/`0x35`) load the same 256-byte program into unit 0 and unit 1. C. Which board `*param_1` value is the US-48-500W: I.

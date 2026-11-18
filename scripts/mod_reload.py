@@ -25,7 +25,12 @@ HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
 BOARD_LOG = "/tmp/mod_reload.log"
 BOARD_SH = "/tmp/mod_reload.sh"
 IP = "192.168.25.207/24"	# ip-registry us48-boot, same as mainline/rootfs/overlay/etc/rc.d/S04us48-net
-NETDEVS = {"us48_cmic": ["ge1"], "us48_cmic_xe": ["xe49", "xe50", "ge40"]}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
+
+_DB = hwdb.lite()
+MGMT = _DB.mgmt_netdev()
+NETDEVS = {"us48_cmic": [MGMT], "us48_cmic_xe": [p["linux"] for p in _DB.ports if p["unit"] == 1 and "linux" in p and p["front"]] + ["ge40"]}
 DEFAULT_ARGS = {"us48_cmic": ["unit0=1"]}
 # One ssh round trip on the LAN is < 1 s; connect 2 s = the board is rebooting/reloading, not slow.
 CONNECT_S = 2
@@ -92,8 +97,8 @@ def board_script(rid: str, stop: list[str], start: list[tuple[str, list[str]]], 
         for m, _a in start:
             for nd in NETDEVS.get(m, []):
                 L.append(f"[ -d /sys/class/net/{nd} ] && {{ echo 1 > /proc/sys/net/ipv6/conf/{nd}/disable_ipv6; ip link set {nd} up; }}")
-                if nd == "ge1":
-                    L.append(f"ip addr add {IP} dev ge1")
+                if nd == MGMT:
+                    L.append(f"ip addr add {IP} dev {MGMT}")
     L.append(f"echo \"== {rid} done $(cat /proc/uptime)\"")
     return "\n".join(L) + "\n"
 

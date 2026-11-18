@@ -20,6 +20,9 @@ import threading
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/xe49_traffic.log"
 SW1 = "root@192.168.25.48"
@@ -27,7 +30,9 @@ BOARD = "root@192.168.25.207"
 SW1_IP = "192.168.25.48"
 PORT = 5201
 STALL_S = 15.0
-MAC = {"xe49": "02:75:73:34:38:31", "xe50": "02:75:73:34:38:32"}
+_DB = hwdb.lite()
+MAC = {p["linux"]: hwdb.mac(p["front"]) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
+SW1_PEER = {p["linux"]: p["sw1_peer"] for p in _DB.ports if "sw1_peer" in p and "linux" in p}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
 
@@ -153,7 +158,7 @@ def main() -> int:
     global _LOCAL
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--xe", default="xe49")
-    ap.add_argument("--lan", default="lan7")
+    ap.add_argument("--lan", default=SW1_PEER["xe49"])
     ap.add_argument("--ip", default="192.168.25.209")
     ap.add_argument("--peer", default="192.168.25.30", help="this host's address on the house LAN")
     ap.add_argument("--mib", default="10,100")

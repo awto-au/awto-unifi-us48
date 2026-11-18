@@ -12,7 +12,7 @@ gw 10.48.10.1                forwarding v4+v6                gw 10.48.20.1
 v6: 2001:db8:48:10::/64 and 2001:db8:48:20::/64 (::1 router, ::2 hosts)
 ```
 
-- Cables: front 8 - front 17 (unit 0), front 32 - front 41 (unit 1) (`scripts/cabling.json`).
+- Cables: the loop cables, see "Fixed cabling" in [port-map.md](port-map.md); link state in `scripts/cabling.json`.
 - The copper ports stay in their private CPU VLANs: every packet goes to the CPU and back out (one A->B packet = 4 CPU-port DMA transfers: ge8 tx, ge17 rx, ge41 tx, ge32 rx; hosts A and B are on the same CPU).
 - ge1 (management, 192.168.25.207) is never named in a write command (`Ctx.sh` refuses it). No bridge, no switch-table writes.
 - Forwarding is set per router port only (`conf/ge17|ge41/forwarding`, v6 `force_forwarding`); `ip_forward`, `conf/all/*` and every other port stay as they are.

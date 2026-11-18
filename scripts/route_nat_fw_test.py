@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
 import _board  # noqa: E402
+import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/route_nat_fw_test.log"
@@ -41,17 +42,20 @@ LINK_S = 5.0       # 1000BASE-T AN ~3 s + 1 s driver link poll, 1.25x (copper_ch
 STATE = "/tmp/rnf"
 MODULES = ["nf_conntrack", "nf_nat", "nf_tables", "nft_ct", "nft_chain_nat", "nft_nat", "nft_masq", "nft_limit", "nft_log",
            "nft_reject", "nft_reject_inet", "nf_flow_table", "nf_flow_table_inet", "nft_flow_offload"]
-PORTS = {"A": "ge8", "R1": "ge17", "R2": "ge41", "B": "ge32"}  # front 8, 17, 41, 32
+_DB = hwdb.lite()
+(_, _g0, _o0), (_, _g1, _o1) = _DB.loop_pairs()  # loop cables (ports.toml): host ends A, B; router ends R1, R2
+PORTS = {"A": _DB.netdev(_g0), "R1": _DB.netdev(_o0), "R2": _DB.netdev(_o1), "B": _DB.netdev(_g1)}
 NET = {"A": ("10.48.10.2", "2001:db8:48:10::2"), "R1": ("10.48.10.1", "2001:db8:48:10::1"),
        "R2": ("10.48.20.1", "2001:db8:48:20::1"), "B": ("10.48.20.2", "2001:db8:48:20::2")}
 TABLES = ("rnf_nat", "rnf_fw", "rnf_ft")
-PORT_RE = r"\bge(8|17|32|41)\b"
+PORT_RE = r"\bge(%d|%d|%d|%d)\b" % (_g0, _o0, _g1, _o1)
 # state saved by setup and compared after teardown: admin up, ipv6 disable, addresses, router-port forwarding, nft rule lines
-SNAP_CMD = ("for p in ge8 ge17 ge32 ge41; do echo \"link $p $(ip -o link show $p | grep -c '[<,]UP[,>]')\"; "
+_R1, _R2 = PORTS["R1"], PORTS["R2"]
+SNAP_CMD = (f"for p in {PORTS['A']} {_R1} {PORTS['B']} {_R2}; do echo \"link $p $(ip -o link show $p | grep -c '[<,]UP[,>]')\"; "
             "echo \"v6dis $p $(cat /proc/sys/net/ipv6/conf/$p/disable_ipv6)\"; "
             "ip -o addr show dev $p | sed \"s/^/addr $p /\"; done; "
-            "for f in /proc/sys/net/ipv4/conf/ge17/forwarding /proc/sys/net/ipv4/conf/ge41/forwarding "
-            "/proc/sys/net/ipv6/conf/ge17/force_forwarding /proc/sys/net/ipv6/conf/ge41/force_forwarding; do echo \"fwd $f $(cat $f)\"; done; "
+            f"for f in /proc/sys/net/ipv4/conf/{_R1}/forwarding /proc/sys/net/ipv4/conf/{_R2}/forwarding "
+            f"/proc/sys/net/ipv6/conf/{_R1}/force_forwarding /proc/sys/net/ipv6/conf/{_R2}/force_forwarding; do echo \"fwd $f $(cat $f)\"; done; "
             "echo \"nftn $(nft list ruleset | wc -l)\"")
 
 

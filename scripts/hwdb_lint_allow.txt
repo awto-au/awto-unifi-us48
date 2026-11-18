@@ -1,4 +1,4 @@
-# Allowed literal CMIC/IPROC bases (scripts/hwdb_lint.py base check). Format: path<TAB>0xBASE<TAB>reason
+# Allowed literals (scripts/hwdb_lint.py base + port checks). Format: path<TAB>0xBASE|netdev|sw1 port<TAB>reason
 scripts/arm_xref_index.py	0x0a000000	ARM instruction-encoding mask (cond/opcode bits), not an address
 scripts/ghidra/func_profile.py	0x18000000	runs inside Ghidra, no hwdb import
 scripts/ghidra/func_profile.py	0x48000000	runs inside Ghidra, no hwdb import
@@ -6,3 +6,9 @@ scripts/ghidra/func_profile.py	0x0a000000	runs inside Ghidra, no hwdb import
 scripts/ghidra_func_regs.py	0x18000000	address filter for Ghidra export text, standalone
 scripts/hwdb.py	0x48000000	the loader itself: fallback + sdk_cmic split
 scripts/hwdb_gen.py	0x18000000	generator: header text and peripheral-window bound
+scripts/switchdev_test.py	ge8	bridge test topology: names of the loop-cable ends in test steps (lport/vid come from hwdb)
+scripts/switchdev_test.py	ge17	bridge test topology: names of the loop-cable ends in test steps (lport/vid come from hwdb)
+scripts/route_nat_fw_test.py	ge17	nft ruleset text of the router topology (PORTS holds the hwdb-derived names)
+scripts/route_nat_fw_test.py	ge41	nft ruleset text of the router topology (PORTS holds the hwdb-derived names)
+scripts/stock_clean_control.py	lan6	stock control run (#78), pairs lan6/xe49 predate the 13.8 correction (xe49 is lan7); see #120
+scripts/stock_clean_control.py	lan3	stock control run (#78), pair lan3/xe50 matches ports.toml

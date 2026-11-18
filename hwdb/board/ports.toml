@@ -1,10 +1,11 @@
 # Front-panel port map: one [[port]] per front port 1-52 plus internal HiGig 28/29 on both chips (front = 0).
-# Fields: front, sw1_peer (xe49/xe50 only: sw1 port on the far end), id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
+# Fields: front, sw1_peer (sw1 port on the far end), loop_peer (front on the other end of a loop cable), role, id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
 # Sources: docs/board.md Port map, docs/driver-internals.md s13, OpenBCM p2l_mapping_24_2_2; switchdrvr FastPath table VA 0x1d8ecb4 checked by scripts/us48_portmap.py.
 
 [[port]]
 front = 1
 id = "f1"
+role = "management"  # ge1 = the board's LAN uplink, never broken
 label = "RJ45 1"
 unit = 0
 logical = 2
@@ -110,6 +111,7 @@ conf = "I"
 [[port]]
 front = 8
 id = "f8"
+loop_peer = 17  # bench patch cable, same chip (docs/port-map.md); scripts/cabling.json holds the link state
 label = "RJ45 8"
 unit = 0
 logical = 9
@@ -245,6 +247,7 @@ conf = "I"
 [[port]]
 front = 17
 id = "f17"
+loop_peer = 8
 label = "RJ45 17"
 unit = 0
 logical = 18
@@ -470,6 +473,7 @@ conf = "I"
 [[port]]
 front = 32
 id = "f32"
+loop_peer = 41
 label = "RJ45 32"
 unit = 1
 logical = 9
@@ -605,6 +609,7 @@ conf = "I"
 [[port]]
 front = 41
 id = "f41"
+loop_peer = 32
 label = "RJ45 41"
 unit = 1
 logical = 18
@@ -755,6 +760,7 @@ sw1_peer = "lan3"  # verified by sw1 bridge fdb (scripts/sw1_link_test.py --ping
 [[port]]
 front = 51
 id = "f51"
+sw1_peer = "lan6"  # optic far end per scripts/cabling.json; not FDB-verified (#109)
 label = "SFP 1"
 unit = 0
 logical = 26

@@ -292,23 +292,38 @@ def phy_cell(p):
 
 
 def gen_cabling(db):
-    """scripts/cabling.json: `label` (fixed per-port field) from ports.toml; bench fields (module, far_end, link, updated) kept."""
+    """scripts/cabling.json: `label` from ports.toml; bench fields (module, far_end, link, updated) kept; far_end must name the loop/sw1 peer."""
     path = ROOT / "scripts/cabling.json"
     d = json.loads(path.read_text())
     for e in d["ports"]:
-        e["label"] = db.port(e["front"])["label"]
+        p = db.port(e["front"])
+        e["label"] = p["label"]
+        want = (db.port(p["loop_peer"])["label"] if "loop_peer" in p else "sw1 " + p["sw1_peer"] if "sw1_peer" in p else None)
+        if want and want not in (e["far_end"] or ""):
+            raise SystemExit("cabling.json front %d: far_end %r does not name %r (ports.toml)" % (e["front"], e["far_end"], want))
     put(path, json.dumps(d, indent=2, ensure_ascii=False) + "\n")
+
+
+def cable_cell(p):
+    c = []
+    if p.get("role") == "management":
+        c.append("management uplink (sw1)")
+    if "loop_peer" in p:
+        c.append("loop cable to front %d" % p["loop_peer"])
+    if "sw1_peer" in p:
+        c.append("sw1 %s" % p["sw1_peer"])
+    return ", ".join(c)
 
 
 def gen_ports(db):
     chip = {0: "unit 0 (BCM53344, host SoC)", 1: "unit 1 (BCM53346, PCIe)"}
     o = [PORT_BEGIN, "",
-         "| Front | Panel label | Chip | Logical | Phys | PHY | SerDes lane | SDK name | Linux name | conf |",
-         "|---|---|---|---|---|---|---|---|---|---|"]
+         "| Front | Panel label | Chip | Logical | Phys | PHY | SerDes lane | SDK name | Linux name | Fixed cabling | conf |",
+         "|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in db.ports:
-        o.append("| %s | %s | %s | %d | %d | %s | %s | %s | %s | %s |" % (
+        o.append("| %s | %s | %s | %d | %d | %s | %s | %s | %s | %s | %s |" % (
             p["front"] or "-", p["label"], chip[p["unit"]], p["logical"], p["phys"], phy_cell(p), p.get("lane", ""),
-            ("`%s`" % p["sdk"]) if "sdk" in p else "", ("`%s`" % p["linux"]) if "linux" in p else "", p["conf"]))
+            ("`%s`" % p["sdk"]) if "sdk" in p else "", ("`%s`" % p["linux"]) if "linux" in p else "", cable_cell(p), p["conf"]))
     o += ["", PORT_END]
     path = ROOT / "docs/port-map.md"
     text = path.read_text()

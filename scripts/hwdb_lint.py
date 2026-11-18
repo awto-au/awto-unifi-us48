@@ -7,7 +7,9 @@ Collisions exist: 0x1c000000 is also the L2X S-channel table id (kernel/us48-cmi
 Usage: python3 scripts/hwdb_lint.py [--all] [--by-file]   (--all also lists literals with no hwdb entry)
 Base check (always runs): literal CMIC/IPROC bases (hwdb cmic0, cmic1, cmic1_uboot, iproc_axi) in scripts/ and kernel/
 outside scripts/hwdb_lint_allow.txt (`path<TAB>0xBASE<TAB>reason`, one row per file+base) fail with exit 1; stale rows are reported.
-Log: tmp/logs/hwdb_lint.log. Exit 0 for the report, 1 on a new base literal.
+Port check (also fails, same allowlist, rows `path<TAB>token<TAB>reason`): quoted loop-cable netdevs (ge8 ge17 ge32 ge41), sw1 peers
+(lan3 lan6 lan7), the management netdev and front MACs 02:75:73:34:38:01..34 in scripts/*.py; use hwdb.lite() instead.
+Log: tmp/logs/hwdb_lint.log. Exit 0 for the report, 1 on a new base or port literal.
 """
 import logging
 import pathlib
@@ -62,7 +64,8 @@ def base_check(db):
     for ln in ALLOW.read_text().splitlines() if ALLOW.exists() else []:
         if ln.strip() and not ln.startswith("#"):
             f = ln.split("\t")
-            allow[(f[0], int(f[1], 16))] = False
+            if f[1].startswith("0x"):
+                allow[(f[0], int(f[1], 16))] = False
     bad = 0
     tracked = tracked_files()  # gitignored build copies (kernel/us48-cmic/bcm_cmic.h etc.) are not ours to lint
     for d in BASE_DIRS:
@@ -85,6 +88,38 @@ def base_check(db):
         if not used:
             logging.info("STALE allowlist row %s 0x%08x (no such literal)", f, a)
     logging.info("hwdb_lint base check: %d new literal(s)", bad)
+    return bad
+
+
+def port_check(db):
+    """Literal loop-cable netdevs, sw1 peers, management netdev and front MACs in scripts/*.py outside the allowlist."""
+    toks = {db.netdev(f) for g in db.loop_pairs() for f in g[1:]} | {p["sw1_peer"] for p in db.ports if "sw1_peer" in p}
+    toks.add(db.mgmt_netdev())
+    pat = re.compile(r"[\"'](%s)[\"']|(02:75:73:34:38:(?:0[1-9a-f]|[12][0-9a-f]|3[0-4]))\b" % "|".join(sorted(toks)), re.I)
+    allow = {}
+    for ln in ALLOW.read_text().splitlines() if ALLOW.exists() else []:
+        f = ln.split("\t")
+        if len(f) > 1 and not ln.startswith("#") and not f[1].startswith("0x"):
+            allow[(f[0], f[1])] = False
+    tracked = tracked_files()
+    bad = 0
+    for p in sorted((ROOT / "scripts").glob("*.py")):
+        rel = str(p.relative_to(ROOT))
+        if p.name in SELF or (tracked is not None and rel not in tracked):
+            continue
+        for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+            for m in pat.finditer(line):
+                tok = m.group(1) or "mac"
+                if (rel, tok) in allow:
+                    allow[(rel, tok)] = True
+                else:
+                    bad += 1
+                    logging.info("PORT %s:%d %s is in hwdb/board/ports.toml: use hwdb.lite() (loop_pairs, sw1_peer, mgmt_netdev, mac) or add to %s",
+                                 rel, n, m.group(0), ALLOW.name)
+    for (f, t), used in allow.items():
+        if not used:
+            logging.info("STALE allowlist row %s %s (no such literal)", f, t)
+    logging.info("hwdb_lint port check: %d new literal(s)", bad)
     return bad
 
 
@@ -117,7 +152,7 @@ def main(argv):
         for f, c in sorted(per_file.items(), key=lambda x: -x[1]):
             logging.info("%5d %s", c, f)
     logging.info("hwdb_lint: %d literals match hwdb, %d do not, %d files with hits", hits, miss, len(per_file))
-    return 1 if base_check(db) else 0
+    return 1 if (base_check(db) + port_check(db)) else 0
 
 
 if __name__ == "__main__":

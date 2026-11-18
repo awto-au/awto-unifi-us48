@@ -19,12 +19,16 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_bounce.log"
 SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
-PAIRS = {"49": ("xe49", "lan7", 0), "50": ("xe50", "lan3", 2)}
-RESTORE = ("lan3", "lan6", "lan7")
+_DB = hwdb.lite()
+PAIRS = {str(p["front"]): (p["linux"], p["sw1_peer"], _DB.lane(p["front"])) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
+RESTORE = _DB.sw1_ports()
 POLL_S = 0.5
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
