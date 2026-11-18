@@ -9,6 +9,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 
 #include "us48_cmic.h"
 
@@ -267,6 +268,8 @@ static int tsc_sfp_passive(struct us48_cmic *u, int front)
 	return tsc_sfp_passive_chan(u->dev, front - 49);
 }
 
+static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg);
+
 int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 {
 	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0 };
@@ -275,6 +278,12 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 	if (!fw) {
 		dev_err(u->dev, "us48-tsc.bin not loaded: 10G SerDes microcode missing, xe links stay down\n");
 		return -ENOENT;
+	}
+	/* Unit 0 (SFP 1 at 10G, opt-in): our cold init leaves XLPORT0 powered down (XGXS 0xe0). */
+	if (!u->modid) {
+		ret = xlport_up(u, BLK_XLPORT, 0, 0);
+		if (ret)
+			return ret;
 	}
 	mutex_lock(&u->mdio);
 	/* PhyConfig_Mode: 4 x 1-lane ports (PORT_MODE_SEL 0, SINGLE_PORT_MODE 0). */
@@ -301,4 +310,225 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 	mutex_unlock(&u->mdio);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(us48_tsc_init);
 MODULE_FIRMWARE("us48-tsc.bin");
+
+/*
+ * ---- HiGig links between the chips (#57): logical 28/29 = phys 30/32 = XLPORT1 (SBUS block 6) ports 0/2, TSC1 at MIIM
+ * bus 1 address 5, two dual-lane ports (lanes 0-1, 2-3) at 13000 Mb/s = SDK TSCMOD_SPD_12773_DXGXS, HiGig2.
+ * Sources per value: docs/driver-internals.md section 15 (stock trace, stock-warm TSC1 capture, OpenBCM 6.5.16).
+ */
+#define BLK_XLPORT1		6
+#define HG_NLANES		4
+#define XGXS0_CTRL		0x2021400
+#define XLPORT_MAC_CONTROL	0x2021000
+#define XLPORT_SOFT_RESET	0x2020c00
+#define XLPORT_MODE_REG		0x2020a00
+#define XLPORT_ENABLE_REG	0x2020b00
+#define XLPORT_CONFIG(l)	(0x20000 | (l))
+#define XLPORT_TXFIFO_CTRL(l)	(0x20300 | (l))
+#define XLMAC_CTRL(l)		(0x60000 | (l))
+#define XLMAC_MODE(l)		(0x60100 | (l))
+#define XLMAC_TX_CTRL(l)	(0x60400 | (l))
+#define XLMAC_RX_CTRL(l)	(0x60600 | (l))
+#define XLMAC_RX_MAX_SIZE(l)	(0x60800 | (l))
+#define XLMAC_RX_LSS_CTRL(l)	(0x60a00 | (l))
+#define XLMAC_RX_LSS_STATUS(l)	(0x60b00 | (l))
+#define XLMAC_CLR_RX_LSS(l)	(0x60c00 | (l))
+#define XLMAC_RPKT(l)		(0xb00 | (l))
+#define XLMAC_TPKT(l)		(0x4c00 | (l))
+/* SDK _soc_xgxs_reset_single_tsc sleep_usec 1100 (common/drv.c) - 10 %; 9 ms after power-up as the cold-init replay. */
+#define XGXS_STEP_US		990
+#define XGXS_PLL_US		9000
+
+static int hg_wr(struct us48_cmic *u, u32 addr, u32 lo, u32 hi, int words)
+{
+	u32 d[2] = { lo, hi };
+
+	return us48_sbus(u, 0x0d, BLK_XLPORT1, addr, d, words);
+}
+
+/* Stage-2 field values that differ for 12.73G HiGig2 dual-lane (stock-warm TSC1 = SDK cfg_seq for SPD_12773_DXGXS). */
+static const struct { u16 reg, mask, val; } hg_patch[] = {
+	{ 0xc111, 0x1e1c, 0x1e18 },	/* ENCODE_0: brcm 64b/66b (encode 6), HG2 enable/codec */
+	{ 0xc113, 0xc000, 0x4000 },	/* TX_X4_MISC SCR_MODE 1 */
+	{ 0xc130, 0xfff8, 0x5280 },	/* RX_X4_PCS_CONTROL_0 */
+	{ 0xc136, 0x0007, 0x0006 },	/* RX_X4_CL36_RX_0 */
+	{ 0xc134, 0xbe07, 0xbe05 },	/* RX_X4_DECODE_CONTROL_0 */
+	{ 0xc253, 0x00f0, 0x00a0 },	/* CL72_MISC1_CONTROL TAP_DEFAULT_MUXSEL */
+	{ 0xc254, 0x3f00, 0x1900 },	/* CL72_MISC2_CONTROL SW_ACTUAL_SPEED 0x19 */
+	{ 0xc103, 0x1fff, 0x0002 },	/* TX_X4_MAC_CREDITGENCNT */
+	{ 0xa003, 0x00ff, 0x0066 },	/* TX_X2_BRCM_MODE ACOL_SWAP_COUNT64B66B */
+	{ 0xa023, 0x0400, 0x0000 },	/* RX_X2_MISC_0 CHK_END_EN */
+};
+
+/* Written before the analog reset release (stock-warm values; 0xc135 = cfg_seq SPD_12773_DXGXS 0x900f). */
+static const struct tsc_step hg_extra[] = {
+	{ TSC_RMW, TSC_LANE, 0xc135, 0xffff, 0x900f },	/* RX_X4_DECODE_CONTROL_1 */
+	{ TSC_RMW, TSC_PAIR, 0xa031, 0xffff, 0xc920 },
+	{ TSC_RMW, TSC_PAIR, 0xa081, 0xffff, 0x2000 },
+};
+
+static struct tsc_step *hg_build(const struct tsc_step *st, int n, int *out_n, bool stage0)
+{
+	struct tsc_step *s = kcalloc(n + ARRAY_SIZE(hg_extra), sizeof(*s), GFP_KERNEL);
+	int i, j, k = 0;
+
+	if (!s)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		if (!stage0 && st[i].op == TSC_LANE_RESET && !st[i].val)
+			for (j = 0; j < ARRAY_SIZE(hg_extra); j++)
+				s[k++] = hg_extra[j];
+		s[k] = st[i];
+		/* SETUP DEFAULT_PLL_MODE_AFE div42 (cfg_seq:1653, SPD_12773_DXGXS plldiv 42; stock 0x9000 = 0x73b0) */
+		if (stage0 && s[k].op == TSC_RMW && s[k].reg == TSC_SETUP_REG && s[k].mask == 0x1f00)
+			s[k].val = 0x1300;
+		for (j = 0; !stage0 && s[k].op == TSC_RMW && j < ARRAY_SIZE(hg_patch); j++)
+			if (s[k].reg == hg_patch[j].reg && s[k].mask == hg_patch[j].mask)
+				s[k].val = hg_patch[j].val;
+		k++;
+	}
+	*out_n = k;
+	return s;
+}
+
+static int hg_tsc(struct us48_cmic *u, const struct firmware *fw)
+{
+	/* PORT_MODE_SEL 3 = 2 x 2-lane (driver-internals s9 step 1; stock 0x9000 [6:4] = 3) */
+	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0x30 };
+	struct tsc_step *s0, *s2;
+	int n0, n2, l, ret;
+
+	s0 = hg_build(tsc_stage0, ARRAY_SIZE(tsc_stage0), &n0, true);
+	s2 = hg_build(tsc_stage2, ARRAY_SIZE(tsc_stage2), &n2, false);
+	if (!s0 || !s2) {
+		kfree(s0);
+		kfree(s2);
+		return -ENOMEM;
+	}
+	mutex_lock(&u->mdio);
+	u->tsc_phy = TSC1_PHY;
+	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, s0, n0, 0, 0xf, fw);
+	/* lane map 0x9003 = 0x1b1b and RX_X1 DECODE_CONTROL_0 0x9220 = 0x0323 (stock-warm; cfg_seq:3217 for 12773) */
+	ret = ret ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0x9003, .mask = 0xffff, .val = 0x1b1b }, 0);
+	ret = ret ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0x9220, .mask = 0xffff, .val = 0x0323 }, 0);
+	for (l = 0; !ret && l < HG_NLANES; l++)
+		ret = tsc_run(u, s2, n2, l, BIT(l), fw);
+	u->tsc_phy = 0;
+	mutex_unlock(&u->mdio);
+	kfree(s0);
+	kfree(s2);
+	return ret;
+}
+
+/*
+ * XLPORT block power-up in stock trace order (init-phases A2/A8): XGXS reset release, MAC reset pulse, port mode.
+ * HiGig (XLPORT1): CONFIG 0x400, MODE 0x1b (2 x dual); unit 0 SFP (XLPORT0): MODE 0 (quad), as stock's unit 0 trace.
+ */
+static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg)
+{
+	static const u32 xgxs[] = { 0xe0, 0xa0, 0xa0, 0xa4, 0xac, 0xae };
+	u32 v;
+	int i, ret = 0;
+
+#define XW(a, x)	(v = (x), us48_sbus(u, 0x0d, blk, (a), &v, 1))
+	for (i = 0; !ret && i < ARRAY_SIZE(xgxs); i++) {
+		ret = XW(XGXS0_CTRL, xgxs[i]);
+		tsc_delay(i == 2 ? XGXS_PLL_US : XGXS_STEP_US);
+	}
+	ret = ret ?: XW(XLPORT_MAC_CONTROL, 1);
+	udelay(9);		/* hurricane2.c soc_hurricane2_tsc_reset sal_udelay(10) - 10 % */
+	ret = ret ?: XW(XLPORT_MAC_CONTROL, 0);
+	if (cfg)
+		ret = ret ?: XW(XLPORT_CONFIG(0), cfg) ?: XW(XLPORT_CONFIG(2), cfg);
+	ret = ret ?: XW(XLPORT_SOFT_RESET, 5) ?: XW(XLPORT_MODE_REG, mode) ?: XW(XLPORT_SOFT_RESET, 0) ?:
+	      XW(XLPORT_ENABLE_REG, 5);
+#undef XW
+	return ret;
+}
+
+static int hg_mac(struct us48_cmic *u, u8 l)
+{
+	return hg_wr(u, XLPORT_ENABLE_REG, 5 & ~BIT(l), 0, 1) ?:
+	       hg_wr(u, XLPORT_TXFIFO_CTRL(l), 7, 0, 1) ?: hg_wr(u, XLPORT_TXFIFO_CTRL(l), 4, 0, 1) ?:
+	       hg_wr(u, XLPORT_ENABLE_REG, 5, 0, 1) ?:
+	       hg_wr(u, XLMAC_CTRL(l), 0x1800, 0, 2) ?: hg_wr(u, XLMAC_RX_CTRL(l), 0x400, 0, 2) ?:
+	       hg_wr(u, XLMAC_TX_CTRL(l), 0x8802, 0x10, 2) ?: hg_wr(u, XLMAC_RX_MAX_SIZE(l), 0x3fe8, 0, 2) ?:
+	       hg_wr(u, XLMAC_MODE(l), 0x42, 0, 2) ?:		/* HDR_MODE 2 = HiGig2, SPEED_MODE 4 */
+	       hg_wr(u, XLMAC_RX_LSS_CTRL(l), 0x70, 0, 2) ?:
+	       hg_wr(u, XLPORT_CONFIG(l), 0xe00, 0, 1) ?:		/* HIGIG_MODE + HIGIG2_MODE + HONOR_PAUSE_FOR_E2E */
+	       hg_wr(u, XLMAC_CTRL(l), 0x1803, 0, 2) ?:		/* TX_EN RX_EN, SOFT_RESET 0, SW_LINK_STATUS */
+	       hg_wr(u, XLMAC_CLR_RX_LSS(l), 3, 0, 2) ?: hg_wr(u, XLMAC_CLR_RX_LSS(l), 0, 0, 2);
+}
+
+int us48_higig_up(struct us48_cmic *u, const struct firmware *fw)
+{
+	static const u16 en[][2] = {
+		{ 0xc138, 0x0009 },			/* RX_SIGDET: no forced signal-detect */
+		{ 0xc100, 0x0000 }, { 0xc100, 0x4021 },	/* TX credits re-armed */
+		{ 0xc017, 0x0990 },			/* ANATX_DRIVER: ELEC_IDLE 0 */
+		{ 0xc01a, 0x0000 },			/* ANATX_CONTROL6: TX enabled */
+	};
+	/* Both lanes of a port at once: AER 4 = lanes 0-1, 5 = lanes 2-3 (SDK tscmod_phyreg.c:509-516 dual broadcast). */
+	static const u16 pair[][2] = {
+		{ 0xc113, 0x41c8 }, { 0xc113, 0x41cb },	/* TX lane reset pulse, after credits */
+		{ 0xc137, 0x0001 },			/* RX lane reset release */
+	};
+	int i, l, ret;
+
+	if (!fw)
+		return -ENOENT;
+	ret = xlport_up(u, BLK_XLPORT1, 0x1b, 0x400) ?: hg_tsc(u, fw) ?: hg_mac(u, 0) ?: hg_mac(u, 2);
+	/* Lane enable after the MAC, port_enable order (driver-internals 13.5/13.7), values = stock-warm TSC1 per lane. */
+	mutex_lock(&u->mdio);
+	u->tsc_phy = TSC1_PHY;
+	for (l = 0; !ret && l < HG_NLANES; l++) {
+		ret = tsc_set_aer(u, l);
+		for (i = 0; !ret && i < ARRAY_SIZE(en); i++)
+			ret = us48_tsc_wr(u, en[i][0], en[i][1]);
+	}
+	for (l = 4; !ret && l <= 5; l++) {
+		ret = tsc_set_aer(u, l);
+		for (i = 0; !ret && i < ARRAY_SIZE(pair); i++)
+			ret = us48_tsc_wr(u, pair[i][0], pair[i][1]);
+	}
+	u->tsc_phy = 0;
+	mutex_unlock(&u->mdio);
+	dev_info(u->dev, "higig: bring-up %s (%d)\n", ret ? "FAILED" : "done", ret);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(us48_higig_up);
+
+void us48_higig_status(struct us48_cmic *u)
+{
+	u16 pll = 0, crc = 0, pmd[HG_NLANES] = {}, pcs[HG_NLANES] = {};
+	u32 ctrl[2], lss[2], rp[2], tp[2], cfg;
+	int l;
+
+	mutex_lock(&u->mdio);
+	u->tsc_phy = TSC1_PHY;
+	tsc_set_aer(u, 0);
+	us48_tsc_rd(u, TSC_PLLSTAT_REG, &pll);
+	us48_tsc_rd(u, TSC_CRC_REG, &crc);
+	for (l = 0; l < HG_NLANES; l++)
+		if (tsc_set_aer(u, l) || us48_tsc_rd(u, 0xc150, &pmd[l]) || us48_tsc_rd(u, 0xc154, &pcs[l]))
+			pmd[l] = pcs[l] = 0xffff;
+	u->tsc_phy = 0;
+	mutex_unlock(&u->mdio);
+	dev_info(u->dev, "higig tsc1: PLL %04x CRC %04x PMD_LIVE %04x %04x %04x %04x PCS_LIVE %04x %04x %04x %04x\n",
+		 pll, crc, pmd[0], pmd[1], pmd[2], pmd[3], pcs[0], pcs[1], pcs[2], pcs[3]);
+	for (l = 0; l < 3; l += 2) {
+		hg_wr(u, XLMAC_CLR_RX_LSS(l), 3, 0, 2);	/* LSS is latched: clear, then read the current state */
+		hg_wr(u, XLMAC_CLR_RX_LSS(l), 0, 0, 2);
+		if (us48_sbus(u, 0x0b, BLK_XLPORT1, XLMAC_CTRL(l), ctrl, 2) ||
+		    us48_sbus(u, 0x0b, BLK_XLPORT1, XLMAC_RX_LSS_STATUS(l), lss, 2) ||
+		    us48_sbus(u, 0x0b, BLK_XLPORT1, XLMAC_RPKT(l), rp, 2) ||
+		    us48_sbus(u, 0x0b, BLK_XLPORT1, XLMAC_TPKT(l), tp, 2) ||
+		    us48_sbus(u, 0x0b, BLK_XLPORT1, XLPORT_CONFIG(l), &cfg, 1))
+			continue;
+		dev_info(u->dev, "higig port %d: XLPORT_CONFIG %x XLMAC_CTRL %x LSS %x RPKT %u TPKT %u\n",
+			 28 + l / 2, cfg, ctrl[0], lss[0], rp[0], tp[0]);
+	}
+}
+EXPORT_SYMBOL_GPL(us48_higig_status);

@@ -12,6 +12,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/if_vlan.h>
 #include <linux/iopoll.h>
+#include <linux/firmware.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
@@ -96,6 +97,12 @@ static void smem_set_bits(struct us48_cmic *u, u32 blk, u32 addr, int words, int
 	sbus(u, 0x09, blk, addr, e, words);
 }
 
+int us48_sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words)
+{
+	return sbus(u, op, blk, addr, data, words);
+}
+EXPORT_SYMBOL_GPL(us48_sbus);
+
 /* ---- TSC SerDes over MIIM (clause 45, devad 0) ---- */
 
 int us48_tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
@@ -104,7 +111,7 @@ int us48_tsc_wr(struct us48_cmic *u, u32 reg, u16 val)
 	int ret;
 
 	wr(u, MIIM_CTRL, 0);
-	wr(u, MIIM_PARAM, MIIM_TSC0 | val);
+	wr(u, MIIM_PARAM, MIIM_TSC_C45 | (u->tsc_phy ?: TSC0_PHY) << 16 | val);
 	wr(u, MIIM_ADDRESS, reg);
 	wr(u, MIIM_CTRL, BIT(0));			/* WR_START */
 	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
@@ -121,7 +128,7 @@ int us48_tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 	int ret;
 
 	wr(u, MIIM_CTRL, 0);
-	wr(u, MIIM_PARAM, MIIM_TSC0);
+	wr(u, MIIM_PARAM, MIIM_TSC_C45 | (u->tsc_phy ?: TSC0_PHY) << 16);
 	wr(u, MIIM_ADDRESS, reg);
 	wr(u, MIIM_CTRL, BIT(1));			/* RD_START */
 	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
@@ -1407,21 +1414,47 @@ MODULE_PARM_DESC(unit0, "1 (default) = drive unit 0 front 1 (ge1) over AXI; 0 = 
 #define UNIT0_CMIC_LEN	0x40000
 
 static struct platform_device *unit0_pdev;
+static struct us48_cmic *unit0_u;
+
+struct us48_cmic *us48_unit0(void)
+{
+	return READ_ONCE(unit0_u);
+}
+EXPORT_SYMBOL_GPL(us48_unit0);
+
+static bool sfp10g;
+module_param(sfp10g, bool, 0444);
+MODULE_PARM_DESC(sfp10g, "1 = SFP 1 (front 51, unit 0 logical 26, TSC0 lane 0) as xe51 at 10G SFI; SDK caps the BCM53344 at 1G (test, #78)");
 
 static int us48_cmic_plat_probe(struct platform_device *pdev)
 {
+	static const struct port_cfg xe51 = { .name = "xe51", .vid = 51, .front = 51, .lport = 26, .lane = 0 };
+	const struct port_cfg *cfgs = unit0_cfgs;
+	const struct firmware *fw = NULL;
+	struct port_cfg *c;
 	struct us48_cmic *u = NULL;
 	void __iomem *cmic = devm_ioremap(&pdev->dev, UNIT0_CMIC_BASE, UNIT0_CMIC_LEN);
-	int ret;
+	int n = ARRAY_SIZE(unit0_cfgs), ret;
 
 	if (!cmic)
 		return -ENOMEM;
+	if (sfp10g) {
+		c = devm_kcalloc(&pdev->dev, n + 1, sizeof(*c), GFP_KERNEL);
+		if (!c)
+			return -ENOMEM;
+		memcpy(c, unit0_cfgs, sizeof(unit0_cfgs));
+		c[n++] = xe51;
+		cfgs = c;
+		if (request_firmware(&fw, "us48-tsc.bin", &pdev->dev))
+			fw = NULL;
+	}
 	ret = us48_chip_cold_init(&pdev->dev, cmic, 0);
-	if (ret)
-		return ret;
-	ret = us48_probe_common(&pdev->dev, &pdev->dev, cmic, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, NULL, NULL, &u);
-	if (!ret)
+	ret = ret ?: us48_probe_common(&pdev->dev, &pdev->dev, cmic, cfgs, n, 0, fw, sfp10g ? us48_tsc_init : NULL, &u);
+	release_firmware(fw);
+	if (!ret) {
 		platform_set_drvdata(pdev, u);
+		WRITE_ONCE(unit0_u, u);
+	}
 	return ret;
 }
 
@@ -1429,6 +1462,7 @@ static void us48_cmic_plat_remove(struct platform_device *pdev)
 {
 	struct us48_cmic *u = platform_get_drvdata(pdev);
 
+	WRITE_ONCE(unit0_u, NULL);
 	mutex_lock(&dbg_lock);
 	dbg_u = NULL;
 	mutex_unlock(&dbg_lock);

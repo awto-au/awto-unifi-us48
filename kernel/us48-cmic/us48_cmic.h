@@ -32,8 +32,10 @@
 #define MIIM_ADDRESS		0x31088
 #define MIIM_CTRL		0x3108c
 #define MIIM_STAT		0x31090
-/* Internal bus 1, clause 45 (INTERNAL_SEL b25, BUS_ID [24:22], C45 b21); TSC0 at address 2. */
-#define MIIM_TSC0		(BIT(25) | 1 << 22 | BIT(21) | 2 << 16)
+/* Internal bus 1, clause 45 (INTERNAL_SEL b25, BUS_ID [24:22], C45 b21). TSC0 answers at 1-4, TSC1 (HiGig) at 5-8 (#57). */
+#define MIIM_TSC_C45		(BIT(25) | 1 << 22 | BIT(21))
+#define TSC0_PHY		2
+#define TSC1_PHY		5
 /* C45 op = address + data frame, 2 x 26 us at MDC 2.5 MHz (section 13); 1.25x. Expiry logged. */
 #define MIIM_TIMEOUT_US		65
 /* One SBUS op answers in a few us; 10 ms = 1000x backstop. Expiry = op abandoned, logged. */
@@ -110,6 +112,7 @@ struct us48_cmic {
 	struct hrtimer poll_timer;
 	struct delayed_work link_work;
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
+	u8 tsc_phy;			/* MIIM address of us48_tsc_rd/wr: 0 = TSC0_PHY; set only while holding mdio */
 	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */
 	u8 blk_ready;			/* bit = GPORT block whose block-wide init (+ octal top reset) ran */
 	spinlock_t tx_lock;
@@ -162,5 +165,13 @@ void us48_tsc_dump(struct us48_cmic *u);
 int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c);
 
 void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u32 lo, u32 hi, int aer);
+
+/* S-channel op on that unit (no lock: the caller keeps link changes / reloads out). */
+int us48_sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words);
+/* Unit 0's driver state while us48_cmic_u0 is bound, else NULL. */
+struct us48_cmic *us48_unit0(void);
+/* Opt-in HiGig link bring-up of logical 28/29 (XLPORT1 + TSC1, 12.73G HiGig2) on one unit; no table writes (#57). */
+int us48_higig_up(struct us48_cmic *u, const struct firmware *fw);
+void us48_higig_status(struct us48_cmic *u);
 
 #endif

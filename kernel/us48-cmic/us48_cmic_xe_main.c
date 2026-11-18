@@ -105,18 +105,20 @@ module_param_cb(phy_scan, &phy_scan_ops, NULL, 0200);
 /* Run fn on the xe port of that front number under dump_lock (unbind waits for it). */
 static int xe_port_op(unsigned int front, u32 lo, u32 hi, int aer, bool restart)
 {
+	struct us48_cmic *u;
 	int i, ret = -EINVAL;
 
 	mutex_lock(&dump_lock);
-	if (!dump_u)
+	u = front == 51 ? us48_unit0() : dump_u;	/* xe51 = unit 0 SFP 1 (us48_cmic sfp10g=1) */
+	if (!u || !dump_u)
 		ret = -ENODEV;
-	for (i = 0; dump_u && i < dump_u->nports; i++) {
-		if (dump_u->cfgs[i].copper || dump_u->cfgs[i].front != front)
+	for (i = 0; u && dump_u && i < u->nports; i++) {
+		if (u->cfgs[i].copper || u->cfgs[i].front != front)
 			continue;
 		if (restart) {
-			ret = us48_tsc_rx_restart(dump_u, &dump_u->cfgs[i]);
+			ret = us48_tsc_rx_restart(u, &u->cfgs[i]);
 		} else {
-			us48_tsc_range(dump_u, &dump_u->cfgs[i], lo, hi, aer);
+			us48_tsc_range(u, &u->cfgs[i], lo, hi, aer);
 			ret = 0;
 		}
 	}
@@ -198,6 +200,40 @@ static int cmicrd_set(const char *val, const struct kernel_param *kp)
 
 static const struct kernel_param_ops cmicrd_ops = { .set = cmicrd_set };
 module_param_cb(cmicrd, &cmicrd_ops, NULL, 0200);
+
+/* Opt-in, default off (#57): echo 1 > .../higig = HiGig link bring-up on both units (no table writes); 2 = status log. */
+static int higig_set(const char *val, const struct kernel_param *kp)
+{
+	struct us48_cmic *u[2];
+	const struct firmware *fw = NULL;
+	unsigned int op;
+	int i, ret = kstrtouint(val, 0, &op);
+
+	if (ret || (op != 1 && op != 2))
+		return ret ?: -EINVAL;
+	mutex_lock(&dump_lock);
+	u[0] = us48_unit0();
+	u[1] = dump_u;
+	if (!u[0] || !u[1]) {
+		mutex_unlock(&dump_lock);
+		return -ENODEV;
+	}
+	if (op == 1 && request_firmware(&fw, "us48-tsc.bin", u[1]->dev)) {
+		mutex_unlock(&dump_lock);
+		return -ENOENT;
+	}
+	for (i = 0; i < 2; i++) {
+		if (op == 1)
+			ret = ret ?: us48_higig_up(u[i], fw);
+		us48_higig_status(u[i]);
+	}
+	release_firmware(fw);
+	mutex_unlock(&dump_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops higig_ops = { .set = higig_set };
+module_param_cb(higig, &higig_ops, NULL, 0200);
 
 static const struct kernel_param_ops rx_restart_ops = { .set = rx_restart_set };
 module_param_cb(rx_restart, &rx_restart_ops, NULL, 0200);

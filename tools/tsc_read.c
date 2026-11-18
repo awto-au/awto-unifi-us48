@@ -4,7 +4,8 @@
  * Usage: tsc_read <cmic phys base> < lines "A aer reg"   (reg = devad<<16 | reg16; A = MIIM phy id: 2 lane 0, 4 lane 2)
  * Output: "A aer reg val" (val = ffffffff on MIIM timeout). Method = docs/driver-internals.md 13.1; AER written before every read.
  * Line "S words addr" = S-channel register read (block 5, XLPORT/XLMAC; words 1 or 2): prints "S words addr ack lo hi"
- * (docs/driver-internals.md 13.3: SCHAN_CTRL 0x31000, MSG0 0x3100c, MSG1 0x31010..). Only MIIM_PARAM/ADDRESS/CTRL writes and READ_DATA/STAT reads; no TSC register is written except the AER.
+ * (docs/driver-internals.md 13.3: SCHAN_CTRL 0x31000, MSG0 0x3100c, MSG1 0x31010..). "B blk words addr" / "M blk words addr" =
+ * register / memory read in any block (HiGig dump, #57). Only MIIM_PARAM/ADDRESS/CTRL writes and READ_DATA/STAT reads; no TSC register is written except the AER.
  * Poll bound: one C45 frame ~64 bit x 0.4 us = 26 us; 2000 polls of a mapped read (~1 us each) = 2 ms = ~75x, log-and-skip on expiry.
  */
 #include <fcntl.h>
@@ -98,6 +99,22 @@ static int sread(unsigned blk, unsigned words, unsigned addr, uint32_t *ack, uin
 	return i;
 }
 
+/* Memory read (op 0x07, header as dev.py schan rmem); ack words stay in MSG for the caller, which clears SCTRL. */
+static int mread(unsigned blk, unsigned words, unsigned addr, uint32_t *ack)
+{
+	int i;
+
+	wr(SCTRL, 0);
+	wr(SMSG, 0x1c000000 | blk << 20 | words * 4 << 7);
+	wr(SMSG + 4, addr);
+	wr(SCTRL, 1);
+	for (i = 0; i < SPOLLS; i++)
+		if (rd(SCTRL) & 2)
+			break;
+	*ack = rd(SMSG);
+	return (i == SPOLLS || (rd(SCTRL) & 0x700000)) ? -1 : 0;
+}
+
 int main(int argc, char **argv)
 {
 	unsigned a, aer, reg;
@@ -143,6 +160,32 @@ int main(int argc, char **argv)
 			if (sread(5, a, reg, &ack, &lo, &hi))
 				ack = lo = hi = 0xffffffff;
 			printf("S %u %x %x %x %x\n", a, reg, ack, lo, hi);
+			continue;
+		}
+		if (kind[0] == 'X') {	/* "X A aer reg val": C45 write, EXPERIMENTS ON OUR LINUX ONLY (HiGig lane map, #57) */
+			unsigned v;
+
+			if (scanf("%u %u %x %x", &a, &aer, &reg, &v) != 4)
+				break;
+			printf("X %u %u %x %x rc=%d\n", a, aer, reg, v,
+			       c45_write(a, (reg >> 16) & 0xf, 0xffde, aer) || c45_write(a, (reg >> 16) & 0xf, reg & 0xffff, v) ? -1 : 0);
+			continue;
+		}
+		if (kind[0] == 'M') {	/* "M blk words addr": S-channel memory read (op 0x07), words <= 8; prints "M blk addr ack w0 .." */
+			unsigned blk, i;
+
+			if (scanf("%u %u %x", &blk, &a, &reg) != 3 || a < 1 || a > 8)
+				break;
+			printf("M %u %x", blk, reg);
+			if (mread(blk, a, reg, &ack))
+				printf(" ffffffff timeout\n");
+			else {
+				printf(" %x", ack);
+				for (i = 0; i < a; i++)
+					printf(" %x", rd(SMSG + 4 + 4 * i));
+				printf("\n");
+			}
+			wr(SCTRL, 0);
 			continue;
 		}
 		if (kind[0] == 'B') {	/* "B blk words addr": S-channel register read in block blk (TOP = 16); prints "B blk addr ack lo hi" */

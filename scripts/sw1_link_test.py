@@ -24,8 +24,8 @@ SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
 POLL_S = 0.5
 RESTORE = ("lan3", "lan6", "lan7")
-PEER = {"xe49": "lan7", "xe50": "lan3"}  # expected far end (hwdb/board/ports.toml); the FDB check below verifies it, never trust it
-MAC = {"xe49": "02:75:73:34:38:31", "xe50": "02:75:73:34:38:32"}
+PEER = {"xe49": "lan7", "xe50": "lan3", "xe51": "lan6"}  # expected far end (hwdb/board/ports.toml); the FDB check below verifies it, never trust it
+MAC = {"xe49": "02:75:73:34:38:31", "xe50": "02:75:73:34:38:32", "xe51": "02:75:73:34:38:33"}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
 
