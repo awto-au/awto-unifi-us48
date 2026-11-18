@@ -34,8 +34,8 @@
 #define CTL_SPEED(s)		(((s) & 3) << 4)
 #define CTL_ACT			BIT(6)
 enum { SP_NONE, SP_SLOW, SP_MID, SP_FAST };
-/* Half periods at the reset refresh period (30 ms, I: 200 MHz LED clock): TICK bit 4/3/2 */
-static const unsigned int sp_ms[] = { 0, 480, 240, 120 };
+/* Half periods = 16/8/4 refreshes (TICK bit 4/3/2) at the reset CLK_PARAMS refresh rate measured on the board (docs/leds.md) */
+static const unsigned int sp_ms[] = { 0, 714, 357, 178 };
 
 enum { PAT_AUTO, PAT_HW, PAT_OFF, PAT_ON, PAT_BOOTING, PAT_ERROR, PAT_PANIC, PAT_PANIC2, PAT_FALLBACK,
 	PAT_CUSTOM };

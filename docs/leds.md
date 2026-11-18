@@ -32,20 +32,20 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 | Register | Offset | Use |
 |---|---|---|
 | `CTRL` | `0x20000` | bit 0 `LEDUP_EN` (RMW); scan delays 3:1, 9:4 left as found (`0x6a` on unit 0, `0x42` on unit 1, hwdb/validation) |
-| `STATUS` | `0x20004` | `RUNNING` bit 8, PC 7:0: read and logged |
+| `STATUS` | `0x20004` | `RUNNING` bit 8, PC 7:0: read and logged. Board 2026-11-19 (both units): STATUS `0x7d` = PC at the program end, RUNNING 0 between refreshes; TICK advances, so running = TICK step (#14) |
 | `CLK_PARAMS` | `0x20050` | not written. Reset `0x505b8d80`: half period 20, refresh 6 000 000 clocks |
 | `DATA_RAM` | `0x20400` | 256 words, bits 7:0 |
 | `PROGRAM_RAM` | `0x20800` | 256 words, one byte each |
 
 - Load order (stock `0x120ed64`, board.md; OpenBCM `ledproc_load`): clear EN, write 256 program words (zero-padded), zero data RAM `0x80-0xff`, write our chain bytes, set EN. Only LEDUP0 (stock loads `uc 0` only, C). LEDUP1 untouched (BT: does it drive anything?).
-- Clocks: LED_CLK 5 MHz is the datasheet rate (clocks.md `[DS]`), the reset half period 20 gives 5 MHz at a 200 MHz LEDUP clock (I), so the rated maximum already runs. The refresh period (30 ms at 200 MHz, I) only sets blink and activity resolution; not changed. `chain` reports the measured rate.
+- Clocks: LED_CLK 5 MHz is the datasheet rate (clocks.md `[DS]`), the reset half period 20 gives 5 MHz at a 200 MHz LEDUP clock (I), so the rated maximum already runs. The refresh period only sets blink and activity resolution; not changed. `chain` reports the measured rate: 22.4 Hz (44.6 ms) on both units, board 2026-11-19, debug image 6434910 (the 30 ms / 200 MHz guess was wrong; blink half periods scale by 1.5x).
 - Data RAM map (ours, matches OpenBCM convention): `0x00-0x7f` hardware scan-in, `0x80-0x9f` `pack` area (`SCANCHAIN_ASSEMBLY_ST_ADDR` reset `0x80`), `0xa0-0xbf` CTL per slot, `0xc0-0xdf` scan port per slot, `0xe0-0xe7` program variables.
 
 ### Program (`kernel/us48-cmic/us48_ledup.asm`, 125 B)
 
 - Ours; stock's program (switchdrvr `0x15a38ac`, 164 B, Ubiquiti's own, not a published Broadcom program) was analysed and its chain format adopted: [ledup-stock.md](ledup-stock.md) (bytes, annotated listing, comparison). ISA (opcodes, operand forms) from OpenBCM sdk-6.5.16 `tools/led/tools/ledasm.h`; structure after the Greyhound/Hurricane3 examples. Licence: Broadcom `Legal/LICENSE`; no Broadcom text copied.
 - `scripts/ledasm.py`: our assembler -> `us48_ledup_prog.h` (generated; `--check` in review). `--verify` assembles `gh_sdk53402.asm` byte-identical to its hex in OpenBCM `rc/gh_ledup.soc` (2026-11-19). `--sim`: reference model, 25/25 cases (semantics I).
-- Per slot: `port SPORT[s]`; value = CTL bits 1:0; bits in the blink mask (3:2) blank on the speed's TICK bit (slow 480 / mid 240 / fast 120 ms half period at 30 ms refresh, I); ACT (bit 6) blanks the slot on odd TICKs while `pushst RX` or `TX` is set; xor POL; shift NBITS bits **LSB first** (stock order); `send (TOTAL)`.
+- Per slot: `port SPORT[s]`; value = CTL bits 1:0; bits in the blink mask (3:2) blank on the speed's TICK bit (16 / 8 / 4 refreshes: slow 714 / mid 357 / fast 178 ms half period at the measured 44.6 ms refresh); ACT (bit 6) blanks the slot on odd TICKs while `pushst RX` or `TX` is set; xor POL; shift NBITS bits **LSB first** (stock order); `send (TOTAL)`.
 - All policy is in the CPU; the chain format is a runtime setting (`chain`), default = stock's:
   - 2 bits per port, LSB first: bit 0 = first bit on the wire = stock's 1G/10G symbol "10", bit 1 = 10/100M symbol "01". Bit 0 = `green`, bit 1 = `amber` (colour names I).
   - Polarity 0 (no inversion), order `front` (ascending; unit 0 front 1-24 then 51/52, unit 1 front 25-48 then 49/50), `slots=28` (56 bits, 4 trailing zero bits), same program on both units.
@@ -71,7 +71,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 | `ports` (ro) | = `cages` | column, front, port, unit, slot, scan port, link Mb/s, CTL |
 | `chain` | extra | chain format `nbits= pol= order=front|rfront|phys|rphys extra= slots= act=` (default = stock: `2 0 front 0 28 1`); per unit STATUS, CTRL, CLK_PARAMS, TICK and refreshes since the last read |
 
-- Patterns (cells = slot x bit, st1008f rows -> bits): booting = bit 0 slow blink; error = all fast blink (120 ms vs st1008f 128 ms); fallback = bit 0 on, bit 1 mid blink (240 vs 256 ms); panic = per slot one bit on, the other fast blink, swapped per `panic_blink` call; on/off = all cells.
+- Patterns (cells = slot x bit, st1008f rows -> bits): booting = bit 0 slow blink; error = all fast blink (178 ms vs st1008f 128 ms); fallback = bit 0 on, bit 1 mid blink (357 vs 256 ms); panic = per slot one bit on, the other fast blink, swapped per `panic_blink` call; on/off = all cells.
 - Digits: 0 off, 7 on, 1-3 fast, 4 mid, 5-6 slow (st1008f has six blink rates, LEDUP three). One blink speed per slot: two cells of one port with different speeds = `-EINVAL`.
 - Differences from st1008f (HR2 reasons):
   - Booting comes from Linux (driver probe), not U-Boot: awto-uboot does not load LEDUP. No U-Boot latch to read at init.
@@ -87,7 +87,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 2. System LED colour per pin, polarity. `sysled`.
 3. Button idle high, press gives `KEY_RESTART` press/release. `button --interactive`.
 4. `us48_cca_gpio` with outputs: SFP presence (lines 2/3) still reads as before (#21 `sensors_test.py`).
-5. LEDUP runs on both units (STATUS bit 8, TICK advances, refresh rate). `ledup`.
+5. LEDUP runs on both units (TICK advances, refresh rate; STATUS bit 8 is 0 between refreshes). `ledup`; program RAM = header: `prog`.
 6. Chain format: confirm the stock-derived default (2 bits, LSB first, front order, 28 slots, pol 0). `chain --interactive` asks once; only on "no" does it scan nbits/order/pol. First `patterns` with the defaults.
 7. Colour per bit; bicolour LEDs that need `01`/`10` (anti-parallel) vs two LEDs. `ports`.
 8. Scan-chain RX/TX bits valid for `pushst` on HR2 (activity flicker on 8<->17, 32<->41). `links`.

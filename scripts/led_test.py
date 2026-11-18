@@ -5,11 +5,12 @@ Usage: led_test.py [STEP ...] [--apply] [--interactive] [--ports 1,8,17] [--host
 - Dry-run by default: prints every board command and what Dan should see, runs nothing. --apply = ssh (scripts/_board.py).
 - --interactive: after each visual step wait for Enter (answer y/n/text, logged). Without it no step waits: visual
   steps set the state, read it back from sysfs, print the expected look and move on.
-- Steps (default all, in this order): preflight button sysled ledup patterns ports chain links latch final
+- Steps (default all, in this order): preflight button sysled ledup prog patterns ports chain links latch final
   - preflight: kernel objects exist (us48-leds, gpio-a, input device, LED class devices); LEDUP running per unit.
   - button: reset-button line reads high = not pressed (debugfs gpio); --interactive: press it once, 2 input events read.
   - sysled: white on, blue on, both off, white blink; restores trigger timer/none as found.
   - ledup: TICK advances; refresh rate from two `chain` reads (expect ~33 Hz at the reset CLK_PARAMS, I).
+  - prog: LEDUP0 program RAM of both units read back (devmem, read only) = kernel/us48-cmic/us48_ledup_prog.h.
   - patterns: on, off, booting, error, fallback, panic (sysfs pattern only, never a real panic), hw.
   - ports: each column (default every port, or --ports) forced on alone, bit 0 then bit 1; readback via `ports`.
   - chain: only with --interactive: first the stock-derived format (2 bits, front order, 28 slots, LSB first); if Dan says no, tries nbits 1/2/4 x order front/rfront/phys/rphys x pol 0/full with all cells on,
@@ -39,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/led_test.log"
 L = "/sys/devices/platform/us48-leds"
 WHITE, BLUE = "/sys/class/leds/white:status", "/sys/class/leds/blue:status"
-STEPS = ["preflight", "button", "sysled", "ledup", "patterns", "ports", "chain", "links", "latch", "final"]
+STEPS = ["preflight", "button", "sysled", "ledup", "prog", "patterns", "ports", "chain", "links", "latch", "final"]
 _DB = hwdb.lite()
 LOOPS = [(_DB.netdev(g), _DB.netdev(o)) for _, g, o in _DB.loop_pairs()]  # loop cables, hwdb/board/ports.toml
 LINK_S = 5.0
@@ -90,8 +91,8 @@ def preflight(r: Run) -> None:
                "grep -A4 -i 'gpio-keys' /proc/bus/input/devices; ls /sys/bus/platform/drivers/nsp-gpio-a")
     for ln in out.splitlines():
         if ln.startswith("unit") and " STATUS " in ln:
-            st = int(ln.split(" STATUS ")[1].split()[0], 16)
-            r.check(bool(st & 0x100), f"{ln.split()[0]} LEDUP STATUS {st:08x}: RUNNING (bit 8)")
+            st = int(ln.split(" STATUS ")[1].split()[0], 16)  # RUNNING (bit 8) reads 0 between refreshes (#14)
+            r.log(f"{ln.split()[0]} LEDUP STATUS {st:08x}: RUNNING {st >> 8 & 1}, PC {st & 0xff:#x}; running = TICK step")
     r.check("Handlers" in out, "gpio-keys-polled input device registered")
     r.check("white:status" in out or "blue:status" in out, "system LED class devices")
 
@@ -135,11 +136,31 @@ def ledup(r: Run) -> None:
     r.check("unit0" in a, "unit 0 LEDUP loaded")
 
 
+PROG_RAM = 0x20800  # CMIC_LEDUP0_PROGRAM_RAM (hwdb cmic0.LEDUP_PROGRAM_RAM), one byte per 32-bit word
+PROG_H = ROOT / "kernel/us48-cmic/us48_ledup_prog.h"
+
+
+def prog(r: Run) -> None:
+    """Read-only: LEDUP0 program RAM of both units (devmem) = the generated header, rest zero-padded."""
+    want = [int(b, 16) for b in PROG_H.read_text().split("{", 1)[1].split("}", 1)[0].replace(",", " ").split()]
+    want += [0] * (256 - len(want))
+    for unit in (0, 1):
+        base = hwdb.cmic_base(unit) + PROG_RAM
+        out = r.sh(f"i=0; while [ $i -lt 256 ]; do devmem $((0x{base:x} + 4 * i)) 32; i=$((i + 1)); done | tr '\\n' ' '",
+                   60.0)  # 256 devmem forks; the debug image forks slowly (#14): 60 s backstop
+        if not r.apply:
+            continue
+        got = [int(w, 16) & 0xff for w in out.split()]
+        bad = [i for i in range(256) if i >= len(got) or got[i] != want[i]]
+        r.check(not bad, f"unit{unit} PROGRAM_RAM = us48_ledup_prog.h ({len(got)} words read, {len(bad)} differ"
+                + (f", first at {bad[0]:#x}" if bad else "") + ")")
+
+
 def patterns(r: Run) -> None:
     looks = {"on": "every port LED on, both colours (both bits)", "off": "every port LED off",
-             "booting": "bit-0 colour of every port blinks slowly (~1 Hz), rest off",
-             "error": "every port LED blinks fast (~4 Hz)",
-             "fallback": "bit-0 colour on, bit-1 colour blinks (~2 Hz)",
+             "booting": "bit-0 colour of every port blinks slowly (~0.7 Hz), rest off",
+             "error": "every port LED blinks fast (~2.8 Hz)",
+             "fallback": "bit-0 colour on, bit-1 colour blinks (~1.4 Hz)",
              "panic": "checkerboard: per port one colour on, the other fast blink, alternating between ports",
              "hw": "ports with link lit, others off"}
     for p, look in looks.items():

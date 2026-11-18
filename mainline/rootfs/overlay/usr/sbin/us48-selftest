@@ -147,7 +147,7 @@ fi
 sd=$R/sys/bus/platform/drivers/sfp
 if [ -d "$sd" ]; then
 	sn=0
-	for l in "$sd"/*; do [ -L "$l" ] && sn=$((sn + 1)); done
+	for l in "$sd"/sfp-*; do [ -L "$l" ] && sn=$((sn + 1)); done	# not the "module" link
 	if [ $sn -eq 4 ]; then res PASS sfp-driver "4 sockets bound"; else res FAIL sfp-driver "$sn/4 sockets bound"; fi
 fi
 for b in 3 4 5 6; do
