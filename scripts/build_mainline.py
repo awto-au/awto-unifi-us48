@@ -352,7 +352,8 @@ MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko
            ("kernel/us48-vnet", ["us48_vnet.ko"]),
            ("kernel/us48-bustest", ["us48_bustest.ko"]),
            ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"]),
-           ("kernel/us48-cmic-gpio", ["us48_cmic_gpio.ko"]), ("kernel/us48-cmic-mspi", ["us48_cmic_mspi.ko"]),
+           ("kernel/us48-cmic-gpio", ["us48_cmic_gpio.ko"]), ("kernel/us48-cca-gpio", ["us48_cca_gpio.ko"]),
+           ("kernel/us48-cmic-mspi", ["us48_cmic_mspi.ko"]), ("kernel/bcm59111", ["bcm59111.ko"]),
            ("kernel/us48-pvtmon", ["us48_pvtmon.ko"]), ("kernel/us48-fan", ["us48_fan.ko"]),
            ("kernel/us48-idm-reset", ["us48_idm_reset.ko"])]
 
@@ -474,7 +475,7 @@ def main() -> int:
     ap.add_argument("--venv-setup", action="store_true", help="(re)create tmp/dtschema-venv, then exit")
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--module-only", action="store_true",
-                    help="build the out-of-tree modules (pci, a2, cmic, gpio, mspi, pvtmon, fan); staged into the rootfs unless --build-dir is given")
+                    help="build the out-of-tree modules (MODULES list); staged into the rootfs unless --build-dir is given")
     ap.add_argument("--tree", type=Path, help="kernel source tree (default tmp/linux-mainline)")
     ap.add_argument("--build-dir", type=Path, help="private kernel build dir (default tmp/mainline/build-<profile>); skips staging")
     ap.add_argument("--store", type=Path, default=Path(os.environ.get("US48_LINUX_STORE", STORE_LINK)),

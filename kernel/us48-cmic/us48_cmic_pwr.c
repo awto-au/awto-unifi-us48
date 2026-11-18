@@ -3,11 +3,13 @@
  * Power down what no port uses (#25), at probe unless pwrsave=0: XLPORT/TSC blocks without a port (SDK), QSGMII2X 0/1
  * and GPHY octals none of whose ports was opened (stock IDDQ writes). Sources: docs/driver-internals.md 16.
  */
+#include <linux/firmware.h>
+
 #include "us48_cmic.h"
 
 static uint pwrsave = 1;
 module_param(pwrsave, uint, 0444);
-MODULE_PARM_DESC(pwrsave, "1 (default) = power down unused XLPORT/TSC, QSGMII2X, unopened GPHY octals; 0 = all on (#25)");
+MODULE_PARM_DESC(pwrsave, "1 (default) = power down unused XLPORT/TSC, QSGMII2X, unopened GPHY octals, unit 0 XLPORT0 while SFP 1/2 are empty and down; 0 = all on (#25, #143)");
 
 #define BLK_TOP			16
 #define TOP_QSGMII2X_CTRL	0x02033400
@@ -114,6 +116,105 @@ void us48_pwr_save(struct us48_cmic *u)
 	}
 	dev_info(u->dev, "pwrsave: XLPORT%s, QSGMII2X 0/1, GPORT octals %#x powered down%s\n", xe ? "1" : "0/1",
 		 u->octal_off, ret ? " (TOP write FAILED)" : "");
+}
+
+/* Unit 0 XLPORT0 gate (#143): on at probe, off while both cages are empty and both xe ports down, on at insert/open. */
+/* Presence poll 300 ms (Dan 2026-11-19); sfp.c polls its own at a fixed 100 ms. Sources: driver-internals 16. */
+#define XE_PWR_POLL_MS		300
+
+static bool xe_needed(struct us48_cmic *u)
+{
+	int i;
+
+	for (i = 0; i < u->nports; i++) {
+		struct us48_port *p = u->port[i];
+
+		if (!p->cfg->copper && (p->open || us48_xe_cage_present(p) != 0))
+			return true;	/* open, module present, or presence unknown */
+	}
+	return false;
+}
+
+/* ENABLE_REG back to its cold-init value 0 (driver-internals 16 live values), then the SDK power-down (xlport_power). */
+static void xe_power_down(struct us48_cmic *u)
+{
+	u32 v = 0;
+	int i, ret = us48_sbus(u, BCM_SCHAN_WRITE_REG, BLK_XLPORT, XLPORT_ENABLE_REG, &v, 1) ?:
+		     xlport_power(u, BLK_XLPORT, false);
+
+	if (ret) {
+		dev_warn(u->dev, "pwrsave: XLPORT0 power down failed (%d)\n", ret);
+		return;
+	}
+	for (i = 0; i < u->nports; i++)
+		if (!u->port[i]->cfg->copper) {
+			u->port[i]->fw_mode = -1;	/* TSC state lost; us48_tsc_init sets 0 again */
+			u->port[i]->rx_tuned = false;
+		}
+	u->xe_off = true;
+	dev_info(u->dev, "pwrsave: XLPORT0/TSC0 powered down (both cages empty, xe ports down)\n");
+}
+
+int us48_pwr_xe_up(struct us48_cmic *u)
+{
+	const struct firmware *fw;
+	int i, ret;
+
+	if (!u->xe_off)
+		return 0;
+	ret = request_firmware(&fw, "us48-tsc.bin", u->dev);
+	if (ret) {
+		dev_err(u->dev, "pwrsave: XLPORT0 power up: us48-tsc.bin: %d\n", ret);
+		return ret;
+	}
+	ret = us48_tsc_init(u, fw);	/* xlport_up() + TSC stage 0/2/3, as at probe */
+	release_firmware(fw);
+	if (ret) {
+		dev_err(u->dev, "pwrsave: XLPORT0 power up failed (%d)\n", ret);
+		return ret;
+	}
+	for (i = 0; i < u->nports; i++)
+		if (!u->port[i]->cfg->copper)
+			us48_xe_port_enable(u->port[i]);
+	u->xe_off = false;
+	dev_info(u->dev, "pwrsave: XLPORT0/TSC0 powered up\n");
+	return 0;
+}
+
+static void xe_pwr_work_fn(struct work_struct *w)
+{
+	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, xe_pwr_work);
+
+	mutex_lock(&u->link_lock);
+	if (xe_needed(u))
+		us48_pwr_xe_up(u);
+	else if (!u->xe_off)
+		xe_power_down(u);
+	mutex_unlock(&u->link_lock);
+	schedule_delayed_work(&u->xe_pwr_work, msecs_to_jiffies(XE_PWR_POLL_MS));
+}
+
+/* Probe, after the netdevs and phylink exist: unit 0 only, pwrsave=1 only. */
+void us48_pwr_xe_start(struct us48_cmic *u)
+{
+	int i;
+
+	if (u->modid || !pwrsave)
+		return;
+	for (i = 0; i < u->nports && u->cfgs[i].copper; i++)
+		;
+	if (i == u->nports)
+		return;
+	INIT_DELAYED_WORK(&u->xe_pwr_work, xe_pwr_work_fn);
+	u->xe_poll = true;
+	schedule_delayed_work(&u->xe_pwr_work, msecs_to_jiffies(XE_PWR_POLL_MS));
+}
+
+void us48_pwr_xe_stop(struct us48_cmic *u)
+{
+	if (u->xe_poll)
+		cancel_delayed_work_sync(&u->xe_pwr_work);
+	u->xe_poll = false;
 }
 
 /* First open of a copper port, link_lock held: power its octal back up, PDN again on the octal's never-opened ports. */

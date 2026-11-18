@@ -6,7 +6,6 @@
  */
 #include <linux/delay.h>
 #include <linux/firmware.h>
-#include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -227,54 +226,8 @@ static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lan
 }
 
 /*
- * Module in cage <front> (SFF-8472 Table 4-1/5-3, A0h: byte 0 id, byte 8 bit 2 = passive cable). I2C = PCA9548
- * channel front-49 (board.md), adapter found by mux name, no bus numbers. Read-only.
- * Returns 1 passive cable, 0 optic/other, -errno unreadable (logged; the optic path is then left as is).
- */
-static int tsc_sfp_passive_chan(struct device *dev, int chan, bool quiet)
-{
-	char want[40];
-	int nr;
-
-	snprintf(want, sizeof(want), "-mux (chan_id %d)", chan);
-	for (nr = 0; nr < 32; nr++) {
-		struct i2c_adapter *ad = i2c_get_adapter(nr);
-		u8 off = 0, a0[11];
-		struct i2c_msg m[2] = { { .addr = 0x50, .len = 1, .buf = &off },
-					{ .addr = 0x50, .flags = I2C_M_RD, .len = sizeof(a0), .buf = a0 } };
-		int ret;
-
-		if (!ad)
-			continue;
-		if (strncmp(ad->name, "i2c-", 4) || !strstr(ad->name, want)) {
-			i2c_put_adapter(ad);
-			continue;
-		}
-		ret = i2c_transfer(ad, m, 2);
-		if (ret != 2) {
-			if (!quiet)
-				dev_err(dev, "sfp chan %d: A0h read failed on %s: %d\n", chan, ad->name, ret);
-			i2c_put_adapter(ad);
-			return ret < 0 ? ret : -EIO;
-		}
-		if (!quiet)
-			dev_info(dev, "sfp chan %d (%s): id %02x conn %02x b3 %02x b8 %02x\n", chan, ad->name, a0[0], a0[2],
-				 a0[3], a0[8]);
-		i2c_put_adapter(ad);
-		return a0[0] == 0x03 && (a0[8] & BIT(2));
-	}
-	dev_err(dev, "sfp chan %d: no PCA9548 channel adapter\n", chan);
-	return -ENODEV;
-}
-
-static int tsc_sfp_passive(struct us48_cmic *u, int front)
-{
-	return tsc_sfp_passive_chan(u->dev, front - 49, false);
-}
-
-/*
- * Lane media mode (caller holds mdio): FIRMWARE_MODE 0xc260 = 2 (passive cable, OM PHY_IF_CR) or 0 (optic, OM SFI =
- * stage-0 value) inside a uC stop/resume, then the per-lane RX restart (13.3b). Same sequence as the load-time DAC path.
+ * Lane media mode (caller holds mdio): FIRMWARE_MODE 0xc260 = 2 (DAC, OM PHY_IF_CR) or 0 (optic, OM SFI = stage-0
+ * value) inside a uC stop/resume, then the per-lane RX restart (13.3b).
  */
 static int tsc_fw_mode_set(struct us48_cmic *u, u8 l, u16 mode)
 {
@@ -290,47 +243,23 @@ static struct us48_port *xe_port(struct us48_cmic *u, int i)
 	return u->port[i] && u->port[i]->cfg == &u->cfgs[i] ? u->port[i] : NULL;
 }
 
-/*
- * SFP hot-plug (#105): re-read A0h (read-only) and, when the module type no longer matches the lane's FIRMWARE_MODE,
- * set the mode as at load + RX restart. force = re-apply the detected mode even if unchanged (test knob).
- * Unreadable/absent module: lane left as is, logged once. Caller holds link_lock (vs open and the link poll).
- */
-int us48_tsc_media_check(struct us48_port *p, bool force)
+/* Module type from the sfp caps (pcs_config): set the lane mode; one RX restart after the next link up (#87). */
+int us48_tsc_fw_mode(struct us48_port *p, u16 mode)
 {
 	struct us48_cmic *u = p->u;
-	int passive, ret;
-	u16 mode;
+	int ret;
 
-	if (p->cfg->copper || p->fw_mode < 0)
-		return -EINVAL;
-	passive = tsc_sfp_passive_chan(u->dev, p->cfg->front - 49, true);
-	if (passive < 0) {
-		if (p->media != -1)
-			netdev_info(p->ndev, "sfp: module absent or A0h unreadable (%d): FIRMWARE_MODE %d kept\n", passive,
-				    p->fw_mode);
-		p->media = -1;
-		return passive;
-	}
-	mode = passive ? 2 : 0;
-	if (p->media != passive)
-		netdev_info(p->ndev, "sfp: module %s (A0h byte 8 bit 2 = %d), lane FIRMWARE_MODE %d\n",
-			    passive ? "passive cable" : "optic/other", passive, p->fw_mode);
-	p->media = passive;
-	if (mode == p->fw_mode && !force)
-		return 0;
-	tsc_sfp_passive_chan(u->dev, p->cfg->front - 49, false);	/* log the A0h bytes of the module we switch to */
 	mutex_lock(&u->mdio);
 	ret = tsc_fw_mode_set(u, p->cfg->lane, mode);
 	mutex_unlock(&u->mdio);
-	netdev_info(p->ndev, "sfp: FIRMWARE_MODE %d -> %d (%s)%s: %d\n", p->fw_mode, mode, passive ? "passive cable" : "optic",
-		    force ? ", forced" : "", ret);
+	netdev_info(p->ndev, "sfp: FIRMWARE_MODE %d -> %d (%s): %d\n", p->fw_mode, mode, mode ? "DAC" : "optic", ret);
 	if (!ret) {
 		p->fw_mode = mode;
-		p->rx_tuned = false;		/* one RX restart after the next link up, as after load (#87) */
+		p->rx_tuned = false;
 	}
 	return ret;
 }
-EXPORT_SYMBOL_GPL(us48_tsc_media_check);
+EXPORT_SYMBOL_GPL(us48_tsc_fw_mode);
 
 static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg);
 
@@ -341,13 +270,13 @@ module_param(tsc_mdc_div, uint, 0644);
 int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 {
 	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0 };
-	int i, ret, passive;
+	int i, ret;
 
 	if (!fw) {
 		dev_err(u->dev, "us48-tsc.bin not loaded: 10G SerDes microcode missing, xe links stay down\n");
 		return -ENOENT;
 	}
-	/* Unit 0 (SFP 1 at 10G, opt-in): our cold init leaves XLPORT0 powered down (XGXS 0xe0). */
+	/* Unit 0 (SFP 1/2, #143): our cold init leaves XLPORT0 powered down (XGXS 0xe0); also the pwrsave power-up. */
 	if (!u->modid) {
 		ret = xlport_up(u, BLK_XLPORT, 0, 0);
 		if (ret)
@@ -363,18 +292,11 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 			continue;
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
 		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
-		/* Passive cable in the cage: OM CR mode (FIRMWARE_MODE 2) + RX restart; optic = OM SFI = FIRMWARE_MODE 0 (stage 0 value). */
-		passive = ret ? -1 : tsc_sfp_passive(u, u->cfgs[i].front);
-		if (passive == 1) {
-			dev_info(u->dev, "tsc %s: passive cable (SFF-8472 A0h byte 8 bit 2): FIRMWARE_MODE 2\n", u->cfgs[i].name);
-			ret = tsc_fw_mode_set(u, u->cfgs[i].lane, 2);
-		}
+		/* FIRMWARE_MODE 0 (OM SFI, stage 0 value) until pcs_config sees a DAC in the cage */
 		if (!ret) {
 			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);
-			if (xe_port(u, i)) {		/* hot-plug state (#105) */
-				xe_port(u, i)->fw_mode = passive == 1 ? 2 : 0;
-				xe_port(u, i)->media = passive < 0 ? -1 : passive;
-			}
+			if (xe_port(u, i))
+				xe_port(u, i)->fw_mode = 0;
 		}
 	}
 	mutex_unlock(&u->mdio);

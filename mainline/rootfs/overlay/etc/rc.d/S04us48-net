@@ -16,5 +16,9 @@ for i in ge1 xe49 xe50; do
 	echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
 	ip link set $i up
 done
+# SFP 1/2 (unit 0, #143): netdevs exist and the TSC is powered, admin down until used
+for i in xe51 xe52; do
+	echo 1 > /proc/sys/net/ipv6/conf/$i/disable_ipv6
+done
 ip addr add $IP dev ge1
 echo "us48-net: done" > /dev/kmsg

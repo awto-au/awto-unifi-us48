@@ -4,13 +4,14 @@
 - Toolchain: musl-cross-make (clone in /mnt/1tnvme/git-mirrors/richfelker) builds gcc + musl, soft-float EABI,
   Cortex-A9, once into /mnt/1tnvme/toolchains/ (symlink tmp/musl-arm, or $US48_MUSL_TC). Kernel + modules use the
   Fedora `arm-linux-gnu-gcc` (build_mainline.py). Fedora's cross gcc is hard-float only (VFP libgcc): unusable here.
-- Sources: busybox/dropbear/nftables (+libmnl, libnftnl)/iproute2 tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
+- Sources: busybox/dropbear/nftables (+libmnl, libnftnl)/iproute2/ethtool tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
 - Our files: mainline/rootfs/{busybox.config,authorized_keys,overlay/}; overlay is copied over the stage as is.
 - Stage: tmp/mainline/rootfs (build_mainline.py adds modules + firmware, then packs it as the initramfs).
 - Log: tmp/logs/build_rootfs.log.
 
 - nft (nftables 1.1.7, static, mini-gmp) is staged in both profiles; cached in tmp/rootfs/tools-bin/nft.
 - bridge (iproute2 7.3.0, static) likewise, /usr/sbin/bridge; cached in tmp/rootfs/tools-bin/bridge.
+- ethtool (7.2, static, netlink via libmnl) likewise, /usr/sbin/ethtool (SFP `ethtool -m`, #21); cached in tmp/rootfs/tools-bin/ethtool.
 
 - --tools (#84, debug image only): static test tools into <stage>/usr/bin: memtester, cyclictest (rt-tests, with the
   tools/numa-stub libnuma stand-in), tinymembench, plus tools/us48bench.c and tools/rngtest.c. Built tools are cached in
@@ -74,6 +75,9 @@ NFTABLES = ("nftables-1.1.7", "https://www.netfilter.org/pub/nftables/nftables-1
 # iproute2 `bridge` (switchdev FDB tests, docs/switchdev.md): static, no libmnl/libelf/libcap/selinux
 IPROUTE2 = ("iproute2-7.3.0", "https://mirrors.edge.kernel.org/pub/linux/utils/net/iproute2/iproute2-7.3.0.tar.xz",
             "5c1789d290bba048a6135ed1ab81b0402dd0fb528d1f1421765c42b1fc3d6289")
+# ethtool (SFP module EEPROM/DDM, link settings, #21): static, libmnl for the netlink interface; release 2026-10-19
+ETHTOOL = ("ethtool-7.2", "https://mirrors.edge.kernel.org/pub/software/network/ethtool/ethtool-7.2.tar.xz",
+           "44256ddf4631ed08d816b7b8725f4b2e0f05e96b8c7ca64ee5c81449da2b6507")
 MEMTESTER = ("memtester-4.7.1", "https://pyropus.ca/software/memtester/old-versions/memtester-4.7.1.tar.gz",
              "e427de663f7bd22d1ebee8af12506a852c010bd4fcbca1e0e6b02972d298b5bb")
 RTTESTS = ("rt-tests-2.11", "https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.gz",
@@ -310,6 +314,31 @@ def build_bridge(jobs: int, stage: Path) -> None:
     log(f"bridge staged: {(dst / 'bridge').stat().st_size} B")
 
 
+def build_ethtool(jobs: int, stage: Path) -> None:
+    """ethtool static against musl + libmnl (netlink), built once into TOOLS_BIN (delete to rebuild)."""
+    TOOLS_BIN.mkdir(parents=True, exist_ok=True)
+    if not (TOOLS_BIN / "ethtool").exists():
+        prefix = WORK / "ethtool-prefix"
+        if prefix.exists():
+            shutil.rmtree(prefix)
+        cc = " ".join(cc_cmd())
+        env = dict(os.environ, PKG_CONFIG_PATH=f"{prefix}/lib/pkgconfig", PKG_CONFIG_LIBDIR=f"{prefix}/lib/pkgconfig")
+        src = unpack(LIBMNL, WORK / "src")
+        run(["./configure", "--host=arm-linux-gnueabi", "--enable-static", "--disable-shared", f"--prefix={prefix}",
+             f"CC={cc}"], cwd=src, env=env)
+        run(["make", f"-j{jobs}", "install"], cwd=src, env=env)
+        src = unpack(ETHTOOL, WORK / "src")
+        run(["./configure", "--host=arm-linux-gnueabi", f"CC={cc}", "LDFLAGS=-static"], cwd=src, env=env)
+        run(["make", f"-j{jobs}", "ethtool"], cwd=src, env=env)
+        run([f"{CROSS}strip", str(src / "ethtool")])
+        shutil.copy2(src / "ethtool", TOOLS_BIN / "ethtool")
+    static_only(TOOLS_BIN / "ethtool")
+    dst = stage / "usr/sbin"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(TOOLS_BIN / "ethtool", dst / "ethtool")
+    log(f"ethtool staged: {(dst / 'ethtool').stat().st_size} B")
+
+
 def build_tools(jobs: int, stage: Path) -> None:
     """Static test tools (#84) into stage/usr/bin; each is built once into TOOLS_BIN (delete to rebuild)."""
     TOOLS_BIN.mkdir(parents=True, exist_ok=True)
@@ -390,6 +419,7 @@ def build(stage: Path, jobs: int = os.cpu_count() or 4, tools: bool = False) -> 
     build_dropbear(jobs, stage)
     build_nft(jobs, stage)
     build_bridge(jobs, stage)
+    build_ethtool(jobs, stage)
     if tools:
         build_tools(jobs, stage)
     shutil.copytree(SRC / "overlay", stage, symlinks=True, dirs_exist_ok=True)

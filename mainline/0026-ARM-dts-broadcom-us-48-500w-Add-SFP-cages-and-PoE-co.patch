@@ -1,0 +1,297 @@
+From bf8fda8b91f506146dbea039f221dc5bb62fe9ea Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Thu, 19 Nov 2026 01:40:22 +1100
+Subject: [PATCH 26/26] ARM: dts: broadcom: us-48-500w: Add SFP cages and PoE
+ controllers
+
+Describe the four SFP cages (two SFP+ on the BCM53346, two SFP on the
+BCM53344) as sff,sfp sockets on channels 0-3 of the PCA9548. Presence
+is a ChipcommonA GPIO of the owning chip, TX disable a CMIC GP pin of
+that chip; both GPIO controllers and the switch ports are driven by
+out-of-tree drivers. Add the twelve BCM59111 PoE controllers on
+channels 4 and 5, and labels on all temperature sensors.
+
+Signed-off-by: TODO
+---
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 215 +++++++++++++++++-
+ 1 file changed, 214 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 737f07942..73244d359 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -245,6 +245,62 @@ map0 {
+ 		};
+ 	};
+ 
++	/*
++	 * SFP cages: presence = ChipcommonA GPIO 2/3 of the owning chip (low = present), TX disable = its CMIC GP pin 2/3
++	 * (high while empty in stock). LOS and TX fault are not wired to a readable pin: module status bits only.
++	 */
++	sfp49: sfp-49 {
++		compatible = "sff,sfp";
++		i2c-bus = <&sfp49_i2c>;
++		mod-def0-gpios = <&cca1 2 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&gp1 2 GPIO_ACTIVE_HIGH>;
++	};
++
++	sfp50: sfp-50 {
++		compatible = "sff,sfp";
++		i2c-bus = <&sfp50_i2c>;
++		mod-def0-gpios = <&cca1 3 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&gp1 3 GPIO_ACTIVE_HIGH>;
++	};
++
++	sfp51: sfp-51 {
++		compatible = "sff,sfp";
++		i2c-bus = <&sfp51_i2c>;
++		mod-def0-gpios = <&cca0 2 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&gp0 2 GPIO_ACTIVE_HIGH>;
++	};
++
++	sfp52: sfp-52 {
++		compatible = "sff,sfp";
++		i2c-bus = <&sfp52_i2c>;
++		mod-def0-gpios = <&cca0 3 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&gp0 3 GPIO_ACTIVE_HIGH>;
++	};
++
++	/* Unit 0 ports of us48_cmic (out of tree), reg = front port; only the SFP ports need a node */
++	ethernet-switch {
++		ethernet-ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@33 {
++				reg = <51>;
++				label = "xe51";
++				phy-mode = "10gbase-r";
++				managed = "in-band-status";
++				sfp = <&sfp51>;
++			};
++
++			port@34 {
++				reg = <52>;
++				label = "xe52";
++				phy-mode = "10gbase-r";
++				managed = "in-band-status";
++				sfp = <&sfp52>;
++			};
++		};
++	};
++
+ 	/* SMBus controller in the CMIC of the BCM53344, no interrupt wired */
+ 	i2c@48000000 {
+ 		compatible = "brcm,iproc-i2c";
+@@ -260,6 +316,117 @@ i2c-mux@70 {
+ 			#size-cells = <0>;
+ 			i2c-mux-idle-disconnect;
+ 
++			/* Channel = front port - 49: SFP+ 1, SFP+ 2, SFP 1, SFP 2 (module EEPROM 0x50, DDM 0x51) */
++			sfp49_i2c: i2c@0 {
++				reg = <0>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++			};
++
++			sfp50_i2c: i2c@1 {
++				reg = <1>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++			};
++
++			sfp51_i2c: i2c@2 {
++				reg = <2>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++			};
++
++			sfp52_i2c: i2c@3 {
++				reg = <3>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++			};
++
++			/* PoE card 0 (front 1-24): chip 0x28 + n = ports 4n+1..4n+4; labels follow the stock sensor names */
++			i2c@4 {
++				reg = <4>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				ethernet-pse@28 {
++					compatible = "brcm,bcm59111";
++					reg = <0x28>;
++					label = "PoE-01";
++				};
++
++				ethernet-pse@29 {
++					compatible = "brcm,bcm59111";
++					reg = <0x29>;
++					label = "PoE-02";
++				};
++
++				ethernet-pse@2a {
++					compatible = "brcm,bcm59111";
++					reg = <0x2a>;
++					label = "PoE-03";
++				};
++
++				ethernet-pse@2b {
++					compatible = "brcm,bcm59111";
++					reg = <0x2b>;
++					label = "PoE-04";
++				};
++
++				ethernet-pse@2c {
++					compatible = "brcm,bcm59111";
++					reg = <0x2c>;
++					label = "PoE-05";
++				};
++
++				ethernet-pse@2d {
++					compatible = "brcm,bcm59111";
++					reg = <0x2d>;
++					label = "PoE-06";
++				};
++			};
++
++			/* PoE card 1 (front 25-48) */
++			i2c@5 {
++				reg = <5>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				ethernet-pse@28 {
++					compatible = "brcm,bcm59111";
++					reg = <0x28>;
++					label = "PoE-07";
++				};
++
++				ethernet-pse@29 {
++					compatible = "brcm,bcm59111";
++					reg = <0x29>;
++					label = "PoE-08";
++				};
++
++				ethernet-pse@2a {
++					compatible = "brcm,bcm59111";
++					reg = <0x2a>;
++					label = "PoE-09";
++				};
++
++				ethernet-pse@2b {
++					compatible = "brcm,bcm59111";
++					reg = <0x2b>;
++					label = "PoE-10";
++				};
++
++				ethernet-pse@2c {
++					compatible = "brcm,bcm59111";
++					reg = <0x2c>;
++					label = "PoE-11";
++				};
++
++				ethernet-pse@2d {
++					compatible = "brcm,bcm59111";
++					reg = <0x2d>;
++					label = "PoE-12";
++				};
++			};
++
+ 			i2c@6 {
+ 				reg = <6>;
+ 				#address-cells = <1>;
+@@ -268,24 +435,28 @@ i2c@6 {
+ 				lm75_48: temperature-sensor@48 {
+ 					compatible = "national,lm75b";
+ 					reg = <0x48>;
++					label = "TEMP-1";
+ 					#thermal-sensor-cells = <1>;
+ 				};
+ 
+ 				lm75_49: temperature-sensor@49 {
+ 					compatible = "national,lm75b";
+ 					reg = <0x49>;
++					label = "TEMP-2";
+ 					#thermal-sensor-cells = <1>;
+ 				};
+ 
+ 				lm75_4a: temperature-sensor@4a {
+ 					compatible = "national,lm75b";
+ 					reg = <0x4a>;
++					label = "TEMP-3";
+ 					#thermal-sensor-cells = <1>;
+ 				};
+ 
+ 				lm75_4b: temperature-sensor@4b {
+ 					compatible = "national,lm75b";
+ 					reg = <0x4b>;
++					label = "TEMP-4";
+ 					#thermal-sensor-cells = <1>;
+ 				};
+ 			};
+@@ -301,6 +472,17 @@ dmu: syscon@3f000 {
+ 	};
+ };
+ 
++/* ChipcommonA GPIO inputs (out of tree, kernel/us48-cca-gpio): read only, outputs and IRQs are not driven */
++&{/axi@18000000} {
++	cca0: gpio@60 {
++		compatible = "ubnt,us48-cca-gpio";
++		reg = <0x60 0xc>;
++		gpio-controller;
++		#gpio-cells = <2>;
++		ngpios = <12>;
++	};
++};
++
+ /* Out-of-tree driver us48_idm_reset (kernel/us48-idm-reset): IDM wrapper reset of the PL330 */
+ &{/axi@18000000} {
+ 	dmac_idm: reset-controller@114000 {
+@@ -380,7 +562,7 @@ &pcie0 {
+ 	compatible = "brcm,iproc-hr2-pcie", "brcm,iproc-pcie";
+ 	status = "okay";
+ 
+-	/* 00:00.0 root port, 01:00.0 the switch: its aux devices pvtmon and gpio take the child nodes (kernel/us48-pci) */
++	/* 00:00.0 root port, 01:00.0 the switch: its aux devices take the child node of their name (kernel/us48-pci) */
+ 	pci@0,0 {
+ 		reg = <0x0000 0 0 0 0>;
+ 		device_type = "pci";
+@@ -401,6 +583,37 @@ gp1: gpio {
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 			};
++
++			/* ChipcommonA GPIO of the BCM53346 through the PAXB window, read only (aux device cca-gpio) */
++			cca1: cca-gpio {
++				gpio-controller;
++				#gpio-cells = <2>;
++				ngpios = <12>;
++			};
++
++			/* aux device cmic (us48_cmic_xe): reg = front port */
++			cmic {
++				ethernet-ports {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					port@31 {
++						reg = <49>;
++						label = "xe49";
++						phy-mode = "10gbase-r";
++						managed = "in-band-status";
++						sfp = <&sfp49>;
++					};
++
++					port@32 {
++						reg = <50>;
++						label = "xe50";
++						phy-mode = "10gbase-r";
++						managed = "in-band-status";
++						sfp = <&sfp50>;
++					};
++				};
++			};
+ 		};
+ 	};
+ };

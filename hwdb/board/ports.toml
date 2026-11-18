@@ -769,6 +769,7 @@ phys = 26
 phy = "none"
 lane = "TSC lane 0"
 sdk = "ge24"
+linux = "xe51"
 src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
 conf = "C"
 
@@ -782,6 +783,7 @@ phys = 28
 phy = "none"
 lane = "TSC lane 2"
 sdk = "ge25"
+linux = "xe52"
 src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
 conf = "C"
 

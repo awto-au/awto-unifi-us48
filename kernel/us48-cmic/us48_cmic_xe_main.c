@@ -117,7 +117,7 @@ static int xe_port_op(unsigned int front, u32 lo, u32 hi, int aer, bool restart)
 	int i, ret = -EINVAL;
 
 	mutex_lock(&dump_lock);
-	u = front == 51 ? us48_unit0() : dump_u;	/* xe51 = unit 0 SFP 1 (us48_cmic sfp10g=1) */
+	u = front >= 51 ? us48_unit0() : dump_u;	/* xe51/xe52 = unit 0 SFP 1/2 (#143) */
 	if (!u || !dump_u)
 		ret = -ENODEV;
 	for (i = 0; u && dump_u && i < u->nports; i++) {
@@ -153,37 +153,6 @@ static int tscreg_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 	return xe_port_op(front, lo, hi, n == 4 ? aer : -1, false);
 }
-
-/*
- * echo "50" > .../media_check: SFP hot-plug path without moving a module (#105): re-read A0h, switch FIRMWARE_MODE only on
- * a type change. "50 force": re-apply the detected mode (+ RX restart) as if the type had changed. Result in dmesg.
- */
-static int media_check_set(const char *val, const struct kernel_param *kp)
-{
-	char how[8] = "";
-	unsigned int front;
-	struct us48_cmic *u;
-	int i, n = sscanf(val, "%u %7s", &front, how), ret = -EINVAL;
-
-	if (n < 1 || (n == 2 && strcmp(how, "force")))
-		return -EINVAL;
-	mutex_lock(&dump_lock);
-	u = front == 51 ? us48_unit0() : dump_u;
-	if (!u || !dump_u)
-		ret = -ENODEV;
-	for (i = 0; u && dump_u && i < u->nports; i++) {
-		if (u->cfgs[i].copper || u->cfgs[i].front != front || !u->port[i])
-			continue;
-		mutex_lock(&u->link_lock);
-		ret = us48_tsc_media_check(u->port[i], n == 2);
-		mutex_unlock(&u->link_lock);
-	}
-	mutex_unlock(&dump_lock);
-	return ret < 0 ? ret : 0;
-}
-
-static const struct kernel_param_ops media_check_ops = { .set = media_check_set };
-module_param_cb(media_check, &media_check_ops, NULL, 0200);
 
 static const struct kernel_param_ops tscreg_ops = { .set = tscreg_set };
 module_param_cb(tscreg, &tscreg_ops, NULL, 0200);

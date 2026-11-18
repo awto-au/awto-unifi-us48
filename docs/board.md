@@ -212,6 +212,8 @@ Sensor read `0x5f65e4(idx, out)`: `out[0]` status (2 = limit > value, 3 = limit 
 
 ## GPIO map (SoC ChipcommonA GPIO, `0x18000060` DIN / `0x64` DOUT / `0x68` OUTEN)
 
+Mainline use of the button and system LED lines: [leds.md](leds.md).
+
 Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux GPIO n = CCA bit n−4. C unless marked.
 
 | Linux GPIO | CCA bit | Function | Evidence |
@@ -240,8 +242,18 @@ Front 49/50 = unit 1 (BCM53346) SDK ports 26/27 (`xe0`/`xe1`), front 51/52 = uni
 - Cage mapping: front 51 = unit 0 GPIO 6 (CCA bit 2) / GP2, front 52 = unit 0 GPIO 7 (CCA bit 3) / GP3. Front 49 / 50 = same bits and pins on **unit 1** (BCM53346's own ChipcommonA and CMIC), reached by the SDK through the PCIe/PAXB window; not Linux GPIOs on the CPU. Chip assignment C (port map), signal-to-physical-cage wiring I.
 - Pins `CMIC_GP` 2/3 do not clash with MSPI selects (unit 0 / unit 1 GP0 on this board class). Output-enable of GP2/GP3 not found in switchdrvr (same as GP0): I: strap/default.
 - No PCA9555 or other I2C expander is used for SFP signals on this board class (`iop*` rows only for `0xb3440001/2` via `0x5e4754`).
-- Linux side: presence for 51/52 readable as GPIO 6/7 (CCA GPIO). 49/50 presence and all four TX-disable lines need CMIC_GP access (unit 0: AXI CMIC; unit 1: PCIe BAR of BCM53346).
 - LOS / TX fault are software-only (module status byte); hardware LOS/TX_FAULT pins not connected to a readable GPIO in this firmware.
+- Linux (#21, `mainline/0026`): one `sff,sfp` socket per cage (`sfp-49`..`sfp-52`), `i2c-bus` = PCA9548 channel front-49; no `los-gpios` / `tx-fault-gpios` (sfp module polls the A2h status byte instead).
+
+  | Cage | `mod-def0-gpios` (active low) | `tx-disable-gpios` (active high: I) | netdev |
+  |---|---|---|---|
+  | SFP+ 1 (49) | `cca1` 2 (unit 1 CCA, `kernel/us48-cca-gpio`, aux `us48_pci.cca-gpio`) | `gp1` 2 (unit 1 CMIC GP, `kernel/us48-cmic-gpio`) | xe49 |
+  | SFP+ 2 (50) | `cca1` 3 | `gp1` 3 | xe50 |
+  | SFP 1 (51) | `cca0` 2 (unit 0 CCA `0x18000060`) | `gp0` 2 | xe51 (always, #143) |
+  | SFP 2 (52) | `cca0` 3 | `gp0` 3 | xe52 (always, #143) |
+
+  - `us48_cca_gpio` is read only: input requests pass only while OUTEN of the line is 0 (OpenWrt after stock: OUTEN `0x2c0`, bits 2/3 = 0, [poe.md](poe.md)); no writes, no IRQ (sfp polls).
+  - The sfp socket drives TX disable through `gp0`/`gp1` (DATA_OUT, then OUT_EN): asserted while the netdev is down or the cage empty.
 
 ## MSPI board IO (relation to [fan.md](fan.md))
 
@@ -352,7 +364,8 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
   - Programs (256-byte slots, ELF file offset = VA - `0x10000`): `0x15a38ac` (164 B used), `0x15a39ac` (168), `0x15a3aac` (186), `0x15a3bac` (167), `0x15a3cac` (152), `0x15a3dac` (152); the two-chip cases use `0x15a38ac`. Starts `02 02 60 e0 06 e0 d2 0a 70 16 ...` (standard Broadcom LED-processor opcodes; not disassembled). C (offsets), I (opcode meaning).
   - Other 256-byte LED programs: `0x1411a54` (`0x6f2e8`, sets data-RAM byte `0xbf`) and `0x1d51ba4` (`0x6f6a0`, sets data-RAM byte `0xbe` = count), both followed by `0x6ed04` / `0x6eb08` (CMIC LED pin config RMW). I: SDK locator/blink helpers.
   - Hidden `ubntdiag ledtest` ([stock-debug-cli.md](stock-debug-cli.md)) loads tiny test programs (68 B: `67 36` repeated, `0x15a3f34` / `0x15a4034`..`0x15a4434`) into LEDUP and writes the MSPI 2-bit-per-port frames (`0x5f6a40`), so link/act LEDs are LEDUP and PoE LEDs are MSPI. C (code), I (colour mapping).
-  - Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain; front 49-52.
+  - Program disassembled, bytes and format: [ledup-stock.md](ledup-stock.md). Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain wiring.
+  - Mainline: our own LEDUP program + driver, chain format and colours as board-test items: [leds.md](leds.md).
 
 ## Open questions
 

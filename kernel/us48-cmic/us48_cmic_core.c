@@ -711,7 +711,7 @@ static void copper_poll(struct us48_port *p)
 		    up ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
 }
 
-/* Copper: only open ports (never-opened ones have no GPORT/VLAN init). xe: PCS live status 0xc154 b1 link. */
+/* Copper only, open ports only (never-opened ones have no GPORT/VLAN init). xe carrier: phylink (us48_cmic_phylink.c). */
 static void link_work_fn(struct work_struct *w)
 {
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, link_work);
@@ -719,38 +719,13 @@ static void link_work_fn(struct work_struct *w)
 
 	for (i = 0; i < u->nports; i++) {
 		struct us48_port *p = u->port[i];
-		u16 v = 0;
-		bool up;
 
-		if (p->cfg->copper) {
-			mutex_lock(&u->link_lock);
-			if (p->open && p->copper_ready)
-				copper_poll(p);
-			mutex_unlock(&u->link_lock);
+		if (!p->cfg->copper)
 			continue;
-		}
-		mutex_lock(&u->mdio);
-		up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
-		mutex_unlock(&u->mdio);
-		if (up != netif_carrier_ok(p->ndev)) {
-			if (up)
-				netif_carrier_on(p->ndev);
-			else
-				netif_carrier_off(p->ndev);
-			netdev_info(p->ndev, "link %s\n", up ? "up" : "down");
-		}
-		/* The RX adaptation of the boot init leaves 2-13 % PCS link drops and FCS errors on the optic lane; a restart once linked clears them (#87). */
-		if (up && !p->rx_tuned) {
-			p->rx_tuned = true;
-			us48_tsc_rx_restart(u, p->cfg);
-		}
-		/* Hot-plug: a swapped module may need the other FIRMWARE_MODE before it can link (#105). */
-		if (!up && p->fw_mode >= 0 && READ_ONCE(p->open) && ++p->media_tick >= MEDIA_POLL_TICKS) {
-			p->media_tick = 0;
-			mutex_lock(&u->link_lock);
-			us48_tsc_media_check(p, false);
-			mutex_unlock(&u->link_lock);
-		}
+		mutex_lock(&u->link_lock);
+		if (p->open && p->copper_ready)
+			copper_poll(p);
+		mutex_unlock(&u->link_lock);
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 }
@@ -812,6 +787,11 @@ static void port_enable(struct us48_port *p)
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | a, v, 2);
 	tx_credit_cycle(u, a);
 	dev_info(u->dev, "%s: enable sequence done\n", p->cfg->name);
+}
+
+void us48_xe_port_enable(struct us48_port *p)
+{
+	port_enable(p);
 }
 
 /*
@@ -1297,8 +1277,15 @@ static int us48_open(struct net_device *nd)
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
 	mutex_lock(&u->link_lock);
-	if (!p->cfg->copper && p->fw_mode >= 0)
-		us48_tsc_media_check(p, false);		/* module may have changed while down (#105) */
+	if (!p->cfg->copper) {
+		int ret = us48_pwr_xe_up(u);	/* XLPORT0 gated by pwrsave (#143) */
+
+		if (ret) {
+			mutex_unlock(&u->link_lock);
+			l2_op_cpu(p, 0x26);
+			return ret;
+		}
+	}
 	p->open = true;
 	mutex_unlock(&u->link_lock);
 	if (u->nopen++ == 0) {
@@ -1308,6 +1295,8 @@ static int us48_open(struct net_device *nd)
 		hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
 	}
 	netif_start_queue(nd);
+	if (p->pl)
+		phylink_start(p->pl);	/* sfp TX enable; pcs_config sets the lane mode for the module in the cage */
 	return 0;
 }
 
@@ -1316,6 +1305,8 @@ static int us48_stop(struct net_device *nd)
 	struct us48_port *p = netdev_priv(nd);
 	struct us48_cmic *u = p->u;
 
+	if (p->pl)
+		phylink_stop(p->pl);
 	netif_stop_queue(nd);
 	mutex_lock(&u->link_lock);
 	p->open = false;
@@ -1440,6 +1431,8 @@ void us48_remove_common(struct us48_cmic *u)
 	int i;
 
 	schan_unit_set(u, false);
+	us48_led_unit_exit(u);
+	us48_pwr_xe_stop(u);
 	cancel_delayed_work_sync(&u->link_work);
 	/* ndo_stop of an open port stops the poll timer, NAPI and both channels. */
 	for (i = 0; i < u->nports; i++) {
@@ -1447,6 +1440,8 @@ void us48_remove_common(struct us48_cmic *u)
 			unregister_netdev(u->port[i]->ndev);
 			u->port[i]->registered = false;
 		}
+		if (u->port[i])
+			us48_xe_phylink_destroy(u->port[i]);
 	}
 	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
@@ -1614,7 +1609,6 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		p->rx_vid = p->vid;
 		p->learning = true;		/* bridge default BR_LEARNING */
 		p->fw_mode = -1;
-		p->media = -1;
 		u->port[i] = p;
 		SET_NETDEV_DEV(nd, dev);
 		nd->netdev_ops = &us48_netdev_ops;
@@ -1656,6 +1650,9 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		sbus(u, 0x0d, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
 	}
 
+	for (i = 0; i < u->nports; i++)
+		if (!u->port[i]->cfg->copper)
+			us48_xe_phylink_create(u->port[i]);	/* failure logged: that port has no link */
 	for (i = 0; i < u->nports; i++) {
 		ret = register_netdev(u->port[i]->ndev);
 		if (ret) {
@@ -1666,6 +1663,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		netdev_info(u->port[i]->ndev, "front %d (logical port %d), MAC %pM, VLAN %d\n", u->port[i]->cfg->front,
 			    u->port[i]->cfg->lport, u->port[i]->ndev->dev_addr, u->port[i]->vid);
 	}
+	us48_led_unit_init(u);
+	us48_pwr_xe_start(u);
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 	schan_unit_set(u, true);
 	if (tsc_log)
@@ -1679,6 +1678,7 @@ void us48_quiesce(struct us48_cmic *u)
 	int i;
 
 	schan_unit_set(u, false);
+	us48_pwr_xe_stop(u);
 	cancel_delayed_work_sync(&u->link_work);
 	hrtimer_cancel(&u->poll_timer);
 	WRITE_ONCE(u->quiesced, true);
@@ -1709,33 +1709,24 @@ EXPORT_SYMBOL_GPL(us48_unit0);
 
 static bool sfp10g;
 module_param(sfp10g, bool, 0444);
-MODULE_PARM_DESC(sfp10g, "1 = SFP 1 (front 51, unit 0 logical 26, TSC0 lane 0) as xe51 at 10G SFI; SDK caps the BCM53344 at 1G (test, #78)");
+MODULE_PARM_DESC(sfp10g, "deprecated, no effect: xe51/xe52 (SFP 1/2, TSC0 lanes 0/2) always exist (#143)");
 
 static int us48_cmic_plat_probe(struct platform_device *pdev)
 {
-	static const struct port_cfg xe51 = { .name = "xe51", .vid = 51, .front = 51, .lport = 26, .phys = 26, .lane = 0 };
-	const struct port_cfg *cfgs = unit0_cfgs;
 	const struct firmware *fw = NULL;
-	struct port_cfg *c;
 	struct us48_cmic *u = NULL;
 	void __iomem *cmic = devm_ioremap(&pdev->dev, UNIT0_CMIC_BASE, UNIT0_CMIC_LEN);
-	int n = ARRAY_SIZE(unit0_cfgs), ret;
+	int ret;
 
 	if (!cmic)
 		return -ENOMEM;
-	if (sfp10g) {
-		c = devm_kcalloc(&pdev->dev, n + 1, sizeof(*c), GFP_KERNEL);
-		if (!c)
-			return -ENOMEM;
-		memcpy(c, unit0_cfgs, sizeof(unit0_cfgs));
-		c[n++] = xe51;
-		cfgs = c;
-		if (request_firmware(&fw, "us48-tsc.bin", &pdev->dev))
-			fw = NULL;
-	}
+	if (sfp10g)
+		dev_warn(&pdev->dev, "sfp10g is deprecated and has no effect: xe51/xe52 are always created (#143)\n");
+	if (request_firmware(&fw, "us48-tsc.bin", &pdev->dev))
+		fw = NULL;		/* us48_tsc_init logs it: xe51/xe52 stay down */
 	ret = us48_chip_cold_init(&pdev->dev, cmic, NULL, NULL, 0);
-	ret = ret ?: us48_probe_common(&pdev->dev, &pdev->dev, cmic, NULL, NULL, cfgs, n, 0, fw, sfp10g ? us48_tsc_init : NULL,
-				       &u);
+	ret = ret ?: us48_probe_common(&pdev->dev, &pdev->dev, cmic, NULL, NULL, unit0_cfgs, ARRAY_SIZE(unit0_cfgs), 0, fw,
+				       us48_tsc_init, &u);
 	release_firmware(fw);
 	if (!ret) {
 		platform_set_drvdata(pdev, u);
@@ -1765,18 +1756,25 @@ static int __init us48_cmic_init(void)
 {
 	int ret = us48_sw_init();	/* unit 1 (us48_cmic_xe.ko) ports use it too */
 
-	if (ret || !unit0)
+	if (ret)
 		return ret;
-	ret = platform_driver_register(&us48_cmic_plat_driver);
+	ret = us48_led_init();
 	if (ret)
 		goto err_sw;
+	if (!unit0)
+		return 0;
+	ret = platform_driver_register(&us48_cmic_plat_driver);
+	if (ret)
+		goto err_led;
 	unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
 	if (IS_ERR(unit0_pdev)) {
 		ret = PTR_ERR(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
-		goto err_sw;
+		goto err_led;
 	}
 	return 0;
+err_led:
+	us48_led_exit();
 err_sw:
 	us48_sw_exit();
 	return ret;
@@ -1788,6 +1786,7 @@ static void __exit us48_cmic_exit(void)
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
+	us48_led_exit();
 	us48_sw_exit();
 }
 

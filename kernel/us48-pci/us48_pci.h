@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * us48_pci: PCI owner of the second chip (BCM53346, unit 1, PCIe 0000:01:00.0) and auxiliary bus parent.
- * Aux devices (names us48_pci.<x>.0): a2 (remoteproc), cmic (netdev), clk (stub), bustest (#80), pvtmon + gpio (#19).
+ * Aux devices (names us48_pci.<x>.0): a2 (remoteproc), cmic (netdev), clk (stub), bustest (#80), pvtmon + gpio (#19),
+ * cca-gpio (#21).
  * Facts + unknowns (C/I): docs/pci-layer.md, design: docs/a2-design.md.
  */
 #ifndef US48_PCI_H
@@ -21,6 +22,7 @@ struct us48_pci;
 #define US48_PCI_AUX_BUSTEST	"bustest"
 #define US48_PCI_AUX_PVTMON	"pvtmon"	/* DT child "pvtmon" of the endpoint node is the aux device's of_node */
 #define US48_PCI_AUX_GPIO	"gpio"		/* DT child "gpio" */
+#define US48_PCI_AUX_CCA	"cca-gpio"	/* DT child "cca-gpio": ChipcommonA GPIO inputs (SFP presence, #21) */
 /* aux driver id_table names: KBUILD_MODNAME.<name> */
 #define US48_PCI_AUX_ID(n)	"us48_pci." n
 

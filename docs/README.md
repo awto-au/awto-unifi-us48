@@ -53,6 +53,8 @@
 
 - [board.md](board.md): board peripherals from stock static RE
 - [fan.md](fan.md): fan control and the quiet rule
+- [leds.md](leds.md): system LED, reset button, LEDUP port LEDs (driver, sysfs, board test)
+- [ledup-stock.md](ledup-stock.md): stock LEDUP program, analysed; chain format source
 - [poe.md](poe.md): PoE (BCM59111): stock sequence and a safe Linux sequence
 - [kernel-pse.md](kernel-pse.md): stock kernel PSE platform driver, board code, gpiodev
 - [selftest.md](selftest.md): boot self-test `us48-selftest`

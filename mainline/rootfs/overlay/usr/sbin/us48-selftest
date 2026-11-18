@@ -178,11 +178,11 @@ for p in $NET_MGMT; do
 		res FAIL unit0-$p "copper_ready $(rd "$nd/copper_ready") block_ready $(rd "$nd/block_ready")"
 	fi
 done
-for p in $NET_SFP; do
+for p in $NET_SFP; do	# xe49/xe50 unit 1, xe51/xe52 unit 0 (#143)
 	if [ -e "$R/sys/class/net/$p" ]; then
-		res PASS unit1-$p "present, operstate $(rd "$R/sys/class/net/$p/operstate")"
+		res PASS sfp-$p "present, operstate $(rd "$R/sys/class/net/$p/operstate")"
 	else
-		res FAIL unit1-$p "netdev missing"
+		res FAIL sfp-$p "netdev missing"
 	fi
 done
 for p in $NET_PROBE; do	# not opened at boot: copper_ready 0 is normal, only the netdev is required

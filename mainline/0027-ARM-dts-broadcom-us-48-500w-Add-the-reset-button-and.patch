@@ -1,0 +1,91 @@
+From 67253b5d81cad28158fe17b73b4c01bce0472026 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Thu, 19 Nov 2026 01:54:51 +1100
+Subject: [PATCH 27/27] ARM: dts: broadcom: us-48-500w: Add the reset button
+ and system LED
+
+Name the ChipcommonA GPIO lines. The recessed reset button on GPIO 11
+(low while pressed) is a polled key: the ChipcommonA interrupt is shared
+with the UARTs. The white/blue system LED is on GPIOs 6/7, driven high
+for on; white blinks while booting like the vendor firmware, blue shows
+a panic.
+
+Signed-off-by: TODO
+---
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 42 ++++++++++++++++++-
+ 1 file changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 73244d359..0032df537 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -9,6 +9,8 @@
+ /dts-v1/;
+ 
+ #include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
+ 
+ #include "bcm-hr2.dtsi"
+ 
+@@ -79,6 +81,41 @@ reboot {
+ 		value = <0x0>;
+ 	};
+ 
++	/* Recessed reset button, low = pressed; polled (the CCA IRQ is shared with the UARTs) */
++	keys {
++		compatible = "gpio-keys-polled";
++		poll-interval = <20>;
++
++		button-reset {
++			label = "reset";
++			linux,code = <KEY_RESTART>;
++			gpios = <&cca0 11 GPIO_ACTIVE_LOW>;
++		};
++	};
++
++	/*
++	 * System LED: high = on (vendor gpiodev), the vendor boot blinks pin 6.
++	 * Colours from the UniFi LED states (flashing white = booting).
++	 */
++	leds {
++		compatible = "gpio-leds";
++
++		led-0 {
++			function = LED_FUNCTION_STATUS;
++			color = <LED_COLOR_ID_WHITE>;
++			gpios = <&cca0 6 GPIO_ACTIVE_HIGH>;
++			linux,default-trigger = "timer";
++		};
++
++		led-1 {
++			function = LED_FUNCTION_STATUS;
++			color = <LED_COLOR_ID_BLUE>;
++			gpios = <&cca0 7 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++			panic-indicator;
++		};
++	};
++
+ 	/* CMIC of the BCM53344 (unit 0): MSPI board IO, GP pins and the die temperature sensor, all out of tree (kernel/us48-*) */
+ 	mspi: spi@48001500 {
+ 		compatible = "ubnt,us48-cmic-mspi";
+@@ -464,7 +501,7 @@ dmu: syscon@3f000 {
+ 	};
+ };
+ 
+-/* ChipcommonA GPIO inputs (out of tree, kernel/us48-cca-gpio): read only, outputs and IRQs are not driven */
++/* ChipcommonA GPIO (kernel/us48-cca-gpio): inputs; outputs only the system LED pins 6/7 */
+ &{/axi@18000000} {
+ 	cca0: gpio@60 {
+ 		compatible = "ubnt,us48-cca-gpio";
+@@ -472,6 +509,9 @@ cca0: gpio@60 {
+ 		gpio-controller;
+ 		#gpio-cells = <2>;
+ 		ngpios = <12>;
++		gpio-line-names = "pse-alarm", "pse-card1", "sfp51-present", "sfp52-present",
++				  "", "", "led-white", "led-blue",
++				  "pse-card0", "pse-reset", "", "reset-button";
+ 	};
+ };
+ 
