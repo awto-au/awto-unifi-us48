@@ -19,6 +19,7 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|stp|mgmt|all> [--apply]
   (1 s windows) on 2 samples in a row, or (stp) both ports forwarding. Board side: busybox loop, 1 s steps, same pps limit,
   deadman 40 s -> bridges + holder removed, reason in /tmp/swd/guard.
 - Timers: STP fd 2 s, hello 1 s, max_age 6 s (kernel minimum). Settle limit 1.25 x (2 fd + hello) = 6.25 s; expiry = FAIL.
+  bpdu uses fd 6 s: roots must agree while both ports listen (HW SP_TREE 1); GPORT MIB + netdev counters of a 4 s window.
 - Temps before/after each step (stop: die >= 108 C, LM75 >= 78 C). Exit 0 pass, 1 fail, 2 usage/precondition.
 - Not testable with busybox (no iproute2 `bridge`): static FDB add/del, `bridge fdb show` self entries (ndo_fdb_dump).
 - Log: tmp/logs/switchdev_test.log
@@ -45,9 +46,11 @@ IPIPE, EPIPE = 10, 11
 # hwdb/board/ports.toml (unit 0): front 8 = lport 9, front 9 = lport 10, front 17 = lport 18; private VLAN 100 + front
 LP = {"ge8": 9, "ge9": 10, "ge17": 18}
 PVID = {"ge8": 108, "ge9": 109, "ge17": 117}
+MIB = {"ge8": (2, 0), "ge17": (4, 0)}    # GPORT S-channel block, lane (asic_fwd_test.py PEER/TEST)
 MAC_GE17 = "02:75:73:34:38:11"           # driver: 02:75:73:34:38:<front>
 FD_CS, HELLO_CS, MAXAGE_CS = 200, 100, 600   # kernel minimum with STP on, centiseconds
 SETTLE_S = 1.25 * (2 * FD_CS / 100 + HELLO_CS / 100)
+BPDU_FD_CS = 600        # bpdu step: 6 s listening = a 4 s counter window (~4 hellos per port) inside HW SP_TREE 1
 HOLD_S = 5.0
 PPS_LIMIT = 2000
 CPU_LIMIT = 90.0
@@ -101,6 +104,8 @@ class Board:
     def __init__(self, apply: bool):
         self.apply = apply
         self.failed = 0
+        self.pt0: dict = {}
+        self.listen: tuple | None = None    # bpdu listening window (s, MIB deltas, netdev deltas)
 
     def sh(self, cmd: str, check: bool = True, quiet: bool = False, allow_ge1: bool = False) -> str:
         if re.search(r"\bge1\b", cmd) and not allow_ge1:
@@ -181,7 +186,7 @@ def thermal(b: Board, when: str) -> None:
 def snapshot(b: Board) -> list[str]:
     out = b.sh("; ".join(f"echo \"link {p} $(ip -o link show {p} | grep -c '[<,]UP[,>]') master=$(readlink "
                          f"/sys/class/net/{p}/master)\"; ip -o addr show dev {p} | sed 's/^/addr /'" for p in LP), quiet=True)
-    return sorted(re.sub(r"\s+valid_lft.*", "", ln).strip() for ln in out.splitlines() if ln.strip())
+    return sorted(re.sub(r"\s+valid_lft.*", "", ln).replace(" tentative", "").strip() for ln in out.splitlines() if ln.strip())
 
 
 def offload_info(b: Board, br: str) -> tuple[int, int]:
@@ -193,6 +198,16 @@ def offload_info(b: Board, br: str) -> tuple[int, int]:
     if not m:
         raise Fail(f"no 'offloaded to {br}' line in dmesg: {out!r}")
     return int(m.group(1)), int(m.group(2))
+
+
+def mib(b: Board) -> dict:
+    """GPORT GRPKT (0x1b00) / GTPKT (0x3800) | lane, as asic_fwd_test.py counter_ops."""
+    if not b.apply:
+        return {}
+    ops = [(0, "rreg", blk, off | ln, 1, None) for blk, ln in MIB.values() for off in (0x1b00, 0x3800)]
+    res = _board.schan_batch(ops)
+    names = [f"{p} {c}" for p in MIB for c in ("GRPKT", "GTPKT")]
+    return {n: r["data"][0] if r["status"] == "ok" else -1 for n, r in zip(names, res)}
 
 
 def stg_state(b: Board, stg: int, port: str) -> int:
@@ -222,6 +237,7 @@ class Sampler:
         self.q: queue.Queue = queue.Queue()
         self.hist: list[dict] = []
         self.hot = 0
+        self.grace = 0    # samples without the CPU guard (pps guard stays): S-channel MIB reads, bpdu only (no loop)
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
@@ -253,6 +269,9 @@ class Sampler:
             pps, _ = rates(self.hist[-2], s)
             _, cpu = rates(self.hist[-3] if len(self.hist) > 2 else self.hist[-2], s)
             self.hot = self.hot + 1 if cpu > CPU_LIMIT else 0
+            if self.grace > 0:
+                self.grace -= 1
+                self.hot = 0
             if pps > PPS_LIMIT or self.hot >= 2:
                 raise Fail(f"storm guard: {pps:.0f} pps, CPU {cpu:.0f} % x{self.hot}")
         if s["guard"] or not s["guard_alive"]:
@@ -289,7 +308,8 @@ def cleanup_cmd() -> str:
     root ns when its namespace dies; it is also moved back first)."""
     brs = "; ".join(f"if [ -d /sys/class/net/{x} ]; then ip link set {x} down; brctl delbr {x}; fi" for x in BRIDGES)
     return (f"{brs}; if [ -e {STATE}/A.pid ]; then nsenter -t $(cat {STATE}/A.pid) -n sh -c 'ip addr flush dev ge17; "
-            f"ip link set ge17 netns 1' 2>/dev/null; kill $(cat {STATE}/A.pid) 2>/dev/null; rm -f {STATE}/A.pid; fi")
+            f"ip link set ge17 netns 1' 2>/dev/null; kill $(cat {STATE}/A.pid) 2>/dev/null; rm -f {STATE}/A.pid; "
+            f"ip link set ge17 up; fi")    # fdb precondition: ge17 was up (carrier) before the move
 
 
 def guard_start(b: Board, ports: tuple, deadman_s: int = DEADMAN_S) -> None:
@@ -316,11 +336,9 @@ def verify_restored(b: Board, name: str, vids: list[int], before: list[str], mac
         e, f = b.rmem("VLAN_TAB", v)
         if field(e, *f["VALID"]):
             bad.append(f"VLAN_TAB[{v}] still valid")
-    for p, lp in LP.items():
-        e, f = b.rmem("PORT_TAB", lp)
-        vid, cml = field(e, *f["PORT_VID"]), field(e, *f["CML_FLAGS_NEW"])
-        if vid != PVID[p] or cml:
-            bad.append(f"PORT_TAB[{lp}] {p} PORT_VID {vid} CML {cml}")
+    for p, (vid, cml) in pt_read(b).items():
+        if (vid, cml) not in ((PVID[p], 0), b.pt0.get(p)):
+            bad.append(f"PORT_TAB[{LP[p]}] {p} PORT_VID {vid} CML {cml} (before {b.pt0.get(p)})")
     for v, mac in macs:
         if b.l2_lookup(v, mac):
             bad.append(f"L2 {v} {mac} still present")
@@ -330,12 +348,22 @@ def verify_restored(b: Board, name: str, vids: list[int], before: list[str], mac
     b.check(f"{name} teardown", not bad, "; ".join(bad) or "ASIC VLANs invalid, PORT_TAB private + CML 0, L2 clean, ports = pre-test")
 
 
+def pt_read(b: Board) -> dict:
+    """{port: (PORT_VID, CML_FLAGS_NEW)}"""
+    out = {}
+    for p, lp in LP.items():
+        e, f = b.rmem("PORT_TAB", lp)
+        out[p] = (field(e, *f["PORT_VID"]), field(e, *f["CML_FLAGS_NEW"]))
+    return out
+
+
 def precondition(b: Board, ports: tuple) -> None:
     if not b.apply:
         return
+    b.pt0 = pt_read(b)    # a never-opened copper port keeps the init PORT_TAB (VID 1) until copper_enable
     out = b.sh("; ".join([f"for x in {' '.join(BRIDGES)}; do test -d /sys/class/net/$x && echo exists $x; done"] +
                          [f"echo {p} $(cat /sys/class/net/{p}/carrier 2>/dev/null) $(test -e /sys/class/net/{p}/master && "
-                          f"echo enslaved)" for p in ports] + [f"test -e {STATE}/A.pid && echo holder"]), quiet=True)
+                          f"echo enslaved)" for p in ports] + [f"test -e {STATE}/A.pid && echo holder", "true"]), quiet=True)
     if "exists" in out or "enslaved" in out or "holder" in out:
         raise Fail(f"precondition: no test bridge, no enslaved port, no holder: {out!r}")
     for p in ports:
@@ -343,10 +371,10 @@ def precondition(b: Board, ports: tuple) -> None:
             raise Fail(f"precondition: {p} carrier 1: {out!r}")
 
 
-def br_make(b: Board, br: str, stp: bool) -> None:
+def br_make(b: Board, br: str, stp: bool, fd_cs: int = FD_CS) -> None:
     cmd = f"brctl addbr {br}"
     if stp:
-        cmd += (f"; echo 1 > /sys/class/net/{br}/bridge/stp_state; echo {FD_CS} > /sys/class/net/{br}/bridge/forward_delay; "
+        cmd += (f"; echo 1 > /sys/class/net/{br}/bridge/stp_state; echo {fd_cs} > /sys/class/net/{br}/bridge/forward_delay; "
                 f"echo {HELLO_CS} > /sys/class/net/{br}/bridge/hello_time; echo {MAXAGE_CS} > /sys/class/net/{br}/bridge/max_age")
     b.sh(cmd + f"; ip link set {br} up")
 
@@ -372,10 +400,13 @@ def preflight(b: Board) -> None:
     log(f"  L2_AGE_TIMER {v:#x}: AGE_ENA {field([v & 0xffffffff], *f['AGE_ENA'])} AGE_VAL {field([v & 0xffffffff], *f['AGE_VAL'])} s")
     v, f = b.rreg("ING_CONFIG_64")
     log(f"  ING_CONFIG_64 {v:#x}: SVL_ENABLE {(v >> f['SVL_ENABLE'][0]) & 1}")
+    up = b.sh("; ".join(f"echo {p} $(ip -o link show {p} | grep -c '[<,]UP[,>]')" for p in LP), quiet=True)
     for p, lp in LP.items():
         e, f = b.rmem("PORT_TAB", lp)
-        b.check(f"PORT_TAB[{lp}] {p} private", field(e, *f["PORT_VID"]) == PVID[p] and not field(e, *f["CML_FLAGS_NEW"]),
-                f"PORT_VID {field(e, *f['PORT_VID'])} CML {field(e, *f['CML_FLAGS_NEW'])}/{field(e, *f['CML_FLAGS_MOVE'])}")
+        vid, cml = field(e, *f["PORT_VID"]), field(e, *f["CML_FLAGS_NEW"])
+        unopened = f"{p} 0" in up.splitlines() and vid == 1    # copper_enable sets the private VLAN at the first open
+        b.check(f"PORT_TAB[{lp}] {p} private", (vid == PVID[p] and not cml) or unopened,
+                f"PORT_VID {vid} CML {cml}/{field(e, *f['CML_FLAGS_MOVE'])}" + (" (never opened: init PORT_TAB)" if unopened else ""))
 
 
 def step_bpdu(b: Board) -> bool:
@@ -387,8 +418,8 @@ def step_bpdu(b: Board) -> bool:
     vids, sm, ok = [], None, False
     try:
         guard_start(b, ports)
-        br_make(b, "brA", True)
-        br_make(b, "brB", True)
+        br_make(b, "brA", True, BPDU_FD_CS)
+        br_make(b, "brB", True, BPDU_FD_CS)
         if b.apply:
             sm = Sampler(ports)
             sm.next()
@@ -397,16 +428,36 @@ def step_bpdu(b: Board) -> bool:
         vids = [va, vb]
         if not b.apply:
             return True
-        t0 = sm.hist[-1]["t"]
+        sm.grace = 4
+        es, f = b.rmems("L2_USER_ENTRY", range(2))
+        for i, e in enumerate(es):
+            log(f"  L2_USER_ENTRY[{i}] VALID {field(e, *f['VALID'])} MAC {field(e, *f['MAC_ADDR']):012x} MASK "
+                f"{field(e, *f['MASK']):018x} CPU {field(e, *f['CPU'])} BPDU {field(e, *f['BPDU'])} words "
+                + " ".join("%08x" % x for x in e))
+        t0, agree, win = sm.hist[-1]["t"], None, []
+        settle = 1.25 * (2 * BPDU_FD_CS / 100 + HELLO_CS / 100)
         while True:
             s = sm.next()
+            # listening window: counters at ~1 s and ~5 s (fd 6 s), both ports listening (HW SP_TREE 1)
+            if len(win) < 2 and s["t"] - t0 >= (1.0, 5.0)[len(win)] and all(v == "1" for v in s["state"].values()):
+                sm.grace = 4    # one ssh with S-channel reads: dropbear + schan load, not a storm
+                win.append((s, mib(b)))
+                if len(win) == 2:
+                    (sa_, ma), (sb_, mb) = win
+                    dm = {k: mb[k] - ma[k] for k in ma}
+                    dn = {p: (sb_["pk"][p][0] - sa_["pk"][p][0], sb_["pk"][p][1] - sa_["pk"][p][1]) for p in ports}
+                    b.listen = (sb_["t"] - sa_["t"], dm, dn)
+                    log(f"  listening window {sb_['t'] - sa_['t']:.1f} s: MIB {dm}, netdev (rx, tx) {dn}")
             roots = b.sh("cat /sys/class/net/brA/bridge/root_id /sys/class/net/brB/bridge/root_id", quiet=True).split()
-            if len(set(roots)) == 1 and all(v == "3" for v in s["state"].values()):
+            if agree is None and len(set(roots)) == 1:
+                agree = (s["t"] - t0, dict(s["state"]))
+                log(f"  roots agree {agree[0]:.1f} s after the joins, port states {agree[1]} (1 = listening = SP_TREE 1)")
+            if agree and all(v == "3" for v in s["state"].values()):
                 log(f"  root agreed {roots[0]}, both forwarding, {s['t'] - t0:.1f} s after the joins")
                 break
-            if s["t"] - t0 > SETTLE_S:
+            if s["t"] - t0 > settle:
                 b.check("bpdu root agreement", False, f"roots {roots} states {s['state']} after {s['t'] - t0:.1f} s "
-                        f"(limit {SETTLE_S:.2f} s): BPDUs not reaching the CPU through the ASIC")
+                        f"(limit {settle:.2f} s): BPDUs not reaching the CPU through the ASIC")
                 return False
         st = (stg_state(b, sa, "ge8"), stg_state(b, sb, "ge17"))
         e, f = b.rmem("VLAN_TAB", va)
@@ -414,6 +465,8 @@ def step_bpdu(b: Board) -> bool:
         e, f = b.rmem("VLAN_TAB", vb)
         bm_b = field(e, *f["PORT_BITMAP"])
         ok = b.check("bpdu root agreement", True, f"brA VLAN {va} STG {sa}, brB VLAN {vb} STG {sb}")
+        ok &= b.check("bpdu agreement in HW blocking (listening)", all(v == "1" for v in agree[1].values()),
+                      f"states at agreement {agree[1]}, {agree[0]:.1f} s (forward_delay {BPDU_FD_CS / 100:.0f} s)")
         ok &= b.check("bpdu STG forwarding", st == (3, 3), f"SP_TREE ge8 {st[0]} ge17 {st[1]}")
         ok &= b.check("bpdu VLAN bitmaps", bm_a == 1 | 1 << LP["ge8"] and bm_b == 1 | 1 << LP["ge17"], f"{bm_a:#x} {bm_b:#x}")
         return ok
@@ -446,7 +499,8 @@ def step_fdb(b: Board) -> None:
             sm.next()
         # ge17 went down/up for the netns move: wait for carrier (both cable ends), samples keep the guards running
         while sm:
-            c = b.sh(f"{ns} cat /sys/class/net/ge17/carrier; cat /sys/class/net/ge8/carrier", check=False, quiet=True).split()
+            # /sys shows the root netns only: carrier inside the netns from ip LOWER_UP
+            c = b.sh(f"{ns} ip -o link show ge17 | grep -c LOWER_UP; cat /sys/class/net/ge8/carrier", check=False, quiet=True).split()
             el = sm.next()["t"] - sm.hist[0]["t"]
             if c == ["1", "1"]:
                 log(f"  carrier ge17 (netns) + ge8 after {el:.1f} s")
@@ -487,7 +541,7 @@ def step_fdb(b: Board) -> None:
         b.sh("echo 1 > /sys/class/net/ge8/brport/learning")
         e, f = b.rmem("PORT_TAB", LP["ge8"])
         b.check("fdb learning on again", field(e, *f["CML_FLAGS_NEW"]) == 8)
-        rc_out = b.sh("echo 0 > /sys/class/net/ge8/brport/flood 2>&1; echo rc=$?; cat /sys/class/net/ge8/brport/flood",
+        rc_out = b.sh("echo 0 > /sys/class/net/ge8/brport/unicast_flood 2>&1; echo rc=$?; cat /sys/class/net/ge8/brport/unicast_flood",
                       check=False, quiet=True)
         b.check("fdb flood off refused", "rc=0" not in rc_out and rc_out.splitlines()[-1:] == ["1"], rc_out.replace("\n", " | "))
         b.sh("echo 1000 > /sys/class/net/brsw/bridge/ageing_time")

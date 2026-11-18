@@ -320,16 +320,45 @@ static void port_flush(struct us48_port *p, struct us48_br *b, bool all)
 }
 
 /*
- * BPDU trap (SDK l2cache.c bcm_esw_l2_cache_init: 01:80:c2:00:00:00, mask all ones, CPU | BPDU, dest CMIC port, own modid):
- * BPDU marks the frame as a BPDU, which the blocking STG state still passes to the CPU. Reused if already present.
+ * TCAM X/Y encoding of KEY 1:69 / MASK 70:69 (HR2 xy_tcam + xy_tcam_direct, 40 nm): K0 = KEY & MASK in KEY,
+ * K1 = KEY | ~MASK in MASK (SDK soc/common/mem.c _soc_mem_tcam_dm_to_xy). Raw data/mask: unmasked bits must be 0.
  */
+static void l2u_dm_to_xy(u32 *e)
+{
+	int i;
+
+	for (i = 0; i < 69; i++) {
+		bool k = ent_get(e, FLD(1 + i, 1)), m = ent_get(e, FLD(70 + i, 1));
+
+		ent_put(e, FLD(1 + i, 1), k && m);
+		ent_put(e, FLD(70 + i, 1), k || !m);
+	}
+}
+
+/* BPDU trap entry, X/Y encoded: SDK l2cache.c bcm_esw_l2_cache_init (01:80:c2:00:00:00/48, CPU | BPDU, CMIC port). */
+static void l2u_bpdu_entry(struct us48_cmic *u, u32 *e)
+{
+	memset(e, 0, L2U_WORDS * sizeof(u32));
+	ent_put(e, L2U_VALID, 1);
+	ent_put(e, L2U_MAC, BPDU_MAC);
+	ent_put(e, L2U_MASK_MAC, GENMASK_ULL(47, 0));
+	ent_put(e, L2U_MASK_KEY_TYPE, 1);
+	l2u_dm_to_xy(e);
+	ent_put(e, L2U_CPU, 1);
+	ent_put(e, L2U_PORT_NUM, 0);
+	ent_put(e, L2U_MODULE_ID, u->modid);
+	ent_put(e, L2U_BPDU, 1);
+}
+
+/* BPDU marks the frame as a BPDU, which the blocking STG state still passes to the CPU. Reused if already present. */
 static int l2u_bpdu_get(struct us48_cmic *u)
 {
-	u32 e[L2U_WORDS];
+	u32 e[L2U_WORDS], want[L2U_WORDS];
 	int i, ret, free_idx = -1;
 
 	if (u->l2u_bpdu >= 0)
 		return 0;
+	l2u_bpdu_entry(u, want);
 	for (i = 0; i < L2U_ENTRIES; i++) {
 		ret = mrd(u, BLK_IPIPE, L2_USER_ENTRY(i), e, L2U_WORDS);
 		if (ret)
@@ -339,8 +368,7 @@ static int l2u_bpdu_get(struct us48_cmic *u)
 				free_idx = i;
 			continue;
 		}
-		if (ent_get(e, L2U_MAC) == BPDU_MAC && ent_get(e, L2U_MASK_MAC) == GENMASK_ULL(47, 0) && ent_get(e, L2U_BPDU) &&
-		    ent_get(e, L2U_CPU)) {
+		if (!memcmp(e, want, sizeof(e))) {
 			u->l2u_bpdu = i;
 			u->l2u_ours = false;
 			dev_info(u->dev, "switchdev: BPDU trap present at L2_USER_ENTRY[%d]\n", i);
@@ -351,16 +379,7 @@ static int l2u_bpdu_get(struct us48_cmic *u)
 		dev_err(u->dev, "switchdev: no free L2_USER_ENTRY for the BPDU trap\n");
 		return -ENOSPC;
 	}
-	memset(e, 0, sizeof(e));
-	ent_put(e, L2U_VALID, 1);
-	ent_put(e, L2U_MAC, BPDU_MAC);
-	ent_put(e, L2U_MASK_MAC, GENMASK_ULL(47, 0));
-	ent_put(e, L2U_MASK_KEY_TYPE, 1);
-	ent_put(e, L2U_CPU, 1);
-	ent_put(e, L2U_PORT_NUM, 0);
-	ent_put(e, L2U_MODULE_ID, u->modid);
-	ent_put(e, L2U_BPDU, 1);
-	ret = mwr(u, BLK_IPIPE, L2_USER_ENTRY(free_idx), e, L2U_WORDS);
+	ret = mwr(u, BLK_IPIPE, L2_USER_ENTRY(free_idx), want, L2U_WORDS);
 	dev_info(u->dev, "switchdev: BPDU trap -> L2_USER_ENTRY[%d]%s\n", free_idx, ret ? ": WRITE FAILED" : "");
 	if (!ret) {
 		u->l2u_bpdu = free_idx;
@@ -624,6 +643,30 @@ static int sw_stp_set(struct us48_port *p, u8 state)
 	return 0;
 }
 
+/* Only BR_LEARNING is offloaded: a flag change that differs from what the ASIC does (flood on, the rest off) is refused. */
+static int sw_pre_flags(const struct switchdev_brport_flags *f, struct netlink_ext_ack *extack)
+{
+	const unsigned long on = BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD;
+	unsigned long m = f->mask & ~BR_LEARNING;
+
+	if ((m & on & ~f->val) || (m & ~on & f->val)) {
+		NL_SET_ERR_MSG_MOD(extack, "only the learning flag is offloaded (the ASIC always floods)");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/* Atomic chain: the bridge sends PRE_BRIDGE_FLAGS with call_switchdev_notifiers (net/bridge/br_switchdev.c). */
+static int sw_attr_set_atomic(struct net_device *dev, const void *ctx, const struct switchdev_attr *attr,
+			      struct netlink_ext_ack *extack)
+{
+	struct us48_port *p = netdev_priv(dev);
+
+	if ((ctx && ctx != p) || !p->br || attr->id != SWITCHDEV_ATTR_ID_PORT_PRE_BRIDGE_FLAGS)
+		return -EOPNOTSUPP;
+	return sw_pre_flags(&attr->u.brport_flags, extack);
+}
+
 static int sw_attr_set(struct net_device *dev, const void *ctx, const struct switchdev_attr *attr,
 		       struct netlink_ext_ack *extack)
 {
@@ -635,11 +678,7 @@ static int sw_attr_set(struct net_device *dev, const void *ctx, const struct swi
 	case SWITCHDEV_ATTR_ID_PORT_STP_STATE:
 		return sw_stp_set(p, attr->u.stp_state);
 	case SWITCHDEV_ATTR_ID_PORT_PRE_BRIDGE_FLAGS:
-		if (attr->u.brport_flags.mask & ~BR_LEARNING) {
-			NL_SET_ERR_MSG_MOD(extack, "only the learning flag is offloaded (the ASIC always floods)");
-			return -EINVAL;
-		}
-		return 0;
+		return sw_pre_flags(&attr->u.brport_flags, extack);
 	case SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS:
 		if (!(attr->u.brport_flags.mask & BR_LEARNING))
 			return 0;
@@ -738,6 +777,8 @@ static int sw_atomic_event(struct notifier_block *nb, unsigned long event, void 
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		return notifier_from_errno(switchdev_handle_fdb_event_to_device(dev, event, ptr, us48_is_port,
 										 sw_foreign, sw_fdb_mod));
+	case SWITCHDEV_PORT_ATTR_SET:
+		return notifier_from_errno(switchdev_handle_port_attr_set(dev, ptr, us48_is_port, sw_attr_set_atomic));
 	}
 	return NOTIFY_DONE;
 }

@@ -4,7 +4,7 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 
 - Decision (switch-model.md stage 4): switchdev in the CMIC driver, not DSA. The CPU port is a DMA ring per unit, not an Ethernet MAC a DSA conduit needs; both units already have their own netdevs.
 - Stage 1 (this): VLAN-unaware bridges, one unit per hardware domain. Stage 2: HiGig cross-unit offload, VLAN-aware bridges, HW-learned FDB notifications, MDB.
-- Not board-tested yet: every C/I tag below is from source, not a run.
+- Board-tested 2026-11-18 on unit 0 (`switchdev_test.py` all + mgmt, results in #57); unit 1 only the L2X walk timing.
 
 ## Model
 
@@ -39,6 +39,7 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 
 - L2 key: `ING_CONFIG_64.SVL_ENABLE` (bit 14) is 1 in stock (0x2080f042, trace line 1587); #57 found unit 0 keyed by FID (0) and unit 1 by VLAN. FID_ID = vid makes both keys = vid. C for the rule, I for SVL on our cold init.
 - L2_USER_ENTRY: not in the stock S-channel capture (capture partial, or written by table DMA). The driver reuses a matching valid entry, else writes the first free index, and removes it with the unit's last bridge.
+- L2_USER_ENTRY is a TCAM stored X/Y: HR2 has `soc_feature_xy_tcam` + `xy_tcam_direct` (SDK `soc/common/feature.c` bcm56150), so `soc_mem_write` encodes KEY = K & M, MASK = K | ~M (40 nm, `soc/common/mem.c` `_soc_mem_tcam_dm_to_xy`). Written raw (data/mask) the unmasked VLAN_ID bits read as "must be 0" and the trap never matched in a bridge VLAN (#57 board run). The driver encodes (`l2u_dm_to_xy`).
 
 ## Sequences (rtnl held throughout; S-channel ops under `schan_seq`)
 
@@ -48,7 +49,7 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 - STP attr: STG_TAB + EGR_VLAN_STG; leaving learning/forwarding -> flush the port's dynamic L2X entries.
 - Leave: unoffload at PRECHANGEUPPER (unlink, as DSA); at CHANGEUPPER PORT_TAB back to private VID + CML 0, out of the bitmaps, STG 0, flush all (static too) L2X entries of the port in the VLAN. Last port: host entries deleted, VLAN_TAB/EGR_VLAN/STG zeroed, BPDU trap removed with the last bridge.
 - Copper port joined before its first `ip link set up`: `copper_enable` rewrites PORT_TAB; `us48_sw_port_reapply` puts the bridge VLAN back.
-- Brport flags: only BR_LEARNING (CML 8 / 0 + flush). flood / mcast_flood / bcast_flood changes: -EINVAL (the VLAN always floods).
+- Brport flags: only BR_LEARNING (CML 8 / 0 + flush). Flood flags off, or hairpin/isolated/locked/MAB/mcast-to-unicast on: -EINVAL (the VLAN always floods). The refusal sits on the atomic notifier: the bridge sends PRE_BRIDGE_FLAGS with `call_switchdev_notifiers` (`net/bridge/br_switchdev.c`).
 - FDB to device: atomic notifier -> ordered workqueue (rtnl): vid 0 only (VLAN-unaware; vid 1 entries are the same key), dynamically learned entries skipped, foreign ports skipped (stage 2). Port static entries reply `SWITCHDEV_FDB_OFFLOADED`.
 - L2X walk (flush, `ndo_fdb_dump`): 16384 index reads per walk per port, under rtnl. PPA (`PER_PORT_AGE_CONTROL`, stock writes 0x10000002 u0 line 19821, 0x1000005b u1 line 39646) is the HW alternative; not used: static-entry handling unknown.
 
@@ -60,8 +61,8 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 
 ## STP
 
-- BPDUs: L2_USER_ENTRY {01:80:c2:00:00:00/48, CPU, BPDU, dest CMIC port, own modid}. The BPDU bit lets the frame past a blocking STG state (SDK BCM_L2_CACHE_BPDU). Without it a blocking port hears no BPDU and goes forwarding after max_age: `switchdev_test.py bpdu` checks this with no loop before `stp` runs one.
-- CPU-sent BPDUs leave by the SOBMH module header (`us48_xmit`); egress STG on that path: open (I), checked by `stp` (the forwarding end's BPDUs must reach the blocking end).
+- BPDUs: L2_USER_ENTRY {01:80:c2:00:00:00/48, CPU, BPDU, dest CMIC port, own modid}, X/Y encoded. The BPDU bit lets the frame past a blocking STG state (SDK BCM_L2_CACHE_BPDU): C, `bpdu` step (roots agree 0.5 s after the joins, both ports SP_TREE 1). Without it a blocking port hears no BPDU and goes forwarding after max_age.
+- CPU-sent BPDUs leave by the SOBMH module header (`us48_xmit`): egress STG does not drop them, C (`bpdu` step: GTPKT counts the netdev TX of a listening port).
 - Not mapped: MST (`SWITCHDEV_ATTR_ID_PORT_MST_STATE`), MRP.
 
 ## Cross-unit bridges
@@ -81,10 +82,8 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 
 ## Open (#57)
 
-- L2_USER_ENTRY BPDU trap passes a blocking port (`bpdu` step).
-- Egress STG on CPU SOBMH TX (BPDU out of a blocking/disabled port).
-- CML 8 in the bridge VLAN: the old private-VLAN note "stock CML 8 drops unicast" (`port_tab_set`) vs the #57 learn run; `fdb` pings the bridge MAC through it.
-- L2X walk cost per op on unit 1 (PCIe S-channel) under rtnl; PPA static-entry behaviour.
+- Answered (board run in #57): BPDU trap passes listening/blocking; SOBMH TX not dropped by egress STG; CML 8 forwards unicast in the bridge VLAN (`fdb` ping).
+- L2X walk under rtnl: one per STP-leave/port-leave; unit 1 (PCIe) ~2x unit 0 (numbers in #57). PPA static-entry behaviour untested.
 - iproute2 `bridge` not in the rootfs: static FDB and `bridge fdb show` self entries untested.
 
 ## Board test (`scripts/switchdev_test.py`, dry-run unless `--apply`)
@@ -92,7 +91,7 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 | Step | Setup | Pass |
 |---|---|---|
 | preflight | read only | params Y/N; VLAN 4000-4007 free; PORT_TAB ge8/ge9/ge17 private, CML 0; logs L2_USER_ENTRY, L2_AGE_TIMER, SVL_ENABLE |
-| bpdu | brA{ge8}, brB{ge17}, STP on, kernel-minimum timers; two VLANs, no loop | same root_id on both within 6.25 s, both forwarding, STG 3/3, bitmaps {CPU, port} |
+| bpdu | brA{ge8}, brB{ge17}, STP on, forward_delay 6 s (4 s counter window in listening); two VLANs, no loop | same root_id while both ports listen (SP_TREE 1), both forwarding within 16.25 s, STG 3/3, bitmaps {CPU, port}; logs GRPKT/GTPKT + netdev rx/tx of the listening window |
 | fdb | brsw{ge8, ge9} STP off; ge17 in a netns = host A 10.48.30.2/24, brsw 10.48.30.1/24 | ping; VLAN_TAB/EGR_VLAN bitmap {0, 9, 10}, STG/FID; STG ge8 3, ge9 0; PORT_TAB VID + CML 8; L2 A on lport 9 dynamic; brsw MAC -> CPU static; learning off -> CML 0 + A flushed; flood off refused; ageing 10 s / 300 s in L2_AGE_TIMER |
 | stp | runs only after bpdu passes; brstp{ge8, ge17} = loop cable, STP on before the joins | one blocking (STG 1) one forwarding (STG 3); blocking port rx >= 1 BPDU/s; < 2000 pps while held 5 s; states stable |
 | mgmt | brmg + ge1 (named only here), 5 s deadman | join refused, ge1 has no master, dmesg "refused join" |
