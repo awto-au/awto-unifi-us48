@@ -2,10 +2,19 @@
 """switchdev_test — board test of the us48_cmic switchdev L2 offload, stage 1 (docs/switchdev.md, #57, #134). Unit 0;
 burst also unit 1.
 
-Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|stp|mgmt|all> [--apply]
-- Dry-run by default (prints every board command). all = preflight, bpdu, fdb, linkdown, burst, rate, stp. mgmt runs only when named.
-- preflight (read only): module params, ports, ASIC VLANs 4000-4007 free, L2_USER_ENTRY, L2_AGE_TIMER (both units = stock
-  0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE.
+Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|vlan|stp|mgmt|all> [--apply]
+- Dry-run by default (prints every board command). all = preflight, bpdu, fdb, linkdown, burst, rate, vlan, stp. mgmt runs only
+  when named.
+- preflight (read only): module params, ports, slot ASIC VLANs (hwdb VID_SLOT_BASE + 0-7) free, L2_USER_ENTRY, L2_AGE_TIMER
+  (both units = stock 0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE; logs PORT_TAB.EN_IFILTER, EGR_PORT.EN_EFILTER.
+- vlan (unit 0): brv{ge8, ge9} with vlan_filtering 1 before the joins, STP off; host A = ge17 in a netns (ge17 stays private).
+  ge8: VID 1 PVID untagged + 10 tagged; ge9: 10 + 20 tagged (no PVID); brv self VID 10 + brv.10. First, with no tagged frame
+  out yet: ge17's EN_IFILTER 1 read back, and tagged frames out ge8 (ge8.10, DA = brv MAC) must not reach ge17's CPU while
+  untagged ones do: a leak there would loop the cable. Then: ASIC VLAN/EGR_VLAN/PORT_TAB/STG read back, untagged + tagged
+  pings, A learned per VID (L2X + bridge), host entries per VID, static per VID, VID 20 from A dropped by ge8's ingress
+  filter (rx delta vs a VID 10 control), PVID 1 -> 10 moves untagged learning, reserved VID and a second VLAN-aware bridge
+  (ge10, no cable) refused, vlan_filtering 0 (slot VLAN, VIDs gone, VLAN 1 = snapshot) and 1 again. Teardown: VLAN 1 words,
+  EN_IFILTER and the private-STG states = snapshot.
 - bpdu: brA{ge8} + brB{ge17}, STP on (kernel-minimum timers): two ASIC VLANs, the cable joins them, no loop possible.
   Pass = both bridges agree on one root (BPDUs crossed the ASIC to the CPU in listening = HW blocking state), both ports
   forwarding, STG reads 3 for both. Without the BPDU trap each bridge stays its own root: safe fail.
@@ -25,7 +34,7 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|stp|mgmt|all> [
   joins. Pass = one port blocking (STG 1), the other forwarding (STG 3), BPDUs still reaching the blocking port, no storm.
 - mgmt: brmg + ge1 must be refused (EPERM). Board-side deadman deletes brmg after 5 s whatever happens.
 - Teardown after every step: bridges deleted, netns holder killed, ge17 back in the root ns; ASIC VLAN invalid, PORT_TAB
-  PORT_VID back to the private VLAN (108/109/117) with CML 0, test-learned L2 entries gone; port state = pre-test snapshot.
+  PORT_VID back to the private VLAN (hwdb pvid) with CML 0, test-learned L2 entries gone; port state = pre-test snapshot.
 - Storm guards (as stp_loop_test.py): host sampler every 0.5 s, abort at > 2000 pps (rx+tx, root-ns test ports), CPU > 90 %
   (1 s windows) on 2 samples in a row, or (stp) both ports forwarding. Board side: busybox loop, 1 s steps, same pps limit,
   deadman 40 s -> bridges + holder removed, reason in /tmp/swd/guard.
@@ -108,7 +117,18 @@ PING2_S = 2.0           # 2 echoes 0.5 s apart + 1 s reply wait = 1.5 s, 1.25x
 FDB_DEADMAN_S = 130     # fdb step ~55 s (20 s base + static 2 + probe 2 + ping 2 + ageing 26.3) x2
 BURST_DEADMAN_S = 90    # burst step ~40 s (setup 10 + probe 2 + burst/resync 4.4 + 3 fdb dumps 6 + 2 CPU windows 12) x2
 STATE = "/tmp/swd"
-BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg", "brbu", "brld")
+BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg", "brbu", "brld", "brv", "brv2")
+SLOT0 = _DB.vid_const("VID_SLOT_BASE")       # VLAN-unaware slot 0 ASIC VLAN (hwdb/board/vlan.toml)
+RSVD_MIN = _DB.vid_const("VID_RSVD_MIN")     # first driver-reserved VID
+VID_T, VID_X = 10, 20   # vlan step: VID 10 on ge8 + ge9 (tagged), VID 20 on ge9 only (ingress-filter probe on ge8)
+NET_TA, NET_TBR = "10.48.32.2", "10.48.32.1"     # VID 10: ge17.10 (netns) <-> brv.10
+MAC_PV = "02:75:73:34:38:b1"             # vlan step: untagged probe after the PVID change
+MAC_IF = "02:75:73:34:38:c0"             # vlan step: ingress-filter probe sources MAC_IF + i
+IF_N = 20               # probe frames per direction/VID; noise allowance below
+IF_NOISE = 4            # unrelated frames tolerated in a probe window (ARP/ND from the stack)
+IF_PPS = 1000           # paced: 20 frames in 20 ms, far below PPS_LIMIT
+VLAN_DEADMAN_S = 120    # vlan step ~60 s (setup 10 + carrier 5 + probes 4 + 4 pings 16 + fdb waits 5 + 2 toggles 14 + reads 6) x2
+VLAN_SUB = (VID_T, VID_X)                # 802.1Q subinterfaces of the netns host, deleted before the host moves back
 # burst step per unit: bridge ports (second one without cable), host port (netns), lports, private VIDs, dmesg device
 _DEV = {0: "us48_cmic_u0 us48_cmic_u0:", 1: "us48_pci.cmic.0:"}
 UNITS = {u: {"br": tuple(_names(g, g + 1)), "host": _DB.netdev(o),
@@ -191,12 +211,13 @@ class Board:
         e, f = self.rmems(name, [idx], unit)
         return e[0], f
 
-    def rreg(self, name: str, unit: int = 0) -> tuple[int, dict]:
+    def rreg(self, name: str, unit: int = 0, idx: int = 0, blk: int = IPIPE) -> tuple[int, dict]:
+        """Register name (+ port index idx for per-port registers, e.g. EGR_PORT | lport)."""
         a, f = reg(name)
         if not self.apply:
-            log(f"DRY read {name} unit {unit}")
+            log(f"DRY read {name}[{idx}] unit {unit}")
             return 0, f
-        r = _board.schan_batch([(unit, "rreg", IPIPE, a, 2, None)])[0]
+        r = _board.schan_batch([(unit, "rreg", blk, a | idx, 2, None)])[0]
         if r["status"] != "ok":
             raise Fail(f"read {name}: {r['line']}")
         return r["data"][0] | (r["data"][1] << 32 if len(r["data"]) > 1 else 0), f
@@ -244,7 +265,7 @@ def snapshot(b: Board, ports: tuple = tuple(LP)) -> list[str]:
 def offload_info(b: Board, br: str) -> tuple[int, int]:
     """ASIC VLAN + STG the driver logged for the last join of br (us48_cmic_sw.c 'offloaded to <br>')."""
     if not b.apply:
-        return 4000, 2
+        return SLOT0, 2
     out = b.sh(f"dmesg | grep 'switchdev: offloaded to {br}:' | tail -n 1", quiet=True)
     m = re.search(r"ASIC VLAN (\d+) STG (\d+)", out)
     if not m:
@@ -359,8 +380,9 @@ def cleanup_cmd(host: str = "ge17") -> str:
     """Board-side undo, shared by the guard and teardown: fdb monitor killed, bridges down + deleted, netns holder killed
     (the host port returns to the root ns when its namespace dies; it is also moved back first)."""
     brs = "; ".join(f"if [ -d /sys/class/net/{x} ]; then ip link set {x} down; brctl delbr {x}; fi" for x in BRIDGES)
-    return (f"kill $(cat {STATE}/mon.pid 2>/dev/null) 2>/dev/null; rm -f {STATE}/mon.pid; "
-            f"{brs}; if [ -e {STATE}/A.pid ]; then nsenter -t $(cat {STATE}/A.pid) -n sh -c 'ip addr flush dev {host}; "
+    subs = "; ".join(f"ip link del {host}.{v} 2>/dev/null" for v in VLAN_SUB)
+    return (f"kill $(cat {STATE}/mon.pid 2>/dev/null) 2>/dev/null; rm -f {STATE}/mon.pid; ip link del ge8.{VID_T} 2>/dev/null; "
+            f"{brs}; if [ -e {STATE}/A.pid ]; then nsenter -t $(cat {STATE}/A.pid) -n sh -c '{subs}; ip addr flush dev {host}; "
             f"ip link set {host} netns 1' 2>/dev/null; kill $(cat {STATE}/A.pid) 2>/dev/null; rm -f {STATE}/A.pid; "
             f"ip link set {host} up; fi")    # fdb/burst precondition: the host port was up (carrier) before the move
 
@@ -445,8 +467,15 @@ def preflight(b: Board) -> None:
     out = b.sh("cat /sys/module/us48_cmic/parameters/switchdev /sys/module/us48_cmic/parameters/mgmt_bridge", quiet=True)
     b.check("module params", out.split() == ["Y", "N"], f"switchdev mgmt_bridge = {out.split()}")
     precondition(b, tuple(LP))
-    es, f = b.rmems("VLAN_TAB", range(4000, 4008))
-    b.check("VLAN_TAB[4000-4007] free", not any(field(e, *f["VALID"]) for e in es))
+    es, f = b.rmems("VLAN_TAB", range(SLOT0, SLOT0 + 8))
+    b.check(f"VLAN_TAB[{SLOT0}-{SLOT0 + 7}] (bridge slots) free", not any(field(e, *f["VALID"]) for e in es))
+    es, f = b.rmems("VLAN_TAB", [VID_T, VID_X])
+    b.check(f"VLAN_TAB[{VID_T}, {VID_X}] (vlan step VIDs) free", not any(field(e, *f["VALID"]) for e in es))
+    for p, lp in LP.items():
+        e, pf = b.rmem("PORT_TAB", lp)
+        v, gf = b.rreg("EGR_PORT", idx=lp, blk=EPIPE)
+        log(f"  {p}: PORT_TAB.EN_IFILTER {field(e, *pf['EN_IFILTER'])}, EGR_PORT.EN_EFILTER {(v >> gf['EN_EFILTER'][0]) & 1}"
+            f" (EGR_PORT {v & 0xffffffff:#010x})")
     trap = []
     es, f = b.rmems("L2_USER_ENTRY", range(128))
     for i, e in enumerate(es):
@@ -540,19 +569,21 @@ def step_bpdu(b: Board) -> bool:
         thermal(b, "after bpdu")
 
 
-def fdb_line(b: Board, mac: str, br: str = "brsw") -> str | None:
-    """The bridge's own FDB entry for mac (`bridge fdb show`, not the port's self entries from ndo_fdb_dump)."""
+def fdb_line(b: Board, mac: str, br: str = "brsw", vid: int | None = None) -> str | None:
+    """The bridge's own FDB entry for mac (`bridge fdb show`, not the port's self entries from ndo_fdb_dump); vid: 'vlan N' only."""
     out = b.sh(f"bridge fdb show br {br}", quiet=True)
-    return next((ln.strip() for ln in out.splitlines() if ln.startswith(mac) and "self" not in ln.split()), None)
+    return next((ln.strip() for ln in out.splitlines() if ln.startswith(mac) and "self" not in ln.split()
+                 and (vid is None or f" vlan {vid} " in f" {ln} ")), None)
 
 
-def fdb_wait(b: Board, sm: "Sampler", mac: str, present: bool, limit: float, br: str = "brsw") -> tuple[float, str | None]:
+def fdb_wait(b: Board, sm: "Sampler", mac: str, present: bool, limit: float, br: str = "brsw",
+             vid: int | None = None) -> tuple[float, str | None]:
     """Until mac is (not) in the bridge's FDB, one check per sampler line (guards stay on); returns (elapsed, last line)."""
     sm.grace = sm.q.qsize() + 3
     t0 = sm.next()["t"]
     while True:
         sm.grace = sm.q.qsize() + 3    # `bridge fdb show` = one L2X walk per port (S-channel busy-wait); fdb has no loop, pps guard stays
-        ln = fdb_line(b, mac, br)
+        ln = fdb_line(b, mac, br, vid)
         el = sm.next()["t"] - t0
         if (ln is not None) == present or el > limit:
             return el, ln
@@ -1011,6 +1042,264 @@ def step_linkdown(b: Board) -> None:
         thermal(b, "after linkdown")
 
 
+def words(w: list[int]) -> str:
+    return " ".join(f"{x:08x}" for x in w)
+
+
+def aware_stg(b: Board, br: str) -> int:
+    """STG the driver logged for a VLAN-aware join of br ('offloaded to <br>: VLAN-aware, ... STG n')."""
+    if not b.apply:
+        return 1
+    out = b.sh(f"dmesg | grep 'switchdev: offloaded to {br}: VLAN-aware' | tail -n 1", quiet=True)
+    m = re.search(r"VLAN-aware, ASIC VLAN = bridge VID, STG (\d+)", out)
+    if not m:
+        raise Fail(f"no VLAN-aware 'offloaded to {br}' line in dmesg: {out!r}")
+    return int(m.group(1))
+
+
+def slot_vlan(b: Board, br: str) -> int:
+    """Slot ASIC VLAN of the last br_vlan_create for br ('<br> -> ASIC VLAN n STG s')."""
+    if not b.apply:
+        return SLOT0
+    out = b.sh(f"dmesg | grep 'switchdev: {br} -> ASIC VLAN' | tail -n 1", quiet=True)
+    m = re.search(r"-> ASIC VLAN (\d+) STG", out)
+    if not m:
+        raise Fail(f"no '{br} -> ASIC VLAN' line in dmesg: {out!r}")
+    return int(m.group(1))
+
+
+def rx_root(b: Board, dev: str) -> int:
+    out = b.sh(f"cat /sys/class/net/{dev}/statistics/rx_packets", quiet=True)
+    return int(out) if out.strip().isdigit() else 0
+
+
+def rx_ns(b: Board, ns: str, dev: str) -> int:
+    """rx_packets of dev inside the netns: /proc/net/dev of the reader's netns (sysfs shows the root ns)."""
+    out = b.sh(f"{ns} cat /proc/net/dev", quiet=True)
+    for ln in out.splitlines():
+        f = ln.replace(":", " ").split()
+        if f and f[0] == dev:
+            return int(f[2])
+    return 0
+
+
+def tick(sm: "Sampler | None", secs: float = 2 * SAMPLE_S) -> None:
+    """Let secs of sampler lines pass (guards applied); dry-run: nothing."""
+    if sm:
+        sm.wait(secs)
+
+
+def ping_ok(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str) -> bool:
+    b.sh(f"{ns} ping -c 3 {ip} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
+    tick(sm, PING_S)
+    out = b.sh(f"kill $(cat {STATE}/ping.pid) 2>/dev/null; cat {STATE}/ping", check=False, quiet=True)
+    got = re.search(r"(\d+) packets received", out)
+    return b.check(name, bool(got) and int(got.group(1)) >= 1, " | ".join(out.splitlines()[-2:]))
+
+
+def check_aware(b: Board, tag: str, stg: int) -> None:
+    """ASIC state of brv: VLAN 1 {CPU, ge8} UT ge8, VLAN 10 {CPU, ge8, ge9} tagged, VLAN 20 {CPU, ge9}; FID = VID; STG = stg."""
+    if not b.apply:
+        return
+    lp8, lp9 = LP["ge8"], LP["ge9"]
+    want = {1: (1 | 1 << lp8, 1 << lp8), VID_T: (1 | 1 << lp8 | 1 << lp9, 0), VID_X: (1 | 1 << lp9, 0)}
+    for v, (pb, ut) in want.items():
+        e, f = b.rmem("VLAN_TAB", v)
+        g, gf = b.rmem("EGR_VLAN", v)
+        got = (field(e, *f["VALID"]), field(e, *f["PORT_BITMAP"]), field(e, *f["FID_ID"]), field(e, *f["STG"]),
+               field(g, *gf["PORT_BITMAP"]), field(g, *gf["UT_BITMAP"]), field(g, *gf["STG"]))
+        b.check(f"vlan [{tag}] ASIC VLAN {v}", got == (1, pb, v, stg, pb, ut, stg),
+                f"VALID {got[0]} PORT {got[1]:#x} FID {got[2]} STG {got[3]}; EGR PORT {got[4]:#x} UT {got[5]:#x} STG {got[6]} "
+                f"(want PORT {pb:#x} UT {ut:#x} FID {v} STG {stg}; CPU tagged)")
+    for p, vid, cml in (("ge8", 1, 8), ("ge9", PVID["ge9"], 8), ("ge17", PVID["ge17"], 0)):
+        e, f = b.rmem("PORT_TAB", LP[p])
+        got = (field(e, *f["PORT_VID"]), field(e, *f["CML_FLAGS_NEW"]), field(e, *f["EN_IFILTER"]))
+        b.check(f"vlan [{tag}] PORT_TAB {p}", got == (vid, cml, 1), f"PORT_VID/CML/EN_IFILTER {got} (want {(vid, cml, 1)}; "
+                "ge9 has no PVID: its private VLAN)")
+    st = (stg_state(b, stg, "ge8"), stg_state(b, stg, "ge9"))
+    b.check(f"vlan [{tag}] STG {stg} states", st == (3, 0), f"ge8 {st[0]} (want 3, forwarding), ge9 {st[1]} (want 0, no carrier)")
+
+
+def l2_on(a: dict | None, port: str, static: bool) -> bool:
+    return bool(a) and a["PORT_NUM"] == LP[port] and bool(a["STATIC_BIT"]) == static and not a["CPU"]
+
+
+def step_vlan(b: Board) -> None:
+    """VLAN-aware bridge offload (#57): per-VID ASIC VLANs, PVID, tagging, ingress filters, FDB per VID, vlan_filtering toggle."""
+    log(f"=== vlan: brv{{ge8, ge9}} vlan_filtering 1; host A = ge17 in a netns (private); VIDs 1 (ge8 PVID), {VID_T}, {VID_X}")
+    ports = ("ge8", "ge9")
+    precondition(b, ("ge8", "ge9", "ge17"))
+    if b.apply and "ENSLAVED" in b.sh("test -e /sys/class/net/ge10/master && echo ENSLAVED; true", quiet=True):
+        raise Fail("precondition: ge10 (second-bridge probe port) is enslaved")
+    before = snapshot(b) if b.apply else []
+    thermal(b, "before vlan")
+    sm, ns, slot, brmac = None, f"nsenter -t $(cat {STATE}/A.pid) -n", SLOT0, ""
+    _, _, vtf = mem("VLAN_TAB")
+    _, _, ptf = mem("PORT_TAB")
+    v1 = (b.rmem("VLAN_TAB", 1)[0], b.rmem("EGR_VLAN", 1)[0])
+    stg_p = field(v1[0], *vtf["STG"])
+    pre = {p: (field(b.rmem("PORT_TAB", lp)[0], *ptf["EN_IFILTER"]), stg_state(b, stg_p, p)) for p, lp in LP.items()}
+    log(f"  snapshot: VLAN_TAB[1] {words(v1[0])}, EGR_VLAN[1] {words(v1[1])}; private STG {stg_p}; "
+        f"(EN_IFILTER, SP_TREE) {pre}")
+    try:
+        tool_push(b)
+        guard_start(b, ports, VLAN_DEADMAN_S)
+        b.sh(f"mkfifo {STATE}/holdA; setsid unshare -n sh -c 'read x <> {STATE}/holdA' </dev/null >/dev/null 2>&1 & "
+             f"echo $! > {STATE}/A.pid")
+        # A untagged only for now; IPv6 off everywhere: the probe windows count frames
+        b.sh(f"ip link set ge17 down; ip link set ge17 netns $(cat {STATE}/A.pid); "
+             f"{ns} sh -c 'for c in all default ge17; do echo 1 > /proc/sys/net/ipv6/conf/$c/disable_ipv6; done; "
+             f"ip link set lo up; ip link set ge17 up; ip addr add {NET_A}/24 dev ge17'")
+        b.sh("brctl addbr brv; echo 1 > /sys/class/net/brv/bridge/vlan_filtering; "
+             "echo 1 > /proc/sys/net/ipv6/conf/brv/disable_ipv6; ip link set brv up")
+        b.sh(f"ip addr add {NET_BR}/24 dev brv; brctl addif brv ge8; brctl addif brv ge9")
+        stg = aware_stg(b, "brv")
+        if b.apply:
+            e, f = b.rmem("PORT_TAB", LP["ge17"])
+            if not b.check("vlan ge17 EN_IFILTER 1 (set by the driver with the first bridge)", field(e, *f["EN_IFILTER"]) == 1,
+                           f"PORT_TAB[{LP['ge17']}] {words(e)}"):
+                raise Fail("ge17 (loop end) has no ingress filter: no tagged frame towards the cable")
+        b.sh(f"bridge vlan add dev ge8 vid {VID_T}; bridge vlan del dev ge9 vid 1; bridge vlan add dev ge9 vid {VID_T}; "
+             f"bridge vlan add dev ge9 vid {VID_X}; bridge vlan add dev brv vid {VID_T} self")
+        if b.apply:
+            sm = Sampler(ports, VLAN_DEADMAN_S)
+            sm.next()
+        while sm:    # ge17 went down/up for the netns move: carrier on both cable ends
+            c = b.sh(f"{ns} ip -o link show ge17 | grep -c LOWER_UP; cat /sys/class/net/ge8/carrier", check=False, quiet=True).split()
+            el = sm.next()["t"] - sm.hist[0]["t"]
+            if c == ["1", "1"]:
+                break
+            if el > LINK_S:
+                raise Fail(f"no carrier ge17/ge8 {el:.1f} s after the move (limit {LINK_S} s): {c}")
+        brmac = b.sh("cat /sys/class/net/brv/address", quiet=True) if b.apply else "02:00:00:00:00:01"
+        # 1. private loop end filters: tagged frames out of ge8 (DA = brv MAC, a CPU entry: no flood even if leaked)
+        b.sh(f"ip link add link ge8 name ge8.{VID_T} type vlan id {VID_T}; "
+             f"echo 1 > /proc/sys/net/ipv6/conf/ge8.{VID_T}/disable_ipv6; ip link set ge8.{VID_T} up")
+        r0 = rx_ns(b, ns, "ge17")
+        b.sh(f"{TOOL} ge8 {IF_N} {MAC_IF} {brmac} {IF_PPS}")
+        tick(sm)
+        r1 = rx_ns(b, ns, "ge17")
+        b.sh(f"{TOOL} ge8.{VID_T} {IF_N} {MAC_IF} {brmac} {IF_PPS}")
+        tick(sm)
+        r2 = rx_ns(b, ns, "ge17")
+        b.sh(f"ip link del ge8.{VID_T}")
+        if not b.check(f"vlan ge17 drops tagged VID {VID_T} (not a member), passes untagged", r1 - r0 >= IF_N and r2 - r1 <= IF_NOISE,
+                       f"ge17 rx: untagged {r1 - r0} (want >= {IF_N}), tagged {r2 - r1} (want <= {IF_NOISE})") and b.apply:
+            raise Fail("tagged frames enter through the private loop end: no tagged bridge traffic")
+        # 2. tagged host interfaces: ge17.10/.20 in the netns, brv.10 on the bridge
+        b.sh(f"{ns} sh -c 'for v in {VID_T} {VID_X}; do ip link add link ge17 name ge17.$v type vlan id $v; "
+             f"echo 1 > /proc/sys/net/ipv6/conf/ge17.$v/disable_ipv6; ip link set ge17.$v up; done; "
+             f"ip addr add {NET_TA}/24 dev ge17.{VID_T}'")
+        b.sh(f"ip link add link brv name brv.{VID_T} type vlan id {VID_T}; echo 1 > /proc/sys/net/ipv6/conf/brv.{VID_T}/disable_ipv6; "
+             f"ip addr add {NET_TBR}/24 dev brv.{VID_T}; ip link set brv.{VID_T} up")
+        check_aware(b, "aware", stg)
+        ping_ok(b, sm, ns, NET_BR, "vlan untagged ping A -> brv (VID 1 = ge8 PVID)")
+        ping_ok(b, sm, ns, NET_TBR, f"vlan tagged ping A ge17.{VID_T} -> brv.{VID_T} (CPU RX tagged, SOBMH TX tagged)")
+        # 3. FDB per VID: A learned in both VIDs; bridge-local MAC -> CPU per VID; static per VID
+        for v in (1, VID_T):
+            a = b.l2_lookup(v, MAC_GE17)
+            el, ln = fdb_wait(b, sm, MAC_GE17, True, FIFO_WAIT_S, "brv", v) if sm else (0.0, None)
+            b.check(f"vlan A learned in VID {v} on ge8 (L2X + bridge vlan {v})", l2_on(a, "ge8", False) and ln is not None
+                    and "extern_learn" in ln.split(), f"L2 {a}, fdb {ln!r} ({el:.1f} s)")
+            h = b.l2_lookup(v, brmac)
+            b.check(f"vlan host entry brv MAC VID {v} -> CPU", bool(h) and h["CPU"] == 1 and h["STATIC_BIT"] == 1, f"{brmac} {h}")
+        b.sh(f"bridge fdb add {MAC_STATIC} dev ge9 vlan {VID_T} master static")
+        s, s1, ln = b.l2_lookup(VID_T, MAC_STATIC), b.l2_lookup(1, MAC_STATIC), fdb_line(b, MAC_STATIC, "brv", VID_T)
+        b.check(f"vlan static VID {VID_T} on ge9 -> L2X (VID {VID_T} only)", l2_on(s, "ge9", True) and s1 is None and ln is not None
+                and "offload" in ln.split(), f"L2 {VID_T} {s}, L2 1 {s1}, fdb {ln!r}")
+        # 4. ingress filter of a bridge port: VID 20 (ge9 only) from A into ge8 dropped; VID 10 control reaches the CPU
+        c0 = rx_root(b, "ge8")
+        b.sh(f"{ns} {TOOL} ge17.{VID_T} {IF_N} {MAC_IF} ff:ff:ff:ff:ff:ff {IF_PPS}")
+        tick(sm)
+        c1 = rx_root(b, "ge8")
+        b.sh(f"{ns} {TOOL} ge17.{VID_X} {IF_N} {MAC_IF} ff:ff:ff:ff:ff:ff {IF_PPS}")
+        tick(sm)
+        c2 = rx_root(b, "ge8")
+        log(f"  L2X VID {VID_X} {MAC_IF} after the dropped frames: {b.l2_lookup(VID_X, MAC_IF)} (learn on drop: logged only)")
+        b.check(f"vlan ge8 ingress filter drops VID {VID_X}", c1 - c0 >= IF_N and c2 - c1 <= IF_NOISE,
+                f"ge8 rx: VID {VID_T} {c1 - c0} (want >= {IF_N}), VID {VID_X} {c2 - c1} (want <= {IF_NOISE})")
+        # 5. PVID change: untagged from A lands in VID 10
+        b.sh(f"bridge vlan add dev ge8 vid {VID_T} pvid untagged")
+        e, f = b.rmem("PORT_TAB", LP["ge8"])
+        g, gf = b.rmem("EGR_VLAN", VID_T)
+        b.sh(f"{ns} {TOOL} ge17 1 {MAC_PV} {MAC_STATIC}")
+        tick(sm)
+        a10, a1 = b.l2_lookup(VID_T, MAC_PV), b.l2_lookup(1, MAC_PV)
+        b.check(f"vlan PVID {VID_T} on ge8", field(e, *f["PORT_VID"]) == VID_T and field(g, *gf["UT_BITMAP"]) >> LP["ge8"] & 1
+                and l2_on(a10, "ge8", False) and a1 is None,
+                f"PORT_VID {field(e, *f['PORT_VID'])}, EGR_VLAN[{VID_T}] UT {field(g, *gf['UT_BITMAP']):#x}; untagged probe: "
+                f"L2 {VID_T} {a10}, L2 1 {a1}")
+        b.sh(f"bridge vlan add dev ge8 vid 1 pvid untagged; bridge vlan add dev ge8 vid {VID_T}")
+        e, f = b.rmem("PORT_TAB", LP["ge8"])
+        g, gf = b.rmem("EGR_VLAN", VID_T)
+        b.check("vlan PVID back to 1", field(e, *f["PORT_VID"]) == 1 and not field(g, *gf["UT_BITMAP"]),
+                f"PORT_VID {field(e, *f['PORT_VID'])}, EGR_VLAN[{VID_T}] UT {field(g, *gf['UT_BITMAP']):#x}")
+        # 6. refusals: reserved VID; a second VLAN-aware bridge on unit 0 (ge10 has no cable)
+        rv = RSVD_MIN + 8
+        out = b.sh(f"bridge vlan add dev ge8 vid {rv} 2>&1; echo rc=$?; bridge vlan show dev ge8", check=False)
+        b.check(f"vlan reserved VID {rv} refused", "rc=0" not in out and "internal VLANs" in out
+                and not re.search(rf"\b{rv}\b", out.split("rc=")[-1]), out.replace("\n", " | "))
+        out = b.sh("brctl addbr brv2; echo 1 > /sys/class/net/brv2/bridge/vlan_filtering; brctl addif brv2 ge10 2>&1; "
+                   "echo rc=$?; test -e /sys/class/net/ge10/master && echo ENSLAVED; "
+                   "dmesg | grep 'refused join of brv2' | tail -n 1; brctl delbr brv2", check=False)
+        b.check("vlan second VLAN-aware bridge refused", "rc=0" not in out and "ENSLAVED" not in out
+                and "second VLAN-aware" in out, out.replace("\n", " | "))
+        # 7. vlan_filtering 0: slot VLAN, per-VID VLANs gone, VLAN 1 = snapshot, statics re-keyed
+        if sm:
+            sm.grace = sm.q.qsize() + 6    # two port flush walks (rtnl, S-channel busy-wait); no loop possible
+        b.sh("echo 0 > /sys/class/net/brv/bridge/vlan_filtering")
+        slot = slot_vlan(b, "brv")
+        if b.apply:
+            e, f = b.rmem("VLAN_TAB", slot)
+            g, gf = b.rmem("EGR_VLAN", slot)
+            want = 1 | 1 << LP["ge8"] | 1 << LP["ge9"]
+            gone = [v for v in (VID_T, VID_X) if field(b.rmem("VLAN_TAB", v)[0], *f["VALID"])]
+            v1n = (b.rmem("VLAN_TAB", 1)[0], b.rmem("EGR_VLAN", 1)[0])
+            pt = {p: field(b.rmem("PORT_TAB", LP[p])[0], *ptf["PORT_VID"]) for p in ports}
+            b.check("vlan [filtering 0] slot VLAN, VIDs gone, VLAN 1 restored", field(e, *f["PORT_BITMAP"]) == want
+                    and field(e, *f["FID_ID"]) == slot and field(g, *gf["UT_BITMAP"]) == want and not gone and v1n == v1
+                    and set(pt.values()) == {slot},
+                    f"VLAN {slot} PORT {field(e, *f['PORT_BITMAP']):#x} UT {field(g, *gf['UT_BITMAP']):#x}; still valid {gone}; "
+                    f"VLAN_TAB[1] {words(v1n[0])} EGR {words(v1n[1])}; PORT_VID {pt}")
+        ping_ok(b, sm, ns, NET_BR, "vlan [filtering 0] untagged ping A -> brv (slot VLAN)")
+        s, sv, h = b.l2_lookup(slot, MAC_STATIC), b.l2_lookup(VID_T, MAC_STATIC), b.l2_lookup(slot, brmac)
+        b.check("vlan [filtering 0] VID statics out of L2X, host in the slot", s is None and sv is None and bool(h) and h["CPU"] == 1,
+                f"L2 slot static {s}, L2 {VID_T} static {sv}, L2 slot host {h}")
+        ln = fdb_line(b, MAC_GE17, "brv", VID_T)
+        b.check(f"vlan [filtering 0] VID {VID_T} extern_learn entry withdrawn from the bridge", ln is None or "extern_learn" not in ln.split(),
+                repr(ln))
+        # 8. vlan_filtering 1 again: same ASIC state as before, statics back
+        if sm:
+            sm.grace = sm.q.qsize() + 6
+        b.sh("echo 1 > /sys/class/net/brv/bridge/vlan_filtering")
+        check_aware(b, "filtering 1 again", stg)
+        s = b.l2_lookup(VID_T, MAC_STATIC)
+        if b.apply:
+            e, f = b.rmem("VLAN_TAB", slot)
+            b.check(f"vlan [filtering 1 again] static VID {VID_T} back, slot VLAN {slot} released", l2_on(s, "ge9", True)
+                    and not field(e, *f["VALID"]), f"L2 {s}, VLAN_TAB[{slot}] VALID {field(e, *f['VALID'])}")
+        ping_ok(b, sm, ns, NET_BR, "vlan [filtering 1 again] untagged ping")
+        ping_ok(b, sm, ns, NET_TBR, f"vlan [filtering 1 again] tagged ping VID {VID_T}")
+        b.sh(f"bridge fdb del {MAC_STATIC} dev ge9 vlan {VID_T} master")
+        if sm:
+            sm.next()
+    finally:
+        if sm:
+            sm.stop()
+        teardown(b)
+        macs = [(v, m) for v in (1, VID_T) for m in (MAC_GE17, MAC_PV)] + [(VID_T, MAC_STATIC), (slot, MAC_STATIC)]
+        if brmac:
+            macs += [(1, brmac), (VID_T, brmac), (slot, brmac)]
+        verify_restored(b, "vlan", [VID_T, VID_X, slot], before, macs)
+        if b.apply:
+            v1n = (b.rmem("VLAN_TAB", 1)[0], b.rmem("EGR_VLAN", 1)[0])
+            post = {p: (field(b.rmem("PORT_TAB", lp)[0], *ptf["EN_IFILTER"]), stg_state(b, stg_p, p)) for p, lp in LP.items()}
+            ge10 = b.sh("test -e /sys/class/net/ge10/master && echo ENSLAVED; true", quiet=True)
+            b.check("vlan teardown VLAN 1, EN_IFILTER, private-STG states = snapshot, ge10 free", v1n == v1 and post == pre
+                    and "ENSLAVED" not in ge10, f"VLAN_TAB[1] {words(v1n[0])} EGR {words(v1n[1])}; {post} (before {pre}) {ge10}")
+        thermal(b, "after vlan")
+
+
 def step_stp(b: Board) -> None:
     log("=== stp: brstp{ge8, ge17} = both ends of the loop cable, STP on before the joins (HW STG blocking)")
     ports = ("ge8", "ge17")
@@ -1075,12 +1364,12 @@ def step_mgmt(b: Board) -> None:
 
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    steps = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "stp", "mgmt", "all")
+    steps = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "vlan", "stp", "mgmt", "all")
     if len(args) != 1 or args[0] not in steps:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     b = Board("--apply" in sys.argv[1:])
-    todo = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "stp") if args[0] == "all" else (args[0],)
+    todo = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "vlan", "stp") if args[0] == "all" else (args[0],)
     rc = 0
     for name in todo:
         try:
@@ -1106,6 +1395,8 @@ def main() -> int:
                     except Fail as e:
                         log(f"FAIL rate u{unit}: {e}")
                         b.failed += 1
+            elif name == "vlan":
+                step_vlan(b)
             elif name == "stp":
                 if name in todo and "bpdu" not in todo and not step_bpdu(b):
                     raise Fail("bpdu step failed: no loop test without a working BPDU trap")

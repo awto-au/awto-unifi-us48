@@ -2,7 +2,7 @@
 """mcast_cpu_diff — read-only: unit 0 vs unit 1 state that decides unknown/IPv6 multicast to the CPU (#127).
 
 Usage: mcast_cpu_diff.py [--all]
-- Per unit, loop-cable ports (u0 ge8/ge17 = lport 9/18, u1 ge32/ge41 = lport 9/18) and their private VLANs (100 + front):
+- Per unit, loop-cable ports (u0 ge8/ge17 = lport 9/18, u1 ge32/ge41 = lport 9/18) and their private VLANs (hwdb pvid = 4040 + front):
   VLAN_TAB fields, VLAN_PROFILE_TAB / VLAN_PROFILE_2 at VLAN_PROFILE_PTR, L2MC at BC/UMC/UUC_IDX, PORT_TAB fields,
   per-port IGMP_MLD_PKT_CONTROL / PROTOCOL_PKT_CONTROL / (I)UNKNOWN_MCAST/UCAST_BLOCK_MASK_64, global CPU_CONTROL_*,
   ING_CONFIG_64, ING_MISC_CONFIG(2).
@@ -76,7 +76,7 @@ def unit_state(u: int) -> dict:
     st: dict = {}
     vt, vtw, vtf = mem("VLAN_TAB")
     pt, ptw, ptf = mem("PORT_TAB")
-    vids = {"vlan1": 1} | {f"vlan_{r}": 100 + FRONT[u][r] for r in PORTS}
+    vids = {"vlan1": 1} | {f"vlan_{r}": DB.pvid(FRONT[u][r]) for r in PORTS}
     rows = read([(u, "mem", vt + v, vtw) for v in vids.values()])
     for (lbl, v), w in zip(vids.items(), rows):
         st[lbl] = decode(w, vtf) | {"raw": " ".join(f"{x:08x}" for x in w[:vtw])}

@@ -351,8 +351,13 @@ class Db:
         return 2 + int(m.group(1)), int(m.group(2))
 
     def pvid(self, front):
-        """Driver port VLAN: copper 100 + front (VLAN 1 = stock's), xe = front."""
-        return (100 if self.port(front)["phy"] in ("gphy", "octal") else 0) + front
+        """Driver private VLAN of a front port: VID_PRIVATE_BASE + front (hwdb/board/vlan.toml)."""
+        self.port(front)
+        return self.consts["VID_PRIVATE_BASE"]["value"] + front
+
+    def vid_const(self, name):
+        """VID plan constant (hwdb/board/vlan.toml): VID_RSVD_MIN, VID_RSVD_MAX, VID_SLOT_BASE, VID_PRIVATE_BASE."""
+        return self.consts[name]["value"]
 
     def loop_peer(self, front):
         """Front on the other end of the loop cable, or None."""

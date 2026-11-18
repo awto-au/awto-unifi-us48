@@ -87,6 +87,14 @@
 #define HW_CONST_PVTMON_CALC_SLOPE	5556L
 /* const TOP_SBUS_BLK: S-channel block id of the TOP block (header bits 25:20) [C] */
 #define HW_CONST_TOP_SBUS_BLK	16L
+/* const VID_PRIVATE_BASE: private VLAN {CPU, port} of front port f = VID_PRIVATE_BASE + f (fronts 1-52 -> 4041-4092), every port type [C] */
+#define HW_CONST_VID_PRIVATE_BASE	4040L
+/* const VID_RSVD_MAX: last reserved VID: VLAN 4094 is written by the stock cold-init replay (VLAN_TAB L3_IIF 4094, HiGig 28/29) [C] */
+#define HW_CONST_VID_RSVD_MAX	4094L
+/* const VID_RSVD_MIN: first driver-reserved VID: bridge VLANs (PORT_VLAN objects) at or above it are refused with an extack [C] */
+#define HW_CONST_VID_RSVD_MIN	4032L
+/* const VID_SLOT_BASE: VLAN-unaware bridge slot i (0-7) = ASIC VLAN VID_SLOT_BASE + i, STG 2 + i [C] */
+#define HW_CONST_VID_SLOT_BASE	4032L
 
 /* block cmic1 (axi0): Unit 1 CMIC = PCIe BAR2 as placed by Linux (GP1 = 0x0a002000) [I] */
 #define HW_CMIC1_BASE	0x0a000000U
