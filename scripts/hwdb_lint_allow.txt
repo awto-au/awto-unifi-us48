@@ -10,3 +10,5 @@ scripts/switchdev_test.py	ge8	bridge test topology: names of the loop-cable ends
 scripts/switchdev_test.py	ge17	bridge test topology: names of the loop-cable ends in test steps (lport/vid come from hwdb)
 scripts/route_nat_fw_test.py	ge17	nft ruleset text of the router topology (PORTS holds the hwdb-derived names)
 scripts/route_nat_fw_test.py	ge41	nft ruleset text of the router topology (PORTS holds the hwdb-derived names)
+scripts/_lab.py	lan7	vendored from awto-dan (sync_shared.py), docstring example of an end string
+scripts/selftest_fixture.py	ge1	fake sysfs tree for the us48-selftest host test, not a bench port

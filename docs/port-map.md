@@ -58,7 +58,7 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 | 47 | RJ45 47 | unit 1 (BCM53346, PCIe) | 24 | 24 | octal PHY, ext bus 0 `0x1a` | QSGMII2 lane 6 | `ge22` |  |  | I |
 | 48 | RJ45 48 | unit 1 (BCM53346, PCIe) | 25 | 25 | octal PHY, ext bus 0 `0x1b` | QSGMII2 lane 7 | `ge23` |  |  | I |
 | 49 | SFP+ 1 | unit 1 (BCM53346, PCIe) | 26 | 26 | SFP+, no PHY | TSC lane 0 | `xe0` | `xe49` | sw1 lan7 | C |
-| 50 | SFP+ 2 | unit 1 (BCM53346, PCIe) | 27 | 28 | SFP+, no PHY | TSC lane 2 | `xe1` | `xe50` | sw1 lan3 | C |
+| 50 | SFP+ 2 | unit 1 (BCM53346, PCIe) | 27 | 28 | SFP+, no PHY | TSC lane 2 | `xe1` | `xe50` |  | C |
 | 51 | SFP 1 | unit 0 (BCM53344, host SoC) | 26 | 26 | SFP, no PHY | TSC lane 0 | `ge24` |  |  | C |
 | 52 | SFP 2 | unit 0 (BCM53344, host SoC) | 27 | 28 | SFP, no PHY | TSC lane 2 | `ge25` |  |  | C |
 | - | HiGig (internal) | unit 0 (BCM53344, host SoC) | 28 | 30 | 13G HiGig to the other chip | TSC1 lanes 0-1 (dual), XLPORT1 port 0; peer u1-hg28 |  |  |  | C |

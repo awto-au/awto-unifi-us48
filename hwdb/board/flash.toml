@@ -1,57 +1,57 @@
-# SPI flash map (32 MiB), one [[region]] per stock mtd partition; protect = true: flash_guard refuses writes.
+# SPI flash map (32 MiB), one [[flash]] per stock mtd partition; protect = true: flash_guard refuses writes.
 # Sources: docs/hardware.md "Flash map" (stock mtdparts), docs/autochain.md (roles), docs/uboot.md s8 (bootsel record).
 # Writable by default: kernel0 only (test images, Dan 2026-11-15); cfg is left unprotected (not on Dan's list).
 # Overrides: flash_guard.allow("<name>") in a script, or US48_FLASH_ALLOW=<name>,... (kernel1 overwrite OK after backup verify).
 
-[[region]]
+[[flash]]
 name = "u-boot"
 mtd = 0
 start = 0x0
 size = 0xC0000
 protect = true  # uboot-1 + ubnt app (stock)
 
-[[region]]
+[[flash]]
 name = "u-boot-env"
 mtd = 1
 start = 0xC0000
 size = 0x10000
 protect = true  # only the docs/autochain.md image, via scripts/u2_flash_env.py
 
-[[region]]
+[[flash]]
 name = "shmoo"
 mtd = 2
 start = 0xD0000
 size = 0x10000
 protect = true  # DDR training data
 
-[[region]]
+[[flash]]
 name = "kernel0"
 mtd = 3
 start = 0xE0000
 size = 0xF00000
 protect = false  # backup slot: test images go here
 
-[[region]]
+[[flash]]
 name = "kernel1"
 mtd = 4
 start = 0xFE0000
 size = 0xF10000
 protect = true  # stock, active
 
-[[region]]
+[[flash]]
 name = "bootsel"
 start = 0x1EE0000
 size = 0x10000
 protect = true  # bootsel record, last 64 KiB of kernel1 (docs/uboot.md s8)
 
-[[region]]
+[[flash]]
 name = "cfg"
 mtd = 5
 start = 0x1EF0000
 size = 0x100000
 protect = false
 
-[[region]]
+[[flash]]
 name = "EEPROM"
 mtd = 6
 start = 0x1FF0000

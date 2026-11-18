@@ -40,7 +40,7 @@ def log(msg: str) -> None:
 
 def regions() -> list[dict]:
     with MAP.open("rb") as fh:
-        return tomllib.load(fh)["region"]
+        return tomllib.load(fh)["flash"]
 
 
 def allow(name: str) -> None:
