@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""stock_clean_control — stock fully up (stock_ramboot.py --no-u1 + wait): sw1 lan3/lan6 up 3 min, then 3 bounces each, sample stock PCS + sw1 TGR_STD_1 (#78).
+"""stock_clean_control — stock fully up (stock_ramboot.py --no-u1 + wait): sw1 lan3/lan7 up 3 min, then 3 bounces each, sample stock PCS + sw1 TGR_STD_1 (#78).
 
 Usage: scripts/stock_clean_control.py [--hold-s 180] [--bounce-n 3] [--post-s 40]
-Per sample: sw1 carrier + TGR_STD_1[0]/[1] + RX_IDLE for lan3/lan6; stock xe49 + xe50 regs c154/c120/c150/RX_LSS (tsc_read, read-only).
+Per sample: sw1 carrier + TGR_STD_1[0]/[1] + RX_IDLE for lan3/lan7; stock xe49 + xe50 regs c154/c120/c150/RX_LSS (tsc_read, read-only).
 Bounce: down 3 s (user spec), up, sample every 10 s for post-s (40 s > one ~30 s sw1 calibration cycle). lan5 never touched.
-Restore in finally: lan3 down, lan6 up (user's required end state). Log: tmp/logs/stock_clean_control.log
+Restore in finally: lan3 down, lan7 up (user's required end state). Log: tmp/logs/stock_clean_control.log
 """
 import _ipreg  # noqa: E402
 import argparse
@@ -18,6 +18,9 @@ import stock_sw1_probe as p  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/stock_clean_control.log"
 H = _ipreg.ip("us48-mgmt")
+_DB = t.hwdb.lite()
+XE = (49, 50)
+LANS = tuple((_DB.sw1_peer(xe), xe) for xe in XE)  # (sw1 port, stock xe front), from ports.toml
 
 
 def log(m: str) -> None:
@@ -29,7 +32,7 @@ def log(m: str) -> None:
 
 
 def sample(tag: str) -> None:
-    for lan, xe in (("lan6", 49), ("lan3", 50)):
+    for lan, xe in LANS:
         c = t.ssh(t.SW1, f"cat /sys/class/net/{lan}/carrier 2>&1").strip()
         log(f"{tag} sw1 {lan} carrier={c} {t.sds(lan).split('serdes')[-1]} | stock xe{xe} {p.stock_regs(H, xe)}")
 
@@ -53,11 +56,11 @@ def main() -> int:
     orig = {l: t.admin_up(l) for l in t.RESTORE}
     log(f"original admin {orig}")
     try:
-        for l in ("lan6", "lan3"):
+        for l in (lan for lan, _ in LANS):
             t.ssh(t.SW1, f"ip link set {l} up")
-        log("lan3 + lan6 up")
+        log(" + ".join(lan for lan, _ in LANS) + " up")
         wait(a.hold_s, "hold", 20)
-        for lan, xe in (("lan6", 49), ("lan3", 50)):
+        for lan, xe in LANS:
             for i in range(a.bounce_n):
                 t.ssh(t.SW1, f"ip link set {lan} down")
                 time.sleep(3)  # user spec: down 3 s
@@ -65,7 +68,7 @@ def main() -> int:
                 log(f"bounce {lan} #{i + 1} up")
                 wait(a.post_s, f"{lan}-b{i + 1}", 10)
     finally:
-        for l, up in {"lan3": False, "lan6": True}.items():
+        for l, up in {_DB.sw1_peer(50): False, _DB.sw1_peer(49): True}.items():
             t.ssh(t.SW1, f"ip link set {l} {'up' if up else 'down'}")
         log("restored: " + str({l: t.admin_up(l) for l in t.RESTORE}))
     return 0

@@ -8,7 +8,9 @@ Usage: storm_watch.py [--guard] [--stop] [--status] [--nic IF] [--selftest]
 - Sampling every SAMPLE_S; baseline = mean of the first BASELINE_S; trip = rate > max(FLOOR_PPS, 20 x baseline) on 2 samples in a row.
 - Threshold: Selwyn enp8s0 idles 1-10 pps mcast+bcast (30 x 1 s samples, 2026-11-19); floor 200 pps = 20 x that peak,
   a forwarding loop is thousands of pps (st1008f #19: 13k pps at +80 s). Unicast traffic is not counted.
-- Trip: US-48 relay OFF (dev.relay_set), retried; logged: baseline, limit, each over-limit sample, kill result.
+- Trip: US-48 relay OFF (dev.relay_set), retried; logged: baseline, limit, each over-limit sample, interface + counters, kill result.
+- Trip during a flash write (tmp/flash_write.lock, scripts/flash_lock.py): no power cut; logs loudly, writes
+  tmp/flash_write.stop (the flow aborts before its next sf erase) and keeps watching; still storming after the lock is gone = cut.
 - Log: tmp/logs/storm_watch.log
 """
 import argparse
@@ -25,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
+import flash_lock  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/storm_watch.log"
@@ -69,6 +72,12 @@ class NicStats:
         fcntl.ioctl(self.sock.fileno(), self.SIOCETHTOOL, struct.pack("16sP", self.nic, ptr.buffer_info()[0]))
         buf[:] = ptr.tobytes()
 
+    def detail(self) -> dict:
+        buf = bytearray(struct.pack("II", self.GSTATS, self.n) + bytes(8 * self.n))
+        self._ioctl(buf)
+        vals = struct.unpack_from(f"{self.n}Q", buf, 8)
+        return {k: vals[i] for k, i in zip(self.WANT, self.idx)}
+
     def read(self) -> int:
         buf = bytearray(struct.pack("II", self.GSTATS, self.n) + bytes(8 * self.n))
         self._ioctl(buf)
@@ -96,6 +105,21 @@ def relay_off() -> bool:
             log(f"KILL relay try {i}/{RELAY_KILL_TRIES} failed: {e}")
     log("KILL FAILED: cut the US-48 power by hand")
     return False
+
+
+def make_trip(nic: str, detail, relay_cut, held=flash_lock.held, request_stop=flash_lock.request_stop):
+    """Trip handler: returns True when power was cut. During a flash write: loud log + stop request, no cut."""
+    def trip() -> bool:
+        log(f"TRIP interface {nic} counters {detail()}")
+        info = held()
+        if info:
+            log(f"STORM DURING FLASH WRITE (pid {info['pid']}, {info['region']}): relay NOT cut; asking the flow to stop "
+                "after this write; cutting if the storm outlives the write")
+            request_stop()
+            return False
+        relay_cut()
+        return True
+    return trip
 
 
 def watch(read, now, sleep, kill, idle=None, duration=None) -> int:
@@ -126,9 +150,10 @@ def watch(read, now, sleep, kill, idle=None, duration=None) -> int:
         if over:
             log(f"over limit {over}/2: {pps:.0f} pps")
         if over >= 2:
-            log(f"STORM {pps:.0f} pps > {limit:.0f}: cutting the relay")
-            kill()
-            return 2
+            log(f"STORM {pps:.0f} pps > {limit:.0f}")
+            if kill():
+                return 2
+            over = 0
     return 0
 
 
@@ -148,18 +173,24 @@ def devpy_running() -> bool:
 def selftest() -> int:
     fails = 0
 
-    def run(rates, what, want_kill):
+    def run(rates, what, want_kill, lock_for=0):
         nonlocal fails
-        clock, count, cuts = [0.0], [0], []
+        clock, count, cuts, stops = [0.0], [0], [], []
+        trips = [0]
         seq = iter(rates)
 
         def sleep(s):
             clock[0] += s
             count[0] += int(next(seq, rates[-1]) * s)
-        rc = watch(lambda: count[0], lambda: clock[0], sleep, lambda: cuts.append(1), duration=40)
-        ok = (rc == 2) == want_kill and bool(cuts) == want_kill
+        def held():
+            trips[0] += 1
+            return {"pid": 1, "region": "sf write"} if trips[0] <= lock_for else None
+        trip = make_trip("fake0", lambda: {"rx_multicast_packets": count[0]}, lambda: cuts.append(1), held,
+                         lambda: stops.append(1))
+        rc = watch(lambda: count[0], lambda: clock[0], sleep, trip, duration=40)
+        ok = (rc == 2) == want_kill and bool(cuts) == want_kill and bool(stops) == bool(lock_for)
         fails += not ok
-        log(f"selftest {what}: rc={rc} cuts={len(cuts)} {'ok' if ok else 'FAIL'}")
+        log(f"selftest {what}: rc={rc} cuts={len(cuts)} stops={len(stops)} {'ok' if ok else 'FAIL'}")
 
     run([3] * 3 + [5] * 40, "quiet 3-10 pps (no trip)", False)
     run([3] * 3 + [150] * 40, "150 pps burst below floor (no trip)", False)
@@ -167,6 +198,8 @@ def selftest() -> int:
     run([3] * 3 + [3000, 3000], "2 samples at 3000 pps (trip)", True)
     run([400] * 3 + [5000, 5000], "noisy baseline 400 pps: limit 8000 (5000 no trip)", False)
     run([400] * 3 + [9000, 9000], "noisy baseline 400 pps, 9000 pps (trip)", True)
+    run([3] * 3 + [3000] * 60, "storm during a flash write, lock held 1 trip: stop asked, then cut", True, lock_for=1)
+    run([3] * 3 + [3000] * 4 + [3] * 40, "storm ends before the lock: stop asked, never cut", False, lock_for=2)
     log(f"{'PASS' if not fails else 'FAIL'} storm_watch selftest")
     return 1 if fails else 0
 
@@ -209,7 +242,7 @@ def main() -> int:
     stats = NicStats(nic)
     log(f"=== start nic={nic} pid={os.getpid()} floor={FLOOR_PPS} factor={FACTOR}")
     try:
-        return watch(stats.read, time.monotonic, time.sleep, relay_off, idle=devpy_running if a.guard else None,
+        return watch(stats.read, time.monotonic, time.sleep, make_trip(nic, stats.detail, relay_off), idle=devpy_running if a.guard else None,
                      duration=None if a.guard else 900)
     finally:
         PIDFILE.unlink(missing_ok=True)

@@ -1622,7 +1622,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		nd->min_mtu = ETH_MIN_MTU;
 		nd->max_mtu = BUF_SZ - ETH_HLEN - VLAN_HLEN - ETH_FCS_LEN - 4;
 		/* Fixed locally administered MACs: one L2 entry per port, no growth across loads. */
-		eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ 0x02, 0x75, 0x73, 0x34, 0x38, p->cfg->front });
+		eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ US48_MAC_PREFIX, p->cfg->front });
 		strscpy(nd->name, p->cfg->name, IFNAMSIZ);
 		if (p->cfg->copper)
 			nd->sysfs_groups[0] = &us48_copper_group;

@@ -56,6 +56,7 @@ LOG = LOGS / "dev.log"
 sys.path.insert(0, str(REPO / "scripts"))
 
 import console  # noqa: E402
+import flash_lock  # noqa: E402
 import hwdb  # noqa: E402
 
 # $US48_IMAGE overrides (default: scripts/build_mainline.py output).
@@ -710,11 +711,24 @@ def _bootm_watch(s: console.Session, slot: str = "linux", prompt: bytes | list[b
 
 
 def _uboot_cmd(s: console.Session, cmd: str, ok_pat: bytes | list[bytes], budget_s: float, what: str) -> str | None:
+    """Sends one U-Boot command. sf erase takes tmp/flash_write.lock (storm_watch must not cut power mid-write);
+    it is dropped after the sf write/update, or on a failure."""
+    words = cmd.split()
+    sf_op = words[1] if words[:1] == ["sf"] and len(words) > 1 else ""
+    if sf_op == "erase":
+        if flash_lock.stop_requested():
+            log("storm guard asked the flash flow to stop (tmp/flash_write.stop): not starting another write", "FATAL")
+            return None
+        flash_lock.acquire(cmd)
     s.send_line(cmd)
     try:
         s.expect(ok_pat if isinstance(ok_pat, list) else [ok_pat], budget_s, what)
-        return s.read_idle(0.3, 2.0).decode(errors="replace")
+        out = s.read_idle(0.3, 2.0).decode(errors="replace")
+        if sf_op in ("write", "update"):
+            flash_lock.release()
+        return out
     except console.Timeout as e:
+        flash_lock.release()
         log(str(e), "FATAL")
         return None
 
@@ -1700,7 +1714,7 @@ def main(argv: list[str] | None = None) -> int:
     if meta["kind"] == "action":  # hardware command: board_guard refuses protected targets, storm guard watches the NIC
         rc = subprocess.call([sys.executable, str(REPO / "scripts/board_guard.py"), name, *extra], cwd=REPO)
         if rc:
-            log(f"{name}: refused by scripts/board_guard.py (hwdb/lab/protected.toml, #139)", "FATAL")
+            log(f"{name}: refused by scripts/board_guard.py (awto-dan docs/lab/lab.toml, #139)", "FATAL")
             return rc
         _storm_guard()
     rc = meta["fn"](extra)

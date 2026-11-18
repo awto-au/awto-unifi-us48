@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""board_guard - refuse a dev.py command whose arguments target a protected lab host, port or serial adapter (#139).
+"""board_guard - refuse a dev.py command whose arguments target another session's lab unit, protected port or serial adapter (#139).
 
 Usage: board_guard.py --selftest | [<dev.py command> [args ...]]    exit 0 = ok, 5 = refused
-- List: hwdb/lab/protected.toml (hosts by registry name -> IP via _ipreg, ports, serial by-id).
-- Host in args: refused unless US48_BOARD_GUARD_ALLOW=<name,...>. Host + its protected port (sw1 lan5): always refused.
-- Host-only check on the argument text (<10 ms, no network, no console traffic).
-- Log: tmp/logs/board_guard.log
+- List: awto-dan docs/lab/lab.toml via scripts/_lab.py: units owned by another repo (mgmt host + relay by ip-registry name/IP),
+  [[protected]] unit:port, adapters of other units. Nothing is stored here.
+- Unit in args: refused unless US48_BOARD_GUARD_ALLOW=<unit,...> (sw1_bounce/sw1_link_test set sw1). Unit + protected port
+  (sw1 lan5), or another unit's serial by-id: always refused.
+- Text match on the arguments only (<10 ms, no network, no console traffic). Log: tmp/logs/board_guard.log
 """
 import os
 import re
 import sys
 import time
-import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _ipreg  # noqa: E402
+import _lab  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-LIST = ROOT / "hwdb/lab/protected.toml"
 LOG = ROOT / "tmp/logs/board_guard.log"
+OURS = "awto-unifi-us48"
 REFUSED = 5
 
 
@@ -36,32 +37,34 @@ def _mentions(text: str, name: str) -> bool:
     return bool(re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w-])|(?<![\d.]){re.escape(ip)}(?![\d])", text))
 
 
-def check(argv: list[str], allow: str | None = None, lst: dict | None = None) -> list[str]:
-    if lst is None:
-        with LIST.open("rb") as fh:
-            lst = tomllib.load(fh)
+def check(argv: list[str], allow: str | None = None) -> list[str]:
     allowed = {x for x in (os.environ.get("US48_BOARD_GUARD_ALLOW", "") if allow is None else allow).split(",") if x}
+    lab = _lab.load()
+    others = {n: u for n, u in lab["unit"].items() if u["owner"] != OURS}
     why = []
     for arg in argv:
-        for p in lst.get("port", []):
-            if _mentions(arg, p["host"]) and re.search(rf"(?<![\w]){re.escape(p['port'])}(?![\w])", arg):
-                why.append(f"{p['host']} {p['port']}: {p['why']}")
-        for h in lst.get("host", []):
-            if h["name"] not in allowed and _mentions(arg, h["name"]):
-                why.append(f"{h['name']}: {h['why']} (US48_BOARD_GUARD_ALLOW={h['name']} to override)")
-        for s in lst.get("serial", []):
-            if s["by_id"] in arg:
-                why.append(f"{s['by_id']}: {s['why']}")
+        for n, u in others.items():
+            hosts = [h for h in (u.get("mgmt_host"), u.get("relay")) if h]
+            if not any(_mentions(arg, h) for h in hosts):
+                continue
+            for p in _lab.protected(n):
+                if re.search(rf"(?<!\w){re.escape(p['port'])}(?!\w)", arg):
+                    why.append(f"{n} {p['port']}: {p['rule']}")
+            if n not in allowed:
+                why.append(f"{n}: owned by {u['owner']} (US48_BOARD_GUARD_ALLOW={n} to override)")
+        for a in lab.get("adapter", []):
+            if a["unit"] in others and any(b in arg for b in a["by_id"]):
+                why.append(f"serial {a['unit']} adapter {a['chip']}: another session's console")
     return why
 
 
 def selftest() -> int:
     cases = [(["send", "ls"], None, False), (["flash-net", "192.168.25.206"], None, False),
              (["send", "ssh root@192.168.25.48 ip link"], None, True),
-             (["send", "ssh root@192.168.25.48 ip link"], "st1008f-1-mgmt", False),
-             (["send", "ssh root@192.168.25.48 ip link set lan5 down"], "st1008f-1-mgmt", True),
+             (["send", "ssh root@192.168.25.48 ip link"], "sw1", False),
+             (["send", "ssh root@192.168.25.48 ip link set lan5 down"], "sw1", True),
              (["send", "st1008f-2-mgmt"], None, True),
-             (["console", "/dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0"], "st1008f-2-mgmt", True),
+             (["console", "/dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0"], "sw2", True),
              (["send", "ping 192.168.25.480"], None, False)]
     fails = 0
     for argv, allow, want in cases:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""stock_sw1_probe — stock Linux running (stock_ramboot.py): sample stock xe49/xe50 PCS state against sw1 lan6/lan3 over time (#78 control).
+"""stock_sw1_probe — stock Linux running (stock_ramboot.py): sample stock xe49/xe50 PCS state against sw1 lan7/lan3 over time (#78 control).
 
-Usage: scripts/stock_sw1_probe.py --sw1 lan6 --xe 49 [--samples 8] [--period-s 5]
+Usage: scripts/stock_sw1_probe.py --sw1 lan7 --xe 49 [--samples 8] [--period-s 5]
 Each sample: stock lane regs 0xc154 (RX PCS live: b0 SYNC b1 LINK b7 RF b8 LF), 0xc120 (TX encode status), 0xc150, XLMAC RX_LSS (tools/tsc_read via ssh,
-read-only) + sw1 carrier and TGR_STD_1 reg0/reg1. sw1 admin: lan3/lan6 recorded first, only --sw1 bounced (down, up), restored in finally. lan5 refused.
+read-only) + sw1 carrier and TGR_STD_1 reg0/reg1. sw1 admin: lan3/lan7 recorded first, only --sw1 bounced (down, up), restored in finally. lan5 refused.
 Bounds: ssh 10 s per call; 8 x 5 s = 40 s = one sw1 calibration verdict (~30 s, #78) + margin. Log: tmp/logs/stock_sw1_probe.log
 """
 import _ipreg  # noqa: E402
@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sw1_link_test as t  # noqa: E402
 import tsc_lane_dump as d  # noqa: E402
 import hwdb  # noqa: E402
+import _lab  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/stock_sw1_probe.log"
 
@@ -49,7 +50,7 @@ def main() -> int:
     ap.add_argument("--period-s", type=float, default=5.0)
     ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt")))
     a = ap.parse_args()
-    if not re.fullmatch(r"lan[1-8]", a.sw1) or a.sw1 == "lan5":
+    if not re.fullmatch(r"lan[1-8]", a.sw1) or _lab.is_protected("sw1", a.sw1):
         sys.exit("refusing sw1 port")
     orig = {l: t.admin_up(l) for l in t.RESTORE}
     log(f"original admin state {orig}")

@@ -15,4 +15,4 @@
 - Mainline kernel base is the newest Linus tag, patch series in `mainline/` (v7.4-rc1 now). #15
 - Shared Linux store, never a fresh clone; worktree from the store (2026-11). #45
 - Upstream series (DT, bindings, pcie-iproc, US-48 device) held until Dan's go-ahead. #41
-- The US-48 is a dev/test unit, not the house uplink; the sw1/sw2 benches belong to the awto-tl-st1008f session (Dan 2026-11-16). `hwdb/lab/protected.toml`, #139
+- The US-48 is a dev/test unit, not the house uplink; the sw1/sw2 benches belong to the awto-tl-st1008f session (Dan 2026-11-16). `awto-dan docs/lab/lab.toml`, #139

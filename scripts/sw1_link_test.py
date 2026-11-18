@@ -14,6 +14,7 @@ Usage: scripts/sw1_link_test.py --sw1 lan7 --xe xe49 [--wait-s 40] [--fdb] [--no
 - Log: tmp/logs/sw1_link_test.log
 """
 import _ipreg  # noqa: E402
+import os
 import argparse
 import re
 import subprocess
@@ -23,8 +24,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
+import _lab  # noqa: E402
 import hwdb  # noqa: E402
 
+os.environ.setdefault("US48_BOARD_GUARD_ALLOW", "sw1")  # Dan 2026-11-16: sw1 lan3/6/7 bounces OK; lan5 stays refused
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_link_test.log"
 SW1 = f"root@{_ipreg.ip('st1008f-1-mgmt')}"
@@ -32,8 +35,8 @@ BOARD = f"root@{_ipreg.ip('us48-boot')}"
 POLL_S = 0.5
 RESTORE = hwdb.lite().sw1_ports()
 _DB = hwdb.lite()
-_SFP = [p["front"] for p in _DB.ports if "sw1_peer" in p]
-PEER = {"xe%d" % f: _DB.sw1_peer(f) for f in _SFP}  # expected far end (ports.toml); the FDB check below verifies it, never trust it
+_SFP = list(_DB.sw1_cages())
+PEER = {"xe%d" % f: _DB.sw1_peer(f) for f in _SFP}  # expected far end (lab.toml); the FDB check below verifies it, never trust it
 MAC = {"xe%d" % f: hwdb.mac(f) for f in _SFP}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
@@ -118,7 +121,7 @@ def main() -> int:
     ap.add_argument("--fdb", action="store_true", help="raw frames + sw1 FDB port = the verdict")
     ap.add_argument("--no-board-dump", action="store_true")
     a = ap.parse_args()
-    if not re.fullmatch(r"lan[1-8]", a.sw1) or a.sw1 == "lan5":
+    if not re.fullmatch(r"lan[1-8]", a.sw1) or _lab.is_protected("sw1", a.sw1):
         sys.exit(f"refusing sw1 port {a.sw1!r}: lan1..lan8 except lan5")
     if a.xe not in MAC:
         sys.exit(f"unknown xe port {a.xe!r}")
