@@ -700,7 +700,7 @@ def _bootm_watch(s: console.Session, slot: str = "linux", prompt: bytes | list[b
     log(f"userspace {time.monotonic() - t0:.1f} s after handover", "ALERT")
     s.send_line("")
     s.read_idle(0.5, 3.0)
-    log("power-cycle (or `reboot`) returns to stock slot kernel1", "ALERT")
+    log("power-cycle autoboots the kernel0 linux slot (awto-uboot us48boot, docs/autochain.md), not this image", "ALERT")
     return 0
 
 
