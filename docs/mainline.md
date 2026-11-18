@@ -1,6 +1,6 @@
 # Mainline Linux port (issue #15)
 
-- Develop on latest mainline. OpenWrt (`openwrt/`, 6.18) is parked and not used by the image build.
+- Develop on latest mainline. OpenWrt was removed 2026-11-18 (tag `openwrt-parked`).
 - Base: torvalds/linux tag `v7.4-rc1` (`BASE` in `scripts/build_mainline.py`); branch `awto/us48/mainline-v7.4-rc1` (local, not pushed). Rebased from v7.3-rc7, all 7 patches apply clean.
 - Tree: `tmp/linux-mainline` = `git worktree` of the machine-shared Linux store (#45), not a clone.
   - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
@@ -107,7 +107,7 @@
 | 24 | PCI: iproc: Keep PERST# released at shutdown on Hurricane 2 | `CLK_CTRL` survives the chip reset; shutdown PERST# made the next boot's first unit 1 access stall until the SP805 bit (#67, #98). Keyed on `brcm,iproc-hr2-pcie`; vendor kernel never asserts it |
 | 22 | lib/stackdepot: Initialise only the hash table entries that were allocated | `init_stack_table()` ran over the requested count, not the allocated one: overwrote the `struct page` array under KASAN (#84) |
 
-Differences to the OpenWrt DTS (`openwrt/0001-*.patch`):
+Differences to the old OpenWrt DTS (`openwrt/0001-*.patch` in tag `openwrt-parked`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.
 - No `bootargs`; `stdout-path` only.
 - LM75 nodes named `temperature-sensor@`; `dmu` compatible `brcm,hr2-dmu`, `syscon`.

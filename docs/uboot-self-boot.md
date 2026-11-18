@@ -58,7 +58,7 @@ Question: can a warm reset land in uboot-2 instead of uboot-1, as a step to reti
 | uboot-1 `reset` | NULL handler | do not use. C (uboot.md §3) |
 
 What survives the DMU soft reset:
-- `IPROC_PCIE_CLK_CTRL` survives (PERST stays asserted into the next boot; patch 952). C (`openwrt/0001-*.patch` ~436-446)
+- `IPROC_PCIE_CLK_CTRL` survives (PERST stays asserted into the next boot; patch 952). C (`openwrt/0001-*.patch` ~436-446, tag `openwrt-parked`; mainline equivalent `mainline/0024`)
 - `IPROC_RESET_REASON` records it. C
 - DDR contents: DRAM is not powered down, but the controller is reset and re-trained by uboot-1; retention not measured. I
 - SRAM `0x1b000000`: random at power-on; across a soft reset unknown. I

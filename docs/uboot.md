@@ -213,7 +213,7 @@ Serial 115200 8N1 on UART1 (header location: see [hardware.md](hardware.md)). Do
 1. Power on; **press any key within 3 s** of "Hit any key to stop autoboot". Expect `u-boot> `.
 2. Read only: `version`, `printenv` (default env as in §3), `coninfo`, `help`. No `saveenv`.
 3. RAM alias check (scratch RAM, safe): `mw.l 0x01000000 0xa5a5a5a5` then `md.l 0x61000000 1`. Same value ⇒ alias confirmed. Different ⇒ stop and re-read §6.
-4. The uImage is built with **load = entry = `0x00018000`** (not `0x8000`; image rule in `openwrt/0001-*.patch`).
+4. The uImage is built with **load = entry = `0x00018000`** (not `0x8000`; image rule in `openwrt/0001-*.patch`, tag `openwrt-parked`).
 5. Send the image over serial: `loady 0x01000000` then ymodem-send `us48-initramfs.bin`; `dev.py` uses 460800 ([§8](#8-console-speed), 921600 fails). `loadb` (kermit) is the alternative.
    - Expected: "## Total Size = 0x... Bytes". Size must equal the file size.
 6. `bootm 0x01000000`. Watch for, in order:

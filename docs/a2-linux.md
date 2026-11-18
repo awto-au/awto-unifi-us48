@@ -22,7 +22,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 1. a1: `us48_a2` remoteproc, `payload=1`, firmware = boot stub ELF; copies zImage + DTB into the carveout, writes stub boot args.
 2. a1: start the DCC reader, then release a2.
 3. Stub: r0 = 0, r1 = ~0, r2 = DTB, `bx` zImage. No appended DTB in the plain zImage: head.S keeps r2 (ARM_APPENDED_DTB only acts on the DTB magic at the zImage end).
-4. Kernel -> `/init` (script, `openwrt/files/init`): `ubnt,us48-a2` in `/proc/device-tree/compatible` -> banner, `/sys`, devtmpfs, shell on `/dev/console` (= hvc0). Otherwise umount `/proc`, `exec /sbin/init` (a1, procd).
+4. Kernel -> `/init` (the shared mainline rootfs `/init`): `ubnt,us48-a2` in `/proc/device-tree/compatible` -> banner, `/sys`, devtmpfs, shell on `/dev/console` (= hvc0). Otherwise umount `/proc`, `exec /sbin/init` (a1, procd).
 - Modules: same `/lib/modules/<release>` in the one initramfs; a2 loads none by default.
 - Module updates on a2 for now = remoteproc reload of the image (`stop`, replace files, `start`). Later: virtio-net/9p over rpmsg.
 
