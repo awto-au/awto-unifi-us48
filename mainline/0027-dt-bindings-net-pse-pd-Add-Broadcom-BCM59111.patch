@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Thu, 19 Nov 2026 03:00:00 +1100
+Subject: [PATCH 27/28] dt-bindings: net: pse-pd: Add Broadcom BCM59111
+
+Describe the BCM59111 four-port PoE PSE controller. Ports are PSE PIs with a
+vpwr supply whose power budget bounds the reservations of the enabled ports.
+
+Signed-off-by: TODO
+---
+diff --git a/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml b/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml
+new file mode 100644
+--- /dev/null
++++ b/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml
+@@ -0,0 +1,80 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/net/pse-pd/brcm,bcm59111.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Broadcom BCM59111 Power Sourcing Equipment controller
++
++maintainers:
++  - Dan on Selwyn <dan@selwyn>
++
++description:
++  Four-port IEEE 802.3af/at PSE controller on I2C. The chip needs a 16 KiB
++  firmware image after reset; it keeps running across a warm reboot. All
++  ports are shut down at probe and stay off until enabled by the user.
++
++allOf:
++  - $ref: pse-controller.yaml#
++
++properties:
++  compatible:
++    const: brcm,bcm59111
++
++  reg:
++    maxItems: 1
++
++  label:
++    description: Name of the chip, used for its hwmon temperature sensor.
++
++  firmware-name:
++    description:
++      Firmware file below /lib/firmware, used only when the driver is told to
++      load firmware (module parameter fw_load) and the chip reports none
++      running.
++    default: bcm59111-v21.bin
++
++  brcm,port-reserve-milliwatt:
++    description:
++      Power reserved on the vpwr supply of a PI while it is enabled. Enabling
++      a PI fails when the reservations exceed the budget of the supply chain.
++    default: 30000
++
++required:
++  - compatible
++  - reg
++  - pse-pis
++
++unevaluatedProperties: false
++
++examples:
++  - |
++    poe: regulator-poe {
++        compatible = "regulator-fixed";
++        regulator-name = "poe";
++        regulator-min-microvolt = <54000000>;
++        regulator-max-microvolt = <54000000>;
++        regulator-power-budget-milliwatt = <436000>;
++    };
++
++    i2c {
++        #address-cells = <1>;
++        #size-cells = <0>;
++
++        ethernet-pse@28 {
++            compatible = "brcm,bcm59111";
++            reg = <0x28>;
++            label = "PoE-01";
++
++            pse-pis {
++                #address-cells = <1>;
++                #size-cells = <0>;
++
++                pse-pi@0 {
++                    reg = <0>;
++                    #pse-cells = <0>;
++                    vpwr-supply = <&poe>;
++                };
++            };
++        };
++    };
+-- 
+2.52.0
+

@@ -30,12 +30,12 @@
 - `/init`: a2 role (DT compatible `ubnt,us48-a2`) = banner + console shell; a1 = `exec /sbin/init` (busybox, `/etc/inittab`: `sysinit` = `/etc/rc.sh`, `askfirst` shell on the console).
 - `/etc/rc.sh`: mounts (the SP805 awto-uboot arms, ~46 s, is fed by the kernel driver: `WATCHDOG_HANDLE_BOOT_ENABLED`, #84), hostname `us48`, `syslogd -O /tmp/messages` (no SysV IPC in the kernel: no `logread`), then `/etc/rc.d/S*` in order:
   - `S04us48-net`: insmod `us48_cmic unit0=1`, `us48_pci`, `us48_cmic_xe`; ge1/xe49/xe50 up, ge1 `192.168.25.207/24` (ip-registry `us48-boot`).
-  - `S05us48-sfp`: insmod `us48_cmic_gpio`, `us48_cca_gpio` (gpio-chips the built-in sfp sockets wait for), `bcm59111` (PoE chip temperatures, read-only hwmon); #21, [board.md](board.md#sfp-ports-4952).
+  - `S05us48-sfp`: insmod `us48_cmic_gpio`, `us48_cca_gpio` (gpio-chips the built-in sfp sockets wait for), `bcm59111` (PoE: shuts all 48 ports off at load, per-port sysfs control, chip temperatures; [poe-pse.md](poe-pse.md), #26); #21, [board.md](board.md#sfp-ports-4952).
   - `S10us48-dma`: insmod `us48_idm_reset` (reset controller, DT `dmac_idm`), then `pl330` (DT `resets`; #84). Explicit insmod like the other scripts: no udev/depmod in the image, so DT/modalias autoload does not exist. Board 2026-11-16: `Num_Chans-8` probed on a cold boot.
   - `S14us48-thermal`: insmod `us48_cmic_gpio` (if S05 did not), `us48_cmic_mspi`, `us48_pvtmon`, `us48_fan` (fans: `docs/fan.md`).
   - `S20dropbear`: `dropbear -R -s -g -p 22`; `/root/.ssh/authorized_keys` = `mainline/rootfs/authorized_keys` (public keys).
   - `S90us48-selftest`: `us48-selftest` in the background (`docs/selftest.md`).
-- `/usr/sbin/us48-poe`, `us48-poe-off`: present, not run at boot (bench image keeps the PoE state stock left; run `us48-poe-off` by hand). `i2cget/i2cset -f`: `bcm59111` is bound to the chips.
+- `/usr/sbin/us48-poe`, `us48-poe-off`: present, not run at boot; `bcm59111` now shuts the ports at load, use `portN_enable` instead (these bypass the budget). `i2cget/i2cset -f`: `bcm59111` is bound to the chips.
 - `/usr/sbin/ethtool` 7.2 static (netlink, libmnl): `ethtool -m xe49` (#21).
 - Modules: `/lib/modules/<release>/*.ko` (loaded by explicit insmod order in the rc scripts; `us48_a2` and `us48_bustest` are loaded by hand). Firmware: `/lib/firmware/us48-a2*.elf` (from `tmp/a2fw`).
 - initramfs = a gen_init_cpio list of the stage (all uid/gid 0), written by `build_mainline.py`; modules are stripped of debug info.

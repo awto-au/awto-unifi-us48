@@ -98,6 +98,10 @@ CONFIG_TUN=y
 CONFIG_PHYLINK=y
 CONFIG_SFP=y
 CONFIG_ETHTOOL_NETLINK=y
+# PoE (#26): pse-pd core for kernel/bcm59111; regulator-fixed = the PoE power budget supplies in the DT (mainline/0028)
+CONFIG_REGULATOR=y
+CONFIG_REGULATOR_FIXED_VOLTAGE=y
+CONFIG_PSE_CONTROLLER=y
 # Route/NAT/firewall tests (docs/route-nat-fw.md): netns + nftables (nf_tables, conntrack, NAT, SW flowtable) as modules, loaded by modprobe
 CONFIG_NAMESPACES=y
 CONFIG_NET_NS=y
