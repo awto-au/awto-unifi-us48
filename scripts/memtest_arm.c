@@ -179,6 +179,27 @@ static void latency(uint32_t *buf, size_t bytes, const char *tag)
 	printf("LAT %s_ns %.1f (span %zu KiB, end %u)\n", tag, t / steps * 1e9, bytes >> 10, cur);
 }
 
+/* Cache-resident integer benchmark: CRC over a 16 KiB buffer (+ 1 KiB table) fits L1, no DDR traffic */
+static void cpu_bench(unsigned passes)
+{
+	static uint32_t buf[4096];
+	uint32_t c = 0xffffffffu, x = 0x12345678u;
+
+	for (unsigned i = 0; i < 4096; i++) {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		buf[i] = x;
+	}
+	for (unsigned p = 0; p < passes; p++)
+		for (unsigned i = 0; i < 4096; i++) {
+			uint32_t w = buf[i] ^ c;
+			for (int b = 0; b < 4; b++, w >>= 8)
+				c = crc_tab[(c ^ w) & 0xff] ^ (c >> 8);
+		}
+	printf("CPU passes %u crc %08x\n", passes, c);
+}
+
 int main(int argc, char **argv)
 {
 	size_t mib = 64, bytes;
@@ -190,10 +211,14 @@ int main(int argc, char **argv)
 			mib = strtoul(argv[++i], NULL, 0);
 		else if (!strcmp(argv[i], "--no-sram"))
 			sram = 0;
-		else if (!strcmp(argv[i], "--walk") && i + 1 < argc)
+		else if (!strcmp(argv[i], "--cpu") && i + 1 < argc) {
+			crc_init();
+			cpu_bench(strtoul(argv[++i], NULL, 0));
+			return 0;
+		} else if (!strcmp(argv[i], "--walk") && i + 1 < argc)
 			walk = atoi(argv[++i]);
 		else {
-			fprintf(stderr, "usage: %s [--mib N] [--walk N] [--no-sram]\n", argv[0]);
+			fprintf(stderr, "usage: %s [--mib N] [--walk N] [--no-sram] [--cpu PASSES]\n", argv[0]);
 			return 2;
 		}
 	}
