@@ -58,7 +58,7 @@ LOG = ROOT / "tmp/logs/build_mainline.log"
 MAKE_LOG = ROOT / "tmp/logs/build_mainline-make.log"
 STORE_LINK = ROOT / "tmp/linux-store"  # symlink -> machine Linux store; no host path in this repo
 BASE = "v7.4-rc1"
-BRANCH = f"awto/us48/mainline-{BASE}"
+BRANCH = os.environ.get("US48_KERNEL_BRANCH", f"awto/us48/mainline-{BASE}")  # a second worktree of the store needs its own branch name
 # tag fetch: objects mostly in the store already, ~300 MB worst case at >=1 MB/s; checkout of ~96k files ~60 s
 FETCH_TIMEOUT, WORKTREE_TIMEOUT = 600, 300
 DTB = "broadcom/bcm53344-ubnt-unifi-us-48-500w.dtb"
@@ -349,6 +349,13 @@ def stage_intree_modules() -> None:
         log(f"{ko.name} ({(dst / ko.name).stat().st_size} B) staged from the kernel tree")
 
 
+def stage_depmod() -> None:
+    """modules.dep (+alias/symbols) for busybox modprobe: host depmod over the flat staged module dir."""
+    rel = (BUILD / "include/config/kernel.release").read_text().strip()
+    run(["depmod", "-b", str(STAGE), rel], out=MAKE_LOG)
+    log(f"modules.dep written: {(STAGE / 'lib/modules' / rel / 'modules.dep').stat().st_size} B")
+
+
 def build_modules(jobs: int, stage: bool = True) -> None:
     """Out-of-tree us48 modules against this tree, staged into the initramfs rootfs (stage=False: build only).
 
@@ -376,6 +383,8 @@ def build_modules(jobs: int, stage: bool = True) -> None:
                 shutil.copy2(mod / ko, dst / ko)
                 run([f"{CROSS}strip", "--strip-debug", str(dst / ko)])  # DWARF would bloat the initramfs
                 log(f"{ko} staged into the initramfs rootfs ({dst})")
+    if stage:
+        stage_depmod()
 
 
 def configure_modules_only() -> None:

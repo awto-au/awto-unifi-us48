@@ -18,6 +18,7 @@
 - Userspace toolchain: musl-cross-make (gcc 14.3, musl 1.2.6, soft-float, Cortex-A9; Fedora's cross gcc is hard-float only, the HR2 A9 has no VFP). Built once by `build_rootfs.py` into `/mnt/1tnvme/toolchains/musl-14.3.0-arm-cortex-a9-soft` (symlink `tmp/musl-arm`, `$US48_MUSL_TC`); mcm clone in `/mnt/1tnvme/git-mirrors/richfelker/musl-cross-make`, tarballs in `/mnt/1tnvme/toolchains/dl`.
 - Output: `tmp/mainline/us48-mainline-<profile>.bin` (build dir `build-<profile>`, stage `rootfs-<profile>`) = legacy uImage, load/entry `0x00018000`, zImage + appended DTB; boots via stock U-Boot `loady 0x01000000; bootm` or awto-uboot TFTP (`dev.py u2-boot --from tftp`).
 - `CONFIG_ARM_ATAG_DTB_COMPAT` off; DT has no bootargs, so `CONFIG_CMDLINE="console=ttyS0,115200 earlycon"` applies.
+- `US48_KERNEL_BRANCH` overrides the branch name: a second worktree of the store (own `tmp/`) cannot reuse the branch checked out in the first.
 - Flags: `--keep-branch` (build tree as is), `--save-patches` (branch -> `mainline/`), `--checkpatch`, `--dtbs-check`, `--prepare-only`.
 - Logs: `tmp/logs/build_mainline.log`, `build_mainline-make.log`, `build_mainline-dtbs_check.log`.
 - Edit flow: change `tmp/linux-mainline` on the branch, commit, `--save-patches`, commit `mainline/`.
@@ -37,6 +38,7 @@
 - Modules: `/lib/modules/<release>/*.ko` (loaded by explicit insmod order in the rc scripts; `us48_a2` and `us48_bustest` are loaded by hand). Firmware: `/lib/firmware/us48-a2*.elf` (from `tmp/a2fw`).
 - initramfs = a gen_init_cpio list of the stage (all uid/gid 0), written by `build_mainline.py`; modules are stripped of debug info.
 - Debug profile only: static test tools in `/usr/bin` (`build_rootfs.py --tools`, docs/core-bringup.md); in-tree `=m` modules (`pl330`, `dmatest`, torture, `test_*`) are staged into `/lib/modules/<release>` by `build_mainline.py`.
+- Network tests (`docs/route-nat-fw.md`): `nft` (nftables 1.1.7, static, mini-gmp, 0.8 MB) in `/usr/sbin`, netfilter/nf_tables/flowtable as `=m` modules in both profiles, `modules.dep` from host `depmod` so busybox `modprobe` works (`CONFIG_MODPROBE`); `unshare`/`nsenter` from busybox.
 - Stage is rebuilt on every `build_mainline.py` run (`tmp/mainline/rootfs`); the busybox/dropbear builds are a few seconds each.
 
 ## Module reload (#78, #56)
