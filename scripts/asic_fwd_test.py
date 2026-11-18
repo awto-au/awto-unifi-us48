@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""asic_fwd_test — cross-chip ASIC forwarding test over the HiGig links (#57, #4; ssh + devmem S-channel).
+"""asic_fwd_test — cross-chip ASIC forwarding test over the HiGig links (#57, #4; ssh + us48_cmic schan param).
 
 Usage: asic_fwd_test.py survey
        asic_fwd_test.py setup [--learn] [--apply]
@@ -17,7 +17,7 @@ Usage: asic_fwd_test.py survey
   and counts them on the four netdevs; per-hop MIB deltas. A storm signature (any hop or ge1 > 10x N) runs restore.
 - count: per-hop MIB snapshot + L2 learning check (TABLE_LOOKUP of both test MACs, read only).
 - restore: writes every recorded value back (reverse order), verifies by read-back, then survey.
-- S-channel via devmem is not locked against the driver: run with no link change / ifup / reload in flight.
+- S-channel: us48_cmic `schan` parameter (_board.schan_batch), under the driver's lock; writes read back in the kernel (#125).
 - Log: tmp/logs/asic_fwd_test.log.
 """
 import argparse
@@ -93,44 +93,23 @@ def reg(name: str) -> tuple[int, dict]:
 
 def rd(ops: list[tuple]) -> list[list[int]]:
     """ops: (unit, 'reg'|'mem', blk, addr, words) -> data words."""
-    req = [(u, "r" + k, b, a, n, None) for u, k, b, a, n in ops]
-    try:
-        res = _board.schan_batch(req)
-    except RuntimeError as e:	# devmem S-channel is not locked against the driver: one logged retry
-        log(f"  read retry after: {e}")
-        res = _board.schan_batch(req)
-    return [r[1:] for r in res]
+    res = _board.schan_batch([(u, "r" + k, b, a, n, None) for u, k, b, a, n in ops])
+    bad = [r["line"] for r in res if r["status"] != "ok"]
+    if bad:
+        raise RuntimeError(f"read failed: {bad[0]}")
+    return [r["data"] for r in res]
 
 
-def rd_stable(u: int, kind: str, blk: int, addr: int, words: int) -> list[int]:
-    """Two equal consecutive reads (up to 4): a value recorded for restore must not be a race glitch."""
-    prev = rd([(u, kind, blk, addr, words)])[0][:words]
-    for _ in range(3):
-        cur = rd([(u, kind, blk, addr, words)])[0][:words]
-        if cur == prev:
-            return cur
-        log(f"  u{u} {addr:#010x}: unstable read {' '.join('%08x' % x for x in prev)} vs {' '.join('%08x' % x for x in cur)}")
-        prev = cur
-    raise RuntimeError(f"u{u} {addr:#x}: no two equal reads in 4")
-
-
-def wr(u: int, kind: str, blk: int, addr: int, data: list[int]) -> None:
-    _board.schan_batch([(u, "w" + kind, blk, addr, len(data), data)])
+def rd_one(u: int, kind: str, blk: int, addr: int, words: int) -> list[int]:
+    return rd([(u, kind, blk, addr, words)])[0][:words]
 
 
 def wr_verified(u: int, kind: str, blk: int, addr: int, data: list[int]) -> bool:
-    """Write + read-back; one logged rewrite on mismatch (a devmem op can be lost to the driver's S-channel use)."""
-    for attempt in (1, 2, 3):
-        try:
-            wr(u, kind, blk, addr, data)
-            got = rd([(u, kind, blk, addr, len(data))])[0][:len(data)]
-        except RuntimeError as e:
-            log(f"  u{u} {addr:#010x}: attempt {attempt}: {e}")
-            continue
-        if got == data:
-            return True
-        log(f"  u{u} {addr:#010x}: read back {' '.join('%08x' % x for x in got)} after write {attempt}")
-    return False
+    """One kernel read / write / read-back under the driver's S-channel lock."""
+    r = _board.schan_batch([(u, "w" + kind, blk, addr, len(data), data)])[0]
+    if r["status"] != "ok":
+        log(f"  u{u} {addr:#010x}: {r['line']}")
+    return r["status"] == "ok"
 
 
 # ---------------------------------------------------------------- survey (read-only)
@@ -200,7 +179,7 @@ class Plan:
 
     def rmw(self, u: int, kind: str, blk: int, addr: int, words: int, fn, what: str, src: str) -> None:
         key = (u, kind, blk, addr)
-        before = list(self.planned.get(key) or rd_stable(u, kind, blk, addr, words))
+        before = list(self.planned.get(key) or rd_one(u, kind, blk, addr, words))
         after = list(before)
         fn(after)
         self.planned[key] = after
@@ -375,19 +354,8 @@ def counter_ops() -> tuple[list[str], list[tuple]]:
 
 
 def counters() -> dict[str, int]:
-    """Two snapshots; a value that moved by > 1000 between them (devmem race glitch) is read a third time, median kept."""
     names, ops = counter_ops()
-    snap = lambda: [v[0] | (v[1] << 32 if len(v) > 1 and "HG" in n else 0) for n, v in zip(names, rd(ops))]  # noqa: E731
-    a, b = snap(), snap()
-    out = {}
-    for i, n in enumerate(names):
-        if abs(a[i] - b[i]) > 1000:
-            c = rd([ops[i]])[0]
-            c = c[0] | (c[1] << 32 if len(c) > 1 and "HG" in n else 0)
-            log(f"  counter {n}: {a[i]} / {b[i]} / {c} (glitch, median kept)")
-            b[i] = sorted((a[i], b[i], c))[1]
-        out[n] = b[i]
-    return out
+    return {n: v[0] | (v[1] << 32 if len(v) > 1 and "HG" in n else 0) for n, v in zip(names, rd(ops))}
 
 
 HOPS = {"fwd": ["u0 ge8 GTPKT", "u0 ge17 GRPKT", "u0 HG28 TPKT", "u0 HG29 TPKT", "u1 HG28 RPKT", "u1 HG29 RPKT",
@@ -429,38 +397,24 @@ def send(direction: str, count: int, rate: int) -> int:
     return 0
 
 
-def l2_lookup(u: int, vid: int, mac: str, op: int = 0x28) -> str:
+def l2_lookup(u: int, vid: int, mac: str, op: str = "lookup") -> str:
     """TABLE_LOOKUP (op 0x28, driver-internals 1) on L2X by key {KEY_TYPE 0, VLAN_ID, MAC_ADDR}: read only.
-    op 0x26 = TABLE_DELETE by the same key (restore: test-learned entries; common/bcm-cmic l2 delete path)."""
+    op "delete" = TABLE_DELETE by the same key (restore: test-learned entries; common/bcm-cmic l2 delete path)."""
     base, words, f = mem("L2X")
     key = [0] * words
     setf(key, *f["VLAN_ID"], vid)
     setf(key, *f["MAC_ADDR"], int(mac.replace(":", ""), 16))
-    b = _board.CMIC[u] + _board.SCHAN
-    hdr = op << 26 | IPIPE << 20 | (4 * words) << 7
-    s = f"devmem {b:#x} 32 0; devmem {b + 12:#x} 32 {hdr:#x}; devmem {b + 16:#x} 32 {base:#x}; "
-    s += "".join(f"devmem {b + 20 + 4 * i:#x} 32 {v:#x}; " for i, v in enumerate(key))
-    s += (f"devmem {b:#x} 32 1; n=0; while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
-          f"echo S $(devmem {b:#x} 32)" + "".join(f" $(devmem {b + 12 + 4 * i:#x} 32)" for i in range(words + 2))
-          + f"; devmem {b:#x} 32 0")
-    for attempt in (1, 2, 3):	# a reply whose ack opcode is not LOOKUP_ACK 0x29 was clobbered by another S-channel op
-        rc, out = _board.ssh(s)
-        ln = [x for x in out.splitlines() if x.startswith("S ")]
-        if rc or not ln:
-            return f"ssh rc {rc}: {out[-200:]}"
-        v = [int(x, 16) for x in ln[0].split()[1:]]
-        ctrl, resp = v[0], v[1:]
-        if resp[0] >> 26 == op + 1:
-            break
-        log(f"  lookup u{u} attempt {attempt}: ack {resp[0]:#010x} ctrl {ctrl:#x} (not a lookup ack)")
-    else:
-        return "no valid lookup reply in 3 attempts"
-    if ctrl & 0x200000:
-        return f"not found (NACK, ctrl {ctrl:#x}, ack {resp[0]:#010x})"
-    if op != 0x28:
-        return f"done: ctrl {ctrl:#x} ack {resp[0]:#010x}"
-    e = resp[2:2 + words]	# ack header, response word (index), entry
-    return (f"found: ctrl {ctrl:#x} ack {resp[0]:#010x} resp {resp[1]:#010x} entry {' '.join('%08x' % x for x in e)} "
+    r = _board.schan_batch([(u, op, IPIPE, base, words, key)])[0]
+    if r["status"] == "notfound":
+        return f"not found (NACK, ack {r['ack']:#010x})"
+    if r["status"] != "ok":
+        return f"failed: {r['line']}"
+    if op != "lookup":
+        return f"done: ack {r['ack']:#010x}"
+    resp, e = r["data"][0], r["data"][1:1 + words]	# response word (index), entry
+    if len(e) != words or field(e, *f["MAC_ADDR"]) != field(key, *f["MAC_ADDR"]):
+        return f"bad reply (entry does not carry the key; us48_pci older than #125?): {r['line']}"
+    return (f"found: ack {r['ack']:#010x} resp {resp:#010x} entry {' '.join('%08x' % x for x in e)} "
             f"VALID {field(e, *f['VALID'])} STATIC {field(e, *f['STATIC_BIT'])} MODULE_ID {field(e, *f['MODULE_ID'])} "
             f"PORT_NUM {field(e, *f['PORT_NUM'])} T {field(e, *f['T'])} MAC {field(e, *f['MAC_ADDR']):012x} "
             f"VLAN {field(e, *f['VLAN_ID'])}")
@@ -474,7 +428,7 @@ def l2_cleanup() -> None:
             for k in (0, TEST_VID):
                 r = l2_lookup(u, k, mac)
                 if r.startswith("found") and "STATIC 0" in r:
-                    log(f"  L2 u{u} key {k} {mac}: delete ({l2_lookup(u, k, mac, op=0x26)}); now {l2_lookup(u, k, mac)[:40]}")
+                    log(f"  L2 u{u} key {k} {mac}: delete ({l2_lookup(u, k, mac, op='delete')}); now {l2_lookup(u, k, mac)[:40]}")
                 elif r.startswith("found"):
                     log(f"  L2 u{u} key {k} {mac}: static entry, not ours, kept")
 

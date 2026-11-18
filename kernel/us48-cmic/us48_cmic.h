@@ -10,12 +10,9 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 
+#include "bcm_cmic.h"
+
 #define CMIC_BAR		2
-#define SCHAN_CTRL		0x31000
-#define SCHAN_MSG(n)		(0x3100c + 4 * (n))
-#define  SCHAN_START		BIT(0)
-#define  SCHAN_DONE		BIT(1)
-#define  SCHAN_ERRS		(BIT(20) | BIT(21) | BIT(22))
 #define DMA_CTRL(ch)		(0x31140 + 4 * (ch))
 #define  DMA_DIR_TX		BIT(0)
 #define  DMA_EN			BIT(1)
@@ -38,8 +35,6 @@
 #define TSC1_PHY		5
 /* C45 op = address + data frame, 2 x 26 us at MDC 2.5 MHz (section 13); 1.25x. Expiry logged. */
 #define MIIM_TIMEOUT_US		65
-/* One SBUS op answers in a few us; 10 ms = 1000x backstop. Expiry = op abandoned, logged. */
-#define SCHAN_TIMEOUT_US	10000
 /* Abort completes after one in-flight descriptor (tens of us); 10 ms backstop, logged on expiry. */
 #define ABORT_TIMEOUT_US	10000
 /* No IRQ yet: poll every 1 ms; NAPI drains the ring. */
@@ -89,6 +84,9 @@ struct port_cfg {
 
 struct us48_cmic;
 
+/* One S-channel op under the unit owner's lock (unit 1: us48_pci_schan, shared with us48_pvtmon, #125). NULL = raw (unit 0). */
+typedef int (*us48_schan_fn)(void *ctx, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
+
 struct us48_port {
 	struct us48_cmic *u;
 	struct net_device *ndev;
@@ -107,6 +105,10 @@ struct us48_cmic {
 	int nports;
 	u8 modid;			/* PORT_TAB.MY_MODID: unit 0 = 0, unit 1 = 1 */
 	void __iomem *cmic;
+	struct bcm_cmic_unit cu;		/* every S-channel op of this unit (driver, shared core, schan param) */
+	us48_schan_fn schan_fn;
+	void *schan_ctx;
+	struct mutex schan_seq;		/* one op, or one schan-param read/write/read-back sequence */
 	struct us48_port *port[MAXPORTS];
 	struct net_device *napi_dev;	/* NAPI needs a netdev; the rings serve all ports */
 	struct napi_struct napi;
@@ -144,10 +146,11 @@ struct firmware;
 /* Optional SerDes bring-up (unit 1: TSC microcode), run before the ports are enabled; failure is logged, not fatal. */
 typedef int (*us48_serdes_init_t)(struct us48_cmic *u, const struct firmware *fw);
 
-int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
-		      int nports, u8 modid, const struct firmware *fw, us48_serdes_init_t serdes_init, struct us48_cmic **out);
+int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, us48_schan_fn schan_fn,
+		      void *schan_ctx, const struct port_cfg *cfgs, int nports, u8 modid, const struct firmware *fw,
+		      us48_serdes_init_t serdes_init, struct us48_cmic **out);
 /* Reset + full cold init of one chip (every load, whatever state it is in), DMA stopped first. unit 0 or 1. */
-int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit);
+int us48_chip_cold_init(struct device *dev, void __iomem *cmic, us48_schan_fn schan_fn, void *schan_ctx, int unit);
 void us48_mdio_scan(struct us48_cmic *u);
 /* Unbind: stop link polling, unregister the netdevs (ndo_stop), stop DMA for good and self-check. */
 void us48_remove_common(struct us48_cmic *u);
@@ -167,7 +170,7 @@ int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c);
 
 void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u32 lo, u32 hi, int aer);
 
-/* S-channel op on that unit (no lock: the caller keeps link changes / reloads out). */
+/* S-channel op on that unit, under its S-channel lock (schan_seq + the owner's lock). */
 int us48_sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words);
 /* Unit 0's driver state while us48_cmic_u0 is bound, else NULL. */
 struct us48_cmic *us48_unit0(void);

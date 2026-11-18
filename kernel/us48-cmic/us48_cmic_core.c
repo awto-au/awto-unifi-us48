@@ -42,32 +42,32 @@ module_param(rx_dump, uint, 0644);
 static u32 rd(struct us48_cmic *u, u32 off) { return ioread32(u->cmic + off); }
 static void wr(struct us48_cmic *u, u32 off, u32 v) { iowrite32(v, u->cmic + off); }
 
+/*
+ * S-channel (section 1): every op of a unit runs under u->schan_seq, then the owner's lock (unit 1: us48_pci_schan, which
+ * us48_pvtmon shares; unit 0: CMC0 has no other kernel user). Lock order: link_lock -> mdio -> schan_seq -> owner (#125).
+ */
+static int schan_exec(struct bcm_cmic_unit *cu, us48_schan_fn fn, void *ctx, u32 op, u32 blk, u32 addr, u32 *data,
+		      int words, u32 *ack)
+{
+	return fn ? fn(ctx, op, blk, addr, data, words, ack) : bcm_cmic_schan_raw(cu, op, blk, addr, data, words, ack);
+}
+
+/* bcm_cmic_unit hook of a probed unit: the shared core's ops take the same locks as sbus(). */
+static int cu_schan_locked(struct bcm_cmic_unit *cu, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
+{
+	struct us48_cmic *u = cu->priv;
+	int ret;
+
+	mutex_lock(&u->schan_seq);
+	ret = schan_exec(cu, u->schan_fn, u->schan_ctx, op, blk, addr, data, words, ack);
+	mutex_unlock(&u->schan_seq);
+	return ret;
+}
+
 /* SBUS op: reg read 0x0b / write 0x0d, mem read 0x07 / write 0x09, insert 0x24, delete 0x26. Section 1. */
 static int sbus(struct us48_cmic *u, u32 op, u32 blk, u32 addr, u32 *data, int words)
 {
-	bool write = op == 0x0d || op == 0x09 || op == 0x24 || op == 0x26;
-	ktime_t t0 = ktime_get();
-	u32 ctrl;
-	int i, ret;
-
-	wr(u, SCHAN_CTRL, 0);
-	wr(u, SCHAN_MSG(0), op << 26 | blk << 20 | (4 * words) << 7);
-	wr(u, SCHAN_MSG(1), addr);
-	for (i = 0; write && i < words; i++)
-		wr(u, SCHAN_MSG(2 + i), data[i]);
-	wr(u, SCHAN_CTRL, SCHAN_START);
-	/* DONE only: an error bit alone can be stale while the op is still in flight (seen as ctrl 00200001). */
-	ret = readl_poll_timeout_atomic(u->cmic + SCHAN_CTRL, ctrl, ctrl & SCHAN_DONE, 1, SCHAN_TIMEOUT_US);
-	if (ret || (ctrl & SCHAN_ERRS)) {
-		dev_err(u->dev, "sbus op %02x blk %u addr %08x: ctrl %08x after %lld us (limit %u)\n",
-			op, blk, addr, ctrl, ktime_us_delta(ktime_get(), t0), SCHAN_TIMEOUT_US);
-		wr(u, SCHAN_CTRL, 0);
-		return ret ?: -EIO;
-	}
-	for (i = 0; !write && i < words; i++)
-		data[i] = rd(u, SCHAN_MSG(1 + i));
-	wr(u, SCHAN_CTRL, 0);
-	return 0;
+	return bcm_cmic_schan_op(&u->cu, op, blk, addr, data, words, NULL);
 }
 
 static void ebit(u32 *e, int n) { e[n / 32] |= BIT(n % 32); }
@@ -365,6 +365,172 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops mib_ops = { .set = mib_set };
 module_param_cb(mib, &mib_ops, NULL, 0200);
 
+/* ---- schan param: host-tool S-channel access under the driver's locks (#125; replaces devmem S-channel) ---- */
+
+static struct us48_cmic *schan_units[2];	/* by unit = modid; set while probed */
+static DEFINE_MUTEX(schan_lock);		/* schan_units, schan_out; unbind waits for a running request */
+static char schan_out[PAGE_SIZE];		/* result of the last request */
+static size_t schan_len;
+#define SCHAN_LINE_MAX	400			/* longest result line: header + 2 x 20 words */
+
+static void schan_unit_set(struct us48_cmic *u, bool on)
+{
+	mutex_lock(&schan_lock);
+	if (on)
+		schan_units[u->modid] = u;
+	else if (schan_units[u->modid] == u)
+		schan_units[u->modid] = NULL;
+	mutex_unlock(&schan_lock);
+}
+
+static void schan_put(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	schan_len += vscnprintf(schan_out + schan_len, sizeof(schan_out) - schan_len, fmt, ap);
+	va_end(ap);
+}
+
+static void schan_words(const char *tag, const u32 *d, int n)
+{
+	int i;
+
+	schan_put(" %s", tag);
+	for (i = 0; i < n; i++)
+		schan_put(" %08x", d[i]);
+}
+
+/* Words as hex text for the log line of a write. */
+static char *words_str(char *b, size_t sz, const u32 *d, int n)
+{
+	int i, k = 0;
+
+	b[0] = 0;
+	for (i = 0; i < n; i++)
+		k += scnprintf(b + k, sz - k, "%s%08x", i ? " " : "", d[i]);
+	return b;
+}
+
+/*
+ * One request line "<unit> <op> <blk> <addr> <words> [data...]", op: rreg rmem (read), wreg wmem (read, write, read back),
+ * lookup delete (L2-style key = data). Runs under that unit's schan_seq: no driver op in between. Writes are logged.
+ */
+static void schan_line(char *ln)
+{
+	static const struct { const char *n; u32 op, rd; } ops[] = {
+		{ "rreg", BCM_SCHAN_READ_REG }, { "rmem", BCM_SCHAN_READ_MEM },
+		{ "wreg", BCM_SCHAN_WRITE_REG, BCM_SCHAN_READ_REG }, { "wmem", BCM_SCHAN_WRITE_MEM, BCM_SCHAN_READ_MEM },
+		{ "lookup", BCM_SCHAN_TABLE_LOOKUP }, { "delete", BCM_SCHAN_TABLE_DELETE },
+	};
+	u32 data[BCM_CMIC_SCHAN_MSG_WORDS] = { }, old[BCM_CMIC_SCHAN_MSG_WORDS] = { }, back[BCM_CMIC_SCHAN_MSG_WORDS] = { };
+	u32 ack = 0;
+	unsigned int unit, blk, addr, words;
+	char name[8];
+	int i, k, n, pos, ret;
+	struct us48_cmic *u;
+
+	if (sscanf(ln, "%u %7s %u %x %u%n", &unit, name, &blk, &addr, &words, &pos) != 5) {
+		schan_put("err parse \"%.40s\"\n", ln);
+		return;
+	}
+	for (k = 0; k < ARRAY_SIZE(ops) && strcmp(name, ops[k].n); k++)
+		;
+	if (unit > 1 || k == ARRAY_SIZE(ops) || blk > 63 || words < 1 || words > BCM_CMIC_SCHAN_MSG_WORDS - 3) {
+		schan_put("err args %u %s %u 0x%08x %u\n", unit, name, blk, addr, words);
+		return;
+	}
+	for (i = 0; ops[k].op != BCM_SCHAN_READ_REG && ops[k].op != BCM_SCHAN_READ_MEM && i < words; i++) {
+		if (sscanf(ln + pos, "%x%n", &data[i], &n) != 1) {
+			schan_put("err data %u %s %u 0x%08x: %d of %u words\n", unit, name, blk, addr, i, words);
+			return;
+		}
+		pos += n;
+	}
+	u = schan_units[unit];
+	if (!u) {
+		schan_put("err nodev %u %s %u 0x%08x\n", unit, name, blk, addr);
+		return;
+	}
+	mutex_lock(&u->schan_seq);
+	if (ops[k].rd) {
+		ret = schan_exec(&u->cu, u->schan_fn, u->schan_ctx, ops[k].rd, blk, addr, old, words, NULL);
+		ret = ret ?: schan_exec(&u->cu, u->schan_fn, u->schan_ctx, ops[k].op, blk, addr, data, words, NULL);
+		ret = ret ?: schan_exec(&u->cu, u->schan_fn, u->schan_ctx, ops[k].rd, blk, addr, back, words, NULL);
+	} else {
+		ret = schan_exec(&u->cu, u->schan_fn, u->schan_ctx, ops[k].op, blk, addr, data, words, &ack);
+	}
+	mutex_unlock(&u->schan_seq);
+
+	if (ret && ret != -ENOENT) {
+		schan_put("err %d %u %s %u 0x%08x\n", ret, unit, name, blk, addr);
+	} else if (ops[k].rd) {
+		bool same = !memcmp(data, back, 4 * words);
+
+		schan_put("%s %u %s %u 0x%08x", same ? "ok" : "mismatch", unit, name, blk, addr);
+		schan_words("old", old, words);
+		schan_words("back", back, words);
+		schan_put("\n");
+		char b0[9 * BCM_CMIC_SCHAN_MSG_WORDS], b1[9 * BCM_CMIC_SCHAN_MSG_WORDS];
+
+		dev_info(u->dev, "schan param: %s blk %u 0x%08x: %s -> %s (%s)\n", name, blk, addr,
+			 words_str(b0, sizeof(b0), old, words), words_str(b1, sizeof(b1), back, words),
+			 same ? "read back ok" : "READ BACK MISMATCH");
+	} else {
+		schan_put("%s %u %s %u 0x%08x ack %08x", ret ? "notfound" : "ok", unit, name, blk, addr, ack);
+		if (!ret && ops[k].op != BCM_SCHAN_TABLE_DELETE)
+			schan_words(":", data, ops[k].op == BCM_SCHAN_TABLE_LOOKUP ? words + 1 : words);
+		schan_put("\n");
+		if (ops[k].op == BCM_SCHAN_TABLE_DELETE) {
+			char b0[9 * BCM_CMIC_SCHAN_MSG_WORDS];
+
+			dev_info(u->dev, "schan param: delete blk %u 0x%08x key %s: %s\n", blk, addr,
+				 words_str(b0, sizeof(b0), data, words), ret ? "not found" : "deleted");
+		}
+	}
+}
+
+/* echo "<line>\n<line>..." > /sys/module/us48_cmic/parameters/schan; cat it for one result line per request line. */
+static int schan_set(const char *val, const struct kernel_param *kp)
+{
+	char *buf = kstrdup(val, GFP_KERNEL), *s, *ln;
+	int left = 0;
+
+	if (!buf)
+		return -ENOMEM;
+	mutex_lock(&schan_lock);
+	schan_len = 0;
+	schan_out[0] = 0;
+	for (s = buf; (ln = strsep(&s, "\n;")); ) {
+		ln = strim(ln);
+		if (!*ln)
+			continue;
+		if (sizeof(schan_out) - schan_len < SCHAN_LINE_MAX) {
+			left++;
+			continue;
+		}
+		schan_line(ln);
+	}
+	if (left)
+		schan_put("err full: %d request lines not run\n", left);
+	mutex_unlock(&schan_lock);
+	kfree(buf);
+	return 0;
+}
+
+static int schan_get(char *buf, const struct kernel_param *kp)
+{
+	int n;
+
+	mutex_lock(&schan_lock);
+	n = scnprintf(buf, PAGE_SIZE, "%s", schan_out);
+	mutex_unlock(&schan_lock);
+	return n;
+}
+
+static const struct kernel_param_ops schan_ops = { .set = schan_set, .get = schan_get };
+module_param_cb(schan, &schan_ops, NULL, 0600);
+
 static void octal_phy_diag(struct us48_cmic *u, struct bcm_cmic_unit *cu, u8 phy)
 {
 	u16 aux, mode, slave, detect, isolate, dsp, reset;
@@ -397,7 +563,7 @@ static void octal_phy_diag(struct us48_cmic *u, struct bcm_cmic_unit *cu, u8 phy
 void us48_mdio_scan(struct us48_cmic *u)
 {
 	static const u8 regs[] = { 2, 3, 0, 1, 1, 4, 5, 9, 10 };
-	struct bcm_cmic_unit cu = { .base = u->cmic };
+	struct bcm_cmic_unit cu = u->cu;
 	int bus, phy, i, ret;
 
 	mutex_lock(&u->mdio);
@@ -463,7 +629,7 @@ static struct bcm_hr2_ge ge_of(const struct us48_port *p)
 static int copper_enable(struct us48_port *p)
 {
 	struct us48_cmic *u = p->u;
-	struct bcm_cmic_unit cu = { .base = u->cmic };
+	struct bcm_cmic_unit cu = u->cu;
 	struct bcm_hr2_ge ge = ge_of(p);
 	int ret;
 
@@ -490,7 +656,7 @@ static int copper_enable(struct us48_port *p)
 static bool copper_link(struct us48_port *p, int *speed)
 {
 	struct us48_cmic *u = p->u;
-	struct bcm_cmic_unit cu = { .base = u->cmic };
+	struct bcm_cmic_unit cu = u->cu;
 	struct bcm_hr2_ge ge = ge_of(p);
 	bool up;
 
@@ -510,7 +676,7 @@ static bool copper_link(struct us48_port *p, int *speed)
 /* One copper port, link_lock held: PHY link -> MAC up (speed from the PHY) / MAC down, carrier. */
 static void copper_poll(struct us48_port *p)
 {
-	struct bcm_cmic_unit cu = { .base = p->u->cmic };
+	struct bcm_cmic_unit cu = p->u->cu;
 	struct bcm_hr2_ge ge = ge_of(p);
 	int speed = 0;
 	bool up = copper_link(p, &speed);
@@ -701,7 +867,7 @@ static int l2_op_cpu(struct us48_port *p, u32 op)
 	int i, ones = 0;
 
 	if (p->cfg->copper) {
-		struct bcm_cmic_unit cu = { .base = p->u->cmic };
+		struct bcm_cmic_unit cu = p->u->cu;
 		struct bcm_hr2_ge ge = ge_of(p);
 
 		return bcm_hr2_ge_l2_cpu(&cu, &ge, p->ndev->dev_addr, op == 0x24);
@@ -1117,7 +1283,7 @@ static int us48_stop(struct net_device *nd)
 	p->open = false;
 	/* Copper: MAC off with the netdev; the poll skips the port until the next open. */
 	if (p->cfg->copper && netif_carrier_ok(nd)) {
-		struct bcm_cmic_unit cu = { .base = u->cmic };
+		struct bcm_cmic_unit cu = u->cu;
 		struct bcm_hr2_ge ge = ge_of(p);
 
 		bcm_hr2_ge_mac_down(&cu, &ge);
@@ -1189,6 +1355,7 @@ void us48_remove_common(struct us48_cmic *u)
 {
 	int i;
 
+	schan_unit_set(u, false);
 	cancel_delayed_work_sync(&u->link_work);
 	/* ndo_stop of an open port stops the poll timer, NAPI and both channels. */
 	for (i = 0; i < u->nports; i++) {
@@ -1243,9 +1410,23 @@ static void us48_cps_reset(struct bcm_cmic_unit *cu)
 	bcm_hr2_cmic_setup(cu);
 }
 
-int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
+/* Cold init runs before the unit's us48_cmic exists: ops through the owner's lock only (nothing else of ours runs yet). */
+struct cold_ctx {
+	us48_schan_fn fn;
+	void *ctx;
+};
+
+static int cu_schan_cold(struct bcm_cmic_unit *cu, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
 {
-	struct bcm_cmic_unit cu = { .base = cmic, .pre_top_release = us48_cps_reset };
+	struct cold_ctx *c = cu->priv;
+
+	return schan_exec(cu, c->fn, c->ctx, op, blk, addr, data, words, ack);
+}
+
+int us48_chip_cold_init(struct device *dev, void __iomem *cmic, us48_schan_fn schan_fn, void *schan_ctx, int unit)
+{
+	struct cold_ctx c = { .fn = schan_fn, .ctx = schan_ctx };
+	struct bcm_cmic_unit cu = { .base = cmic, .pre_top_release = us48_cps_reset, .schan_op = cu_schan_cold, .priv = &c };
 	int ch, ops = 0, errs = 0;
 
 	/* The bootloader may leave a channel running into RAM Linux now owns: log it, abort + wait (bounded), then reset. */
@@ -1272,9 +1453,9 @@ int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit)
 }
 EXPORT_SYMBOL_GPL(us48_chip_cold_init);
 
-int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, const struct port_cfg *cfgs,
-		      int nports, u8 modid, const struct firmware *fw, us48_serdes_init_t serdes_init,
-		      struct us48_cmic **out)
+int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *cmic, us48_schan_fn schan_fn,
+		      void *schan_ctx, const struct port_cfg *cfgs, int nports, u8 modid, const struct firmware *fw,
+		      us48_serdes_init_t serdes_init, struct us48_cmic **out)
 {
 	struct us48_cmic *u;
 	u32 link[2];
@@ -1289,6 +1470,10 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->nports = nports;
 	u->modid = modid;
 	u->cmic = cmic;
+	u->schan_fn = schan_fn;
+	u->schan_ctx = schan_ctx;
+	mutex_init(&u->schan_seq);
+	u->cu = (struct bcm_cmic_unit){ .base = cmic, .schan_op = cu_schan_locked, .priv = u };
 	mutex_init(&u->mdio);
 	mutex_init(&u->link_lock);
 	spin_lock_init(&u->tx_lock);
@@ -1384,6 +1569,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 			    u->port[i]->cfg->lport, u->port[i]->ndev->dev_addr, u->port[i]->vid);
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
+	schan_unit_set(u, true);
 	if (tsc_log)
 		us48_tsc_dump(u);
 	return 0;
@@ -1394,6 +1580,7 @@ void us48_quiesce(struct us48_cmic *u)
 {
 	int i;
 
+	schan_unit_set(u, false);
 	cancel_delayed_work_sync(&u->link_work);
 	hrtimer_cancel(&u->poll_timer);
 	WRITE_ONCE(u->quiesced, true);
@@ -1448,8 +1635,9 @@ static int us48_cmic_plat_probe(struct platform_device *pdev)
 		if (request_firmware(&fw, "us48-tsc.bin", &pdev->dev))
 			fw = NULL;
 	}
-	ret = us48_chip_cold_init(&pdev->dev, cmic, 0);
-	ret = ret ?: us48_probe_common(&pdev->dev, &pdev->dev, cmic, cfgs, n, 0, fw, sfp10g ? us48_tsc_init : NULL, &u);
+	ret = us48_chip_cold_init(&pdev->dev, cmic, NULL, NULL, 0);
+	ret = ret ?: us48_probe_common(&pdev->dev, &pdev->dev, cmic, NULL, NULL, cfgs, n, 0, fw, sfp10g ? us48_tsc_init : NULL,
+				       &u);
 	release_firmware(fw);
 	if (!ret) {
 		platform_set_drvdata(pdev, u);

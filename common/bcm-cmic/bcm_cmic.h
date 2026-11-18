@@ -12,6 +12,9 @@
 struct bcm_cmic_unit {
 	void __iomem *base;	/* unit 0: AXI 0x48000000; unit 1: PCIe BAR2 */
 	void (*pre_top_release)(struct bcm_cmic_unit *u);	/* optional: CPS_RESET hook, run with BCM_HR2_INIT_CPS (#78) */
+	/* optional: runs every bcm_cmic_schan_op of this unit (Linux: the owner's S-channel lock, #125); calls bcm_cmic_schan_raw */
+	int (*schan_op)(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
+	void *priv;		/* schan_op context */
 };
 
 /* CMC0 offsets, driver-internals 1 */
@@ -31,13 +34,17 @@ struct bcm_cmic_unit {
 #define BCM_SCHAN_WRITE_REG		0x0d
 #define BCM_SCHAN_TABLE_INSERT		0x24
 #define BCM_SCHAN_TABLE_DELETE		0x26
+#define BCM_SCHAN_TABLE_LOOKUP		0x28	/* key = data[words]; reply = response word + entry: data[words + 1] */
 
 /*
  * One S-channel op. Header = op<<26 | blk<<20 | 4*words<<7, address word = addr (block only in the
  * header). Reads fill data[words] from the reply; ack (optional) gets the reply header.
- * Raw and unguarded: callers own the write policy.
+ * LOOKUP/DELETE NACK (key not in the table) = -ENOENT, quiet, ack filled.
+ * Raw and unguarded: callers own the write policy. Goes through u->schan_op when set.
  */
 int bcm_cmic_schan_op(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
+/* The handshake itself, no hook: for schan_op implementations. */
+int bcm_cmic_schan_raw(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
 
 static inline int bcm_cmic_reg_read(struct bcm_cmic_unit *u, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
 {
