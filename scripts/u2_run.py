@@ -24,12 +24,12 @@ CMD_CAP_S = 20.0
 LOG = ROOT / "tmp/logs/u2_run.log"
 
 
-def catch_window(s: console.Session, cycle: bool = True, reboot: bool = False) -> bool:
-    """Power-cycle (cycle=True) or type `reboot` into the Linux shell on the console (reboot=True, no power cycle),
+def catch_window(s: console.Session, cycle: bool = True, reboot: str = "") -> bool:
+    """Power-cycle (cycle=True) or type `reboot` (or e.g. "reboot -f") into the Linux shell on the console (no power cycle),
     then space every 20 ms from the awto-uboot banner until its prompt. False on window expiry."""
     if reboot:
         s.buf = b""
-        s.write(b"\rreboot\r")
+        s.write(b"\r" + reboot.encode() + b"\r")
         window = WINDOW_S + REBOOT_SHUTDOWN_S
     elif not cycle:  # already at the prompt
         s.write(b"\r")

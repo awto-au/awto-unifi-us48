@@ -7,10 +7,11 @@ Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Add a ramoops region
 record (boot counter, clean-shutdown flag) is written to pmsg and read
 back at the next boot, so no flash is written.
 
-The region is above the 64 MiB a2 carveout and 4 MiB below the top of
-DDR, clear of the bootloader image relocated to 0x6ff40000. Whether the
-DDR keeps its contents over a soft or watchdog reset is not measured;
-the health line reports rec=ram/prev=none when it does not.
+The region is above the 64 MiB a2 carveout and 10 MiB below the low
+end of what awto-uboot reserves at the top of DDR (relocated image,
+malloc pool, stack, FDT: 0x6eaff520..0x6fffffff). At 0x6fc00000 the
+region sat inside that malloc pool and was zeroed on every reboot. The
+health line reports rec=ram/prev=none when the record does not survive.
 
 Signed-off-by: TODO
 ---
@@ -26,10 +27,10 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
  			reusable;
 +		};
 +
-+		/* us48-health boot record (pstore pmsg, RAM only): above the a2 carveout, below uboot-1's image at 0x6ff40000 */
-+		ramoops@6fc00000 {
++		/* us48-health boot record (pstore pmsg, RAM only): above the a2 carveout, below awto-uboot's malloc + stack */
++		ramoops@6e000000 {
 +			compatible = "ramoops";
-+			reg = <0x6fc00000 0x100000>;
++			reg = <0x6e000000 0x100000>;
 +			no-map;
 +			record-size = <0x10000>;
 +			console-size = <0x40000>;

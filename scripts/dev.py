@@ -970,8 +970,9 @@ def cmd_stock_fresh(_extra: list[str]) -> int:
 
 
 @command("power-cycle to the awto-uboot> prompt (1 s autoboot window caught, as u2_run.py) and stay there; "
-         "--reboot = type `reboot` into the Linux shell on the console instead (no power cycle); --stock = uboot-1 prompt",
-         args="[--reboot | --stock]", kind="action")
+         "--reboot = type `reboot` into the Linux shell on the console instead (no power cycle), --force: `reboot -f`; "
+         "--stock = uboot-1 prompt",
+         args="[--reboot [--force] | --stock]", kind="action")
 def cmd_uboot(extra: list[str]) -> int:
     if "--stock" not in extra:
         # env auto-chain: uboot-1 never shows "Hit any key", only awto-uboot has a window (docs/autochain.md)
@@ -979,7 +980,8 @@ def cmd_uboot(extra: list[str]) -> int:
         if not console.restart(console.BAUD):
             return 1
         s = console.Session()
-        ok = u2_run.catch_window(s, reboot="--reboot" in extra)
+        rb = ("reboot -f" if "--force" in extra else "reboot") if "--reboot" in extra else ""
+        ok = u2_run.catch_window(s, reboot=rb)
         s.close()
         log("at awto-uboot>: staying" if ok else f"no awto-uboot> prompt in {u2_run.WINDOW_S} s", "ALERT" if ok else "FATAL")
         return 0 if ok else 1

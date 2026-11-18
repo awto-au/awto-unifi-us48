@@ -34,10 +34,11 @@ Not in the line: PoE invalid-temperature counter (the hwmon driver has none), 53
 ## Boot record
 
 - No flash area is allowed: `kernel1`, bootsel `0x1ee0000`, `u-boot`, `u-boot-env`, `EEPROM` are off limits (CLAUDE.md); `cfg` (`0x1ef0000`) is stock's own config store (stock rewrites it, [autochain.md](autochain.md)); `shmoo` is DDR training data; `kernel0` slots are test images. A flash write needs Dan's go and a chosen area, so none is written.
-- RAM instead: pstore/ramoops, `mainline/0028` (`ramoops@6fc00000`, 1 MiB, pmsg 256 KiB). `us48-health` writes its line to `/dev/pmsg0`; the next boot reads `/sys/fs/pstore/pmsg-ramoops-0` (the previous boot's pmsg, restored by ramoops) for `boot=` and the clean flag. The shutdown hook writes `us48-health clean boot=N`.
-- Lost on a power cycle by design. Whether the DDR keeps this region over the DMU soft reset and the SP805 reset is not measured (uboot-1 re-trains the DDR, [uboot-self-boot.md](uboot-self-boot.md)): board test 2. If it does not, `prev=none boot=1` every time and the record is useless; the register `rst=` still works.
-- Region choice: above the 64 MiB a2 carveout, 4 MiB below the DDR top (uboot-1 relocates to `0x6ff40000`, [uboot.md](uboot.md)); ramoops also keeps a console log and panic dmesg there.
-- Register caveat: the reset-reason bits may accumulate over several resets (no clear is done, nothing is written to them); `cause` therefore also uses the record.
+- RAM instead: pstore/ramoops, `mainline/0028` (`ramoops@6e000000`, 1 MiB, pmsg 256 KiB). `us48-health` writes its line to `/dev/pmsg0`; the next boot reads `/sys/fs/pstore/pmsg-ramoops-0` (the previous boot's pmsg, restored by ramoops) for `boot=` and the clean flag. The shutdown hook writes `us48-health clean boot=N`.
+- Lost on a power cycle by design. Kept over `reboot` and `reboot -f` (DMU soft reset through uboot-1 + awto-uboot): `boot=2 prev=clean`, then `boot=3 prev=unclean` (2026-11-19, #35). SP805 reset not tested.
+- Region choice: above the 64 MiB a2 carveout, below everything awto-uboot reserves at the DDR top (`bdinfo` lmb `0x6eaff520..0x6fffffff`: image relocated to `0x6ff1f000`, malloc pool, stack, FDT). The first choice `0x6fc00000` sat in that malloc pool and read all zero at the `awto-uboot>` prompt after every reboot. ramoops also keeps a console log and panic dmesg there.
+- #79 (upper bank to a2) would need the region moved.
+- Reset reason `0x1803f018`: 0 after power-on, `0x2` (soft) after `reboot` / `reboot -f`; two reads in a row equal (not clear-on-read). Bits may accumulate over several resets (no clear is done), so `cause` also uses the record.
 
 ## Self-test (`us48-selftest`)
 
