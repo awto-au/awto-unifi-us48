@@ -4,6 +4,7 @@
  * unit. HW learns and ages (L2_MOD_FIFO reports it to the bridge); static/local FDB -> L2X; STP state -> STG_TAB/EGR_VLAN_STG.
  * One hardware domain per unit: cross-unit bridge traffic goes through the CPU (HiGig offload = stage 2). All state: rtnl.
  */
+#include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/if_bridge.h>
 #include <linux/module.h>
@@ -22,6 +23,10 @@ MODULE_PARM_DESC(switchdev, "1 (default) = offload Linux bridges of us48 ports t
 static bool mgmt_bridge;
 module_param(mgmt_bridge, bool, 0644);
 MODULE_PARM_DESC(mgmt_bridge, "1 = allow ge1 (management) in an offloaded bridge; default 0 refuses the join");
+/* Off: only FIFO overflow left the bridge behind L2X, and that walk runs at once (#135) */
+static uint l2_check_s;
+module_param(l2_check_s, uint, 0644);
+MODULE_PARM_DESC(l2_check_s, "L2X vs bridge consistency walk every N s while a bridge is offloaded; 0 (default) = off");
 
 /* Bridge slot i: ASIC VLAN SW_VID_BASE + i, STG SW_STG_BASE + i; unused by stock and our init (tmp/schan_stock_writes*.txt). */
 #define SW_VID_BASE		4000
@@ -93,12 +98,14 @@ struct us48_host {
 #define LM_L2_ENTRY		20		/* L2_ENTRY_DATA 20:101 = L2X bits 0-100 (KEY_TYPE .. EVEN_PARITY) */
 /* OPERATION: SDK l2mod.c _soc_hu2_l2mod_fifo_process (757-799) */
 enum { LM_DELETE, LM_PPA_DELETE, LM_AGE, LM_INSERT, LM_PPA_REPLACE, LM_LEARN, LM_MEMWR, LM_OVERFLOW };
-/* 128 entries per 10 ms: 12800 changes/s, more new sources learn at a later frame; idle = one register read */
+/* Idle: one register read per 10 ms (3 jiffies at HZ 250). A drain that finds >= half full re-runs after 1 ms
+ * (hrtimer sleep: a jiffy is 4 ms) until one finds less: ceiling 128 / 1 ms (docs/switchdev.md, #135). */
 #define L2MOD_POLL_MS		10
-#define L2RESYNC_MS		3000		/* at most one overflow walk per SDK poll pass (l2xmsg_thread_usec) */
-#define L2CHECK_MS		300000		/* consistency walk: once per default ageing period */
-#define L2WALK_CHUNKS		8
-#define L2WALK_CHUNK		(L2X_ENTRIES / L2WALK_CHUNKS)
+#define L2MOD_FAST_US		1000
+#define L2MOD_HALF		(L2MOD_ENTRIES / 2)
+/* Walk chunk: one chunk's reads stay under the 1 ms fast-drain period on unit 1 (PCIe), FIFO drained between chunks */
+#define L2WALK_CHUNK		32
+#define L2WALK_CHUNKS		(L2X_ENTRIES / L2WALK_CHUNK)
 
 struct us48_l2rec {
 	u8 mac[ETH_ALEN];
@@ -616,7 +623,7 @@ static void l2mod_apply(struct us48_cmic *u, const u32 *f)
 	}
 }
 
-/* Pop what L2_MOD_FIFO_CNT shows (no rtnl), report under rtnl. -ENODEV once the FIFO is off. */
+/* Pop what L2_MOD_FIFO_CNT shows (no rtnl), report under rtnl. Returns the count read; -ENODEV once the FIFO is off. */
 static int l2mod_drain(struct us48_cmic *u)
 {
 	u32 cnt = 0;
@@ -646,7 +653,7 @@ static int l2mod_drain(struct us48_cmic *u)
 	rtnl_unlock();
 	if (ret)
 		dev_warn_ratelimited(u->dev, "switchdev: L2_MOD_FIFO read failed (%d): resync due\n", ret);
-	return 0;
+	return cnt;
 }
 
 /* Whole L2X vs shadow, chunk by chunk: FIFO drained before each chunk read, so later events apply after its diff. */
@@ -655,16 +662,16 @@ static int l2_resync(struct us48_cmic *u, const char *why)
 	DECLARE_BITMAP(bad, L2WALK_CHUNK);
 	int c, i, r, nbad = 0, add = 0, del = 0;
 	ktime_t t0 = ktime_get();
+	s64 dt;
 
 	for (c = 0; c < L2WALK_CHUNKS; c++) {
 		int base = c * L2WALK_CHUNK;
 
-		if (l2mod_drain(u))
+		if (l2mod_drain(u) < 0)
 			return -ENODEV;
+		cond_resched();
 		bitmap_zero(bad, L2WALK_CHUNK);
 		for (i = 0; i < L2WALK_CHUNK; i++) {
-			if ((i & 255) == 255)
-				cond_resched();
 			if (mrd(u, BLK_IPIPE, L2X + base + i, &u->l2buf[4 * i], 4)) {
 				__set_bit(i, bad);
 				nbad++;
@@ -687,9 +694,12 @@ static int l2_resync(struct us48_cmic *u, const char *why)
 		}
 		rtnl_unlock();
 	}
+	dt = ktime_ms_delta(ktime_get(), t0);
+	rtnl_lock();
 	u->l2resyncs++;
-	dev_info(u->dev, "switchdev: L2 resync (%s): %d added, %d removed, %d reads failed, %lld ms\n", why, add, del, nbad,
-		 ktime_ms_delta(ktime_get(), t0));
+	u->l2resync_at = jiffies + msecs_to_jiffies(dt);	/* next overflow walk after a gap = this walk's time */
+	rtnl_unlock();
+	dev_info(u->dev, "switchdev: L2 resync (%s): %d added, %d removed, %d reads failed, %lld ms\n", why, add, del, nbad, dt);
 	return 0;
 }
 
@@ -697,21 +707,27 @@ static void l2mod_fn(struct work_struct *w)
 {
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, l2mod);
 	const char *why = NULL;
+	int cnt = l2mod_drain(u);
 
-	if (l2mod_drain(u))
+	if (cnt < 0)
 		return;
 	rtnl_lock();
 	if (u->l2resync && time_after_eq(jiffies, u->l2resync_at)) {
 		why = "FIFO full";
 		u->l2resync = false;
-		u->l2resync_at = jiffies + msecs_to_jiffies(L2RESYNC_MS);
-	} else if (time_after_eq(jiffies, u->l2check_at)) {
+	} else if (l2_check_s && time_after_eq(jiffies, u->l2check_at)) {
 		why = "check";
-		u->l2check_at = jiffies + msecs_to_jiffies(L2CHECK_MS);
+		u->l2check_at = jiffies + secs_to_jiffies(l2_check_s);
 	}
 	rtnl_unlock();
 	if (why && l2_resync(u, why))
 		return;
+	if (cnt >= L2MOD_HALF) {
+		u->l2fast++;
+		usleep_range(L2MOD_FAST_US, L2MOD_FAST_US);
+		queue_delayed_work(system_wq, &u->l2mod, 0);
+		return;
+	}
 	queue_delayed_work(system_wq, &u->l2mod, msecs_to_jiffies(L2MOD_POLL_MS));
 }
 
@@ -762,14 +778,14 @@ static void l2mod_start(struct us48_cmic *u)
 		dev_err(u->dev, "switchdev: AUX_ARB_CONTROL write failed: HW-learned entries not shown in the bridge\n");
 		return;
 	}
-	u->l2ev = u->l2full = u->l2resyncs = u->l2mismatch = 0;
+	u->l2ev = u->l2full = u->l2resyncs = u->l2mismatch = u->l2fast = 0;
 	u->l2resync = false;
 	u->l2resync_at = jiffies;	/* not 0: jiffies starts 5 min before the wrap (INITIAL_JIFFIES) */
-	u->l2check_at = jiffies + msecs_to_jiffies(L2CHECK_MS);
+	u->l2check_at = jiffies + secs_to_jiffies(l2_check_s);
 	u->l2mod_on = true;
 	queue_delayed_work(system_wq, &u->l2mod, 0);
-	dev_info(u->dev, "switchdev: L2 change FIFO on (AUX_ARB_CONTROL %08x -> %08x), drained every %d ms%s\n", old, v,
-		 L2MOD_POLL_MS, left ? ", stale entries dropped" : "");
+	dev_info(u->dev, "switchdev: L2 change FIFO on (AUX_ARB_CONTROL %08x -> %08x), drained every %d ms, %d us from %d%s\n",
+		 old, v, L2MOD_POLL_MS, L2MOD_FAST_US, L2MOD_HALF, left ? ", stale entries dropped" : "");
 }
 
 /* Last bridge gone: recording off, leftovers dropped; the work sees l2mod_on false under rtnl and stops. */
@@ -784,9 +800,9 @@ static void l2mod_stop(struct us48_cmic *u)
 	ret = l2mod_enable(u, false, &old, &v);
 	left = l2mod_flush(u);
 	memset(u->l2shadow, 0, L2X_ENTRIES * sizeof(*u->l2shadow));
-	dev_info(u->dev, "switchdev: L2 change FIFO off (AUX_ARB_CONTROL %08x -> %08x%s): %u events, %u full, %u resyncs, "
-		 "%u index mismatches, %d dropped\n", old, v, ret ? " WRITE FAILED" : "", u->l2ev, u->l2full, u->l2resyncs,
-		 u->l2mismatch, left);
+	dev_info(u->dev, "switchdev: L2 change FIFO off (AUX_ARB_CONTROL %08x -> %08x%s): %u events, %u full, %u fast drains, "
+		 "%u resyncs, %u index mismatches, %d dropped\n", old, v, ret ? " WRITE FAILED" : "", u->l2ev, u->l2full,
+		 u->l2fast, u->l2resyncs, u->l2mismatch, left);
 }
 
 /* Port left vid: the bridge drops its FDB entries itself; forget ours so a later join reports afresh. */

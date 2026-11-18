@@ -175,7 +175,7 @@ struct us48_cmic {
 	u32 *l2pop;			/* popped L2_MOD_FIFO entries */
 	unsigned long l2resync_at;	/* jiffies: earliest next overflow resync */
 	unsigned long l2check_at;	/* jiffies: next consistency walk */
-	u32 l2ev, l2full, l2resyncs, l2mismatch;	/* since the FIFO went on (logged when it goes off) */
+	u32 l2ev, l2full, l2resyncs, l2mismatch, l2fast;	/* since the FIFO went on (logged when it goes off) */
 	bool l2resync;			/* FIFO was full or a pop failed: events may be lost; rtnl */
 	bool l2mod_on;			/* rtnl */
 };

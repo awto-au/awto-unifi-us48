@@ -58,15 +58,37 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 
 - Decision (Dan 2026-11-18): L2_MOD_FIFO, not the SDK's HR2 default (L2MODE_POLL, `soc/esw/l2xmsg.c` `soc_l2x_mode_cfg_get`; taken as convenience, not a HW limit). Table walk only as resync/check.
 - Enable: `AUX_ARB_CONTROL` |= LEARN 1, PPA_REPLACE 2, AGE 4, PPA_DELETE 5 (0x36) while the unit has an offloaded bridge; cleared + leftovers popped with the last bridge. SDK set (`l2mod.c` `_soc_l2mod_fifo_enable`) minus L2_DELETE 6: CPU deletes (flush) notify the bridge where they are made; no FIFO-full refusal of our own ops (`SCHAN_GEN_RESP_L2_MOD_FIFO_FULL`).
-- Drain: S-channel FIFO_POP (SDK `soc_mem_pop`; HR2 has `soc_feature_mem_push_pop` via bcm56624_a0, `feature.c`), header data_byte_len 0 as `_soc_mem_pop`; NACK = empty. Not the SDK's CMIC FIFO DMA (`fifo_dma_hu2`). No IRQ in the driver: delayed work every 10 ms reads `L2_MOD_FIFO_CNT`, pops that many (max 128), applies under rtnl.
-- 10 ms: 128 entries / 10 ms = 12800 changes/s; idle cost one register read per period.
+- Drain: S-channel FIFO_POP (SDK `soc_mem_pop`; HR2 has `soc_feature_mem_push_pop` via bcm56624_a0, `feature.c`), header data_byte_len 0 as `_soc_mem_pop`; NACK = empty. No CMIC FIFO DMA (Dan 2026-11-19, #135), no IRQ: delayed work reads `L2_MOD_FIFO_CNT`, pops that many (max 128), applies under rtnl.
+- Adaptive period (#135):
+  - idle: 10 ms delayed work = 3 jiffies at HZ 250 = 12 ms; cost one register read per period. Cap 128 / 12 ms = 10.7k changes/s.
+  - a drain that found >= 64 (half full) re-runs after 1 ms (`usleep_range`, hrtimer: a jiffy is 4 ms) until one finds < 64. Ceiling 128 / 1 ms = 128k/s; the real cap is the per-event cost (pops + notifier + rtnl), board numbers below.
+- Timings (old -> new, #135):
+  - overflow walk gap: 3 s (SDK `l2xmsg_thread_usec` pace) -> none at first overflow; next one after a gap = the last walk's own time (walking <= 50 % duty under a sustained flood).
+  - walk chunk: 8 x 2048 entries -> 512 x 32, FIFO drained between chunks: 32 reads stay under the 1 ms fast-drain period on unit 1 (PCIe ~10-13 us per read), rtnl only for the diff of 32.
+  - consistency walk: every 300 s (SDK default ageing period) -> off (`l2_check_s` 0; N s for diagnostics). 43 check walks at 2 s over a full `switchdev_test all` run: 42 found nothing, 1 found 3 entries inside a burst (FIFO full) that the overflow walk would have caught.
+  - unchanged: 10 ms idle drain (Dan), `L2_AGE_TIMER` (user-set ageing).
 - Decode (SDK `_soc_hu2_l2mod_fifo_process`): op 5 LEARN / 3 INSERT / 4 PPA_REPLACE -> entry; 2 AGE / 0 DELETE / 1 PPA_DELETE -> gone; 7 = hash bucket full (not learned). L2X index = BUCKET_INDEX x 8 + ENTRY_INDEX (I; 0 index mismatches in every board run).
 - Shadow (16384 records) = what the bridge was told. Reported: valid, KEY_TYPE 0, dynamic, not CPU/trunk, MODULE_ID = PORT_TAB.MY_MODID, VLAN of a live slot (4000-4007), port a member. Private VLANs never. Changed record -> `SWITCHDEV_FDB_DEL_TO_BRIDGE` old + `ADD_TO_BRIDGE` new (vid 0, offloaded). Static user add drops the record (bridge owns it).
-- FIFO full (count 128) or a pop error -> one L2X walk (8 chunks, FIFO drained before each chunk read) diffs table vs shadow; at most one per 3 s. Same walk every 300 s as a consistency check.
+- FIFO full (count 128) or a pop error -> one L2X walk (32-entry chunks, FIFO drained before each chunk read) diffs table vs shadow, started at once.
+- FIFO full loses events, not only learns: each overflow walk adds 2-9 entries that HW learned without a FIFO record (#135 runs).
 - Board 2026-11-19 (#134, RAM boot build #132 + this module, both units):
   - FIFO full **pauses HW learning**: 512 new sources back to back (4-11 ms) -> 139-305 learned over 6 runs, resync 0-1 corrections, bridge = L2X. Sources beyond 12800/s learn at a later frame.
   - Learn latency (probe frame TX -> `bridge -timestamp monitor` extern_learn): 0.7-10.6 ms. Ageing 10 s: bridge Deleted 17.6-19.1 s after the last frame.
   - Idle CPU with one bridge vs none (6 s windows): unit 1 7.7 vs 7.5 %, unit 0 7.2 vs 7.2 % (4ea3394 table poll: ~5 % on unit 1).
+- Board 2026-11-19 (#135, RAM boot build #136 + the final module, `switchdev_test.py rate`: 4096 new sources per run, DA = static sink, frames never leave the chip; sender max ~30-42k/s, so 50k/100k runs are sender-bound):
+
+  | run | u0 old (a8c6198) | u0 adaptive | u1 old | u1 adaptive |
+  |---|---|---|---|---|
+  | back to back (39-42k/s u0, 29-30k/s u1) | 770 | 2295-2541 | 523 | 1966-2271 |
+  | 20k/s | 1254 | 3995-4032 | 834 | 2938-3183 |
+  | ~28-35k/s (50k asked) | 887 | 2901-3421 | 523 | 2155-2230 |
+  | ~20-35k/s (100k asked) | 1016 | 2708-3360 | 524 | 2187-2656 |
+
+  - Learned = L2X = bridge in every run; 0 index mismatches. FIFO full 11-22 per run; overflow walks add 2-9 entries each.
+  - Now bound by per-event cost, not the period: drain CPU (busy - sender - idle base) ~255-375 ms per run u0, ~480-720 ms u1 (pops + switchdev notifier + `bridge monitor` writer), most drains run inside the overflow walk (1-5 fast drains per run).
+  - Walk (no traffic, after a burst): u0 53-87 ms, u1 168-318 ms; during a burst u0 225-290 ms, u1 345-420 ms.
+  - Idle CPU with one bridge vs none: u0 7.2 vs 7.2 %, u1 7.8 vs 7.5 %. Learn latency 0.7-11.1 ms.
+- Carrier loss (`linkdown` step): bridge sets the port DISABLED -> STP attr -> `port_flush` dynamic (the SDK linkscan `bcm_l2_addr_delete_by_port` equivalent, L2X TABLE_DELETE 0x26 per entry), static kept. Admin down of ge8: flush logged 228 ms after the command (one 16384-entry walk). Far-end admin down keeps the PHY linked (#137); station-move test needs a second cable (#138).
 - MODULE_ID: unit 1 learns MODULE_ID 0 (PORT_TAB.MY_MODID 0 after our cold init), not the driver's modid 1. The L2X/L2_USER_ENTRY fields use MY_MODID read at the first join (`l2_modid_check`); the switch id keeps modid.
 
 ## offload_fwd_mark
@@ -108,11 +130,13 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 |---|---|---|
 | preflight | read only | params Y/N; VLAN 4000-4007 free; L2_AGE_TIMER 0x0010012c on both units; PORT_TAB ge8/ge9/ge17 private, CML 0; logs L2_USER_ENTRY, SVL_ENABLE |
 | bpdu | brA{ge8}, brB{ge17}, STP on, forward_delay 6 s (4 s counter window in listening); two VLANs, no loop | same root_id while both ports listen (SP_TREE 1), both forwarding within 16.25 s, STG 3/3, bitmaps {CPU, port}; logs GRPKT/GTPKT + netdev rx/tx of the listening window |
-| fdb | brsw{ge8, ge9} STP off; ge17 in a netns = host A 10.48.30.2/24, brsw 10.48.30.1/24 | ping; VLAN_TAB/EGR_VLAN bitmap {0, 9, 10}, STG/FID; STG ge8 3, ge9 0; PORT_TAB VID + CML 8; L2 A on lport 9 dynamic; A in `bridge fdb` extern_learn + offload; brsw MAC -> CPU static; static `bridge fdb add` on ge9 in L2X; learning off -> CML 0 + A flushed; flood off refused; probe frame (DA = the ge9 static) TX -> `bridge -timestamp monitor` extern_learn <= 15 ms; ageing 10 s: A + probe gone from L2X + bridge within 1.25 x (2 x 10 s + 1 s); statics kept; `bridge fdb del`; 300 s restored; FIFO off line: 0 index mismatches |
-| burst | per unit: brbu{ge8, ge9} + host ge17 (u0), brbu{ge32, ge33} + host ge41 (u1); static sink on ge9/ge33 | probe latency <= 15 ms; idle CPU with the bridge - without < 5 points; 512 sources back to back (`tools/l2_burst`, DA = sink: no frame reaches the CPU or a wire) -> 'L2 resync (FIFO full)' within 4.4 s; bridge extern_learn set = driver L2X dump (`self`), > 128; statics kept; 0 index mismatches |
+| fdb | brsw{ge8, ge9} STP off; ge17 in a netns = host A 10.48.30.2/24, brsw 10.48.30.1/24 | ping; VLAN_TAB/EGR_VLAN bitmap {0, 9, 10}, STG/FID; STG ge8 3, ge9 0; PORT_TAB VID + CML 8; L2 A on lport 9 dynamic; A in `bridge fdb` extern_learn + offload; brsw MAC -> CPU static; static `bridge fdb add` on ge9 in L2X; learning off -> CML 0 + A flushed; flood off refused; probe frame (DA = the ge9 static) TX -> `bridge -timestamp monitor` extern_learn <= 17.5 ms (12 ms idle drain + 2 ms, x1.25); ageing 10 s: A + probe gone from L2X + bridge within 1.25 x (2 x 10 s + 1 s); statics kept; `bridge fdb del`; 300 s restored; FIFO off line: 0 index mismatches |
+| linkdown | brld{ge8, ge9}, host ge17 (netns); A learned on ge8; far end ge17 admin down (info only, #137), then ge8 admin down | A gone from L2X + bridge, static sink kept; flush latency from dmesg |
+| burst | per unit: brbu{ge8, ge9} + host ge17 (u0), brbu{ge32, ge33} + host ge41 (u1); static sink on ge9/ge33 | probe latency <= 17.5 ms; idle CPU with the bridge - without < 5 points; 512 sources back to back (`tools/l2_burst`, DA = sink: no frame reaches the CPU or a wire) -> 'L2 resync (FIFO full)' within 1.88 s; bridge extern_learn set = driver L2X dump (`self`), > 128; statics kept; 0 index mismatches |
+| rate | as burst, one bridge per run; 4096 sources at 0/20k/50k/100k pps | bridge = L2X per run; logs learned vs sent by time mark, resyncs, FIFO counters, drain CPU |
 | stp | runs only after bpdu passes; brstp{ge8, ge17} = loop cable, STP on before the joins | one blocking (STG 1) one forwarding (STG 3); blocking port rx >= 1 BPDU/s; < 2000 pps while held 5 s; states stable |
 | mgmt | brmg + ge1 (named only here), 5 s deadman | join refused, ge1 has no master, dmesg "refused join" |
 
 - Every step: snapshot before; teardown verifies VLANs invalid, PORT_TAB private + CML 0, test MACs gone, ports = snapshot.
 - Guards as `stp_loop_test.py`: host sampler 0.5 s (> 2000 pps, CPU > 90 % twice, both loop ports forwarding; fdb: CPU guard paused around L2X walks, no loop possible there), board loop 1 s steps with the same pps limit and a 40 s deadman (fdb 130 s) (bridges deleted, netns holder killed). Temps stop: die >= 108 C, LM75 >= 78 C.
-- Order: `preflight`, `bpdu`, `fdb`, `burst`, `stp` (`all`); `mgmt` on its own.
+- Order: `preflight`, `bpdu`, `fdb`, `linkdown`, `burst`, `rate`, `stp` (`all`); `mgmt` on its own.

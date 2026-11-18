@@ -2,8 +2,8 @@
 """switchdev_test — board test of the us48_cmic switchdev L2 offload, stage 1 (docs/switchdev.md, #57, #134). Unit 0;
 burst also unit 1.
 
-Usage: switchdev_test.py <preflight|bpdu|fdb|burst|stp|mgmt|all> [--apply]
-- Dry-run by default (prints every board command). all = preflight, bpdu, fdb, burst, stp. mgmt runs only when named.
+Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|stp|mgmt|all> [--apply]
+- Dry-run by default (prints every board command). all = preflight, bpdu, fdb, linkdown, burst, rate, stp. mgmt runs only when named.
 - preflight (read only): module params, ports, ASIC VLANs 4000-4007 free, L2_USER_ENTRY, L2_AGE_TIMER (both units = stock
   0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE.
 - bpdu: brA{ge8} + brB{ge17}, STP on (kernel-minimum timers): two ASIC VLANs, the cable joins them, no loop possible.
@@ -16,6 +16,10 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|burst|stp|mgmt|all> [--apply]
   the cable-less port; one probe frame (learn latency), idle CPU with vs without the bridge, then 512 new sources back to
   back (tools/l2_burst, DA = the sink: no frame reaches the CPU or a wire, so the pps guards see none; one burst per unit).
   Pass = 'L2 resync (FIFO full)' logged, bridge extern_learn set = the driver's L2X dump (`self`) after it, statics kept.
+- linkdown (unit 0, #135): brld{ge8, ge9}, host A on ge17 (netns) learned on ge8; ge8 loses carrier (far end ge17 admin
+  down, then ge8 admin down). Pass = A gone from L2X + bridge, static sink kept; latency from dmesg time stamps.
+- rate (both units, same ports as burst, #135): one bridge per run, RATE_N sources paced at each RATE_PPS. Logged: learned
+  (L2X, bridge, monitor) vs sent by time mark, resync walks, the run's FIFO counters, drain CPU. Pass = bridge = L2X.
 - stp: runs bpdu first (refuses on its FAIL), then brstp{ge8, ge17} = both ends of the loop cable, STP on before the
   joins. Pass = one port blocking (STG 1), the other forwarding (STG 3), BPDUs still reaching the blocking port, no storm.
 - mgmt: brmg + ge1 must be refused (EPERM). Board-side deadman deletes brmg after 5 s whatever happens.
@@ -75,18 +79,27 @@ MAC_STATIC = "02:75:73:34:38:aa"          # test-only static FDB entry on ge9/ge
 MAC_LAT = "02:75:73:34:38:b0"             # one probe frame: learn latency + ageing
 BURST_BASE = "02:75:73:35:00:00"          # burst sources BURST_BASE + i
 BURST_N = 512           # > 4 x the 128-entry L2_MOD_FIFO; DA = MAC_STATIC (no carrier): no frame reaches the CPU or a wire
-FIFO_POLL_S = 0.010     # driver L2_MOD_FIFO drain period (us48_cmic_sw.c L2MOD_POLL_MS)
-LAT_LIMIT_S = 1.25 * (FIFO_POLL_S + 0.002)     # one drain period + ~2 ms work/notify scheduling (HZ 1000)
+FIFO_POLL_S = 0.012     # driver idle drain: L2MOD_POLL_MS 10 = 3 jiffies at HZ 250
+LAT_LIMIT_S = 1.25 * (FIFO_POLL_S + 0.002)     # one drain period + ~2 ms work/notify scheduling
 FIFO_WAIT_S = 1.25 * (2 * SAMPLE_S + FIFO_POLL_S)  # `bridge fdb` checks run once per sampler line
 AGE_S = 10                               # ageing_time 1000 cs in the fdb step
 AGE_WAIT_S = 1.25 * (2 * AGE_S + FIFO_WAIT_S)  # hit-bit ageing: gone 1-2 periods after the last frame
-RESYNC_WAIT_S = 1.25 * (3.0 + 0.5)       # driver: at most one overflow walk per 3 s (L2RESYNC_MS), unit 1 walk < 0.5 s
+RESYNC_WAIT_S = 1.25 * (2 * SAMPLE_S + 0.5)    # overflow walk starts at once; unit 1 walk < 0.5 s; checked per sample
+RATE_N = 4096           # rate step: sources per run (L2X 16384 x 4 w; 1/4 of it, few hash-bucket-full drops)
+RATE_PPS = (0, 20000, 50000, 100000)     # 0 = back to back; the old 10 ms drain capped at 128 / 12 ms = 10.7k/s
+RATE_TAIL_S = 1         # CPU window after the burst: drains + resync walk (< 0.5 s) inside it
+RATE_SETTLE_S = 1.0     # then 2 sampler lines before the fdb dump (a second walk would have started by then)
+RATE_MARKS_MS = (5, 10, 20, 50, 100, 200, 500, 1000)
+LD_WAIT_S = 1.25 * (1.0 + 0.4 + 2 * SAMPLE_S)  # link poll LINK_POLL_MS 1 s + flush walk < 0.4 s, fdb checked per sample
+LD_ISSUE = "#137"
+LD_DEADMAN_S = 60      # linkdown ~25 s (setup 8 + 2 x (carrier 5 + learn 1 + down 3)) x2
+RATE_DEADMAN_S = 120   # rate step ~55 s (base CPU 6 + 4 runs x (setup 4 + burst/tail 1.3 + settle 1 + dumps 3 + del 1)) x2
 CPU_WIN_S = 6           # idle CPU window (as the 4ea3394 poll measurement, #57)
 PING2_S = 2.0           # 2 echoes 0.5 s apart + 1 s reply wait = 1.5 s, 1.25x
 FDB_DEADMAN_S = 130     # fdb step ~55 s (20 s base + static 2 + probe 2 + ping 2 + ageing 26.3) x2
 BURST_DEADMAN_S = 90    # burst step ~40 s (setup 10 + probe 2 + burst/resync 4.4 + 3 fdb dumps 6 + 2 CPU windows 12) x2
 STATE = "/tmp/swd"
-BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg", "brbu")
+BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg", "brbu", "brld")
 # burst step per unit: bridge ports (second one without cable), host port (netns), lports, private VIDs, dmesg device
 UNITS = {0: {"br": ("ge8", "ge9"), "host": "ge17", "lp": {"ge8": 9, "ge9": 10, "ge17": 18},
              "pvid": {"ge8": 108, "ge9": 109, "ge17": 117}, "dev": "us48_cmic_u0 us48_cmic_u0:"},
@@ -829,6 +842,162 @@ def step_burst(b: Board, unit: int) -> None:
         thermal(b, f"after burst u{unit}")
 
 
+def learn_curve(b: Board, t0: datetime.datetime) -> tuple[int, list[tuple[int, int]]]:
+    """Monitor extern_learn adds of burst MACs: total, and the count by each RATE_MARKS_MS mark after the first frame."""
+    ts, t = [], None
+    for ln in b.sh(f"cat {STATE}/mon", quiet=True).splitlines():
+        if mon_tstamp(ln):
+            t = mon_tstamp(ln)
+            continue
+        f = ln.split()
+        if t and f and f[0].startswith(BURST_BASE[:12]) and "extern_learn" in f and f[0] != "Deleted":
+            ts.append((t - t0).total_seconds() * 1000)
+    return len(ts), [(m, sum(1 for x in ts if x <= m)) for m in RATE_MARKS_MS]
+
+
+def step_rate(b: Board, unit: int) -> None:
+    """RATE_N new sources per run at each RATE_PPS: learned (L2X, bridge) vs sent over time, FIFO full / fast drains,
+    resync walks, drain CPU. One bridge per run (its 'FIFO off' line carries the run's counters)."""
+    cfg = UNITS[unit]
+    p0, p1 = cfg["br"]
+    host, br = cfg["host"], "brbu"
+    log(f"=== rate unit {unit}: {br}{{{p0}, {p1}}} STP off; host {host} sends {RATE_N} sources at {RATE_PPS} pps (0 = back to back)")
+    precondition(b, (p0, p1, host), unit)
+    before = snapshot(b, tuple(cfg["lp"])) if b.apply else []
+    thermal(b, f"before rate u{unit}")
+    vid, sm, ns = 4000, None, f"nsenter -t $(cat {STATE}/A.pid) -n"
+    try:
+        tool_push(b)
+        guard_start(b, (p0, p1), RATE_DEADMAN_S, host)
+        b.sh(f"mkfifo {STATE}/holdA; setsid unshare -n sh -c 'read x <> {STATE}/holdA' </dev/null >/dev/null 2>&1 & "
+             f"echo $! > {STATE}/A.pid")
+        b.sh(f"ip link set {host} down; ip link set {host} netns $(cat {STATE}/A.pid); "
+             f"{ns} sh -c 'echo 1 > /proc/sys/net/ipv6/conf/{host}/disable_ipv6 2>/dev/null; ip link set lo up; "
+             f"ip link set {host} up'")
+        if not b.apply:
+            return
+        sm = Sampler((p0, p1), RATE_DEADMAN_S)
+        sm.next()
+        base_cpu = cpu_busy(b, sm)
+        for pps in RATE_PPS:
+            br_make(b, br, False)
+            b.sh(f"brctl addif {br} {p0}; brctl addif {br} {p1}")
+            vid, _ = offload_info(b, br)
+            while True:
+                c = b.sh(f"{ns} ip -o link show {host} | grep -c LOWER_UP; cat /sys/class/net/{p0}/carrier", check=False, quiet=True).split()
+                el = sm.next()["t"] - sm.hist[0]["t"]
+                if c == ["1", "1"]:
+                    break
+                if el > RATE_DEADMAN_S / 2:
+                    raise Fail(f"no carrier {host}/{p0}: {c}")
+            b.sh(f"bridge fdb add {MAC_STATIC} dev {p1} master static")
+            mon_start(b)
+            grep = f"dmesg | grep '{cfg['dev']} switchdev: L2 resync (FIFO full)'; true"
+            n_res = len(b.sh(grep, quiet=True).splitlines())
+            out = b.sh(f"head -n 1 /proc/stat; {ns} {TOOL} {host} {RATE_N} {BURST_BASE} {MAC_STATIC} {pps}; "
+                       f"read -t {RATE_TAIL_S} x <> {STATE}/f; head -n 1 /proc/stat", quiet=True).splitlines()
+            sm.grace = sm.q.qsize() + 4
+            m = re.search(r"tx \S+ (\d+) first (\S+) last (\S+) cpu_ms (\d+)", " ".join(out))
+            if not m:
+                raise Fail(f"l2_burst: {out!r}")
+            sent, t0, t1, tx_ms = int(m.group(1)), tstamp(m.group(2)), tstamp(m.group(3)), int(m.group(4))
+            a, z = ([int(x) for x in ln.split()[1:8]] for ln in (out[0], out[-1]))
+            win = (sum(z) - sum(a)) * 10 / 2      # USER_HZ 100: ms per CPU, 2 CPUs
+            busy = (sum(z) - sum(a) - (z[3] + z[4]) + (a[3] + a[4])) * 10
+            drain_ms = busy - tx_ms - base_cpu / 100 * 2 * win
+            sm.wait(RATE_SETTLE_S)
+            res = b.sh(grep, quiet=True).splitlines()[n_res:]
+            mine, hw = fdb_sets(b, sm, p0, br)
+            n_mon, curve = learn_curve(b, t0)
+            dur = (t1 - t0).total_seconds() * 1000
+            b.sh(f"kill $(cat {STATE}/mon.pid) 2>/dev/null; rm -f {STATE}/mon.pid; ip link set {br} down; brctl delbr {br}")
+            off = fifo_off_line(b, unit)
+            log(f"  rate u{unit} {pps or 'b2b'} pps: sent {sent} in {dur:.1f} ms ({sent / max(dur, 0.001) * 1000:.0f}/s), "
+                f"L2X {len(hw)}, bridge {len(mine)}, monitor {n_mon}; learned by ms {curve}; "
+                f"resyncs {[r.split('resync')[1].strip() for r in res]}; drain CPU ~{drain_ms:.0f} ms (busy {busy:.0f}, "
+                f"sender {tx_ms}, idle base {base_cpu:.1f} %, window {win:.0f} ms); {off.split('): ')[-1]}")
+            b.check(f"rate u{unit} {pps or 'b2b'} bridge fdb = L2X", mine == hw,
+                    f"only L2X {sorted(hw - mine)[:4]}, only bridge {sorted(mine - hw)[:4]}")
+            b.check(f"rate u{unit} {pps or 'b2b'} FIFO off clean", " 0 index mismatches" in off and "WRITE FAILED" not in off, off)
+            thermal(b, f"rate u{unit} {pps or 'b2b'}")
+    finally:
+        if sm:
+            sm.stop()
+        teardown(b, host)
+        verify_restored(b, f"rate u{unit}", [vid], before, [(vid, MAC_STATIC), (vid, BURST_BASE)], unit)
+        thermal(b, f"after rate u{unit}")
+
+
+def dmesg_t(b: Board, pat: str, after: float) -> tuple[float, str] | None:
+    """First dmesg line matching pat with a time stamp > after (s since boot)."""
+    for ln in b.sh(f"dmesg | grep -e '{pat}'; true", quiet=True).splitlines():
+        m = re.match(r"\[\s*(\d+\.\d+)\]", ln)
+        if m and float(m.group(1)) > after:
+            return float(m.group(1)), ln.strip()
+    return None
+
+
+def step_linkdown(b: Board) -> None:
+    """Carrier loss of a bridged port: its dynamic L2X entries leave the chip and the bridge, statics stay (#135)."""
+    log("=== linkdown: brld{ge8, ge9}, host A = ge17 in a netns; A learned on ge8, then ge8 loses carrier")
+    ports = ("ge8", "ge9")
+    precondition(b, ("ge8", "ge9", "ge17"))
+    before = snapshot(b) if b.apply else []
+    thermal(b, "before linkdown")
+    vid, sm, ns = 4000, None, f"nsenter -t $(cat {STATE}/A.pid) -n"
+    try:
+        tool_push(b)
+        guard_start(b, ports, LD_DEADMAN_S)
+        b.sh(f"mkfifo {STATE}/holdA; setsid unshare -n sh -c 'read x <> {STATE}/holdA' </dev/null >/dev/null 2>&1 & "
+             f"echo $! > {STATE}/A.pid")
+        b.sh(f"ip link set ge17 down; ip link set ge17 netns $(cat {STATE}/A.pid); "
+             f"{ns} sh -c 'echo 1 > /proc/sys/net/ipv6/conf/ge17/disable_ipv6 2>/dev/null; ip link set lo up; ip link set ge17 up'")
+        br_make(b, "brld", False)
+        b.sh("brctl addif brld ge8; brctl addif brld ge9")
+        vid, _ = offload_info(b, "brld")
+        if not b.apply:
+            return
+        sm = Sampler(ports, LD_DEADMAN_S)
+        sm.next()
+        for how, down, up in (("far end ge17 admin down", f"{ns} ip link set ge17 down", f"{ns} ip link set ge17 up"),
+                              ("ge8 admin down", "ip link set ge8 down", "ip link set ge8 up")):
+            while True:
+                c = b.sh(f"{ns} ip -o link show ge17 | grep -c LOWER_UP; cat /sys/class/net/ge8/carrier", check=False, quiet=True).split()
+                el = sm.next()["t"] - sm.hist[0]["t"]
+                if c == ["1", "1"]:
+                    break
+                if el > LD_DEADMAN_S / 2:
+                    raise Fail(f"no carrier ge17/ge8: {c}")
+            b.sh(f"bridge fdb replace {MAC_STATIC} dev ge9 master static")
+            burst(b, ns, "ge17", 1, MAC_LAT)
+            el, ln = fdb_wait(b, sm, MAC_LAT, True, FIFO_WAIT_S, "brld")
+            a = b.l2_lookup(vid, MAC_LAT)
+            b.check(f"linkdown [{how}] A learned on ge8 (L2X + bridge)", bool(a) and a["PORT_NUM"] == LP["ge8"] and
+                    not a["STATIC_BIT"] and ln is not None and "extern_learn" in ln.split(), f"L2 {a}, fdb {ln!r}")
+            t_mark, t_cmd = (float(x) for x in b.sh(f"cut -d' ' -f1 /proc/uptime; {down}; cut -d' ' -f1 /proc/uptime").split()[-2:])
+            el, ln = fdb_wait(b, sm, MAC_LAT, False, LD_WAIT_S, "brld")
+            if b.sh("cat /sys/class/net/ge8/carrier", check=False, quiet=True) == "1":
+                log(f"  INFO linkdown [{how}]: ge8 keeps carrier {el:.1f} s later (admin down = MAC down, PHY stays "
+                    f"linked: {LD_ISSUE}); A still learned: {ln!r}")
+                b.sh(up)
+                continue
+            a, s = b.l2_lookup(vid, MAC_LAT), b.l2_lookup(vid, MAC_STATIC)
+            dn = dmesg_t(b, "ge8: link down", t_mark)
+            fl = dmesg_t(b, "ge8: switchdev: L2 flush (dynamic)", t_mark)
+            lat = f"link down +{(dn[0] - t_mark) * 1000:.0f} ms, " if dn else "no 'ge8: link down' line, "
+            lat += f"flush +{(fl[0] - t_mark) * 1000:.0f} ms: {fl[1].split('switchdev: ')[-1]!r}" if fl else "no flush line"
+            b.check(f"linkdown [{how}] A gone from L2X and the bridge, static kept", a is None and ln is None and bool(s)
+                    and s["STATIC_BIT"] == 1, f"{lat} (command {(t_cmd - t_mark) * 1000:.0f} ms); L2 A {a}, fdb {ln!r}, static {s}")
+            b.sh(up)
+        sm.next()
+    finally:
+        if sm:
+            sm.stop()
+        teardown(b)
+        verify_restored(b, "linkdown", [vid], before, [(vid, MAC_LAT), (vid, MAC_STATIC)])
+        thermal(b, "after linkdown")
+
+
 def step_stp(b: Board) -> None:
     log("=== stp: brstp{ge8, ge17} = both ends of the loop cable, STP on before the joins (HW STG blocking)")
     ports = ("ge8", "ge17")
@@ -893,12 +1062,12 @@ def step_mgmt(b: Board) -> None:
 
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    steps = ("preflight", "bpdu", "fdb", "burst", "stp", "mgmt", "all")
+    steps = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "stp", "mgmt", "all")
     if len(args) != 1 or args[0] not in steps:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     b = Board("--apply" in sys.argv[1:])
-    todo = ("preflight", "bpdu", "fdb", "burst", "stp") if args[0] == "all" else (args[0],)
+    todo = ("preflight", "bpdu", "fdb", "linkdown", "burst", "rate", "stp") if args[0] == "all" else (args[0],)
     rc = 0
     for name in todo:
         try:
@@ -908,12 +1077,21 @@ def main() -> int:
                 step_bpdu(b)
             elif name == "fdb":
                 step_fdb(b)
+            elif name == "linkdown":
+                step_linkdown(b)
             elif name == "burst":
                 for unit in (0, 1):
                     try:
                         step_burst(b, unit)
                     except Fail as e:
                         log(f"FAIL burst u{unit}: {e}")
+                        b.failed += 1
+            elif name == "rate":
+                for unit in (0, 1):
+                    try:
+                        step_rate(b, unit)
+                    except Fail as e:
+                        log(f"FAIL rate u{unit}: {e}")
                         b.failed += 1
             elif name == "stp":
                 if name in todo and "bpdu" not in todo and not step_bpdu(b):

@@ -96,6 +96,14 @@ def dmesg_lines() -> list[str]:
     return sh("dmesg").splitlines()
 
 
+def dmesg_ts(ln: str) -> float:
+    """Kernel time stamp of a dmesg line, -1 if none (a line count breaks once the ring wraps)."""
+    try:
+        return float(ln.split("]", 1)[0].lstrip("[ "))
+    except ValueError:
+        return -1.0
+
+
 def wait_carrier(devs: tuple[str, ...]) -> tuple[bool, float]:
     t0 = time.monotonic()
     while True:
@@ -136,7 +144,7 @@ def main() -> int:
         if a.no_octal or not ok:
             continue
         pre = copper_state(second)
-        d1 = len(dmesg_lines())
+        d1 = max((dmesg_ts(ln) for ln in dmesg_lines()), default=-1.0)
         sh(f"ip link set {second} up")
         test_ports.append(second)
         t_end = time.monotonic() + 3 * LINK_POLL_S + 0.5
@@ -146,7 +154,7 @@ def main() -> int:
             if c.get(gphy) != "1" or c.get(octal) != "1":
                 drops.append(c)
             time.sleep(POLL_S)
-        new = dmesg_lines()[d1:]
+        new = [ln for ln in dmesg_lines() if dmesg_ts(ln) > d1]
         post = copper_state(second)
         down = [ln for ln in new if "link down" in ln and (f" {gphy}:" in ln or f" {octal}:" in ln)]
         brought = [ln for ln in new if f"{second}: copper bring-up" in ln]
