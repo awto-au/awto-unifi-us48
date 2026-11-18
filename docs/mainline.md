@@ -6,7 +6,7 @@
   - Store reached via gitignored symlink `tmp/linux-store` (or `$US48_LINUX_STORE`, `--store`); `build_mainline.py` creates the worktree if missing.
   - Never `--depth`, `git gc` or `git repack` in the store or its worktrees (machine timer does gc).
 - Series: `mainline/0001..0009-*.patch` (`git format-patch`, `Signed-off-by: TODO` = unsigned on purpose).
-- Config: `mainline/us48_defconfig` on `allnoconfig` (explicit list, ~520 `=y`; debug profile as OpenWrt `hr2/config-6.18`, #4, #64). gzip kernel + initramfs.
+- Config: `mainline/us48_defconfig` on `allnoconfig` (explicit list, ~520 `=y`; debug profile from the parked OpenWrt `hr2` config, #4, #64). gzip kernel + initramfs.
   - `build_mainline.py` aborts if any listed symbol is missing from the final `.config` (unmet dependency).
   - Slot limit: `kernel0` linux slot = 0xD00000 B (13 MiB, `SLOTS["linux"]` in `dev.py`).
 

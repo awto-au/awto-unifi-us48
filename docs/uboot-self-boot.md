@@ -51,7 +51,7 @@ Question: can a warm reset land in uboot-2 instead of uboot-1, as a step to reti
 
 | Path | Mechanism | Result |
 |---|---|---|
-| Linux `reboot` (mainline, OpenWrt) | `syscon-reboot` DMU `0x1803f200` clear b1 (IPROC_RESET_N) | ROM → uboot-1 banner ~5 s later. C (DTS `bcm53344-ubnt-unifi-us-48-500w.dts:31-36`; `openwrt-port.md:40`) |
+| Linux `reboot` (mainline) | `syscon-reboot` DMU `0x1803f200` clear b1 (IPROC_RESET_N) | ROM → uboot-1 banner ~5 s later. C (DTS `bcm53344-ubnt-unifi-us-48-500w.dts:31-36`) |
 | uboot-2 `reset` | `SYSRESET_SYSCON`, same register | stock banner. C (`tmp/logs/console/us48-20261113-132714.log:3639-3642`) |
 | uboot-2 data abort | `Resetting CPU ...` | stock banner, PCIe LINKSTA 0x9012. C (same log :4981-5013) |
 | SP805 expiry (`0x18039000`, armed by dev.py ~46 s) | scope by WATCHDOG_RESET_MODE (0) | returns to uboot-1 at 400 MHz. C (`clocks.md:66,71`) |

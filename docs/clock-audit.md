@@ -124,12 +124,12 @@ What a faster DRAM clock needs (none of it done): XGPLL relock to the 800 row (m
 
 ## 6. Test plan for the board agent (`scripts/clock_sweep.py`)
 
-- Prereq: `python3 scripts/clock_sweep.py --build` (memtest_arm, 42 KB static, musl). `--plan` prints the step table. `US48_HOST=lizard`, OpenWrt image in kernel0 openwrt slot (as `clock_trial.py cpu`).
+- Prereq: `python3 scripts/clock_sweep.py --build` (memtest_arm, 42 KB static, musl). `--plan` prints the step table. Linux image in kernel0 (as `clock_trial.py cpu`).
 - Default: `python3 scripts/clock_sweep.py --start 1400 --stop 1999 --step 50 --soak 300`. Log `tmp/logs/clock_sweep.log`, table `tmp/logs/clock_sweep_results.md`.
 - Per step:
   1. `dev._session_at_uboot` -> uboot-1 prompt (400 MHz, fresh from reset).
   2. Calibrate U-Boot op budget: time `crc32` of 4 MiB at 400 MHz; budget = 1.25 x measured + console.
-  3. References at 400 MHz: `sf read` 1 MiB of the openwrt slot + `crc32`; `crc32` of the same bytes through the BSPI window `0x1c1e0000`.
+  3. References at 400 MHz: `sf read` 1 MiB of the kernel0 slot + `crc32`; `crc32` of the same bytes through the BSPI window `0x1c1e0000`.
   4. `sf read` the kernel to `0x01000000`, arm SP805 (46 s), `clock_trial.switch_cpu(mhz)` (gate, fid 2, PLLARMB RMW, `PLLARMA`, lock bits 28 + 7, post-reset, fid 7, verify GO clear + POLICY_DBG fid 7, `PLL_DEBUG`).
   5. U-Boot checks at the new clock (SP805 petted between ops): DDR `0x02000000..0x05ffffff` constant patterns 0/~0/0x55../0xaa.. (`mw.l` + `crc32` per 4 MiB vs host zlib CRC), walking ones (32 x 1 MiB), `cp.l` + `cmp.l` 4 MiB, SRAM 16 KiB two patterns, `sf read` CRC and BSPI-window CRC equal to step 3.
   6. Re-arm SP805, `bootm`; userspace within `dev.USERSPACE_BUDGET_S`.

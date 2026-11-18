@@ -57,7 +57,7 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 
 ## Clock and boot speed (#70, #79, 2026-11-15)
 - Unit 1 power-on: `POLICY_DBG` 0x2222 = fid 2 (sys clk, 100 MHz row), PLLARMA 0x01004010 (PLL in reset, unlocked), ch0 mdiv 4, ch1 mdiv 2, ARM_DIV 0x2012. PERIPHCLK 50 MHz (heartbeat 25 beats/s x 2e6 ticks).
-- `us48_a2` `cpu_mhz` (default 1600 since 2026-11-16, Dan's choice, #88; 100 was the default 2026-11-15; 0 = leave): E2 sequence of `us48_cpu_switch` through the regmap in `start()` before the halt. 400..600 = fid 6 (VCO 4x, ch0 mdiv 4), 700+ = fid 7 (VCO 2x, ch1 mdiv 2). 1000: GO + lock in 149 us, PERIPHCLK 500 MHz host-timed. debugfs `remoteproc0/ccu` = registers + computed MHz.
+- `us48_a2` `cpu_mhz` (default 1600, Dan's choice, #88; 0 = leave): E2 sequence of `us48_cpu_switch` through the regmap in `start()` before the halt. 400..600 = fid 6 (VCO 4x, ch0 mdiv 4), 700+ = fid 7 (VCO 2x, ch1 mdiv 2). 1000: GO + lock in 149 us, PERIPHCLK 500 MHz host-timed. debugfs `remoteproc0/ccu` = registers + computed MHz.
 - Standalone firmware (bustest, selftest) at 800/1000: no mismatch, link clean (`us48_bustest stats`).
 - Linux payload (debug and normal profile, with and without L2): early memory corruption (UBSAN in `memblock_free_all`, page-struct oops) at 500/600/800/1000; 400 fails about 3 in 5; 100 MHz boots every time. `cachepolicy=` is ignored on ARMv7 (`Only cachepolicy=writeback supported`): not a test. Poll rate of the DCC reader (5 ms, 1 ms, 20 ms, burst) does not change it. Open in #79.
 - `a2_boot_time.py <label> [--param k=v]` = start a2 Linux and time it (a1 uptime in centiseconds); a2 text in `tmp/logs/a2_boot_<label>.txt`.
@@ -316,4 +316,3 @@ One kernel image, one initramfs for a1 and a2. Only DTB + bootargs differ. Loade
 - Tools: `a2_pm.py` (boot loop, oops post-mortem, `--count-only`), `a2_pm_ab.py` (alternating blocks), `a2_catch.py` (vector catch loop). `dcc_stats` shows `mark` (1 = "Run /init" seen, -1 = oops/panic text seen since the start).
 - After the change, normal image from RAM (`us48-mainline-normal.bin`, cksum 3707398970, module defaults, `a2_boot_cycles.py --ping`): 1000 MHz 0/120 oops, 0 no marker; 1600 MHz 0/120. Debug image `a2_pm.py`: 1600 MHz 0/100. `tx_cfg` reads 0xd at the release on all of them.
 - Cost check at 1600 MHz, L2 on (`vnet_test.py`, `a2_bw.py`): TCP 5.46 / 4.52 MB/s (was 5.43 / 4.48), us48bench 8M rd/wr/cp 67 / 260 / 67 MB/s (was 67 / 256 / 66).
-- kernel0 not reflashed with this build (flash-kernel0 was denied by the tool classifier): the flashed image still has the old `us48_a2`; `insmod` of the new module or a flash is needed for the fix to persist across a power cycle.

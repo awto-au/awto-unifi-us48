@@ -1,6 +1,6 @@
 # U-Boot `usw-v1.1.6.122-gd2310f3e` (US-48-500W)
 
-Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot flow now: `scripts/dev.py boot-ram` / `flash-kernel0` / `boot-flash` ([openwrt-port.md](openwrt-port.md)).
+Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot flow now: `scripts/dev.py boot-ram` / `flash-kernel0` / `boot-flash` ([autochain.md](autochain.md)).
 
 - **C** = confirmed in disassembly (function@address / string / constant cited). **I** = inferred.
 - Image: PART `u-boot` of 7.5.15, 447118 B. Flash backup `mtd0` (taken after the 7.5.15 upgrade) is byte-identical over those 447118 B (C) — this is the U-Boot on the device.
@@ -43,7 +43,7 @@ Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot
 | Pet = `wdt_pet`@0x1c002808 (reload from saved value). Called from serial getc/putc (@0x1c024a04/0x1c024a1c), `udelay`@0x1c02ad1c, `memmove_wd`@0x1c01c504, memory cmds, hush loop, CRC loops, TFTP loop | callers scan | C |
 | So the prompt stays alive; a long `loady` stays alive (getc pets) | | C (path), I (no gap > 30 s) |
 | **`bootm` stops it**: `do_bootm_linux`@0x1c00d4ac calls `wdt_stop`@0x1c00282c (writes disable keys `0x12345678`, `0x87654321` to `+0x634`, control=0, clears saved reload) at 0x1c00d4fc, before "Starting kernel ..." | | C |
-| OpenWrt will not reboot after boot unless `bootm` fails after arming; no need to pet. If stuck in U-Boot idle in a non-polling state, board resets after 30 s | | C |
+| Linux will not reboot after boot unless `bootm` fails after arming; no need to pet. If stuck in U-Boot idle in a non-polling state, board resets after 30 s | | C |
 
 ## 3. Reaching the prompt
 
@@ -138,7 +138,7 @@ Static: ubnt app (`ubntboot` 0x67032dec, selector 0x67030afc). Live: `ubntbox bo
 - **U-Boot never increments bootcount** ("BS: skip bootcount increment (runtime-only policy)" 0x67031044). The OS does it; stock resets via `ubntbox bootsel mark-success` (syswrapper.sh). C.
   - → No hardware fallback: a slot that boots but never reaches userspace stays selected on every power-up. Only serial or that OS can switch back.
 - Stock tool: `ubntbox bootsel {init,mark-success,force-fallback [-n],reset-counts,set-bootcount <active|backup> N,status}`. FW auto-rollback (`rc.auto_rollback_watchdog`) is compiled out in 7.5.x (`auto-capable` rc 1). C.
-- A swap to a slot whose image passes CRC needs nothing else: OpenWrt uImage (load 0x18000) in kernel0 + `bootsel force-fallback` boots it. I: untested.
+- A swap to a slot whose image passes CRC needs nothing else: Linux uImage (load 0x18000) in kernel0 + `bootsel force-fallback` boots it. I: untested.
 
 ## 8. Console speed
 
@@ -213,11 +213,11 @@ Serial 115200 8N1 on UART1 (header location: see [hardware.md](hardware.md)). Do
 1. Power on; **press any key within 3 s** of "Hit any key to stop autoboot". Expect `u-boot> `.
 2. Read only: `version`, `printenv` (default env as in §3), `coninfo`, `help`. No `saveenv`.
 3. RAM alias check (scratch RAM, safe): `mw.l 0x01000000 0xa5a5a5a5` then `md.l 0x61000000 1`. Same value ⇒ alias confirmed. Different ⇒ stop and re-read §6.
-4. The uImage is built with **load = entry = `0x00018000`** (not `0x8000`; image rule in `openwrt/0001-*.patch`, tag `openwrt-parked`).
-5. Send the image over serial: `loady 0x01000000` then ymodem-send `us48-initramfs.bin`; `dev.py` uses 460800 ([§8](#8-console-speed), 921600 fails). `loadb` (kermit) is the alternative.
-   - Expected: "## Total Size = 0x... Bytes". Size must equal the file size.
+4. The uImage is built with **load = entry = `0x00018000`** (not `0x8000`; `mkuimage.py`).
+5. Load the image to `0x01000000` over TFTP from awto-uboot (`dev.py u2-boot`, [autochain.md](autochain.md)); never serial YMODEM. Stock U-Boot has no NIC.
+   - Size must equal the file size.
 6. `bootm 0x01000000`. Watch for, in order:
-   1. `## Booting kernel from Legacy Image at 01000000 ...`, image name `ARM OpenWrt Linux-6.18.55`
+   1. `## Booting kernel from Legacy Image at 01000000 ...`, image name `ARM Linux`
    2. `Verifying Checksum ... OK` (data CRC; a transfer error shows `Bad Data CRC`)
    3. `Loading Kernel Image ... OK`
    4. `Starting kernel ...` (watchdog stopped here)

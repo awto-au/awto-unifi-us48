@@ -28,7 +28,7 @@ awto-uboot as the bootloader of unit 1's Cortex-A9, loaded into its carveout by 
 ## Devices
 | Device | Choice |
 |---|---|
-| CPU clock | `us48_cpu_switch` (E2 relock, `CPU_REENTRY`), 1000 MHz. a1 `us48_a2` sets `cpu_mhz` (default 100, #79) before the release: U-Boot sees the target and skips; if the ROM state (fid 2) is found, it relocks itself |
+| CPU clock | `us48_cpu_switch` (E2 relock, `CPU_REENTRY`), 1000 MHz. a1 `us48_a2` sets `cpu_mhz` (default 1600, #88) before the release: U-Boot sees the target and skips; if the ROM state (fid 2) is found, it relocks itself |
 | Timer | A9 global timer `0x19020200`, rate = live ARM/2 (`periph_clk`) |
 | L2 | PL310 `0x19022000`, `CONFIG_US48_L2` default y here: invalidate + enable before the D-cache; flush + disable in `cleanup_before_linux`. Not tested at 1000 MHz (`cpu` prints L2 state). Switch off if the board test fails |
 | L1 | I+D cache on after relocation (`US48_ICACHE`/`US48_DCACHE`) |

@@ -77,7 +77,7 @@ Event message (kernel → userspace), `pse_nl_port_evt_unicast` `0xc0023fc4`:
 - `show_pse_enable` `0xc0023e7c`: prints current state (0/1). (C)
 - `proc_write_pse_enable` `0xc0023eb0`: reads <=7 bytes, first char only. `'1'` and currently 0 → `platform_driver_register(pse driver)` (probes `pse_plt`, requests the 3 IRQs). `'0'` and currently 1 → `platform_driver_unregister`. Anything else: ignored. (C)
 - Module-exit stub `FUN_c0350700` also unregisters and removes the proc entries. (C)
-- OpenWrt port: a replacement does not need this driver at all if the new PSE driver takes the three GPIOs/IRQs itself (pins 0, 1, 8 on CCA GPIO, falling edge). (I)
+- Linux port: a replacement does not need this driver at all if the new PSE driver takes the three GPIOs/IRQs itself (pins 0, 1, 8 on CCA GPIO, falling edge). (I)
 
 ## 2. Board-specific kernel code
 
@@ -175,7 +175,7 @@ Module: license Proprietary, depends `ubnthal` (uses `ubnthal_get_systemid`), ve
 - None of `ubnt_common`, `ubnthal`, `gpiodev`, `linux-kernel-bde`, `linux-user-bde` references an i2c adapter symbol (strings check). (C)
 - `/dev/i2c-0`, `/dev/i2c-1` are static cpio nodes (see `docs/board.md`); with no i2c-dev in the kernel they are non-functional nodes (I). All PoE/sensor/SFP I2C goes through the switch chip's CMIC SMBus master from userspace (`docs/board.md`).
 - Bus speeds, mux/PoE addresses, device table: `docs/board.md` (switchdrvr-derived); nothing kernel-side to add. (C)
-- OpenWrt consequence: a Linux I2C master is needed. Resolved (#7): `i2c-bcm-iproc` on the CMIC SMBus `0x48000000`, polled; ChipcommonB instances (`0x18038000`/`0x1803b000`) unused ([board.md](board.md#i2c-master-issue-7)).
+- Linux consequence: a Linux I2C master is needed. Resolved (#7): `i2c-bcm-iproc` on the CMIC SMBus `0x48000000`, polled; ChipcommonB instances (`0x18038000`/`0x1803b000`) unused ([board.md](board.md#i2c-master-issue-7)).
 
 ## 5. Open questions
 

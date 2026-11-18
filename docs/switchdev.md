@@ -63,9 +63,9 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
   - idle: 10 ms delayed work = 3 jiffies at HZ 250 = 12 ms; cost one register read per period. Cap 128 / 12 ms = 10.7k changes/s.
   - a drain that found >= 64 (half full) re-runs after 1 ms (`usleep_range`, hrtimer: a jiffy is 4 ms) until one finds < 64. Ceiling 128 / 1 ms = 128k/s; the real cap is the per-event cost (pops + notifier + rtnl), board numbers below.
 - Timings (old -> new, #135):
-  - overflow walk gap: 3 s (SDK `l2xmsg_thread_usec` pace) -> none at first overflow; next one after a gap = the last walk's own time (walking <= 50 % duty under a sustained flood).
-  - walk chunk: 8 x 2048 entries -> 512 x 32, FIFO drained between chunks: 32 reads stay under the 1 ms fast-drain period on unit 1 (PCIe ~10-13 us per read), rtnl only for the diff of 32.
-  - consistency walk: every 300 s (SDK default ageing period) -> off (`l2_check_s` 0; N s for diagnostics). 43 check walks at 2 s over a full `switchdev_test all` run: 42 found nothing, 1 found 3 entries inside a burst (FIFO full) that the overflow walk would have caught.
+  - overflow walk gap: none at first overflow; next one after a gap = the last walk's own time (walking <= 50 % duty under a sustained flood).
+  - walk chunk: 512 x 32 entries, FIFO drained between chunks: 32 reads stay under the 1 ms fast-drain period on unit 1 (PCIe ~10-13 us per read), rtnl only for the diff of 32.
+  - consistency walk: off (`l2_check_s` 0; N s for diagnostics). 43 check walks at 2 s over a full `switchdev_test all` run: 42 found nothing, 1 found 3 entries inside a burst (FIFO full) that the overflow walk would have caught.
   - unchanged: 10 ms idle drain (Dan), `L2_AGE_TIMER` (user-set ageing).
 - Decode (SDK `_soc_hu2_l2mod_fifo_process`): op 5 LEARN / 3 INSERT / 4 PPA_REPLACE -> entry; 2 AGE / 0 DELETE / 1 PPA_DELETE -> gone; 7 = hash bucket full (not learned). L2X index = BUCKET_INDEX x 8 + ENTRY_INDEX (I; 0 index mismatches in every board run).
 - Shadow (16384 records) = what the bridge was told. Reported: valid, KEY_TYPE 0, dynamic, not CPU/trunk, MODULE_ID = PORT_TAB.MY_MODID, VLAN of a live slot (4000-4007), port a member. Private VLANs never. Changed record -> `SWITCHDEV_FDB_DEL_TO_BRIDGE` old + `ADD_TO_BRIDGE` new (vid 0, offloaded). Static user add drops the record (bridge owns it).
@@ -74,7 +74,7 @@ Linux bridge -> ASIC mapping for both BCM5334x units; base for the L3/NAT offloa
 - Board 2026-11-19 (#134, RAM boot build #132 + this module, both units):
   - FIFO full **pauses HW learning**: 512 new sources back to back (4-11 ms) -> 139-305 learned over 6 runs, resync 0-1 corrections, bridge = L2X. Sources beyond 12800/s learn at a later frame.
   - Learn latency (probe frame TX -> `bridge -timestamp monitor` extern_learn): 0.7-10.6 ms. Ageing 10 s: bridge Deleted 17.6-19.1 s after the last frame.
-  - Idle CPU with one bridge vs none (6 s windows): unit 1 7.7 vs 7.5 %, unit 0 7.2 vs 7.2 % (4ea3394 table poll: ~5 % on unit 1).
+  - Idle CPU with one bridge vs none (6 s windows): unit 1 7.7 vs 7.5 %, unit 0 7.2 vs 7.2 %.
 - Board 2026-11-19 (#135, RAM boot build #136 + the final module, `switchdev_test.py rate`: 4096 new sources per run, DA = static sink, frames never leave the chip; sender max ~30-42k/s, so 50k/100k runs are sender-bound):
 
   | run | u0 old (a8c6198) | u0 adaptive | u1 old | u1 adaptive |

@@ -93,7 +93,7 @@ Shape: DM_ETH glue (`uboot-port/drivers/net/bcm_hr2_cmic_eth.c`, polled, legacy 
 | 9 | Default VLAN profile, `GPORT_RSV_MASK`, `GPORT_CONFIG` (CLR_CNT, GPORT_EN) | | §2 init 8-9 | C |
 | 10 | Port 2: `PORT_TAB[2]`, `EGR_PORT`, `EGR_ENABLE[phys 9]`, MAC reset pulse (`0x01802058` → `..5B` → `0x0180005B`) | | §2 init 10, §12.5 step 7 | C |
 | 11 | GPHY (bus 0, addr 9): top reset, DSP clock, `DSP_TAP10=0x011b`, SUPER_ISOLATE=0, `MODE_SEL=0`, `POWER_DOWN=0`, 1000FD + AN (`MII_CTRL=0x1340`), EEE off. RDB enter/exit around RDB regs | MIIM `0x02000000 \| A<<16 \| data` (bus 0, C22; I for bus-0 form) | §4, §7, §12.4 | C (OM + stock), I (HW) |
-| 12 | VLAN 1 = {CPU port 0, logical 2} **only**; STG forwarding for port 2 (and `EGR_VLAN_STG`); `EGR_VLAN[1]`; `EPC_LINK_BMAP_64` bits 0 and 2 | other 47 ports never enabled: no loop onto the house LAN | §6, §5 "What gets a frame" | C (recipe), I (HW) |
+| 12 | VLAN 1 = {CPU port 0, logical 2} **only**; STG forwarding for port 2 (and `EGR_VLAN_STG`); `EGR_VLAN[1]`; `EPC_LINK_BMAP_64` bits 0 and 2 | other 47 ports never enabled: no loop onto the LAN | §6, §5 "What gets a frame" | C (recipe), I (HW) |
 | 13 | CMIC DMA init: abort stale channels, `CMIC_RXBUF_EP_RLS_CRED`, `COS_CTRL_RX_*[ch1]`, ch0 TX / ch1 RX control | `DMA_CTRL` bits 5:4 = 0 (LE host, I) | §3, §5 | C (OM+SW), I (LE) |
 | 14 | Link poll: BMSR link + `MAC_MODE` bit 5 LINK_STATUS | §12.3 checks 1, 12 as debug dump | §12.3 | C |
 
@@ -156,15 +156,15 @@ Shape: DM_ETH glue (`uboot-port/drivers/net/bcm_hr2_cmic_eth.c`, polled, legacy 
 | SPI flash | `drivers/spi/iproc_qspi.c` (`brcm,iproc-qspi`, BSPI+MSPI) (C) | `sf probe/read` for EEPROM MAC and flash slot. Check it against the stock-used window `0x18027000` (uboot.md §5). Read-only guard (no `sf write/erase` except dev opt-in) as st1008f |
 | GPIO | `drivers/gpio/iproc_gpio.c` (C) | optional (system LED GPIO 6/7) |
 | Timer | `drivers/timer/arm_global_timer.c`, `arm_twd_timer.c` (C) | A9 global timer at PERIPHBASE `0x19020200` (stock's private watchdog is at `0x19020620`, same PERIPHBASE, C) for `udelay`; the clock rate is PERIPHCLK (stock assumes 200 MHz, I: uboot.md Open items) |
-| PCIe | `drivers/pci/pcie_iproc.c` (`paxb-v2`, `paxc-v2` only, C) | **not for M1-M6** (unit 0 is AXI). For M7: add an HR2/PAXB-v1 variant (Linux `pcie-iproc.c` register table; OpenWrt patches 950-952 already adapt Linux, openwrt-port.md) |
+| PCIe | `drivers/pci/pcie_iproc.c` (`paxb-v2`, `paxc-v2` only, C) | **not for M1-M6** (unit 0 is AXI). For M7: add an HR2/PAXB-v1 variant (Linux `pcie-iproc.c` register table; the parked OpenWrt patches 950-952 adapt Linux, tag `openwrt-parked`) |
 | Net stack | `NET_LEGACY`: `dhcp`, `tftpboot`, `ping`, `wget` | as st1008f; lwIP optional later |
-| bootm / uImage | yes | LZMA only if kernels shrink; OpenWrt initramfs image is uncompressed uImage today |
+| bootm / uImage | yes | LZMA only if kernels shrink; the Linux initramfs image is an uncompressed uImage today |
 | Watchdog | `wdt` uclass + `drivers/watchdog/sp805_wdt.c` (C) | DT node `arm,sp805` at `0x18039000`, 50 MHz clock; no new driver (Watchdog section above). `cmd/wdt.c` gives `wdt` commands (C) |
 
 ### From st1008f (`/mnt/2tb/git/awto-tl-st1008f`)
 - **Scaffold + build script pattern**: `uboot-port/` staged into a pinned tree, hooks patched idempotently, out-of-tree build, outputs under `tmp/tftp/`, log `tmp/logs/build_uboot_mainline.log`; store reached through a gitignored symlink (`tmp/u-boot-store`, env override), as CLAUDE.md #45.
 - **`ramload` flow** (`scripts/st1008_ramload.py`): power-cycle → stock prompt → load → `go`/`bootm` → match banner. Adapt: stock `loady` + `bootm` (above) instead of stock TFTP + `go`; reuse `Console.run`, `send_checked` (long lines lose chars at 115200, st1008f #31), banner regex.
-- **Chain-image format**: st1008f builds a raw slot image with CRC verified by stock `crc32`/`cmp`. Here the format is a plain legacy uImage (`mkimage`-style header, OpenWrt's `mkimage` already used for the initramfs image), so stock `bootm` does the CRC and handoff.
+- **Chain-image format**: st1008f builds a raw slot image with CRC verified by stock `crc32`/`cmp`. Here the format is a plain legacy uImage (`mkimage`-style header, `scripts/mkuimage.py` builds the initramfs image), so stock `bootm` does the CRC and handoff.
 - **Net test**: `uboot-test net` = ping gateway, `dhcp`, `tftpboot` + CRC32 vs host, repeated 8x; port as `dev.py uboot-test net` (TFTP of the U-Boot image itself). Reference rate 10.6-19.8 MiB/s at 10G (C, their doc); expect lower at 1G polled (~5-10 MiB/s, I) = a 5.6 MB kernel in ~1 s.
 - **Debug lessons to copy** (C, their doc): all RX rings armed or none (null ring left a runout bit), release RX counters per frame, doorbell loss on TX (re-kick after a bounded wait), never reset the chip with the NIC reset (separate reset bits), `ethstat` command, `ethrxany` debug switch.
 - **Shared core** (st1008f #83 `shared/` + UNVR `stage_hal.py`): adopted, built in from the start, not after the first packet. See sections 8 and 9.
@@ -187,7 +187,7 @@ New commands in `scripts/dev.py` (`@command`, `describe`), helper in `scripts/`:
 | `dev.py uboot-chain-install` (later) | `sf write` the chain image to the head of `kernel0` + read-back CRC | same guards as `flash-kernel0`; never `kernel1`/bootsel/u-boot/EEPROM |
 | `dev.py uboot-test net` | ping, `dhcp`, `tftpboot` + CRC32 vs host, 8 repeats | after M4 |
 
-- Host side: tftpd for `tmp/tftp/` on the dev host (port 69, host IP on the 192.168.25.0/24 LAN; `us48-boot` .207 for the board). Link path: front 1 → sw1 → house LAN (current cabling, 2026-11-12). Our port is isolated (only CPU + front 1), so no loop even though front 1 and the uplink (50) are both cabled.
+- Host side: tftpd for `tmp/tftp/` on the dev host (port 69, host IP on the 192.168.25.0/24 LAN; `us48-boot` .207 for the board). Link path: front 1 → sw1 (`scripts/cabling.json`). Our port is isolated (only CPU + front 1), so no loop even though front 1 and the uplink (50) are both cabled.
 - `serverip` / `ipaddr` set per boot by `dev.py` (RAM env), not saved. Claim any other address in the registry first.
 - Coordinator note: `uboot-chain` reboots the unit into stock U-Boot; never run it during live kernel tests.
 - Keep the existing `boot-ram` / `flash-kernel0` / `boot-flash` paths as the fallback when the second stage is broken.
@@ -197,11 +197,11 @@ New commands in `scripts/dev.py` (`@command`, `describe`), helper in `scripts/`:
 | M | Goal | Exit criterion | Needs |
 |---|---|---|---|
 | M0 | Pre-checks at the **stock** prompt (read-only, by the coordinator, not run) | `pci` output (is the RC/link up, BCM53346 `14e4:8346` seen); `mw.l 0x01000000 ...` + `md.l 0x61000000 1` alias test (uboot.md first-boot step 3); `md.l 0x19020200` (global timer present) | existing console |
-| M1 | **Serial prompt**: scaffold, `ARCH_BCMHR2`, ns16550, global timer, RAM env, `loady`/`md`/`mw`/`bootm` | `dev.py uboot-chain` reaches `awto-uboot>`, `md` works, `bootm` of the OpenWrt initramfs (via `loady`) boots as today | build script, uImage wrapper |
+| M1 | **Serial prompt**: scaffold, `ARCH_BCMHR2`, ns16550, global timer, RAM env, `loady`/`md`/`mw`/`bootm` | `dev.py uboot-chain` reaches `awto-uboot>`, `md` works, `bootm` of the initramfs (via `loady`) boots as today | build script, uImage wrapper |
 | M2 | **SPI flash** (built 2026-11-12, not yet run on the board): `iproc_qspi` + `sf probe/read`, EEPROM MAC read (read-only guard on) | `sf read` of `0x1ff0000` 6 B == stock `ubnthal` MAC; `crc32` of a kernel0 range == stock `mtd` CRC | M1 |
 | M3 | **Net link**: S-channel read of `UMAC_REV_ID` (DI §1 worked example, `0x00030601`/`..0501`), chip init, GPHY, DMA; first RX frame (ARP broadcast from the LAN) in the RX DCB, first TX frame seen by `tcpdump` on the host | RX count > 0 and a host `tcpdump` shows our ARP reply; `ethstat` clean. **Resolves DI §12** (or triggers the unit-1 fallback) | M1, M2 |
 | M4 | **DHCP / TFTP**: `ping`, `dhcp` (or static), `tftpboot` a 5.6 MB image, `crc32` == host | 8/8 repeat passes, no `T` timeouts, rate logged (target ≥ 5 MiB/s) | M3 |
-| M5 | **Boot Linux from RAM**: `dev.py ramload us48-initramfs.bin`; DMA stopped on `bootm`; OpenWrt reaches `Starting kernel` and its console, with its own switch init working after our cold init | OpenWrt login on the serial console; kernel's `us48` switch driver does its own reset (DI §2) without conflict | M4 |
+| M5 | **Boot Linux from RAM**: `dev.py ramload us48-initramfs.bin`; DMA stopped on `bootm`; Linux reaches `Starting kernel` and its console, with its own switch init working after our cold init | Linux login on the serial console; kernel's `us48` switch driver does its own reset (DI §2) without conflict | M4 |
 | M6 | Flash slot `kernel0` chain (`uboot-chain-install`), `--from-flash` | boot from kernel0 head to our prompt in seconds | M5 |
 | M7 | (optional) 10G on unit 1 front 50: HR2 PAXB v1 in `pcie_iproc`, HOSTMEM remap, TSC init + ucode | TFTP ≥ 10 MiB/s over the DAC | M5; ucode blob policy |
 
@@ -211,10 +211,10 @@ New commands in `scripts/dev.py` (`@command`, `describe`), helper in `scripts/`:
 |---|---|---|---|
 | 1 | **GPHY→MAC path unresolved** (DI §12: PHY link up, GPORT0 MIB 0) | M3 blocked on unit 0 front 1 | §12.5 sequence + §12.3 checks logged at M3; fall back to unit 1 front 50 (M7 pulled forward) |
 | 2 | **Cold chip init is unproven**: DI §2 is from source (OM + one stock trace), only ever run warm after stock (DI §5 "stock leaves config") | first-packet failures hard to localise | init in numbered steps, each with a read-back print (`ethstat init`); compare to a stock reg dump of the same registers; `reg-diff` approach as st1008f |
-| 3 | `CMIC_CPS_RESET` side effects on unit 1 / PCIe / HiGig; does a CPU-only reset leave the chip configured on a later warm boot? | Linux (OpenWrt) switch driver sees a different state after our U-Boot than after stock | Skip the reset when the chip already answers (read `UMAC_REV_ID` first); verify Linux boots after M3 (M5) |
+| 3 | `CMIC_CPS_RESET` side effects on unit 1 / PCIe / HiGig; does a CPU-only reset leave the chip configured on a later warm boot? | Linux switch driver sees a different state after our U-Boot than after stock | Skip the reset when the chip already answers (read `UMAC_REV_ID` first); verify Linux boots after M3 (M5) |
 | 4 | DMA coherence unknown (CMIC AXI master vs A9 + PL310; PL310 is off after handoff) | silent RX/TX corruption | uncached DMA window; first test with 64-byte pings |
 | 5 | **Hung init on a remote unit**: SP805 is running at entry (Watchdog section), so a stall resets in ~10-20 s only while we keep it fed correctly; a feed bug = spurious resets mid-TFTP | spurious reset, or hang if feeding sits in a loop that never exits | per-wait bounds (section 2); feed from `sp805_wdt` + cyclic, verified with a 25 s `sleep` at M1; `reset` = SP805 forced reset |
-| 6 | Heat: fans stay at power-on default in U-Boot (uboot.md §5), chip init raises dissipation | overheating in long sessions | short sessions; temp watch on the OpenWrt boot (CLAUDE.md); no fan access in U-Boot |
+| 6 | Heat: fans stay at power-on default in U-Boot (uboot.md §5), chip init raises dissipation | overheating in long sessions | short sessions; temp watch on the Linux boot (CLAUDE.md); no fan access in U-Boot |
 | 7 | Front 1 currently carries sw1 uplink / loop path (docs: copper 1 up 1000F to sw1, STP discarding) | cutting the link at reboot is expected; **a bridged U-Boot would loop** | VLAN 1 = CPU + front 1 only; never enable other ports; never run it with forwarding of other ports |
 | 8 | Mainline for HR2 is a new mach: iProc QSPI/timer/serial DT, clocks not modelled | M1/M2 friction | take node shapes from `private/reference/bcm-hr2.dtsi`; fixed rates in DT, measured once (UART, PERIPHCLK; uboot.md Open items) |
 | 9 | Stock `bootm` accepts our image only with valid CRCs + `Linux/ARM/kernel` header | no chain | `mkimage` header, host-side CRC check in `build-uboot` |
@@ -282,7 +282,7 @@ Goal: one portable C core ("bcm-cmic") for the HR2 switch chips, compiled **unch
 
 | Option | Verdict | Why |
 |---|---|---|
-| Symlink from each tree into `common/` | no | Trees are disposable detached worktrees (`tmp/u-boot-v2026.07`, `tmp/linux-mainline`) and the OpenWrt kernel dir is regenerated by `make clean`; a symlink dirties `git status` and dangles. UNVR's own review of symlinks into trees: absolute paths, tools that do not follow links, dangling on another checkout (`tmp/issue-vendoring-symlinks.md`). Kbuild `M=` also cannot take `../` objects reliably (I). C/I |
+| Symlink from each tree into `common/` | no | Trees are disposable detached worktrees (`tmp/u-boot-v2026.07`, `tmp/linux-mainline`) and an in-tree kernel dir would be regenerated by `make clean`; a symlink dirties `git status` and dangles. UNVR's own review of symlinks into trees: absolute paths, tools that do not follow links, dangling on another checkout (`tmp/issue-vendoring-symlinks.md`). Kbuild `M=` also cannot take `../` objects reliably (I). C/I |
 | Git submodule / separate repo | no | Third repo to keep in lock-step; both consumers need patches to land together while the core is still moving. I |
 | **Single source in `common/bcm-cmic/`, byte-identical read-only copy staged into each tree by `scripts/sync_bcm_cmic.py`, `--check` in `dev.py gate`** | **chosen** | Both siblings already do this (UNVR `stage_hal.py`, st1008f `SHARED`). The staged copy is read-only so an edit there fails at the edit. Same files become the upstream Linux patch (`git format-patch` needs real files) and the U-Boot sync. C (siblings), I (upstream use) |
 | Upstream-first: Linux lib is the source, U-Boot copy is a periodic sync | end state, not the dev flow | U-Boot already carries Linux-derived code in two forms (git grep of the store, 2026-11-12). Compat headers it provides so Linux-dialect code compiles: `include/linux/{bitfield,iopoll,mdio,mii,dma-mapping,printk,delay,io}.h`; "from Linux" notes in `lib/crc32c.c`, `lib/hexdump.c`, `drivers/net/phy/{broadcom,smsc,et1011c}.c`. Forks with `#ifndef __UBOOT__` ifdefs: `drivers/mtd/ubi/*`, `drivers/mtd/nand/spi/*`, `drivers/usb/musb-new/*`, `lib/rbtree.c`, `lib/list_sort.c`, `lib/crypto/*`, `drivers/spi/spi-mem.c`. The fork form is what we avoid; a verbatim sync is the form maintainers can review against Linux (I). Until the Linux side lands, `common/` stays the source |
@@ -322,7 +322,7 @@ scripts/bcm_cmic_host_test.py         builds + runs tests/host_test.c
 | Consumer | Staged to | Hook | Notes |
 |---|---|---|---|
 | Linux mainline branch (`tmp/linux-mainline`) | `drivers/net/ethernet/broadcom/bcm-cmic/` | `broadcom/Kconfig`: `source ".../bcm-cmic/Kconfig"`; `broadcom/Makefile`: `obj-$(CONFIG_BCM_CMIC) += bcm-cmic/`; consumer Makefile `ccflags-y += -I$(srctree)/drivers/net/ethernet/broadcom/bcm-cmic`. Hook patch `mainline/0008-*.patch` (hooks only; the core is staged, never duplicated into a patch) | Same shape as `microchip/fdma/`: `config FDMA bool "FDMA API" if COMPILE_TEST`, consumers `select FDMA`, `obj-$(CONFIG_FDMA) += fdma/`, `ccflags-y += -I.../fdma` in lan966x and sparx5 (lan969x builds inside `sparx5/`, I). C |
-| OpenWrt hr2 kernel (OOT module build, `scripts/build_us48_cmic.py`; removed 2026-11-18, tag `openwrt-parked`) | `kernel/us48-cmic/bcm-cmic/` (gitignored) | `us48-cmic-y := us48_cmic.o bcm-cmic/bcm_cmic_schan.o ...` in the module Makefile (subdir objects in `M=` builds, I) | One `.ko`, core not exported. Matches the kernel in the flashed image (`build_us48_cmic.py` rule) |
+| Linux kernel (OOT module build, `scripts/build_mainline.py`) | `kernel/us48-cmic/bcm-cmic/` (gitignored) | `us48-cmic-y := us48_cmic.o bcm-cmic/bcm_cmic_schan.o ...` in the module Makefile (subdir objects in `M=` builds, I) | One `.ko`, core not exported. Matches the kernel in the image |
 | U-Boot worktree (`tmp/u-boot-v2026.07`) | `lib/bcm-cmic/` (built: `drivers/net/` needs `ETH`, we run `NO_NET`; patch 0002 hooks `lib/Kconfig` + `lib/Makefile`, 0003 `cmd/Makefile`) | patch 0002: `drivers/net/Kconfig` `source "drivers/net/bcm-cmic/Kconfig"`; `drivers/net/Makefile` `obj-$(CONFIG_BCM_CMIC) += bcm-cmic/`; `ccflags-y += -I$(srctree)/drivers/net/bcm-cmic` for `bcm_hr2_cmic_eth.o` and `cmd/bcm_cmic.o` | `uboot/Makefile` lists flat objects (`obj-y += bcm_cmic_schan.o ...`); Linux Makefile uses the `bcm-cmic-y` composite form, so the two Makefiles are the only per-OS files |
 
 - `sync_bcm_cmic.py stage <target>`: copy core files, set read-only, write a manifest with SHA-256. `check`: every staged copy equals `common/`; fails `dev.py gate` (UNVR `hal-drift-check.py` pattern). C (pattern), I (script)
@@ -373,7 +373,7 @@ Principle: write the core in the Linux kernel dialect and use only the subset U-
 | `gphy` | `gphy_status(unit, port, &st)`, `gphy_powerup(unit, port, cfg)`, RDB enter/exit helpers | DI §4, §7, §12.4: top reset, DSP clock, `DSP_TAP10`, SUPER_ISOLATE=0, `MODE_SEL`, `POWER_DOWN=0`, `MII_CTRL=0x1340`, EEE off | copper ports | `gphy`, first port |
 | `port` | `port_enable(unit, port, vlan, stg)`, `port_disable`, `stp_set`, `port_status` | `PORT_TAB`, `EGR_PORT`, `EGR_ENABLE`, MAC reset pulse, VLAN/STG/`EGR_VLAN`, `EPC_LINK_BMAP_64` (DI §5, §6, §12.5) | switch driver | `port`, DM_ETH `start` |
 | `dma` | `dma_init(unit, cfg)`, `rx_arm`, `rx_poll(&frame{ptr,len,src_port})`, `rx_release`, `tx(bus,len,dst_port)`, `dma_abort(ch)`, `dma_stop`, `dma_status` | CMC0 DMA channels, DCB 64 B / 16 words / 16-byte aligned, RX ch1 + TX ch0, abort recipe, `RXBUF_EP_RLS_CRED`, `COS_CTRL_RX` (DI §3, §5) | netdev RX/TX | `eth_ops`, `dma rx-test` |
-| `init` | `chip_reset`, `chip_init(unit, &cfg{ports})` | DI §2 steps 1-10 (reset, SBUS ring, TOP release, pipe reset, port maps, TDM, MIIM clock, MMU, VLAN profile, port bring-up) | OpenWrt boots with the unit-0 core **unconfigured** (#46 comment, AMAC tests), so Linux needs this too | cold init at M3 |
+| `init` | `chip_reset`, `chip_init(unit, &cfg{ports})` | DI §2 steps 1-10 (reset, SBUS ring, TOP release, pipe reset, port maps, TDM, MIIM clock, MMU, VLAN profile, port bring-up) | Linux boots with the unit-0 core **unconfigured** (#46 comment, AMAC tests), so Linux needs this too | cold init at M3 |
 | `dump` | `dump_next(unit, &iter, buf, len)`: one `NAME[port] addr = val` line | section 10 | debugfs | `regdump` |
 | `names` | `name_lookup`, `name_iter` | section 10 | debugfs (optional) | commands |
 
@@ -494,7 +494,7 @@ Order rule: infrastructure and shared code first (written once, tested on the ho
 5. On failure: `cmic r 0x31140 4` (DMA_CTRL/STAT), `smem r 10 0x04000000+27 8` (PORT_TAB[27]), report the log lines `bcm-cmic:` / `us48-eth:`.
 
 ## M4 result (2026-11-12, #46)
-- `tftpboot 0x01000000 us48-initramfs.bin` over xe1 (front 50): 8,496,209 B, 5,788 blocks, ~85 s, server log "sent" (`scripts/tftp_serve.py`, `setenv tftpdstp 6969`). iminfo header OK ("ARM OpenWrt Linux-6.18.55").
+- `tftpboot 0x01000000 us48-initramfs.bin` over xe1 (front 50): 8,496,209 B, 5,788 blocks, ~85 s, server log "sent" (`scripts/tftp_serve.py`, `setenv tftpdstp 6969`). iminfo header OK ("ARM OpenWrt Linux-6.18.55", old image).
 - Needed: fresh stock-initialised chip + a U-Boot built after the `CML_FLAGS = 0` change (a stale 17:29 build kept CML 1 and failed).
 - Open: `iminfo` checksum / `bootm` of the RAM image reset the board (SP805 armed by `dev.py` for 20 s); not yet diagnosed. Speed ~100 kB/s, lock-step TX.
 - U-Boot has no `ping` command in this build.

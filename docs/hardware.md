@@ -39,7 +39,7 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
   Same order as D-Link HR2 GPL `mach-iproc/common.c` — D-Link used as a hint only.
 - Front-panel **RJ45 "Console" port**, RS-232 levels (MAX3321 transceiver), Cisco-style: rollover RJ45→DB9 cable
   (or USB↔RJ45 console cable), 115200 8N1, no flow control ([US-48-500W QSG](https://dl.ubnt.com/qsg/US-48-500W_US-48-750W/US-48-500W_US-48-750W_EN.html)).
-  No case opening or TTL adapter needed. Current adapter: PL2303 USB-RS232 on `lizard` (`US48_HOST=lizard`).
+  No case opening or TTL adapter needed. Current adapter: PL2303 USB-RS232, local on Selwyn (`US48_HOST` unset).
 - U-Boot `usw-v1.1.6.122-gd2310f3e` (was `usw-v1.1.4.115-g14af1ee6`); `loadaddr=0x01000000`,
   `ubntboot=bootm 0x01000000`; `tftpboot`, `bootm` present (no NIC, so `tftpboot` fails).
 - U-Boot contains `FATAL:Image is not RSA signed..Aborting` in the ubnt app only; plain `bootm` does not enforce it (our unsigned uImage boots, [uboot.md](uboot.md) §1).

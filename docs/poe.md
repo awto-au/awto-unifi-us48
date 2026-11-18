@@ -187,12 +187,12 @@ Rules for Linux (safe default):
 | Live host path | `0x60e420`: `0x5e57c8(0, 13, v)` → RMW CCA `0x18000064`: 1, wait, 0, wait, 1. Wait = `0x5c04dc(0x14)`: argument in µs, clamped to ≥ 10000 → **10 ms** each | C (sw.c:695026, 648127) |
 | Unused SDK path | ioctl op 0 `0x1087594`: OUTEN `0x18000068 \|= 0x200`, OUT bit 9 high, `sal_udelay(20)`, low, 20 µs, high. Only place that sets OUTEN bit 9 in the UniFi image | C |
 | Polarity | active-low, idle high (final state high; ESWH init sets DOUT bit 9 = 1) | I |
-| OUTEN | observed `0x2c0` on OpenWrt after stock (bits 6, 7, 9); source in UniFi image = unused op 0, or boot ROM / U-Boot | C (obs, #12), I |
+| OUTEN | observed `0x2c0` on Linux after stock (bits 6, 7, 9); source in UniFi image = unused op 0, or boot ROM / U-Boot | C (obs, #12), I |
 | After reset | 1 s sleep, then FW load (§4) | C |
 | IRQ lines | CCA 0 = alarm (log only), CCA 1 = card 1, CCA 8 = card 0; falling edge; kernel forwards over genl `PSE_FAMILY`. Handler `0x1087680`: read `0x00`; bit 2 → read `0x03`, clear LED bits, read `0x07`; bit 1 only → read `0x03`, set LED bits | C ([kernel-pse.md](kernel-pse.md)) |
 | SMBus alert | `i2cdetect` on card-0 bus shows `0x0c` (ARA) | C (#12 comment) |
-| Warm reboot | all 12 chips answered after stock → OpenWrt: FW `0x15`, `0x12 = 0x00` (stock had run `swctrl poe set off`); no reset in between | C (live, #24) |
-| Cold boot straight into OpenWrt | chip state with no stock before it | M |
+| Warm reboot | all 12 chips answered after stock → Linux: FW `0x15`, `0x12 = 0x00` (stock had run `swctrl poe set off`); no reset in between | C (live, #24) |
+| Cold boot straight into Linux | chip state with no stock before it | M |
 | U-Boot | no I2C, no GPIO 9, no MSPI | C ([uboot.md](uboot.md)) |
 
 ## 9. Temperature

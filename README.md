@@ -12,7 +12,7 @@ Broadcom Hurricane 2 BCM53344 (Cortex-A9 + switch, unit 0) with a BCM53346 on PC
 | Boot | uboot-1 (stock) auto-chains awto-uboot (uboot-2) from `kernel0`, which boots mainline Linux; ssh about 14 s after power-on ([docs/autochain.md](docs/autochain.md)) |
 | Mainline Linux | v7.4-rc1 + the `mainline/` series, normal and debug profiles ([docs/mainline.md](docs/mainline.md), #15) |
 | Unit 0 | `us48_cmic`: ge1 management port, full cold init on every load |
-| Unit 1 | `us48_cmic_xe` over PCIe: SFP+ 1 10G optic (#78, link fault #109), DAC parked (#105), 10G-T module (#110) |
+| Unit 1 | `us48_cmic_xe` over PCIe: SFP+ 1 10G optic (#78, link fault fixed #109), DAC parked (#105), 10G-T module (#110) |
 | 48 copper ports | bring-up in progress on branch `wip/copper-phy-20261117` (#4, #57, #58) |
 | a2 (unit 1 A9) | Linux at 1600 MHz via `us48_a2` remoteproc, virtual NIC to a1 (#85, [docs/a2-linux.md](docs/a2-linux.md)) |
 | Fans / thermal | presets 50/70/90/100 %, quiet rule by default, `us48-fan` + `us48-pvtmon` ([docs/fan.md](docs/fan.md)) |

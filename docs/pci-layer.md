@@ -44,7 +44,7 @@ Aux devices `pvtmon` and `gpio` take their `of_node` from the DT child of the sa
 - `rust/a2ctl`: bring-up tool, raw BAR access.
 
 ## Migration of us48_cmic: done
-- Steps 1-4 of the old plan: PCI driver dropped from `us48_cmic_xe`, DMA device via `us48_pci_dev()`, shutdown moved to `us48_pci` (aux shutdown quiesces first), load order `us48_pci.ko` before `us48_cmic_xe.ko` (`openwrt/files/etc/init.d/us48-net`, symbol dependency for modprobe).
+- Steps 1-4 of the old plan: PCI driver dropped from `us48_cmic_xe`, DMA device via `us48_pci_dev()`, shutdown moved to `us48_pci` (aux shutdown quiesces first), load order `us48_pci.ko` before `us48_cmic_xe.ko` (symbol dependency for modprobe).
 - Step 5 (shared S-channel core): `us48_pci` and `us48_cmic.ko` each still link `bcm_cmic_schan.c`; export from one module later.
 
 ## Verification state
