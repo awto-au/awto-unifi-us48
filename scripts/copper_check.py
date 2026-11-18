@@ -7,6 +7,8 @@ Usage: copper_check.py [--no-octal] [--down]
   must reach carrier at 1000M.
 - octal: with a pair linked, ip link set up a second port of the same octal (ge18 / ge42): the linked pair must keep
   carrier and log no 'link down' over 3 link polls, and the second port must not run the block init (octal top reset).
+  Judged from the driver's /sys/class/net/<port>/copper_ready + block_ready (#126): bring-up runs once per module load,
+  so on a re-run the second port is already up (copper_ready 1) and no bring-up line is expected.
 - xe49/xe50 carrier and the dmesg WARN/BUG/Oops/FAILED count; temperatures (stop: die >= 108 C, LM75 >= 78 C).
 - --down: set the test ports down at the end. Log: tmp/logs/copper_check.log. Exit 0 = all PASS.
 """
@@ -54,6 +56,12 @@ def carrier(*devs: str) -> dict[str, str]:
     return {f[0]: (f[1] if len(f) > 1 else "") for f in (ln.split() for ln in out.splitlines()) if f}
 
 
+def copper_state(dev: str) -> tuple[bool, bool] | None:
+    """(copper_ready, block_ready) from the us48_cmic netdev sysfs attrs; None if the driver has none."""
+    out = sh(f"cat /sys/class/net/{dev}/copper_ready /sys/class/net/{dev}/block_ready 2>/dev/null").split()
+    return (out[0] == "1", out[1] == "1") if len(out) == 2 else None
+
+
 def dmesg_lines() -> list[str]:
     return sh("dmesg").splitlines()
 
@@ -95,6 +103,7 @@ def main() -> int:
         check(f"link {gphy}<->{octal}", ok and g1000, f"carrier after {el:.1f} s, {speed}")
         if a.no_octal or not ok:
             continue
+        pre = copper_state(second)
         d1 = len(dmesg_lines())
         sh(f"ip link set {second} up")
         test_ports.append(second)
@@ -106,11 +115,19 @@ def main() -> int:
                 drops.append(c)
             time.sleep(POLL_S)
         new = dmesg_lines()[d1:]
+        post = copper_state(second)
         down = [ln for ln in new if "link down" in ln and (f" {gphy}:" in ln or f" {octal}:" in ln)]
         brought = [ln for ln in new if f"{second}: copper bring-up" in ln]
-        no_blk = bool(brought) and "block init" not in brought[0] and "done" in brought[0]
+        # driver state (#126): bring-up runs once per load; block init (octal top reset) only if block_ready was 0
+        if pre is None or post is None:
+            no_blk, how = False, "no copper_ready/block_ready sysfs attrs (image older than #126)"
+        elif pre[0]:
+            no_blk, how = not brought and post[0], f"already brought up this load (copper_ready 1), new lines {brought}"
+        else:
+            no_blk = pre[1] and post[0] and len(brought) == 1 and "done" in brought[0] and "block init" not in brought[0]
+            how = f"block_ready before {int(pre[1])}, copper_ready after {int(post[0])}, bring-up {brought}"
         check(f"octal {second} vs {octal}", not drops and not down and no_blk,
-              f"carrier drops {len(drops)}, link-down lines {down}, bring-up {brought}")
+              f"carrier drops {len(drops)}, link-down lines {down}, {how}")
     c = carrier("xe49", "xe50", "ge1")
     log(f"info xe/ge1 carrier: {c}")
     check("ge1", c.get("ge1") == "1", "management carrier")

@@ -1305,6 +1305,30 @@ static int us48_stop(struct net_device *nd)
 	return 0;
 }
 
+/* Per-port copper state for scripts/copper_check.py (#126): bring-up runs once per load, block init once per block. */
+static ssize_t copper_ready_show(struct device *d, struct device_attribute *attr, char *buf)
+{
+	struct us48_port *p = netdev_priv(to_net_dev(d));
+
+	return sysfs_emit(buf, "%d\n", READ_ONCE(p->copper_ready));
+}
+static DEVICE_ATTR_RO(copper_ready);
+
+static ssize_t block_ready_show(struct device *d, struct device_attribute *attr, char *buf)
+{
+	struct us48_port *p = netdev_priv(to_net_dev(d));
+
+	return sysfs_emit(buf, "%d\n", !!(READ_ONCE(p->u->blk_ready) & BIT(p->cfg->blk)));
+}
+static DEVICE_ATTR_RO(block_ready);
+
+static struct attribute *us48_copper_attrs[] = {
+	&dev_attr_copper_ready.attr,
+	&dev_attr_block_ready.attr,
+	NULL
+};
+static const struct attribute_group us48_copper_group = { .attrs = us48_copper_attrs };
+
 static const struct net_device_ops us48_netdev_ops = {
 	.ndo_open		= us48_open,
 	.ndo_stop		= us48_stop,
@@ -1534,6 +1558,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		/* Fixed locally administered MACs: one L2 entry per port, no growth across loads. */
 		eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ 0x02, 0x75, 0x73, 0x34, 0x38, p->cfg->front });
 		strscpy(nd->name, p->cfg->name, IFNAMSIZ);
+		if (p->cfg->copper)
+			nd->sysfs_groups[0] = &us48_copper_group;
 		netif_carrier_off(nd);
 	}
 
