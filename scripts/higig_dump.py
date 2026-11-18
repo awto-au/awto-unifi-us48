@@ -20,12 +20,13 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
 from _cli import help_guard  # noqa: E402
 import tsc_lane_dump as tld  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/higig_dump.log"
-BASE = {0: "0x48000000", 1: "0x0a000000"}
+BASE = {0: "0x%08x" % hwdb.cmic_base(0), 1: "0x%08x" % hwdb.cmic_base(1)}
 IPIPE, EPIPE, MMU, XLP0, XLP1 = 10, 11, 12, 5, 6
 # (unit, MIIM addr, lanes): TSC1 = HiGig phys 30/32 on both units; unit 0 TSC0 = SFP 1/2 (phys 26/28).
 TSCS = [(0, 5, (0, 1, 2, 3)), (1, 5, (0, 1, 2, 3)), (0, 1, (0, 2)), (1, 1, (0, 2))]

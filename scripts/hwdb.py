@@ -440,6 +440,17 @@ def addr(name, idx=0):
     return default().addr(name, idx)
 
 
+_lite = None
+
+
+def cmic_base(unit, uboot=False):
+    """CMIC base for a script: unit 0 = AXI (cmic0); unit 1 = PCIe BAR2 as Linux places it (cmic1), or as uboot-1/2 does (cmic1_uboot)."""
+    global _lite
+    if _lite is None:
+        _lite = load(sdk=False)
+    return _lite.addr("cmic0" if unit == 0 else "cmic1_uboot" if uboot else "cmic1")
+
+
 def main(argv):
     import logging
     root = repo_root()

@@ -2,7 +2,7 @@
 """miim — read clause-22 PHY registers through the unit-0 CMIC MIIM controller, from the board shell (devmem).
 
 Usage: scripts/miim.py [--phy 0x09] [--bus 0] [--internal] [--regs 0,1,2,3]
-- Unit 0 CMIC at AXI 0x48000000; offsets from regdb (CMIC_CMC0_MIIM_*). Run under Linux: stock's link-scan
+- Unit 0 CMIC at AXI (hwdb cmic0); offsets from regdb (CMIC_CMC0_MIIM_*). Run under Linux: stock's link-scan
   drives the same controller. Read-only on the PHY. Log: tmp/logs/miim.log
 """
 import argparse
@@ -12,10 +12,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
 import console  # noqa: E402
 
 LOG = Path(__file__).resolve().parent.parent / "tmp/logs/miim.log"
-CMIC = 0x48000000
+CMIC = hwdb.cmic_base(0)
 PARAM, RDATA, ADDR, CTRL, STAT = (CMIC + o for o in (0x31080, 0x31084, 0x31088, 0x3108C, 0x31090))
 RD_START, OPN_DONE = 1 << 1, 1 << 0
 # MDC ~2.5 MHz: one C22 frame = 64 bits ≈ 26 µs. Each devmem poll is a ~10 ms console round trip, so 10 polls

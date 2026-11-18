@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsc_lane_dump as d  # noqa: E402
+import hwdb  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
 ROOT = d.ROOT
@@ -28,13 +29,13 @@ def run(kind: str, out: Path) -> None:
     req = requests()
     txt = "".join(f"S {w} {a:x}\n" for w, a in req).encode()
     if kind == "stock":
-        r = d.ssh("192.168.25.206", "/tmp/tsc_read 0x0a000000", stdin=txt, timeout=60)
+        r = d.ssh("192.168.25.206", f"/tmp/tsc_read {hwdb.cmic_base(1):#010x}", stdin=txt, timeout=60)
         got = r.stdout.decode().splitlines()
     else:
         scratch = ROOT / "tmp/xlport_req.txt"
         scratch.write_bytes(txt)
         subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"), "--put", str(scratch), "/tmp/xlreq.txt"], check=True, capture_output=True)
-        r = subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"), "/tmp/tsc_read 0x0a000000 < /tmp/xlreq.txt"], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/lx.py"), f"/tmp/tsc_read {hwdb.cmic_base(1):#010x} < /tmp/xlreq.txt"], capture_output=True, text=True)
         got = r.stdout.splitlines()
     lines = []
     for ln in got:

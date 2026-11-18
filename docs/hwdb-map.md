@@ -64,6 +64,7 @@
 | `uart1` | axi0 | `0x18000400` | `0x100` | 0 | 8 | C | UART1 (ns16550a, byte registers), console 115200 8N1 FIFO on; APB 50 MHz | docs/uboot.md s5 (serial_init @0x1c024a64); us48-uboot.dts serial@400 |
 | `ddr_ctl` | axi0 | `0x18010000` | `0x400` | 0 | 1 | C | DDR3 controller, Synopsys Denali DENALI_CTL_NN at 4-byte stride | D-Link HR2 socregs.h DDR_DENALI_CTL_00 = 0x18010000; regdb DDR_DENALI_CTL_*; docs/ddr.md |
 | `ddr_phy` | axi0 | `0x18010800` | `0x400` | 0 | 137 | C | DDR PHY control regs (+0x000..0x0ff) and word lane 0 (+0x200..0x3ff) | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+| `ddr_phy_wl1` | axi0 | `0x18010c00` | `0x200` | 0 | 7 | I | DDR PHY word lane 1 (0x18010c00 + 0x200..0x3ff relative to lane 0 base 0x18010a00); regdb names only lane 0 | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
 | `paxb0` | axi0 | `0x18012000` | `0x1000` | 0 | 32 | C | Root complex PAXB of unit 0 (brcm,iproc-pcie) | bcm-hr2.dtsi pcie@18012000; regdb PAXB_0_* |
 | `dmac` | axi0 | `0x18020000` | `0x1000` | 0 | 4 | C | ARM PL330 DMAC (8 channels), upstream `pl330`; IRQs GIC SPI 53-60 events (event N on SPI 53+N, board-measured), 69 abort (D-Link irqs.h HX4 branch, docs/core-bringup.md; conf I) Note: stays in IDM reset (dmac_idm.RESET_CONTROL = 1) until released; reading it before that stalls the bus. AXI cache/coherency attributes: CC_n.*_CACHE_CTRL | regdb DMAC_PL330_*; tmp/linux-mainline bcm-hr2.dtsi dma@20000 |
 | `bspi` | axi0 | `0x18027000` | `0x124` | 0 | 20 | C | QSPI BSPI (read-only XIP engine behind the 0x1c000000 window); BSPI clock via CRU_CONTROL.QSPI_CLK_SEL | us48-uboot.dts spi@27200 reg bspi; docs/uboot.md s5 (MSPI/BSPI 0x18027000) |
@@ -494,6 +495,18 @@ Same registers as `uart1`.
 | `0x3a8` | `WL0_CLOCK_PAD_DISABLE` | 32 | rw |  | CLK0_PAD_DIS[0], CLK1_PAD_DIS[1], DM_PAD_DIS[2] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
 | `0x3ac` | `WL0_WR_PREAMBLE_MODE` | 32 | rw |  |  | C |  | regdb; socregs.h |
 | `0x3b0` | `WL0_PHYBIST_VDL_ADJ` | 32 | rw |  | DQ0_VDL_ADJ[20:16], DQ1_VDL_ADJ[28:24], DQS0_VDL_ADJ[4:0], DQS1_VDL_ADJ[12:8] | C |  | D-Link HR2 socregs.h DDR_PHY_CONTROL_REGS_REVISION = 0x18010800; regdb DDR_PHY_*; docs/ddr.md |
+
+### ddr_phy_wl1 (`0x18010c00`)
+
+| Offset | Name | W | Access | Reset | Fields | conf | Notes | Source |
+|---|---|---|---|---|---|---|---|---|
+| `0x160` | `READ_DATA_DLY` | 32 | rw |  |  | I | mirror of DDR_PHY_WORD_LANE_0_READ_DATA_DLY (0x18010b60) | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x164` | `READ_CONTROL` | 32 | rw |  |  | I | mirror of DDR_PHY_WORD_LANE_0_READ_CONTROL (0x18010b64) | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x190` | `READ_FIFO_STATUS` | 32 | rw |  |  | I | mirror of DDR_PHY_WORD_LANE_0_READ_FIFO_STATUS (0x18010b90); uboot-1 writes 0 then 1 | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x194` | `READ_FIFO_CLEAR` | 32 | rw |  | CLEAR[0] | I | mirror of DDR_PHY_WORD_LANE_0_READ_FIFO_CLEAR (0x18010b94); 6408 writes (0 in the shmoo loop, 1 once) | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x1a0` | `IDLE_PAD_CONTROL` | 32 | rw |  |  | I | mirror of DDR_PHY_WORD_LANE_0_IDLE_PAD_CONTROL (0x18010ba0); written 0x00500000 as on lane 0 | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x1a4` | `DRIVE_PAD_CTL` | 32 | rw |  |  | I | mirror of DDR_PHY_WORD_LANE_0_DRIVE_PAD_CTL (0x18010ba4); written 0xa as on lane 0 | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
+| `0x1ac` | `CLOCK_PAD_DISABLE` | 32 | rw |  |  | I | uboot-1 writes 3 (CLK0/CLK1_PAD_DIS); lane 0 equivalent is at +0x1a8 (0x18010ba8), lane 1 offset differs by 4 Note: name by value pattern, not by regdb | uboot1 emu trace (FUN_1c006a14 at PC 0x1c006a28), mirrors regdb DDR_PHY_WORD_LANE_0_* at +0x200 (#116) |
 
 ### paxb0 (`0x18012000`)
 

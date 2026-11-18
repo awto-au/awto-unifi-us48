@@ -1,0 +1,8 @@
+# Allowed literal CMIC/IPROC bases (scripts/hwdb_lint.py base check). Format: path<TAB>0xBASE<TAB>reason
+scripts/arm_xref_index.py	0x0a000000	ARM instruction-encoding mask (cond/opcode bits), not an address
+scripts/ghidra/func_profile.py	0x18000000	runs inside Ghidra, no hwdb import
+scripts/ghidra/func_profile.py	0x48000000	runs inside Ghidra, no hwdb import
+scripts/ghidra/func_profile.py	0x0a000000	runs inside Ghidra, no hwdb import
+scripts/ghidra_func_regs.py	0x18000000	address filter for Ghidra export text, standalone
+scripts/hwdb.py	0x48000000	the loader itself: fallback + sdk_cmic split
+scripts/hwdb_gen.py	0x18000000	generator: header text and peripheral-window bound

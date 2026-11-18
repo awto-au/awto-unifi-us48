@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clause-22 PHY access through a chip's own CMIC MIIM, from uboot-2: first chip (u0, BCM53344, AXI 0x48000000) or second chip (u1, BCM53346, PCIe BAR2 0x08040000).
+"""Clause-22 PHY access through a chip's own CMIC MIIM, from uboot-2: first chip (u0, BCM53344, AXI, hwdb cmic0) or second chip (u1, BCM53346, PCIe BAR2, hwdb cmic1_uboot).
 
 Usage (board at uboot-2, US48_HOST=lizard):
   phy.py u0|u1 read  int|ext BUS PHY REG
@@ -15,10 +15,11 @@ import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import hwdb  # noqa: E402
 import console  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
-BASES = {"u0": 0x48000000, "u1": 0x08040000}
+BASES = {"u0": hwdb.cmic_base(0), "u1": hwdb.cmic_base(1, uboot=True)}
 B = BASES["u1"]
 PARAM = RDATA = ADDR = CTRL = 0
 LOG = pathlib.Path(__file__).resolve().parent.parent / "tmp/logs/phy.log"

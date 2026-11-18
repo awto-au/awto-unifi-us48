@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sw1_link_test as t  # noqa: E402
 import tsc_lane_dump as d  # noqa: E402
+import hwdb  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/stock_sw1_probe.log"
 
@@ -32,7 +33,7 @@ def log(msg: str) -> None:
 def stock_regs(host: str, front: int) -> str:
     a, lane = d.FRONTS[front]
     req = "".join(f"{a} {lane} {r:x}\n" for r in (0xc154, 0xc120, 0xc150)) + f"S 2 {0x60b00 | lane:x}\n"
-    r = d.ssh(host, "/tmp/tsc_read 0x0a000000", stdin=req.encode(), timeout=10)
+    r = d.ssh(host, f"/tmp/tsc_read {hwdb.cmic_base(1):#010x}", stdin=req.encode(), timeout=10)
     got = [x.split() for x in r.stdout.decode().splitlines()]
     if len(got) != 4:
         return f"stock read failed rc={r.returncode} {r.stderr[-80:]!r}"

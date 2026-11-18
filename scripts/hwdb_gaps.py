@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
 import hwdb_probe as hp  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
@@ -31,7 +32,7 @@ WIN = 256
 # trace0 = 192 KiB, 16 B per record + 32 B header: 12286 reads max; 8000 keeps the ssh transfer ~130 KiB
 RUN_READS = 8000
 TEMP_STOP_C = 100.0  # stop well before the 105 C limit given by Dan
-CMIC = 0x48000000
+CMIC = hwdb.cmic_base(0)
 Z1 = 0x1000
 
 # page groups: (name, [page base, ...]). Pages with regdb names, in blocks whose IDM wrapper reads RESET_CONTROL = 0.
@@ -42,7 +43,7 @@ GROUPS = [
     ("cmic_common", [CMIC + o for o in (0x10000, 0x11000, 0x1a000, 0x1b000, 0x1c000)]),
     ("cmic_other", [CMIC + o for o in (0x0, 0x1000, 0x2000, 0x3000, 0x4000, 0x20000, 0x21000, 0x22000, 0x24000, 0x25000, 0x26000,
                                       0x30000, 0x31000, 0x32000, 0x33000)]),
-    ("ccb", [0x18000000] + [0x18030000 + i * Z1 for i in range(16)]),
+    ("ccb", [hwdb.addr("iproc_axi")] + [0x18030000 + i * Z1 for i in range(16)]),
     ("idm", IDM_PAGES),
     # controllers whose IDM wrapper reads released (NAND, QSPI, PNOR, SRAM, PAXB), then IHOST/A9 debug and the AXI interconnect wrappers
     ("periph", [0x18012000, 0x18021000, 0x18026000, 0x18027000, 0x1802e000]),

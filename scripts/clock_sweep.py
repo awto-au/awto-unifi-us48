@@ -25,6 +25,7 @@ import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
 import clock_trial as ct  # noqa: E402
 import console  # noqa: E402
 import build_rootfs  # noqa: E402
@@ -45,7 +46,7 @@ VCO_HIGH_HIGH_MHZ = 3100  # generic iProc PLL loop-filter band edge (clk-iproc-p
 
 # PVTMON (TOP block 16) via S-channel on CMC1: the Linux drivers own CMC0 (us48_cmic.h SCHAN_CTRL 0x31000).
 CMC1 = 0x32000
-UNIT_BASE = {0: 0x48000000, 1: 0x0A000000}  # unit 0 AXI CMIC; unit 1 PCIe BAR2 (boot logs)
+UNIT_BASE = {0: hwdb.cmic_base(0), 1: hwdb.cmic_base(1)}
 TOP_BLK = 16
 PEAK: dict[int, float] = {}  # unit -> hottest PEAK_TEMP_DATA reading (since PVTMON init) as C
 PVT_CTRL0, PVT_CTRL1, PVT_RESULT = 0x02050000, 0x02050400, 0x02050800

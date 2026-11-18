@@ -2,7 +2,7 @@
 """Clause-22 MDIO scan on unit 1 (BCM53346): ID1/ID2 and link (BMSR bit 2, read twice: latched) of PHY 0-31 on internal buses 0-3 and external buses 0-2.
 
 Usage (board at uboot-2, US48_HOST=lizard): python3 scripts/mdio_scan_u1.py
-Unit-1 CMIC = BAR2 at 0x08040000 (stock-enumerated). Sequence as common/bcm-cmic/bcm_cmic_miim.c; U-Boot runs the
+Unit-1 CMIC = BAR2 (hwdb cmic1_uboot). Sequence as common/bcm-cmic/bcm_cmic_miim.c; U-Boot runs the
 reads in one batched command line per 2 PHYs (U-Boot input line limit 1024 chars) (a C22 frame is ~26 us; the console round trip dominates).
 Log: tmp/logs/mdio_scan_u1.log
 """
@@ -13,9 +13,10 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import console  # noqa: E402
+import hwdb  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
-B = 0x08040000
+B = hwdb.cmic_base(1, uboot=True)
 PARAM, RDATA, ADDR, CTRL = B + 0x31080, B + 0x31084, B + 0x31088, B + 0x3108C
 LOG = pathlib.Path(__file__).resolve().parent.parent / "tmp/logs/mdio_scan_u1.log"
 
