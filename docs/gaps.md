@@ -15,7 +15,7 @@ Ranked by blocking effect. Snapshot 2026-11-17. Detail lives in the linked docs 
 | 9 | Buttons, reset, system LED, PoE IRQ/reset GPIOs in DT; panic/last-reset reason | No factory reset, no failsafe trigger | [board.md](board.md) GPIO map | #60 (NEW), #29 | `gpio-keys` GPIO 15, `gpio-leds` 10/11 in DT | y |
 | 10 | Fans/thermal: preset-only, no tach, no off, policy daemon is bench-only | Heat/noise; safety net for all other work | [fan.md](fan.md) | #12, #19, #21, #22 | temperature-driven policy with fail-safe | y |
 | 11 | QSPI at 12.5 MHz DT, 4-byte-mode reset hazard after panic | Boot time; board can hang until power-cycle | #20 | #20 | `sysrq-c` test + rated-clock DT | y |
-| 12 | Watchdog/reboot path: SP805, DMU restart; no recovery policy | Hangs in the field | tag `openwrt-parked` bring-up | #20, #60 | covered by #20/#60 tests | y |
+| 12 | Watchdog/reboot path: SP805 armed by awto-uboot, fed by the kernel driver (`WATCHDOG_HANDLE_BOOT_ENABLED`); DMU restart; no recovery policy | Hangs in the field | [mainline.md](mainline.md) rc.sh | #20, #60 | covered by #20/#60 tests | y |
 | 13 | DDR shmoo/clock headroom; CPU 400 MHz vs 800 MHz | Performance ceiling (NAT/CPU path) | [hardware.md](hardware.md) rates | #55, #17 | RAM-only clock trial | y |
 | 14 | Boot time (59 s to shell, no forwarding stage) | Field behaviour, restarts | [autochain.md](autochain.md) boot timing | #34 | `autochain_time.py` | y |
 | 15 | Unit 1 A9 (a2): controllable, no payload; no Linux loader | Possible offload engine | [a2.md](a2.md) | #53, #54 | remoteproc-style loader design | y |
