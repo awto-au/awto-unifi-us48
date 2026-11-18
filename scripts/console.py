@@ -26,7 +26,11 @@ ROOT = Path(__file__).resolve().parent.parent
 SOCK = ROOT / "tmp/tio.us48.sock"
 TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
 LOG = ROOT / "tmp/logs/console.log"
-TTY = os.environ.get("US48_TTY", "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0")
+# The Prolific PL2303 (067b:2303) adapter: udev names it either way depending on the host kernel (2026-11-18).
+_TTY_NAMES = ("usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0", "usb-067b_2303-if00-port0")
+TTY = os.environ.get("US48_TTY") or next(
+    (p for p in (f"/dev/serial/by-id/{n}" for n in _TTY_NAMES) if os.path.exists(p)),
+    f"/dev/serial/by-id/{_TTY_NAMES[0]}")
 # Adapter on another box (e.g. lizard): tio runs there via `ssh -t`, its socket forwarded to SOCK.
 HOST = os.environ.get("US48_HOST", "")
 RSOCK = "/tmp/tio.us48.sock"  # on HOST
