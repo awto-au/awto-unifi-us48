@@ -16,8 +16,9 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|stp|mgmt|all> [
   the cable-less port; one probe frame (learn latency), idle CPU with vs without the bridge, then 512 new sources back to
   back (tools/l2_burst, DA = the sink: no frame reaches the CPU or a wire, so the pps guards see none; one burst per unit).
   Pass = 'L2 resync (FIFO full)' logged, bridge extern_learn set = the driver's L2X dump (`self`) after it, statics kept.
-- linkdown (unit 0, #135): brld{ge8, ge9}, host A on ge17 (netns) learned on ge8; ge8 loses carrier (far end ge17 admin
-  down, then ge8 admin down). Pass = A gone from L2X + bridge, static sink kept; latency from dmesg time stamps.
+- linkdown (unit 0, #135, #133): brld{ge8, ge9}, host A on ge17 (netns) learned on ge8; ge8 loses carrier (far end ge17
+  admin down = PHY power-down, then ge8 admin down). Pass = ge8 carrier 0, A gone from L2X + bridge, static sink kept;
+  latency from dmesg time stamps.
 - rate (both units, same ports as burst, #135): one bridge per run, RATE_N sources paced at each RATE_PPS. Logged: learned
   (L2X, bridge, monitor) vs sent by time mark, resync walks, the run's FIFO counters, drain CPU. Pass = bridge = L2X.
 - stp: runs bpdu first (refuses on its FAIL), then brstp{ge8, ge17} = both ends of the loop cable, STP on before the
@@ -90,8 +91,7 @@ RATE_PPS = (0, 20000, 50000, 100000)     # 0 = back to back; the old 10 ms drain
 RATE_TAIL_S = 1         # CPU window after the burst: drains + resync walk (< 0.5 s) inside it
 RATE_SETTLE_S = 1.0     # then 2 sampler lines before the fdb dump (a second walk would have started by then)
 RATE_MARKS_MS = (5, 10, 20, 50, 100, 200, 500, 1000)
-LD_WAIT_S = 1.25 * (1.0 + 0.4 + 2 * SAMPLE_S)  # link poll LINK_POLL_MS 1 s + flush walk < 0.4 s, fdb checked per sample
-LD_ISSUE = "#137"
+LD_WAIT_S = 1.25 * (1.77 + 0.4 + 2 * SAMPLE_S)  # far-end carrier loss (copper_admin_test.py, #133) + flush walk < 0.4 s
 LD_DEADMAN_S = 60      # linkdown ~25 s (setup 8 + 2 x (carrier 5 + learn 1 + down 3)) x2
 RATE_DEADMAN_S = 120   # rate step ~55 s (base CPU 6 + 4 runs x (setup 4 + burst/tail 1.3 + settle 1 + dumps 3 + del 1)) x2
 CPU_WIN_S = 6           # idle CPU window (as the 4ea3394 poll measurement, #57)
@@ -387,6 +387,13 @@ def verify_restored(b: Board, name: str, vids: list[int], before: list[str], mac
     for v, mac in macs:
         if b.l2_lookup(v, mac, unit):
             bad.append(f"L2 {v} {mac} still present")
+    # Ports set down/up by the step renegotiate (PHY power-down, #133); IPv6 link-local returns with carrier.
+    up = [ln.split()[1] for ln in before if ln.startswith("link ") and ln.split()[2] == "1"]
+    t0 = time.monotonic()
+    while up and time.monotonic() - t0 < LINK_S:
+        if b.sh("; ".join(f"cat /sys/class/net/{p}/carrier" for p in up), check=False, quiet=True).split() == ["1"] * len(up):
+            break
+        time.sleep(SAMPLE_S)
     after = snapshot(b, tuple(lp))
     if after != before:
         bad.append(f"ports differ: {sorted(set(before) ^ set(after))}")
@@ -976,18 +983,15 @@ def step_linkdown(b: Board) -> None:
                     not a["STATIC_BIT"] and ln is not None and "extern_learn" in ln.split(), f"L2 {a}, fdb {ln!r}")
             t_mark, t_cmd = (float(x) for x in b.sh(f"cut -d' ' -f1 /proc/uptime; {down}; cut -d' ' -f1 /proc/uptime").split()[-2:])
             el, ln = fdb_wait(b, sm, MAC_LAT, False, LD_WAIT_S, "brld")
-            if b.sh("cat /sys/class/net/ge8/carrier", check=False, quiet=True) == "1":
-                log(f"  INFO linkdown [{how}]: ge8 keeps carrier {el:.1f} s later (admin down = MAC down, PHY stays "
-                    f"linked: {LD_ISSUE}); A still learned: {ln!r}")
-                b.sh(up)
-                continue
+            car = b.sh("cat /sys/class/net/ge8/carrier", check=False, quiet=True)
             a, s = b.l2_lookup(vid, MAC_LAT), b.l2_lookup(vid, MAC_STATIC)
             dn = dmesg_t(b, "ge8: link down", t_mark)
             fl = dmesg_t(b, "ge8: switchdev: L2 flush (dynamic)", t_mark)
             lat = f"link down +{(dn[0] - t_mark) * 1000:.0f} ms, " if dn else "no 'ge8: link down' line, "
             lat += f"flush +{(fl[0] - t_mark) * 1000:.0f} ms: {fl[1].split('switchdev: ')[-1]!r}" if fl else "no flush line"
-            b.check(f"linkdown [{how}] A gone from L2X and the bridge, static kept", a is None and ln is None and bool(s)
-                    and s["STATIC_BIT"] == 1, f"{lat} (command {(t_cmd - t_mark) * 1000:.0f} ms); L2 A {a}, fdb {ln!r}, static {s}")
+            b.check(f"linkdown [{how}] ge8 carrier lost, A gone from L2X and the bridge, static kept", car != "1" and
+                    a is None and ln is None and bool(s) and s["STATIC_BIT"] == 1,
+                    f"ge8 carrier {car!r}, {lat} (command {(t_cmd - t_mark) * 1000:.0f} ms); L2 A {a}, fdb {ln!r}, static {s}")
             b.sh(up)
         sm.next()
     finally:

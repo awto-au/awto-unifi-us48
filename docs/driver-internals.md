@@ -501,7 +501,14 @@ Order matters: PHY side first, then MAC. Skip steps whose read-only check alread
 | 8 | Re-read checks 1, 2 and the MIB (`GRPKT`, GPORT port reg offset 0x1b00 per regdb, address \| P) | n/a |
 - No QSGMII2X / TSC write is part of this sequence: none exists for GPORT0/1 in source or stock (12.1).
 - If check 1 shows LINK_STATUS=1 and checks 3/13 are already clean, steps 3-6 are no-ops and the remaining suspects are MAC reset/clock (step 7) and the S-channel port index / block pick for the MIB read (verify the same `P` hits `MAC_0`). I
-- Open: whether anything besides SUPER_ISOLATE / EXT_PWRDOWN gates the GPHY->MAC interface; stock's per-port enable (`phy_enable_set`, RDB reg 0 b11 + reg 0x1a bits) was seen but not fully traced (`0x10d0f54`, case 0x2b).
+- Open: whether anything besides SUPER_ISOLATE / EXT_PWRDOWN gates the GPHY->MAC interface.
+- Stock `0x10d0f54` = `phy_bcm542xx_control_set`, not `enable_set`: case 0x2b = `SOC_PHY_CONTROL_POWER` (low / full / auto power-down via RDB 0x1a `POWER_AUTO_DOWN` APD bit 5; sdk-6.5.7 `phy542xx.c:7277-7341`). C
+
+### 12.7 Admin down / up = PHY power (#133)
+- Port enable in the SDK = PHY `MII_CTRL.POWER_DOWN` (reg 0 b11, IEEE 802.3 22.2.4.1.5) only: BCM54282 `phy_bcm542xx_enable_set` (sdk-6.5.7 `phy542xx.c:3122`, copper-only part: no fiber/combo path), internal QGPHY `phy_54680_enable_set` (OpenBCM sdk-6.5.16 `phy54680.c:1011`). No RDB / shadow / super-isolate write. OM `bcm54282_drv.c` has no enable op. C
+- Driver: `us48_stop` -> MAC off, then `MII_CTRL |= POWER_DOWN` (RMW). `us48_open` of a port already brought up -> `MII_CTRL = 0x1340` (the bring-up value: PDN 0, AN + restart). Own port only; no octal reset (block init stays first-open only).
+- Never-opened copper ports: powered down at probe, as SDK `_bcm_port_probe` (`port.c:14649`, "Probe function should leave port disabled"). Before #133 they kept the reset value `0x1140` (AN on): a cabled peer saw link on a down port. The first open's bring-up clears PDN; the octal top reset (first open per octal) leaves the other lanes' PDN set (read back 2026-11-19).
+- Measured (2026-11-19, commit after 0754aea, both loop cables, both directions, random 1 s link-poll phase, `scripts/copper_admin_test.py`): far end carrier 0 after 0.41-1.77 s (PHY link fail + 1 s driver poll); admin up -> both ends 1000 Mb/s after 2.37-3.49 s. Test limits 1.25x the worst: 2.21 s / 4.36 s.
 
 ### 12.6 Native Linux QSGMII2 initialization gap
 - The native `bcm_hr2_ge_bringup()` path initializes each external BCM54282 copper PHY and the GPORT2 MAC, but does not access the QSGMII65 core at external MIIM bus 0 address `0x1c` or run stock `phy_qsgmii65_init()` (`tmp/ghidra/out/switchdrvr/switchdrvr.c`, `0x10a58b4`). Stock's routine resets that core, polls reset completion, and configures its 1000X/AN controls (12.2).

@@ -653,6 +653,21 @@ static int copper_enable(struct us48_port *p)
 	return ret;
 }
 
+/* Copper PHY power follows the netdev (#133): down = POWER_DOWN, the peer loses carrier; up = AN restart. */
+static int copper_power(struct us48_port *p, bool on)
+{
+	struct bcm_cmic_unit cu = p->u->cu;
+	struct bcm_hr2_ge ge = ge_of(p);
+	int ret;
+
+	mutex_lock(&p->u->mdio);
+	ret = bcm_hr2_ge_phy_power(&cu, &ge, on);
+	mutex_unlock(&p->u->mdio);
+	if (ret)
+		netdev_warn(p->ndev, "PHY power %s failed: %d\n", on ? "up" : "down", ret);
+	return ret;
+}
+
 /* BMSR link (latched low: read twice) and negotiated speed from the 1000BASE-T / LPA registers. */
 static bool copper_link(struct us48_port *p, int *speed)
 {
@@ -1273,6 +1288,11 @@ static int us48_open(struct net_device *nd)
 		if (ret)
 			return ret;
 		us48_sw_port_reapply(p);	/* joined a bridge before the first open */
+	} else if (p->cfg->copper) {
+		int ret = copper_power(p, true);
+
+		if (ret)
+			return ret;
 	}
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
@@ -1299,7 +1319,7 @@ static int us48_stop(struct net_device *nd)
 	netif_stop_queue(nd);
 	mutex_lock(&u->link_lock);
 	p->open = false;
-	/* Copper: MAC off with the netdev; the poll skips the port until the next open. */
+	/* Copper: MAC off and PHY powered down with the netdev; the poll skips the port until the next open. */
 	if (p->cfg->copper && netif_carrier_ok(nd)) {
 		struct bcm_cmic_unit cu = u->cu;
 		struct bcm_hr2_ge ge = ge_of(p);
@@ -1307,6 +1327,8 @@ static int us48_stop(struct net_device *nd)
 		bcm_hr2_ge_mac_down(&cu, &ge);
 		netif_carrier_off(nd);
 	}
+	if (p->cfg->copper && p->copper_ready)
+		copper_power(p, false);
 	mutex_unlock(&u->link_lock);
 	l2_op_cpu(p, 0x26);
 	if (--u->nopen == 0) {
@@ -1616,8 +1638,11 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
-		if (p->cfg->copper)		/* copper_enable() does VLAN + PORT_TAB at first open */
+		/* Down until opened, as SDK _bcm_port_probe ("leave port disabled"); copper_enable() does VLAN + PORT_TAB. */
+		if (p->cfg->copper) {
+			copper_power(p, false);
 			continue;
+		}
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);
 		bcm_hr2_umc_cpu_unblock(&u->cu, p->cfg->lport);	/* #127 */
