@@ -105,18 +105,20 @@ module_param_cb(phy_scan, &phy_scan_ops, NULL, 0200);
 /* Run fn on the xe port of that front number under dump_lock (unbind waits for it). */
 static int xe_port_op(unsigned int front, u32 lo, u32 hi, int aer, bool restart)
 {
+	struct us48_cmic *u;
 	int i, ret = -EINVAL;
 
 	mutex_lock(&dump_lock);
-	if (!dump_u)
+	u = front == 51 ? us48_unit0() : dump_u;	/* xe51 = unit 0 SFP 1 (us48_cmic sfp10g=1) */
+	if (!u || !dump_u)
 		ret = -ENODEV;
-	for (i = 0; dump_u && i < dump_u->nports; i++) {
-		if (dump_u->cfgs[i].copper || dump_u->cfgs[i].front != front)
+	for (i = 0; u && dump_u && i < u->nports; i++) {
+		if (u->cfgs[i].copper || u->cfgs[i].front != front)
 			continue;
 		if (restart) {
-			ret = us48_tsc_rx_restart(dump_u, &dump_u->cfgs[i]);
+			ret = us48_tsc_rx_restart(u, &u->cfgs[i]);
 		} else {
-			us48_tsc_range(dump_u, &dump_u->cfgs[i], lo, hi, aer);
+			us48_tsc_range(u, &u->cfgs[i], lo, hi, aer);
 			ret = 0;
 		}
 	}

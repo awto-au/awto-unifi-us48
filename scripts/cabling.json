@@ -54,9 +54,9 @@
     {
       "label": "SFP 1",
       "front": 51,
-      "module": "1G optic",
-      "far_end": "sw1 lan6",
-      "link": "1G SFP cages not tested (Dan 2026-11-13)"
+      "module": "FS SFP-10GSR-85 SN F2220031790 (10G SR optic)",
+      "far_end": "sw1 lan6 (optic SN F2220031783)",
+      "link": "light both ways; 10G test (sfp10g=1) 2026-11-18: board PCS locks, sw1 cannot calibrate (driver-internals 13.9)"
     },
     {
       "label": "SFP 2",

@@ -505,6 +505,7 @@ Scope: unit 1 (BCM53346, PCIe), xe0 = front 49 = phys 26 = TSC0 lane 0, xe1 = fr
 - Unit-1 CMIC base `B` = 0x0a000000 (PCIe BAR); every CMC0 offset below is `B + off`. S-channel / MIIM layouts equal unit 0 (sections 1, 4). C (S-channel verified live), I (MIIM on unit 1)
 
 ### 13.1 MIIM access to the TSC
+- No RDB on the TSC: every TSC access (`us48_tsc_rd/wr`, `tscreg`, `tools/tsc_read.c`) is C45 with the AER (`0xffde`) written first; RDB enter/exit (12.4) is a BCM54282 GPHY mechanism only (#78, 2026-11-18). C
 - **The OM TSC driver uses clause 45 on the internal bus, not the `xgsm_miim_iblk` clause-22 block path.** C (`bcmi_tsc_xgxs_probe` sets `PHY_F_CLAUSE45 | PHY_F_ADDR_SHARE`; `phy_tsc_iblk_mdio_read`, `xgsm_miim.c`)
   - Section 9's earlier "block = addr>>8" decode was wrong (that is `xgsm_miim_iblk`, used by other cores).
 - **MIIM_PARAM** (`B+0x31080`): INTERNAL_SEL b25 = 1, BUS_ID [24:22] = 1, C45_SEL b21, PHY_ID [20:16] = A, PHY_DATA [15:0].
@@ -682,6 +683,18 @@ Warm boot from stock, uC alive (13.2 core checks pass). TSC MIIM A = 2, AER = 2 
   - Side effect: after CPS_RESET unit 1 PVTMON returned code 1023 with RESET_N still set; `us48_pvtmon` now restarts the sensor on code 1023 as well as 0.
 - DAC pair (xe50 <-> lan3) parked (Dan 2026-11-16). Before that: lan3 RX_IDLE = 1 for the whole 40 s (valid, reg 2 = 0x35), no `-67` log, i.e. sw1 lan3 never sees our signal; none of IDRIVER (0xc017 0x0900/0x0400/0x0f00/0x2220), FIR 0xcad0 + 0x2220, ELEC_IDLE pulse, TX lane reset pulse (0xc113), TX reset + `rx_restart` changed that. All reverted. sw1 runs a snapshot without upstream PR #26223 (DAC receive settings). C
 
+### 13.9 Unit 0 SFP 1 (front 51) at 10G (#78, #109, 2026-11-18)
+- SKU: SDK caps BCM53344 config 10 phys 26/28 at 1G (`port_speed_max_24x1g_2x1g_2x13g`, `hurricane2.c:2503`); BCM53346 = 10G. Same TDM (`hu2_tdm_cascade`) and core clock (135 MHz when any TSC port > 1G, `hurricane2.c:4108`) on both SKUs. No speed bond-out register found in regdb. C
+- Stock runs unit 0 TSC0 at 1G: `0x9000` 0x6a80 (div66, quad), microcode loaded, ENCODE 0x000c, `SW_ACTUAL_SPEED` 0x02, `XLMAC_MODE` 0x20. C
+- Test (`us48_cmic sfp10g=1`, RAM): XLPORT0 power-up (stock unit 0 trace A2/A8: MODE 0, ENABLE 5) + the unit 1 TSC0 init on unit 0's TSC0 (addr 2) + xe51 netdev. PLL ee0a, ucode a042/a081, `PMD_LIVE` 0x000f; PCS 0x0000 until one RX restart, then `PCS_LIVE` 0x0081 (block lock, RF from sw1). C
+- sw1 lan6 (SerDes 7, optic F2220031783): RX light 0.60 mW, no carrier, "RX calibration did not pass -67" every ~30 s, 40 s x 2. Same signature as xe49 -> lan7 (#109). C
+- So unit 0's TSC0 runs 10G SerDes/PCS despite the SDK SKU cap; the MAC at 10G is untested (no frames). The failure is board TX -> sw1 RX on two independent optic pairs (different chip, cage, module, fibre, sw1 port). I
+
+### 13.10 FS SFP-10G-T in SFP+ 2 (xe50) and sw1 lan3 (#110, 2026-11-18)
+- Module A0h (read only, PCA9548 chan 1): id 03, connector 0x07 (LC), compliance byte 3 0x10 (10GBASE-SR), byte 8 0, BR 0x67 (10.3 GBd), vendor FS, PN SFP-10G-T, SN G2210210056, date 220506, diag byte 0x68. A2h: 25 C, 3.34 V, fixed TX bias/power words. Host interface advertised = 10GBASE-R SFI. C
+- I2C 0x56 answers (word reads 1-5 = 0x0200, 0xc331, 0x121c, 0x3160, 0x9a00; reg 0 NAK): not a plain clause-22 bridge; copper PHY status needs the RollBall/page protocol (writes), not done. C
+- xe50 (10G SFI, lane 2): `PMD_LIVE` 0x0004 (no AFE signal), PCS 0. sw1 lan3 (10gbase-r inband): RX_IDLE 1 for 40 s, no carrier, ethtool lists 100baseT only, `ethtool -m` fails. Neither module drives its host side: copper link down. C
+
 ## 14. Unit-1 PCIe DMA addressing (issues #4, #47; offline analysis 2026-11-12)
 
 Symptom was: RX ch1 armed, `CURR_DESC` advanced, nothing written. Resolved in 14.4 (VLAN/STG membership, not PCIe).
@@ -738,3 +751,40 @@ Sources: OM `cdk/.../bcm56150_a0_cmic.h:9743-10025` (RDB descriptions), OM `libb
   - Each adds an even bit count, so `EVEN_PARITY` stays valid. `PORT_TAB[27]` PORT_VID = 1, EN_IFILTER 0. C
 - First frame: 68 B ARP broadcast, `w12` src port 27, DONE/start/end set, err 0, VLAN 1 tag kept (`81 00 00 01`), within 100 ms of arming. C
 - Abort the channel before any `rmmod` (section 5 abort) so the engine never writes into freed RAM.
+
+## 15. HiGig links between the chips (#57, 2026-11-18)
+
+Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk-6.5.16/src/...`, commit 6d2330ce, fetched with `gh api`; the `/vendors/broadcom` copies moved to the NAS). Stock-warm capture: `scripts/higig_dump.py stock` on a RAM-booted stock (autochain.md "Stock from RAM"), file `tmp/higig/stock.txt` (not committed).
+
+### 15.1 Topology
+- Logical 28/29 = phys 30/32 = XLPORT1 (SBUS block 6) ports 0/2 on both chips; `p2l_mapping_24_2_2` (SDK `soc/esw/hurricane2.c:2205`). C
+- SerDes: TSC1, MIIM internal bus 1, C45, addresses 5-8 (one core, `PHY_F_ADDR_SHARE`); TSC0 (phys 26-29) answers at 1-4. Scan 2026-11-18 (`SERDESID` 0x900e = 0x0291 at 1-4 on unit 1; 0 everywhere while a core is held in reset). C
+- Two dual-lane ports per core: port 28 = lanes 0-1, port 29 = lanes 2-3 (`XLPORT_MODE_REG` 0x1b = DUAL, `XLPORT_ENABLE_REG` 5). C (stock trace A8)
+- Peers: unit 0 port 28 <-> unit 1 port 28, 29 <-> 29 (TX electrical idle on unit 1 port 28 (AER 4) drops unit 0 lanes 0-1 to PMD_LIVE 0x104, lanes 2-3 stay 0x10f; same for 29/lanes 2-3). C
+- Lane map `0x9003` = 0x1b1b (both TX and RX lanes reversed) on both chips, stock-warm; TSC0 is 0xe4e4. C
+- Speed: `port_speed_max` 130 (x100 Mb/s) for phys 30/32 on both SKUs (config 10; SDK `hurricane2.c:2452-2511`); stock sets 13000 Mb/s (board.md). SDK `tscmod.c:3073` maps 13000 on a DXGXS port to `TSCMOD_SPD_12773_DXGXS` (`TSCMOD_ASPD_12p7G_X2`): PLL div 42 (`tscmod_cfg_seq.c:3745`), 156.25 MHz x 42 = 6.5625 GBd per lane, brcm 64b/66b. C
+
+### 15.2 Stock state (stock-warm capture, both chips identical unless noted)
+- TSC1: microcode a042/CRC a081 (same image as TSC0), `0x9000` = 0x73b0 (REFCLK 3, FORCE_PLL_MODE_AFE 1, DEFAULT_PLL_MODE_AFE 3 = div42, START_SEQUENCER 1, PORT_MODE_SEL 3), `0x9220` 0x0323 (`cfg_seq.c:3217`). C
+- Per lane (all 4): `0xc111` 0x1e18, `0xc113` 0x41cb (SCR_MODE 1), `0xc130` 0x5280, `0xc134` 0xbe75, `0xc135` 0x900f (`cfg_seq.c:3181`), `0xc136` 0x0006, `0xc103` 0x0002, `0xc017` 0x0990, `0xc252` 0x83f0, `0xc253` 0x3fa0, `0xc254` 0x1920 (SW_ACTUAL_SPEED 0x19), `0xc260` 0. Pair: `0xa003` 0x0066, `0xa023` 0x1000. C
+- Link: `PMD_LIVE` 0x010f all lanes, `PCS_LIVE` 0x000b (first lane of a port) / 0x0009 (second). `LINK_STATUS_64` bits 28/29 set on both chips. C
+- XLPORT1/XLMAC (stock trace, init-phases A2/A8/B1/C1): XGXS0_CTRL 0xe0, 0xa0, 0xa0, 0xa4, 0xac, 0xae; `XLPORT_MAC_CONTROL` 1 then 0; `XLPORT_CONFIG` 0x400 then 0xe00 (HIGIG_MODE, HIGIG2_MODE, HONOR_PAUSE_FOR_E2E); `XLMAC_MODE` 0x41 then 0x42 (HDR_MODE 2 = HiGig2); `XLMAC_CTRL` 0x1803; `TX_CTRL` 0x8802/0x10; `RX_CTRL` 0x400; `RX_MAX_SIZE` 0x3fe8; `RX_LSS_CTRL` 0x70; also PFC_CTRL, MACSEC_CTRL 2, TIMESTAMP_ADJUST, E2EFC headers, LAG_FAILOVER pulse. Stock clears `XLMAC_CLEAR_RX_LSS_STATUS` every ~260 ms. C
+- Stacking (live): module id unit 0 = 0, unit 1 = 1 (`PORT_TAB.MY_MODID`, `EGR_PORT.MY_MODID`); `PORT_TAB[28/29]` PORT_TYPE 1, HIGIG2 1, HIGIG_TRUNK 1, HIGIG_TRUNK_ID 1; `EGR_PORT[28/29]` 0x9c00010d/0x9d00010d (unit 1: 0x9c00030d/0x9d00030d); `HG_TRUNK_BITMAP[1]` 0xc, `HG_TRUNK_GROUP[1]` 0x779de3 = {28, 29, 28, 29}, RTAG 3; `HIGIG_TRUNK_CONTROL` 0xf; `MODPORT_MAP_SW/IM/EM[remote modid]` = 0x88 (HIGIG_PORT_BITMAP 8 = port 29, parity) on both chips; `E2EFC_TX/RX_RMODID` unit 0 0x81 (rmod 1), unit 1 0x80. C
+  - Array registers: index i at `+i<<8` (`HG_TRUNK_BITMAP[1]` = 0x46006a00, `HG_TRUNK_GROUP[1]` = 0x46006c00), not `+i`. C
+  - `MODPORT_MAP_*` writes are not in the S-channel trace (SBUS DMA or after the trace ended). I
+- Our cold init before this: XLPORT1 XGXS 0xe0 (TSC1 in reset) on both chips, unit 1 `PORT_TAB/EGR_PORT[28/29]` zero, `EGR_ENABLE` phys 30/32 0 on unit 1, unit 0 stacking regs already = stock (replay). C
+
+### 15.3 Native bring-up (`us48_higig_up`, `us48_tsc_fw.c`; opt-in `echo 1 > /sys/module/us48_cmic_xe/parameters/higig`, 2 = status)
+1. XLPORT1 power-up in stock trace order, waits SDK `_soc_xgxs_reset_single_tsc` sleep_usec 1100 - 10 % (`soc/common/drv.c`), 9 ms after the PLL step (as the cold-init replay); MAC_CONTROL pulse 9 us (`hurricane2.c` `soc_hurricane2_tsc_reset` 10 us - 10 %); CONFIG 0x400, SOFT_RESET 5, MODE 0x1b, SOFT_RESET 0, ENABLE 5. C
+2. TSC1 (`u->tsc_phy` = 5 under `u->mdio`): mode 2 x 2-lane, stage 0 with div42, microcode, PLL; `0x9003` 0x1b1b, `0x9220` 0x0323; stage 2 per lane 0-3 with the 15.2 field values patched in, `0xc135` before the analog reset release. C
+3. XLMAC per port, stock B1/C1 order: ENABLE/TXFIFO pulse, CTRL 0x1800, RX_CTRL, TX_CTRL, RX_MAX_SIZE, MODE 0x42, RX_LSS_CTRL 0x70, XLPORT_CONFIG 0xe00, CTRL 0x1803, LSS clear. C
+4. Lane enable per lane (RX_SIGDET 0x9, credits 0 then 0x4021, ANATX 0x0990, ANATX_CONTROL6 0), then per port with dual-lane AER broadcast (4 = lanes 0-1, 5 = lanes 2-3; SDK `tscmod_phyreg.c:509-516`): TX lane reset pulse `0xc113` 0x41c8 -> 0x41cb, `0xc137` 1. C
+- Not written: PFC/MACSEC/timestamp/E2EFC, any PORT_TAB/EGR_PORT/MODPORT_MAP/trunk/VLAN entry.
+- Per-lane enable (TX lane reset one lane at a time) left the far end unable to deskew one port in most runs (PCS 0x0001 = sync only); per-port broadcast fixed it. C
+- Result (RAM, 2026-11-18, 3 module reloads + bring-ups): both chips PLL 0xee03, CRC a081, `PMD_LIVE` 0x010f x4, `PCS_LIVE` 000b/0009/000b/0009 = stock, `XLMAC_RX_LSS_STATUS` 0 after one clear; a lane may need ~5 s to adapt after bring-up. ge1 and xe49 unchanged; XLMAC RPKT/TPKT unchanged while no table points at the ports. `asic_fwd_test.py survey`: ready on both chips. C
+
+### 15.4 Next for a cross-chip forwarding test (`scripts/asic_fwd_test.py`)
+- Unit 1 `PORT_TAB[28/29]` and `EGR_PORT[28/29]` = stock values (PORT_TYPE 1, HIGIG2 1, HIGIG_TRUNK 1/ID 1, MY_MODID 1) and `EGR_ENABLE` phys 30/32 = 1; unit 1 front ports' `PORT_TAB/EGR_PORT.MY_MODID` = 1 (stock 0x02000100 word 1).
+- `MODPORT_MAP_SW/IM/EM[1]` on unit 0 and `[0]` on unit 1 = 0x88; unit 1 `HG_TRUNK_BITMAP[1]` 0xc, `HG_TRUNK_GROUP[1]` 0x779de3, `E2EFC_TX/RX_RMODID` 0x80.
+- XLMAC E2EFC/PFC/timestamp regs as stock (not needed for link; needed if E2E flow control is on).
+- Then the planned VLAN 200 test (switch-model.md stage 3) with both HiGig ports in the trunk instead of one port per chip; count XLMAC RPKT/TPKT on 28/29 and GPORT counters on ge17/ge41.
