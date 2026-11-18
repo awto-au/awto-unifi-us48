@@ -7,7 +7,6 @@
 
 - [mainline.md](mainline.md): mainline Linux port: base, patch series, config, build, rootfs (#15)
 - [DECISIONS.md](DECISIONS.md): standing decisions, one line each, with issue links
-- [gaps.md](gaps.md): what is missing for a full native Linux port
 - [hardware.md](hardware.md): board hardware, console, U-Boot, flash map
 - [port-map.md](port-map.md): front panel -> chip -> software port names
 - [hwdb.md](hwdb.md): hwdb schema, single source of truth for hardware facts (#72)
@@ -16,7 +15,7 @@
 ## Boot chain and U-Boot
 
 - [uboot.md](uboot.md): stock U-Boot `usw-v1.1.6.122` (uboot-1)
-- [uboot-second-stage.md](uboot-second-stage.md): awto-uboot (uboot-2) design with network (#46)
+- [uboot-second-stage.md](uboot-second-stage.md): awto-uboot live design (#46)
 - [uboot-self-boot.md](uboot-self-boot.md): boot straight into awto-uboot without uboot-1 (#63)
 - [autochain.md](autochain.md): uboot-1 auto-chains awto-uboot on every power-on (#63)
 - [uboot-cpu-clock.md](uboot-cpu-clock.md): uboot-2 CPU clock (#17)

@@ -18,7 +18,7 @@
 
 ## What uboot-2 inherits
 
-- uboot-2 is entered by stock `bootm` (legacy uImage holding `u-boot.bin`) after the full stock boot (uboot-second-stage.md "Entry mechanism"). C
+- uboot-2 is entered by stock `bootm` (legacy uImage holding `u-boot.bin`) after the full stock boot ([uboot-second-stage.md](uboot-second-stage.md) "Entry and handoff"). C
 - DDR is already trained and running at 667 MHz, 256 MiB at `0x60000000` (low 128 MiB aliased at `0x0`). C
 - uboot-2 builds with `CONFIG_SKIP_LOWLEVEL_INIT`: no PLL, no DDR init, no shmoo, no `mtd2` access. C (uboot-second-stage.md)
 - So uboot-2 cannot corrupt `mtd2`; only a stock boot with Ctrl-C or an invalid blob rewrites it. C

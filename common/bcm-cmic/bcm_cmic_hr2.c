@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * bcm-cmic HR2 unit-1 port 50 (xe1): chip programming shared by Linux and U-Boot.
- * Ported 1:1 from kernel/us48-cmic/us48_cmic.c; facts in docs/driver-internals.md 1, 5, 13.5, 14.
+ * Ported 1:1 from kernel/us48-cmic/us48_cmic_core.c; facts in docs/driver-internals.md 1, 5, 13.5, 14.
  */
 #include <linux/bitops.h>
 #include <linux/delay.h>
@@ -416,7 +416,7 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 	return true;
 }
 
-/* ---- copper ports (unit 0 front 1 = ge1); generic over block/lane/lport, from us48_cmic.c ---- */
+/* ---- copper ports (unit 0 front 1 = ge1); generic over block/lane/lport, from us48_cmic_core.c ---- */
 
 #define GP_CC(l)		(0x10200 | (l))		/* GPORT UMAC COMMAND_CONFIG */
 #define GP_CC_BASE		0x01800058		/* reset released, RX/TX off, 1G code (stock's final init value) */

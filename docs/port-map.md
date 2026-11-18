@@ -79,4 +79,4 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 ## Which software drives which chip
 - uboot-2 drives unit 0 (AXI CMIC): `BCM_HR2_XE1_PORT 26` lane 0 = SFP 1 (front 51).
 - Linux `us48_cmic` drives unit 1 over PCIe: `xe49` = SFP+ 1, `xe50` = SFP+ 2.
-- uboot-2 on unit 1 (SFP+ 1/2) = M7 in [uboot-second-stage.md](uboot-second-stage.md).
+- uboot-2 on unit 1 (SFP+ 1/2): xe1 = the awto-uboot NIC ([uboot-second-stage.md](uboot-second-stage.md)).

@@ -80,7 +80,7 @@ int bcm_cmic_miim_rdb_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32
 
 /*
  * HR2 unit-1 (BCM53346) front-panel port 50 (xe1, logical port 27) bring-up and CPU packet I/O.
- * Same chip programming for Linux and U-Boot (bcm_cmic_hr2.c); reference history: us48_cmic.c.
+ * Same chip programming for Linux and U-Boot (bcm_cmic_hr2.c); reference history: us48_cmic_core.c.
  * DMA memory must be below the chip's 128 MiB inbound window (driver-internals 14.3).
  */
 /* uboot-2 port on unit 0 (this CMIC): logical 26 lane 0 = front 51, logical 27 lane 2 = front 52 (docs/port-map.md). */

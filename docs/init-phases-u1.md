@@ -38,7 +38,7 @@
 | 15 | SYSTEM_CONFIG_TABLE, VLAN/STG defaults, CPU_COS_MAP, COS arbitration | B2-B5 | 4259 of 16454 (B1-B5 together; 4096 of them are the SYSTEM_CONFIG_TABLE fill, index layout not decoded so not reduced) | VLAN 1 + STG forwarding; CPU COS map |
 | 16 | our code: EPC_LINK_BMAP bits 26/27 on link, private VLAN, PORT_TAB vid, static L2X to CPU | n/a (bcm_hr2_xe1_bringup) | n/a | stock does this in phase C (EPC_LINK_BMAP final 0x30060001 on u1) |
 
-- Not in either trace: TSC/PHY init over MIIM (PLL lock check, SerDes ucode, lane config), CMC0 DMA page, u1 CMIC MMIO. Cold xe1 needs the TSC part; `tsc enable` only works warm (docs/uboot-second-stage.md).
+- Not in either trace: TSC/PHY init over MIIM (PLL lock check, SerDes ucode, lane config), CMC0 DMA page, u1 CMIC MMIO. Cold xe1 needs the TSC part; `tsc enable` only works warm.
 - TOP state after the unit-1 replay vs unit 0 (S-channel reads from a1, `tools/tsc_read.c` `B 16 1 addr`, 2026-11-17, 9713149, #91). C
   - Equal: `TOP_SOFT_RESET_REG` 0xfffff (TS_RST_L, MMU_RST_L released), `_2` 0x13f00, `TOP_TS_PLL_STATUS` 0x80000102 (locked), `TOP_TS_PLL_CTRL_0..4`, `TOP_PLL_BYP_AND_REFCLK_CONTROL` 0, `TOP_XG_PLL*_STATUS`, `TOP_MISC_CONTROL_2` 1.
   - Differ (dropped writes, unit 1 = reset default): `TOP_BS_PLL0/1_CTRL_0` 0x197d1996/0x197d1096 vs ...19af/...10af, `_CTRL_1` 0x60c000 vs 0x662040, `TOP_BROAD_SYNC0/1_LCPLL_FBDIV_CTRL_1` 0x4000 vs 0x8c00, `TOP_MISC_CONTROL_1` 0x5001e080 vs 0x5001e880 (bit 11).

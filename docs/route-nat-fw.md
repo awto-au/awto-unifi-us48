@@ -42,11 +42,11 @@ v6: 2001:db8:48:10::/64 and 2001:db8:48:20::/64 (::1 router, ::2 hosts)
 
 ## Offload model for the US-48 (plan, not a claim)
 
-Source model: awto-tl-st1008f `docs/NAT-STACKS.md`, `ROUTING-OFFLOAD.md`, `UPSTREAM-L3.md`, `DECISIONS.md` ("No netfilter guard on L3 offload"), `CPU-PORT.md` (read-only).
+Source model: awto-tl-st1008f docs: [NAT-STACKS.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/NAT-STACKS.md), [ROUTING-OFFLOAD.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/ROUTING-OFFLOAD.md), [UPSTREAM-L3.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/UPSTREAM-L3.md), [DECISIONS.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/DECISIONS.md) ("No netfilter guard on L3 offload"), [CPU-PORT.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/CPU-PORT.md) (read-only).
 
 - Kernel stays the source of truth: FIB, neighbour table, conntrack, nftables. No TCP termination offload (TOE): not acceptable upstream.
 - Routes reach the ASIC through FIB/neighbour notifiers (switchdev router pattern: mlxsw, prestera). On-link and unmatched traffic traps to the CPU.
-- NAT flows: nftables flowtable. Their stack numbers: conntrack + masquerade without flowtable is about 3.5x slower than with the software flowtable (`NAT.md`, RTL9303, their conditions). `flowtable` above measures the same pair here first.
+- NAT flows: nftables flowtable. Their stack numbers: conntrack + masquerade without flowtable is about 3.5x slower than with the software flowtable ([NAT.md](https://github.com/awto-au/awto-tl-st1008f/blob/main/docs/NAT.md), RTL9303, their conditions). `flowtable` above measures the same pair here first.
 - Firewall stays nftables; nothing in the driver checks nft rules before offloading routes (their decision, in-tree routers do not either).
 - HR2 mapping to check before any driver work (all from `regdb/hr2_mems.tsv`, generated from the stock SDK tables; sizes = index range):
 
