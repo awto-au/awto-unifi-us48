@@ -373,7 +373,7 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
   - Programs (256-byte slots, ELF file offset = VA - `0x10000`): `0x15a38ac` (164 B used), `0x15a39ac` (168), `0x15a3aac` (186), `0x15a3bac` (167), `0x15a3cac` (152), `0x15a3dac` (152); the two-chip cases use `0x15a38ac`. Starts `02 02 60 e0 06 e0 d2 0a 70 16 ...` (standard Broadcom LED-processor opcodes; not disassembled). C (offsets), I (opcode meaning).
   - Other 256-byte LED programs: `0x1411a54` (`0x6f2e8`, sets data-RAM byte `0xbf`) and `0x1d51ba4` (`0x6f6a0`, sets data-RAM byte `0xbe` = count), both followed by `0x6ed04` / `0x6eb08` (CMIC LED pin config RMW). I: SDK locator/blink helpers.
   - Hidden `ubntdiag ledtest` ([stock-debug-cli.md](stock-debug-cli.md)) loads tiny test programs (68 B: `67 36` repeated, `0x15a3f34` / `0x15a4034`..`0x15a4434`) into LEDUP and writes the MSPI 2-bit-per-port frames (`0x5f6a40`), so link/act LEDs are LEDUP and PoE LEDs are MSPI. C (code), I (colour mapping).
-  - Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain; front 49-52.
+  - Program disassembled, bytes and format: [ledup-stock.md](ledup-stock.md). Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain wiring.
   - Mainline: our own LEDUP program + driver, chain format and colours as board-test items: [leds.md](leds.md).
 
 ## Open questions

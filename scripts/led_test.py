@@ -12,7 +12,7 @@ Usage: led_test.py [STEP ...] [--apply] [--interactive] [--ports 1,8,17] [--host
   - ledup: TICK advances; refresh rate from two `chain` reads (expect ~33 Hz at the reset CLK_PARAMS, I).
   - patterns: on, off, booting, error, fallback, panic (sysfs pattern only, never a real panic), hw.
   - ports: each column (default every port, or --ports) forced on alone, bit 0 then bit 1; readback via `ports`.
-  - chain: only with --interactive: tries nbits 1/2/4 x order front/rfront/phys/rphys x pol 0/full with all cells on,
+  - chain: only with --interactive: first the stock-derived format (2 bits, front order, 28 slots, LSB first); if Dan says no, tries nbits 1/2/4 x order front/rfront/phys/rphys x pol 0/full with all cells on,
     Dan says which combination lights the panel correctly; writes nothing permanent (module reload resets).
   - links: loop cables 8<->17 (unit 0) and 32<->41 (unit 1): admin up, carrier within 5 s, `ports` link_mbps and CTL
     value; IPv6 multicast ping for activity; admin state restored as found. ge1 (management) is never touched.
@@ -171,11 +171,20 @@ def ports(r: Run) -> None:
     r.sh(f"echo hw > {L}/pattern")
 
 
+STOCK = "nbits=2 pol=0 order=front extra=0 slots=28"  # stock program format (docs/ledup-stock.md)
+
+
 def chain(r: Run) -> None:
     if not r.interactive:
         r.log("chain scan: skipped (needs --interactive)")
         return
     found = []
+    r.sh(f"echo '{STOCK}' > {L}/chain; echo booting > {L}/pattern")
+    r.log("chain = stock format: front 1..48 blink in order on bit 0 (1G colour), no mirrored or shifted panel")
+    if input("  stock format correct? [y/n] ").strip().lower().startswith("y"):
+        r.log("chain: stock format confirmed, scan skipped")
+        r.sh(f"echo '{STOCK}' > {L}/chain")
+        return
     for nbits in (2, 1, 4):
         for order in ("front", "rfront", "phys", "rphys"):
             for pol in (0, (1 << nbits) - 1):
@@ -186,7 +195,7 @@ def chain(r: Run) -> None:
                 if ans.startswith("y"):
                     found.append((nbits, pol, order))
     r.log(f"chain combinations Dan accepted: {found}")
-    r.sh(f"echo 'nbits=2 pol=0 order=front' > {L}/chain")
+    r.sh(f"echo '{STOCK}' > {L}/chain")
 
 
 def links(r: Run) -> None:

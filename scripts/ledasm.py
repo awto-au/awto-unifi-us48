@@ -2,10 +2,13 @@
 """ledasm: assembler + reference simulator for the CMIC LEDUP processor (docs/leds.md, #14).
 
 Usage: ledasm.py [--asm FILE] [--out HEADER] [--check] [--verify ASM HEX] [--sim] [--list]
+       ledasm.py --disasm FILE [--len N] | --find FILE DIR
 - default: assemble kernel/us48-cmic/us48_ledup.asm -> kernel/us48-cmic/us48_ledup_prog.h (generated, committed).
 - --check: exit 1 if the committed header differs from a fresh assembly (no write).
 - --verify ASM HEX: assemble a reference program and compare with its published hex bytes (space separated, file),
   e.g. OpenBCM tools/led/example/greyhound/gh_sdk53402.asm vs rc/gh_ledup.soc. Proves the encoder, nothing is copied.
+- --disasm FILE: disassemble a raw .bin or a text file of hex bytes (up to --len bytes, default all non-zero tail trimmed).
+- --find FILE DIR: assemble every *.asm under DIR, report byte identity / common prefix with FILE (published-program match).
 - --sim: run our program in the simulator for the pattern cases below; exit 1 on a mismatch.
 - --list: print the listing (address, bytes, source).
 - ISA: opcode table and operand forms of OpenBCM sdk-6.5.16 tools/led/tools/ledasm.h (Broadcom licence, Legal/LICENSE:
@@ -50,7 +53,7 @@ class AsmError(Exception):
 
 
 def evaluate(expr: str, sym: dict) -> int:
-    toks = re.findall(r"0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*|[-+*()]", expr)
+    toks = re.findall(r"0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*|[-+*/()]", expr)
     if "".join(toks) != expr.replace(" ", ""):
         raise AsmError(f"bad expression {expr!r}")
     py = []
@@ -61,7 +64,7 @@ def evaluate(expr: str, sym: dict) -> int:
             py.append(str(sym[t]))
         else:
             py.append(str(int(t, 0)) if t[0].isdigit() else t)
-    return eval("".join(py), {"__builtins__": {}}) & 0xFFFF  # noqa: S307 (tokens are numbers and + - * ( ) only)
+    return eval("".join(py).replace("/", "//"), {"__builtins__": {}}) & 0xFFFF  # noqa: S307 (tokens are numbers and + - * ( ) only)
 
 
 def operand(text: str, sym: dict) -> tuple[int, int | None]:
@@ -279,7 +282,7 @@ def ref_bits(ctl: list[int], nbits: int, pol: int, tick: int, act: list[bool]) -
         if v & 0x40 and act[s] and tick & 1:
             vv = 0
         vv ^= pol
-        out += [(vv >> i) & 1 for i in range(nbits - 1, -1, -1)]
+        out += [(vv >> i) & 1 for i in range(nbits)]
     return out
 
 
@@ -309,9 +312,96 @@ def simulate(prog: bytes, sym: dict) -> int:
     return 1 if bad else 0
 
 
+RN = {0: "a", 1: "b", 4: "(a)", 5: "(b)", 7: "cy"}
+
+
+def disasm(prog: bytes) -> list[tuple[int, list[int], str]]:
+    rows, pc = [], 0
+    fixed = {v: k for k, v in FIXED.items()}
+    jumps = {v: k for k, v in JUMPS.items()}
+
+    def opd(f, imm):
+        return f"({imm:#04x})" if f == 6 else f"{imm:#04x}" if f == 2 else RN[f]
+
+    while pc < len(prog):
+        op = prog[pc]
+        imm = prog[pc + 1] if pc + 1 < len(prog) else 0
+        if op in fixed:
+            ln, txt = 1, fixed[op]
+        elif op in jumps:
+            ln, txt = 2, f"{jumps[op]:7} {imm:#04x}"
+        elif op & 0xF8 == 0x20 and op & 7 != 3:
+            ln = 2 if op & 7 in (2, 6) else 1
+            txt = f"push    {opd(op & 7, imm)}"
+        elif op & 0xF8 == 0x28 and op & 7 != 3:
+            ln = 2 if op & 7 in (2, 6) else 1
+            txt = f"port    {opd(op & 7, imm)}"
+        elif op & 0xFC == 0x30:
+            ln = 2 if op & 3 == 2 else 1
+            txt = f"pushst  {opd(op & 3, imm)}"
+        elif op & 0xF8 == 0x38 and op & 7 != 3:
+            ln = 2 if op & 7 in (2, 6) else 1
+            txt = f"send    {opd(op & 7, imm)}"
+        elif op & 0xE0 == 0x80 and op & 0xF0 in (0x80, 0x90) and op & 7 != 3:
+            f = op & 7
+            ln = 2 if f == 6 else 1
+            txt = f"{('inc', 'rol', 'dec', 'ror')[((op >> 3) & 1) | ((op >> 3) & 2)]:7} {opd(f, imm)}"
+        elif op >= 0xA0:
+            d, f = (op >> 3) & 1, op & 7
+            ln = 2 if f in (2, 6) else 1
+            nm = {0xA0: "xor", 0xB0: "or", 0xC0: "and", 0xD0: "cmp", 0xE0: "sub", 0xF0: "add"}[op & 0xF0]
+            txt = f"{nm:7} {RN[d]}, {opd(f, imm)}"
+        elif op & 0x8C in (0x08, 0x0C):
+            d, f = (op >> 4) & 7, op & 3
+            ln = 2 if d == 6 or f == 2 else 1
+            nm = "tst" if op & 0x04 == 0 else "bit"
+            di = imm if d == 6 else 0
+            txt = f"{nm:7} {opd(d, di)}, {opd(f, imm)}"
+        elif op & 0x88 == 0:
+            d, f = (op >> 4) & 7, op & 7
+            ln = 2 if d == 6 or f in (2, 6) else 1
+            txt = f"ld      {opd(d, imm)}, {opd(f, imm)}"
+        else:
+            ln, txt = 1, f".byte   {op:#04x}"
+        rows.append((pc, list(prog[pc:pc + ln]), txt))
+        pc += ln
+    return rows
+
+
+def load_bytes(path: Path) -> bytes:
+    raw = path.read_bytes()
+    try:
+        return bytes(int(t, 16) for t in raw.decode().split())
+    except ValueError:
+        return raw
+
+
 def main() -> int:
-    help_guard(__doc__, strict=True, known=("--asm", "--out", "--check", "--verify", "--sim", "--list"))
+    help_guard(__doc__, strict=True, known=("--asm", "--out", "--check", "--verify", "--sim", "--list", "--disasm",
+                                            "--find", "--len"))
     args = sys.argv[1:]
+    if "--disasm" in args:
+        data = load_bytes(Path(args[args.index("--disasm") + 1]))
+        n = int(args[args.index("--len") + 1], 0) if "--len" in args else len(data.rstrip(b"\0"))
+        for pc, code, txt in disasm(data[:n]):
+            log(f"{pc:02x}  {' '.join(f'{b:02x}' for b in code):6}  {txt}")
+        return 0
+    if "--find" in args:
+        i = args.index("--find")
+        ref = load_bytes(Path(args[i + 1])).rstrip(b"\0")
+        n = 0
+        for f in sorted(Path(args[i + 2]).rglob("*.asm")):
+            try:
+                prog, _, _ = assemble(f.read_text(errors="replace"), f.name)
+            except Exception as e:  # noqa: BLE001 (unsupported syntax in a reference file: report and go on)
+                log(f"skip {f.name}: {str(e)[:60]}")
+                continue
+            n += 1
+            prog = prog.rstrip(b"\0")
+            common = next((k for k in range(min(len(prog), len(ref))) if prog[k] != ref[k]), min(len(prog), len(ref)))
+            log(f"{'IDENTICAL' if prog == ref else 'prefix %3d' % common}  {len(prog):3} B vs {len(ref)} B  {f.name}")
+        log(f"find: {n} reference programs assembled")
+        return 0
     src = Path(args[args.index("--asm") + 1]) if "--asm" in args else ASM
     out = Path(args[args.index("--out") + 1]) if "--out" in args else HDR
     if "--verify" in args:

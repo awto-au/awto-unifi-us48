@@ -9,8 +9,8 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 |---|---|---|---|
 | System LED white / blue | ChipcommonA GPIO 6 / 7 (stock Linux GPIO 10 / 11), high = on (C: gpiodev `gpio_set_led` writes the value bits unchanged) | DT `gpio-leds` `white:status`, `blue:status` | colour per pin I (BT) |
 | Reset button | ChipcommonA GPIO 11 (stock GPIO 15, IRQ 267), low = pressed (C: gpiodev `IRQF_TRIGGER_LOW`) | DT `gpio-keys-polled`, `KEY_RESTART` | BT |
-| Copper link/activity 1-48 | CMIC LEDUP0 of the owning unit (C: stock loads an LEDUP program into unit 0 and unit 1, board.md) | `us48_cmic` LEDUP program + LED class devices | chain format BT |
-| SFP+ 1/2, SFP 1/2 (49-52) | not located (board.md: no MSPI field) | slots for 49/50 exist on unit 1 (xe ports); 51/52 only with `sfp10g` or `chain extra=` | BT |
+| Copper link/activity 1-48 | CMIC LEDUP0 of the owning unit (C: stock loads an LEDUP program into unit 0 and unit 1, board.md) | `us48_cmic` LEDUP program + LED class devices | chain format = stock ([ledup-stock.md](ledup-stock.md)), BT confirms |
+| SFP+ 1/2, SFP 1/2 (49-52) | not located (board.md: no MSPI field) | stock: last two slots of each chain, unit 1 = 49/50, unit 0 = 51/52 (C, [ledup-stock.md](ledup-stock.md)); ours: slots exist for the ports the driver registers, rest padding (`slots=28`) | BT |
 | PoE 1-48 | MSPI board-IO frames (0,0)/(0,1), 2 bits/port (C: board.md, poe.md section 6) | not implemented (PoE driver #26; colours unknown) | out of scope |
 
 ## Reset button and system LED (DT mainline 0027, kernel/us48-cca-gpio)
@@ -41,12 +41,16 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 - Clocks: LED_CLK 5 MHz is the datasheet rate (clocks.md `[DS]`), the reset half period 20 gives 5 MHz at a 200 MHz LEDUP clock (I), so the rated maximum already runs. The refresh period (30 ms at 200 MHz, I) only sets blink and activity resolution; not changed. `chain` reports the measured rate.
 - Data RAM map (ours, matches OpenBCM convention): `0x00-0x7f` hardware scan-in, `0x80-0x9f` `pack` area (`SCANCHAIN_ASSEMBLY_ST_ADDR` reset `0x80`), `0xa0-0xbf` CTL per slot, `0xc0-0xdf` scan port per slot, `0xe0-0xe7` program variables.
 
-### Program (`kernel/us48-cmic/us48_ledup.asm`, 123 B)
+### Program (`kernel/us48-cmic/us48_ledup.asm`, 125 B)
 
-- Ours. ISA (opcodes, operand forms) from OpenBCM sdk-6.5.16 `tools/led/tools/ledasm.h`; structure after the Greyhound/Hurricane3 examples (`tools/led/example/greyhound/gh_sdk53402.asm`, `hurricane3/bcm956160k.asm`). Licence: Broadcom `Legal/LICENSE` (source derivatives may be distributed); no Broadcom text or bytes are copied, no stock bytes.
+- Ours; stock's program (switchdrvr `0x15a38ac`, 164 B, Ubiquiti's own, not a published Broadcom program) was analysed and its chain format adopted: [ledup-stock.md](ledup-stock.md) (bytes, annotated listing, comparison). ISA (opcodes, operand forms) from OpenBCM sdk-6.5.16 `tools/led/tools/ledasm.h`; structure after the Greyhound/Hurricane3 examples. Licence: Broadcom `Legal/LICENSE`; no Broadcom text copied.
 - `scripts/ledasm.py`: our assembler -> `us48_ledup_prog.h` (generated; `--check` in review). `--verify` assembles `gh_sdk53402.asm` byte-identical to its hex in OpenBCM `rc/gh_ledup.soc` (2026-11-19). `--sim`: reference model, 25/25 cases (semantics I).
-- Per slot: `port SPORT[s]`; value = CTL bits 1:0; bits in the blink mask (3:2) blank on the speed's TICK bit (slow 480 / mid 240 / fast 120 ms half period at 30 ms refresh, I); ACT (bit 6) blanks the slot on odd TICKs while `pushst RX` or `TX` is set; xor POL; shift NBITS bits MSB first; `send (TOTAL)`.
-- All policy is in the CPU, so chain unknowns are runtime settings (`chain`), not program changes.
+- Per slot: `port SPORT[s]`; value = CTL bits 1:0; bits in the blink mask (3:2) blank on the speed's TICK bit (slow 480 / mid 240 / fast 120 ms half period at 30 ms refresh, I); ACT (bit 6) blanks the slot on odd TICKs while `pushst RX` or `TX` is set; xor POL; shift NBITS bits **LSB first** (stock order); `send (TOTAL)`.
+- All policy is in the CPU; the chain format is a runtime setting (`chain`), default = stock's:
+  - 2 bits per port, LSB first: bit 0 = first bit on the wire = stock's 1G/10G symbol "10", bit 1 = 10/100M symbol "01". Bit 0 = `green`, bit 1 = `amber` (colour names I).
+  - Polarity 0 (no inversion), order `front` (ascending; unit 0 front 1-24 then 51/52, unit 1 front 25-48 then 49/50), `slots=28` (56 bits, 4 trailing zero bits), same program on both units.
+  - Scan port = physical port (stock: logical 2-9 reversed to 9-2, 26/27 -> 26/28).
+  - Stock reads RX, TX, SPEED_C, SPEED_M scan bits, so they are valid on HR2 (C code, BT).
 
 ### Driver (`kernel/us48-cmic/us48_cmic_led.c`)
 
@@ -65,7 +69,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 | `error` | yes | any write latches the error pattern, text = reason; read `1 <reason>` |
 | `clear` (wo) | yes | release latch and manual pattern -> `auto` |
 | `ports` (ro) | = `cages` | column, front, port, unit, slot, scan port, link Mb/s, CTL |
-| `chain` | extra | chain format `nbits= pol= order=front|rfront|phys|rphys extra= act=`; per unit STATUS, CTRL, CLK_PARAMS, TICK and refreshes since the last read |
+| `chain` | extra | chain format `nbits= pol= order=front|rfront|phys|rphys extra= slots= act=` (default = stock: `2 0 front 0 28 1`); per unit STATUS, CTRL, CLK_PARAMS, TICK and refreshes since the last read |
 
 - Patterns (cells = slot x bit, st1008f rows -> bits): booting = bit 0 slow blink; error = all fast blink (120 ms vs st1008f 128 ms); fallback = bit 0 on, bit 1 mid blink (240 vs 256 ms); panic = per slot one bit on, the other fast blink, swapped per `panic_blink` call; on/off = all cells.
 - Digits: 0 off, 7 on, 1-3 fast, 4 mid, 5-6 slow (st1008f has six blink rates, LEDUP three). One blink speed per slot: two cells of one port with different speeds = `-EINVAL`.
@@ -84,7 +88,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 3. Button idle high, press gives `KEY_RESTART` press/release. `button --interactive`.
 4. `us48_cca_gpio` with outputs: SFP presence (lines 2/3) still reads as before (#21 `sensors_test.py`).
 5. LEDUP runs on both units (STATUS bit 8, TICK advances, refresh rate). `ledup`.
-6. Chain format: bits per port, order, polarity, padding. `chain --interactive`; first `patterns` with the defaults.
+6. Chain format: confirm the stock-derived default (2 bits, LSB first, front order, 28 slots, pol 0). `chain --interactive` asks once; only on "no" does it scan nbits/order/pol. First `patterns` with the defaults.
 7. Colour per bit; bicolour LEDs that need `01`/`10` (anti-parallel) vs two LEDs. `ports`.
 8. Scan-chain RX/TX bits valid for `pushst` on HR2 (activity flicker on 8<->17, 32<->41). `links`.
 9. Front 49-52 LEDs: on the LEDUP0 chain (slots of xe49/xe50; 51/52 with `extra=`), on LEDUP1, or elsewhere.

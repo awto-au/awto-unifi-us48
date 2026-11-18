@@ -8,7 +8,7 @@
 ;   CTL+s   [1:0] value bits, [3:2] blink mask (bit n blinks), [5:4] blink speed 0 none 1 slow 2 mid 3 fast,
 ;           [6] ACT: blank the slot while the scan chain shows RX or TX on SPORT+s
 ;   SPORT+s scan-chain port for `port` (physical port, I)
-;   NSLOT slots, NBITS bits per slot (1..4, MSB first; bits above 1 are 0), POL xor mask, TOTAL = NSLOT * NBITS
+;   NSLOT slots, NBITS bits per slot (1..4, LSB first = stock; bits above 1 are 0), POL xor mask, TOTAL = NSLOT * NBITS
 
 CTL     equ 0xA0
 SPORT   equ 0xC0
@@ -89,17 +89,18 @@ busy:
         jnc     emit
         ld      a, 0
         ld      (VV), a
-; shift out NBITS bits of VV ^ POL, MSB first
+; shift out NBITS bits of VV ^ POL, LSB first (stock order: docs/ledup-stock.md)
 emit:
         ld      a, (VV)
         xor     a, (POL)
-        ld      b, (NBITS)
+        ld      b, 0
 bit:
-        dec     b
-        jc      next
+        cmp     b, (NBITS)
+        jnc     next
         tst     a, b
         push    cy
         pack
+        inc     b
         jmp     bit
 next:
         inc     (SLOT)

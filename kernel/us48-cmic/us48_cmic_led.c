@@ -74,10 +74,10 @@ struct us48_ledu {
 
 /* Chain format: board-test unknowns, settable at runtime through `chain` (docs/leds.md) */
 static struct {
-	u8 nbits, pol, extra;
+	u8 nbits, pol, extra, slots;
 	bool act;
 	char order[8];
-} chain = { .nbits = 2, .act = true, .order = "front" };
+} chain = { .nbits = 2, .act = true, .order = "front", .slots = 28 };	/* stock: 26 ports + 2 pad, 56 bits */
 
 static DEFINE_SPINLOCK(led_lock);
 static struct us48_ledu *units[2];
@@ -117,7 +117,7 @@ static bool flags_lit(unsigned long fl, int speed)
 	       (speed == 10000 && (fl & BIT(TRIGGER_NETDEV_LINK_10000)));
 }
 
-/* Default offload per bit (I: bit 0 green = 1G/10G, bit 1 amber = 10/100; board test) */
+/* Default offload per bit: bit 0 = first bit on the wire = stock 1G/10G colour (docs/ledup-stock.md) */
 static unsigned long default_flags(int bit)
 {
 	return (bit ? HW_FLAGS_SLOW : HW_FLAGS_FAST) | HW_FLAGS_ACT;
@@ -235,7 +235,7 @@ static void unit_layout(struct us48_ledu *lu)
 	if (chain.order[0] == 'r')
 		for (i = 0; i < n / 2; i++)
 			swap(lu->slot_port[i], lu->slot_port[n - 1 - i]);
-	lu->nslot = min(n + chain.extra, NSLOT_MAX);
+	lu->nslot = min(max(n + chain.extra, (int)chain.slots), NSLOT_MAX);
 	for (i = n; i < NSLOT_MAX; i++)
 		lu->slot_port[i] = NULL;
 	for (i = 0; i < MAXPORTS; i++)
@@ -692,11 +692,11 @@ static ssize_t ports_show(struct device *dev, struct device_attribute *a, char *
 }
 static DEVICE_ATTR_RO(ports);
 
-/* Chain format + live LEDUP state per unit; write "nbits=N pol=X order=front|rfront|phys|rphys extra=N act=0|1" */
+/* Chain format + live LEDUP state per unit; write "nbits=N pol=X order=front|rfront|phys|rphys extra=N slots=N act=0|1" */
 static ssize_t chain_show(struct device *dev, struct device_attribute *a, char *buf)
 {
-	int i, len = sysfs_emit(buf, "nbits=%u pol=%u order=%s extra=%u act=%d\n", chain.nbits, chain.pol,
-				 chain.order, chain.extra, chain.act);
+	int i, len = sysfs_emit(buf, "nbits=%u pol=%u order=%s extra=%u slots=%u act=%d\n", chain.nbits,
+				chain.pol, chain.order, chain.extra, chain.slots, chain.act);
 
 	for (i = 0; i < 2; i++) {
 		struct us48_ledu *lu = READ_ONCE(units[i]);
@@ -739,6 +739,8 @@ static ssize_t chain_store(struct device *dev, struct device_attribute *a, const
 			c.pol = v;
 		else if (sscanf(tok, "extra=%u", &v) == 1 && v <= NSLOT_MAX)
 			c.extra = v;
+		else if (sscanf(tok, "slots=%u", &v) == 1 && v <= NSLOT_MAX)
+			c.slots = v;
 		else if (sscanf(tok, "act=%u", &v) == 1 && v <= 1)
 			c.act = v;
 		else if (!strncmp(tok, "order=", 6) && match_string(orders, ARRAY_SIZE(orders), tok + 6) >= 0)
