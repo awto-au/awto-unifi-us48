@@ -82,7 +82,7 @@ struct port_cfg {
 	bool external_phy;		/* copper PHY is on external MIIM bus 0 */
 };
 
-#define MAXPORTS	26
+#define MAXPORTS	26		/* unit 1: 24 copper + 2 xe */
 
 struct us48_cmic;
 
@@ -90,10 +90,11 @@ struct us48_port {
 	struct us48_cmic *u;
 	struct net_device *ndev;
 	const struct port_cfg *cfg;
-	u16 vid;			/* private VLAN id = front port number */
+	u16 vid;			/* private VLAN id (hwdb_gen ports_c: copper 100 + front, xe front) */
 	bool open;
 	bool registered;
 	bool rx_tuned;			/* xe: one RX restart after the first link up (#87) */
+	bool copper_ready;		/* copper: MAC/PHY/VLAN bring-up done (first ndo_open) */
 };
 
 struct us48_cmic {
@@ -109,6 +110,8 @@ struct us48_cmic {
 	struct hrtimer poll_timer;
 	struct delayed_work link_work;
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
+	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */
+	u8 blk_ready;			/* bit = GPORT block whose block-wide init (+ octal top reset) ran */
 	spinlock_t tx_lock;
 	int nopen;
 	bool quiesced;			/* DMA stopped for good: NAPI must not re-arm RX */

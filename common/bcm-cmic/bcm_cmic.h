@@ -125,13 +125,16 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
 /*
  * Copper port (GPORT block + lane, PHY on internal or external MIIM bus 0), e.g. unit 0 front 1:
  * blk 2, lane 7, logical 2, phy 9. Private VLAN `vid` holds the CPU and this port only (VLAN 1 is
- * stock's and may bridge ports); MAC left RX/TX off until bcm_hr2_ge_mac_set().
+ * stock's and may bridge ports); MAC left RX/TX off until bcm_hr2_ge_mac_up().
  * Frames reach the CPU via the static L2 entry (modid = unit's MY_MODID, port 0).
+ * blk_ready: an earlier port of this GPORT block ran the block-wide steps (GPORT_CONFIG, CNTMAXSIZE, octal
+ * top reset); skip them, they disturb running lanes. false (default) = first port of the block.
  */
 struct bcm_hr2_ge {
 	u8 blk, lane, phy, lport, modid;
 	u16 vid;
-	bool external_phy;
+	bool external_phy;		/* BCM54282 octal on external MIIM bus 0, lane 0 at phy - lane */
+	bool blk_ready;
 };
 
 /* GPORT MAC init, PHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */

@@ -490,67 +490,54 @@ static void cpu_meter_off(struct bcm_cmic_unit *u)
 		bcm_cmic_reg_write(u, 12, 0x19c00 + (cos << 8), z, 2);
 }
 
+/*
+ * TOP_MISC_GLOBAL_RESET (RDB 0x82b) = TOP_MII_REG_SOFT_RST | RESET_1588: resets the octal-wide top block (RDB 0x800-0xaff,
+ * OpenBCM phy542xx.c:2628), so once per octal, through lane 0. No settle delay: stock 0x10d116c and OpenBCM issue the
+ * next access right after it; the bits self-clear, checked by one read-back (driver-internals 12.4).
+ */
+static int bcm54282_top_reset(struct bcm_cmic_unit *u, u8 phy0)
+{
+	u16 v;
+	int ret = bcm_cmic_miim_rdb_write(u, false, 0, phy0, 0x82b, 0x8400);
+
+	ret = ret ?: bcm_cmic_miim_rdb_read(u, false, 0, phy0, 0x82b, &v);
+	if (ret)
+		return ret;
+	if (v & 0x8400) {
+		pr_err("bcm-cmic: octal phy %02x TOP_MISC_GLOBAL_RESET still %04x after the reset write\n", phy0, v);
+		return -EIO;
+	}
+	return 0;
+}
+
+/*
+ * Per-port subset of stock phy_bcm542xx_reset_setup (0x10d116c) + OM bcm56150_phy_init (driver-internals 4, 7):
+ * DSP clock, DSP_TAP10, SUPER_ISOLATE off, SGMII-to-copper, AN 1000FD, SGMII auto-detect, LED traffic, EXT_PKT_LEN.
+ * Not done: per-port MII reset, EEE off, LED selectors/LED_CTRL/LED_GPIO (stock does them).
+ */
 static int bcm54282_link_init(struct bcm_cmic_unit *u, u8 phy)
 {
 	u16 val;
 	int ret;
 
-	ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x82b, 0x8400);
-	if (ret)
-		return ret;
+	/* MII_AUX_CTRL (reg 0x18 shadow 000) = ENABLE_DSP_CLOCK | RESERVED: OM step 2, OpenBCM phy542xx.c:2653. */
 	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x18, 0x0c00);
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x125, 0x011b);
-	if (ret)
-		return ret;
-
-	ret = bcm_cmic_miim_rdb_read(u, false, 0, phy, 0x02a, &val);
-	if (ret)
-		return ret;
-	if (val & BIT(5)) {
-		ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x02a, val & ~BIT(5));
-		if (ret)
-			return ret;
-	}
-
-	ret = bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x1f, &val);
-	if (ret)
-		return ret;
-	val &= 0x03ff;
-	val &= ~(BIT(1) | BIT(2));
-	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1f, val);
-	if (ret)
-		return ret;
-
-	ret = bcm_cmic_miim_write(u, false, 0, phy, 9, 0x0600);
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_write(u, false, 0, phy, 0, 0x1340);
-	if (ret)
-		return ret;
-
-	ret = bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x15, &val);
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x15, (val & 0x03ff) | BIT(0));
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1e, BIT(5));
-	if (ret)
-		return ret;
-
-	ret = bcm_cmic_miim_read(u, false, 0, phy, 0x10, &val);
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x10, val | BIT(5));
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x18, 0x4c00);
-	if (ret)
-		return ret;
-
-	return 0;
+	ret = ret ?: bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x125, 0x011b);	/* DSP_TAP10: stock + OM */
+	ret = ret ?: bcm_cmic_miim_rdb_read(u, false, 0, phy, 0x02a, &val);	/* POWER_MII_CTRL */
+	if (!ret && (val & BIT(5)))
+		ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x02a, val & ~BIT(5));	/* SUPER_ISOLATE = 0 */
+	ret = ret ?: bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x1f, &val);	/* MODE_CTRL */
+	ret = ret ?: bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1f, val & 0x03ff & ~(BIT(1) | BIT(2)));	/* MODE_SEL 0 */
+	ret = ret ?: bcm_cmic_miim_write(u, false, 0, phy, 9, 0x0600);		/* GB_CTRL: SWITCH_DEV, 1000T FD */
+	ret = ret ?: bcm_cmic_miim_write(u, false, 0, phy, 0, 0x1340);		/* AN + restart, FD, 1000, PDN 0 */
+	ret = ret ?: bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x15, &val);	/* SGMII_SLAVE */
+	ret = ret ?: bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x15, (val & 0x03ff) | BIT(0));	/* AUTO_DETECT */
+	/* AUTO_DETECT_MEDIUM whole = QFSD_WITH_SYNC_STATUS, rest 0: OM step 5. */
+	ret = ret ?: bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1e, BIT(5));
+	ret = ret ?: bcm_cmic_miim_read(u, false, 0, phy, 0x10, &val);		/* MII_PHY_ECR */
+	ret = ret ?: bcm_cmic_miim_write(u, false, 0, phy, 0x10, val | BIT(5));	/* LED_TRAFFIC_EN */
+	/* MII_AUX_CTRL = 0x0c00 | EXT_PKT_LEN (b14): OM step 5. */
+	return ret ?: bcm_cmic_miim_write(u, false, 0, phy, 0x18, 0x4c00);
 }
 
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
@@ -558,22 +545,27 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	u8 b = ge->blk, l = ge->lane;
 	u32 link[2];
 	int ret;
-	bool internal = !ge->external_phy;
 
 	/* Stock's per-lane copper MAC init (docs/driver-internals.md 12): MAC left RX/TX off. */
-	gp_wr(u, b, 0x02020000, 2);			/* GPORT_CONFIG: CLR_CNT, then run with GPORT_EN */
-	gp_wr(u, b, 0x02020000, 3);
-	gp_wr(u, b, 0x02020000, 1);
+	if (!ge->blk_ready) {
+		gp_wr(u, b, 0x02020000, 2);		/* GPORT_CONFIG (block-wide): CLR_CNT, then run with GPORT_EN */
+		gp_wr(u, b, 0x02020000, 3);
+		gp_wr(u, b, 0x02020000, 1);
+		gp_wr(u, b, 0x02020800, 0x5ee);		/* GPORT_CNTMAXSIZE (block-wide) */
+	}
 	gp_wr(u, b, 0x10500 | l, 0x5ee);		/* FRM_LENGTH */
 	gp_wr(u, b, GP_CC(l), 0x01802058);
 	gp_wr(u, b, 0x1cc00 | l, 0x2c000);		/* PAUSE_CONTROL */
 	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
 	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
-	gp_wr(u, b, 0x02020800, 0x5ee);			/* GPORT_CNTMAXSIZE */
 	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
-	/* Stock's copper-PHY bring-up: AN enable + restart + FD + 1000, power-down clear. */
-	ret = ge->external_phy ? bcm54282_link_init(u, ge->phy) :
-		bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, 0x1340);
+	if (ge->external_phy) {
+		ret = ge->blk_ready ? 0 : bcm54282_top_reset(u, ge->phy - l);
+		ret = ret ?: bcm54282_link_init(u, ge->phy);
+	} else {
+		/* Integrated GPHY powers up with BMCR PDN set: AN enable + restart + FD + 1000, PDN clear (OM step 4). */
+		ret = bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340);
+	}
 	if (ret)
 		return ret;
 	cpu_meter_off(u);

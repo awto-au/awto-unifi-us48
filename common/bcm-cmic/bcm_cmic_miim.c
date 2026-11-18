@@ -65,7 +65,10 @@ int bcm_cmic_miim_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy
 	return 0;
 }
 
-/* Shadow/RDB selector writes target address registers; data writes use the selected PHY register. */
+/*
+ * Broadcom shadow (reg 0x1c) and RDB accesses, sequence in docs/driver-internals.md 12.4 (stock 0x10c9be4).
+ * Shadow read = selector write; RDB enter (exp 0xf7e <- 0) and exit (RDB 0x87 <- 0x8000) are mode writes.
+ */
 int bcm_cmic_miim_shadow_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 shadow, u16 *val)
 {
 	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1c, (shadow & 0x1f) << 10);
@@ -79,42 +82,28 @@ int bcm_cmic_miim_shadow_write(struct bcm_cmic_unit *u, bool internal, u32 bus, 
 				   BIT(15) | (shadow & 0x1f) << 10 | (val & 0x03ff));
 }
 
-static int miim_rdb_enter(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy)
+/* One RDB access: enter, 0x1e <- reg, 0x1f data. Exit runs whenever the first enter write landed (no half-entered PHY). */
+static int miim_rdb(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *rd, u16 wr)
 {
-	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x17, 0x0f7e);
+	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x17, 0x0f7e), exit_ret;
 
-	return ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x15, 0x0000);
-}
-
-static int miim_rdb_exit(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy)
-{
-	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, 0x0087);
-
-	return ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, 0x8000);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x15, 0x0000);
+	ret = ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, reg);
+	ret = ret ?: (rd ? bcm_cmic_miim_read(u, internal, bus, phy, 0x1f, rd) :
+		      bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, wr));
+	exit_ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, 0x0087);
+	exit_ret = exit_ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, 0x8000);
+	return ret ?: exit_ret;
 }
 
 int bcm_cmic_miim_rdb_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *val)
 {
-	int ret = miim_rdb_enter(u, internal, bus, phy), exit_ret;
-
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, reg);
-	if (!ret)
-		ret = bcm_cmic_miim_read(u, internal, bus, phy, 0x1f, val);
-	exit_ret = miim_rdb_exit(u, internal, bus, phy);
-	return ret ?: exit_ret;
+	return miim_rdb(u, internal, bus, phy, reg, val, 0);
 }
 
 int bcm_cmic_miim_rdb_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val)
 {
-	int ret = miim_rdb_enter(u, internal, bus, phy), exit_ret;
-
-	if (ret)
-		return ret;
-	ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, reg);
-	if (!ret)
-		ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, val);
-	exit_ret = miim_rdb_exit(u, internal, bus, phy);
-	return ret ?: exit_ret;
+	return miim_rdb(u, internal, bus, phy, reg, NULL, val);
 }

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * us48_cmic: the two 10G uplinks of the UniFi US-48-500W (front 49 = xe49 = logical port 26,
- * front 50 = xe50 = logical port 27) on the BCM53346 (unit 1) behind PCIe.
- * One CMIC DMA ring pair serves both ports: RX is demuxed on the source port, TX goes straight to a
- * port through the module header. Each port sits in its own private VLAN with the CPU only, so the
- * chip never forwards between them or into the HiGig links. Polled. docs/driver-internals.md 1, 5, 13.5, 14.
+ * us48_cmic: switch ports of the UniFi US-48-500W: copper ge1-ge24 (unit 0, AXI CMIC), ge25-ge48 and SFP+ xe49/xe50
+ * (unit 1, PCIe; us48_cmic_xe.ko). Port tables: hwdb/gen/us48_ports.h.
+ * One CMIC DMA ring pair per unit: RX is demuxed on the source port, TX goes straight to a port through the module
+ * header. Each port sits in its own private VLAN with the CPU only, so the chip never forwards between ports or into
+ * the HiGig links. Copper bring-up at the first ndo_open. Polled. docs/driver-internals.md 1, 4, 5, 12, 13.5, 14.
  */
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -24,63 +24,12 @@
 #include "us48_cmic.h"
 #include "bcm_cmic.h"
 #include "us48_hwdb.h"
+#include "us48_ports.h"
 
-const struct port_cfg us48_unit1_cfgs[] = {
-	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 },
-	{ .name = "xe50", .vid = 50, .front = 50, .lport = 27, .lane = 2 },
-	/* GPHY addresses follow the physical-port mapping in docs/driver-internals.md section 4. */
-	{ .name = "ge25", .vid = 125, .front = 25, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 9 },
-	{ .name = "ge26", .vid = 126, .front = 26, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 8 },
-	{ .name = "ge27", .vid = 127, .front = 27, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 7 },
-	{ .name = "ge28", .vid = 128, .front = 28, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 6 },
-	{ .name = "ge29", .vid = 129, .front = 29, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 4 },
-	{ .name = "ge30", .vid = 130, .front = 30, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 3 },
-	{ .name = "ge31", .vid = 131, .front = 31, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 2 },
-	{ .name = "ge32", .vid = 132, .front = 32, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 1 },
-	{ .name = "ge33", .vid = 133, .front = 33, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 11 },
-	{ .name = "ge34", .vid = 134, .front = 34, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 12 },
-	{ .name = "ge35", .vid = 135, .front = 35, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 13 },
-	{ .name = "ge36", .vid = 136, .front = 36, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 14 },
-	{ .name = "ge37", .vid = 137, .front = 37, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 16 },
-	{ .name = "ge38", .vid = 138, .front = 38, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 17 },
-	{ .name = "ge39", .vid = 139, .front = 39, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 18 },
-	{ .name = "ge40", .vid = 40, .front = 40, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 19 },
-	{ .name = "ge41", .vid = 141, .front = 41, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true },
-	{ .name = "ge42", .vid = 142, .front = 42, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true },
-	{ .name = "ge43", .vid = 143, .front = 43, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true },
-	{ .name = "ge44", .vid = 144, .front = 44, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true },
-	{ .name = "ge45", .vid = 145, .front = 45, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true },
-	{ .name = "ge46", .vid = 146, .front = 46, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true },
-	{ .name = "ge47", .vid = 147, .front = 47, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true },
-	{ .name = "ge48", .vid = 148, .front = 48, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true },
-};
-/* Unit 0 (host SoC, AXI CMIC): front 1 = logical 2, GPORT0 (block 2) lane 7, GPHY addr 9; VLAN 101 (VLAN 1 = stock's). */
-static const struct port_cfg unit0_cfgs[] = {
-	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 9 },
-	{ .name = "ge2", .vid = 102, .front = 2, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 8 },
-	{ .name = "ge3", .vid = 103, .front = 3, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 7 },
-	{ .name = "ge4", .vid = 104, .front = 4, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 6 },
-	{ .name = "ge5", .vid = 105, .front = 5, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 4 },
-	{ .name = "ge6", .vid = 106, .front = 6, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 3 },
-	{ .name = "ge7", .vid = 107, .front = 7, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 2 },
-	{ .name = "ge8", .vid = 108, .front = 8, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 1 },
-	{ .name = "ge9", .vid = 109, .front = 9, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 11 },
-	{ .name = "ge10", .vid = 110, .front = 10, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 12 },
-	{ .name = "ge11", .vid = 111, .front = 11, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 13 },
-	{ .name = "ge12", .vid = 112, .front = 12, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 14 },
-	{ .name = "ge13", .vid = 113, .front = 13, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 16 },
-	{ .name = "ge14", .vid = 114, .front = 14, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 17 },
-	{ .name = "ge15", .vid = 115, .front = 15, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 18 },
-	{ .name = "ge16", .vid = 116, .front = 16, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 19 },
-	{ .name = "ge17", .vid = 117, .front = 17, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true },
-	{ .name = "ge18", .vid = 118, .front = 18, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true },
-	{ .name = "ge19", .vid = 119, .front = 19, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true },
-	{ .name = "ge20", .vid = 120, .front = 20, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true },
-	{ .name = "ge21", .vid = 121, .front = 21, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true },
-	{ .name = "ge22", .vid = 122, .front = 22, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true },
-	{ .name = "ge23", .vid = 123, .front = 23, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true },
-	{ .name = "ge24", .vid = 124, .front = 24, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true },
-};
+/* Port tables from hwdb/board/ports.toml (scripts/hwdb_gen.py ports_c): name, vid, logical port, GPORT block/lane, PHY. */
+const struct port_cfg us48_unit1_cfgs[] = { US48_PORTS_UNIT1 };
+/* Unit 0 (host SoC, AXI CMIC): front 1 = ge1 = management. */
+static const struct port_cfg unit0_cfgs[] = { US48_PORTS_UNIT0 };
 const int us48_unit1_nports = ARRAY_SIZE(us48_unit1_cfgs);
 EXPORT_SYMBOL_GPL(us48_unit1_cfgs);
 EXPORT_SYMBOL_GPL(us48_unit1_nports);
@@ -437,7 +386,7 @@ static void octal_phy_diag(struct us48_cmic *u, struct bcm_cmic_unit *cu, u8 phy
 		 phy, aux, mode, slave, detect, isolate, dsp, reset);
 }
 
-/* Read both copper MDIO buses; vendor-register access writes selectors only, never PHY configuration data. */
+/* Read both copper MDIO buses. No configuration writes; the shadow/RDB reads write selectors and the RDB mode enter/exit. */
 void us48_mdio_scan(struct us48_cmic *u)
 {
 	static const u8 regs[] = { 2, 3, 0, 1, 1, 4, 5, 9, 10 };
@@ -503,34 +452,31 @@ static struct bcm_hr2_ge ge_of(const struct us48_port *p)
 				    .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy };
 }
 
-/* Shared core (common/bcm-cmic): stock's per-lane copper MAC init (docs/driver-internals.md 12), GPHY AN, private VLAN, PORT_TAB, link bitmap. */
-static void copper_enable(struct us48_port *p)
+/* Shared core (common/bcm-cmic): copper MAC init, PHY AN, private VLAN, PORT_TAB, link bitmap. First ndo_open, link_lock held. */
+static int copper_enable(struct us48_port *p)
 {
 	struct us48_cmic *u = p->u;
 	struct bcm_cmic_unit cu = { .base = u->cmic };
 	struct bcm_hr2_ge ge = ge_of(p);
 	int ret;
 
+	ge.blk_ready = u->blk_ready & BIT(p->cfg->blk);
 	mutex_lock(&u->mdio);
 	ret = bcm_hr2_ge_bringup(&cu, &ge);
 	mutex_unlock(&u->mdio);
+	if (!ret) {
+		u->blk_ready |= BIT(p->cfg->blk);
+		p->copper_ready = true;
+	}
 	if (p->cfg->front == 1) {
 		mutex_lock(&dbg_lock);
 		dbg_u = u;
 		dbg_cfg = p->cfg;
 		mutex_unlock(&dbg_lock);
 	}
-	dev_info(u->dev, "%s: copper bring-up %s (block %d lane %d)\n", p->cfg->name, ret ? "FAILED" : "done",
-		 p->cfg->blk, p->cfg->lane);
-}
-
-/* Link up at 100M/1G full duplex: stock's CC sequence (reset pulse, speed, RX|TX on). Speed from the PHY. */
-static void copper_mac_set(struct us48_port *p, int speed)
-{
-	struct bcm_cmic_unit cu = { .base = p->u->cmic };
-	struct bcm_hr2_ge ge = ge_of(p);
-
-	bcm_hr2_ge_mac_up(&cu, &ge, speed);
+	dev_info(u->dev, "%s: copper bring-up %s (block %d lane %d%s)\n", p->cfg->name, ret ? "FAILED" : "done",
+		 p->cfg->blk, p->cfg->lane, ge.blk_ready ? "" : ", block init");
+	return ret;
 }
 
 /* BMSR link (latched low: read twice) and negotiated speed from the 1000BASE-T / LPA registers. */
@@ -554,7 +500,28 @@ static bool copper_link(struct us48_port *p, int *speed)
 	return up;
 }
 
-/* PCS live status (RX_X4_PCS_LIVE_STATUS 0xc154): bit0 sync, bit1 link. */
+/* One copper port, link_lock held: PHY link -> MAC up (speed from the PHY) / MAC down, carrier. */
+static void copper_poll(struct us48_port *p)
+{
+	struct bcm_cmic_unit cu = { .base = p->u->cmic };
+	struct bcm_hr2_ge ge = ge_of(p);
+	int speed = 0;
+	bool up = copper_link(p, &speed);
+
+	if (up == netif_carrier_ok(p->ndev))
+		return;
+	if (up) {
+		bcm_hr2_ge_mac_up(&cu, &ge, speed);
+		netif_carrier_on(p->ndev);
+	} else {
+		bcm_hr2_ge_mac_down(&cu, &ge);
+		netif_carrier_off(p->ndev);
+	}
+	netdev_info(p->ndev, "link %s%s\n", up ? "up" : "down",
+		    up ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
+}
+
+/* Copper: only open ports (never-opened ones have no GPORT/VLAN init). xe: PCS live status 0xc154 b1 link. */
 static void link_work_fn(struct work_struct *w)
 {
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, link_work);
@@ -564,32 +531,26 @@ static void link_work_fn(struct work_struct *w)
 		struct us48_port *p = u->port[i];
 		u16 v = 0;
 		bool up;
-		int speed = 0;
 
 		if (p->cfg->copper) {
-			up = copper_link(p, &speed);
-			if (up && !netif_carrier_ok(p->ndev))
-				copper_mac_set(p, speed);
-			else if (!up && netif_carrier_ok(p->ndev)) {
-				struct bcm_cmic_unit cu = { .base = u->cmic };
-				struct bcm_hr2_ge ge = ge_of(p);
-
-				bcm_hr2_ge_mac_down(&cu, &ge);
-			}
-		} else {
-			mutex_lock(&u->mdio);
-			up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
-			mutex_unlock(&u->mdio);
+			mutex_lock(&u->link_lock);
+			if (p->open && p->copper_ready)
+				copper_poll(p);
+			mutex_unlock(&u->link_lock);
+			continue;
 		}
+		mutex_lock(&u->mdio);
+		up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
+		mutex_unlock(&u->mdio);
 		if (up != netif_carrier_ok(p->ndev)) {
 			if (up)
 				netif_carrier_on(p->ndev);
 			else
 				netif_carrier_off(p->ndev);
-			netdev_info(p->ndev, "link %s%s\n", up ? "up" : "down", up && p->cfg->copper ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
+			netdev_info(p->ndev, "link %s\n", up ? "up" : "down");
 		}
 		/* The RX adaptation of the boot init leaves 2-13 % PCS link drops and FCS errors on the optic lane; a restart once linked clears them (#87). */
-		if (up && !p->cfg->copper && !p->rx_tuned) {
+		if (up && !p->rx_tuned) {
 			p->rx_tuned = true;
 			us48_tsc_rx_restart(u, p->cfg);
 		}
@@ -627,10 +588,8 @@ static void port_enable(struct us48_port *p)
 	u32 a = p->cfg->lane, v[2];
 	int i, ret = 0;
 
-	if (p->cfg->copper) {
-		copper_enable(p);
+	if (p->cfg->copper)		/* deferred to the first ndo_open */
 		return;
-	}
 	/* Only from stock's parked state: re-crediting a running port is not known safe. */
 	if (!sbus(u, 0x0b, BLK_XLPORT, 0x60000 | a, v, 2) && (v[0] & 0x43) == 0x03) {
 		dev_info(u->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip enable\n", p->cfg->name, v[0]);
@@ -1117,9 +1076,20 @@ static int us48_open(struct net_device *nd)
 	struct us48_port *p = netdev_priv(nd);
 	struct us48_cmic *u = p->u;
 
+	if (p->cfg->copper && !p->copper_ready) {
+		int ret;
+
+		mutex_lock(&u->link_lock);
+		ret = copper_enable(p);
+		mutex_unlock(&u->link_lock);
+		if (ret)
+			return ret;
+	}
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
+	mutex_lock(&u->link_lock);
 	p->open = true;
+	mutex_unlock(&u->link_lock);
 	if (u->nopen++ == 0) {
 		us48_pool_fill(&u->pool_work);
 		rx_arm(u);
@@ -1136,7 +1106,17 @@ static int us48_stop(struct net_device *nd)
 	struct us48_cmic *u = p->u;
 
 	netif_stop_queue(nd);
+	mutex_lock(&u->link_lock);
 	p->open = false;
+	/* Copper: MAC off with the netdev; the poll skips the port until the next open. */
+	if (p->cfg->copper && netif_carrier_ok(nd)) {
+		struct bcm_cmic_unit cu = { .base = u->cmic };
+		struct bcm_hr2_ge ge = ge_of(p);
+
+		bcm_hr2_ge_mac_down(&cu, &ge);
+		netif_carrier_off(nd);
+	}
+	mutex_unlock(&u->link_lock);
 	l2_op_cpu(p, 0x26);
 	if (--u->nopen == 0) {
 		hrtimer_cancel(&u->poll_timer);
@@ -1303,6 +1283,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->modid = modid;
 	u->cmic = cmic;
 	mutex_init(&u->mdio);
+	mutex_init(&u->link_lock);
 	spin_lock_init(&u->tx_lock);
 	skb_queue_head_init(&u->skb_pool);
 	INIT_WORK(&u->pool_work, us48_pool_fill);
@@ -1373,7 +1354,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
-		if (p->cfg->copper)		/* the core did VLAN + PORT_TAB */
+		if (p->cfg->copper)		/* copper_enable() does VLAN + PORT_TAB at first open */
 			continue;
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);

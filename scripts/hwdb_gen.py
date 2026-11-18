@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate artifacts from hwdb/*.toml (hand facts only; the SDK regdb is not emitted).
 
-Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [regmap] [--check]   (no target = all)
+Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [ports_c] [regmap] [--check]   (no target = all)
 Outputs: hwdb/gen/us48_hwdb.h, hwdb/gen/hwdb.rs, docs/hwdb-map.md, hwdb/gen/ghidra_import_hwdb.py,
-         hwdb/gen/us48_unit1_regmap.h (regmap access tables of unit 1 AXI), hwdb/gen/ghidra_export_hwdb.py (copy of scripts/ghidra/hwdb_export.py), port table in docs/port-map.md.
+         hwdb/gen/us48_unit1_regmap.h (regmap access tables of unit 1 AXI), hwdb/gen/ghidra_export_hwdb.py (copy of scripts/ghidra/hwdb_export.py), port table in docs/port-map.md,
+         hwdb/gen/us48_ports.h (driver port tables, ports_c).
 --check: fail if a generated file differs from disk (no write). Log: tmp/logs/hwdb_gen.log.
 """
 import logging
@@ -309,6 +310,37 @@ def gen_ports(db):
     put(path, text)
 
 
+PORTS_H_DOC = """/*
+ * Driver port tables (struct port_cfg initialisers, kernel/us48-cmic/us48_cmic.h), one macro per unit.
+ * - Rows: copper fronts (phy gphy|octal) and ports with a `linux` name; xe rows first (probe order: TSC before copper).
+ * - vid: copper 100 + front (VLAN 1 = stock's); xe = front. blk: QSGMII<n> -> GPORT S-channel block 2 + n.
+ */"""
+
+
+def port_cfg(p):
+    m = re.fullmatch(r"(QSGMII(\d) lane|TSC lane) (\d)", p["lane"])
+    if not m:
+        raise SystemExit("ports.toml front %d: lane %r not parsable" % (p["front"], p["lane"]))
+    lane = int(m.group(3))
+    if p["phy"] in ("gphy", "octal"):
+        return ('{ .name = "ge%d", .vid = %d, .front = %d, .lport = %d, .lane = %d, .copper = true, .blk = %d, '
+                '.phy = 0x%02x%s }' % (p["front"], 100 + p["front"], p["front"], p["logical"], lane, 2 + int(m.group(2)),
+                                       p["phy_addr"], ", .external_phy = true" if p["phy"] == "octal" else ""))
+    return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .lane = %d }' % (
+        p["linux"], p["front"], p["front"], p["logical"], lane)
+
+
+def gen_ports_c(db):
+    o = ["/* %s */" % HDR, "#ifndef US48_PORTS_H", "#define US48_PORTS_H", "", PORTS_H_DOC]
+    for unit in (0, 1):
+        rows = [p for p in db.ports if p["unit"] == unit and p["front"] and (p["phy"] in ("gphy", "octal") or "linux" in p)]
+        rows.sort(key=lambda p: (p["phy"] in ("gphy", "octal"), p["front"]))
+        o += ["", "#define US48_PORTS_UNIT%d \\" % unit]
+        o += ["\t%s, \\" % port_cfg(p) for p in rows[:-1]] + ["\t%s" % port_cfg(rows[-1])]
+    o += ["", "#endif /* US48_PORTS_H */"]
+    put(GEN / "us48_ports.h", "\n".join(o) + "\n")
+
+
 def py_lit(x):
     return repr(x)
 
@@ -442,7 +474,7 @@ def main(argv):
     logging.basicConfig(level=logging.INFO, format="%(message)s",
                         handlers=[logging.FileHandler(log), logging.StreamHandler(sys.stdout)])
     check = "--check" in argv
-    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports", "regmap"]
+    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports", "ports_c", "regmap"]
     db = hwdb.load()
     err = db.validate()
     if err:
@@ -450,7 +482,8 @@ def main(argv):
             logging.info("ERR %s", e)
         return 1
     for t in targets:
-        {"c": gen_c, "rust": gen_rust, "md": gen_md, "ghidra": gen_ghidra, "ports": gen_ports, "regmap": gen_regmap}[t](db)
+        {"c": gen_c, "rust": gen_rust, "md": gen_md, "ghidra": gen_ghidra, "ports": gen_ports, "ports_c": gen_ports_c,
+         "regmap": gen_regmap}[t](db)
     bad = 0
     for p, text in sorted(WRITES.items()):
         if check:

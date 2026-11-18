@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * us48_cmic_xe: aux driver (us48_pci.cmic) for the second chip (unit 1, BCM53346 behind PCIe): SFP+ 1/2 (xe49/xe50)
- * plus the copper test port ge40. Separate module so it can be loaded and unloaded while us48_cmic.ko
+ * plus copper ge25-ge48. Separate module so it can be loaded and unloaded while us48_cmic.ko
  * (core + unit 0 ge1, the management port) keeps running. The two CMICs have separate DMA channels and rings.
  */
 #include <linux/auxiliary_bus.h>
@@ -24,7 +24,7 @@ static int us48_xe_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	ret = us48_pci_link_ok(p);
 	if (ret)
 		return ret;
-	/* Missing microcode is logged by us48_tsc_init; the ports and ge40 still come up. */
+	/* Missing microcode is logged by us48_tsc_init; the copper ports still come up. */
 	if (request_firmware(&fw, "us48-tsc.bin", &adev->dev))
 		fw = NULL;
 	/* Every load resets the chip and runs the full cold init; DMA is stopped first. */
@@ -80,7 +80,7 @@ static int tsc_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops tsc_ops = { .set = tsc_set };
 module_param_cb(tsc, &tsc_ops, NULL, 0200);
 
-/* echo 1 > /sys/module/us48_cmic_xe/parameters/phy_scan: read internal/external bus-0 PHYs, no PHY writes. */
+/* echo 1 > /sys/module/us48_cmic_xe/parameters/phy_scan: read internal/external bus-0 PHYs (us48_mdio_scan: no config writes). */
 static int phy_scan_set(const char *val, const struct kernel_param *kp)
 {
 	unsigned int scan;
