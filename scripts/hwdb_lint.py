@@ -5,7 +5,9 @@ Scans scripts/, common/, kernel/, uboot-port/, rust/ (.py .c .h .S .rs .dts .dts
 (header says generated / do not edit) and build artifacts. Match = exact register, block/region base, or inside a block/region.
 Collisions exist: 0x1c000000 is also the L2X S-channel table id (kernel/us48-cmic), so hits are context-dependent.
 Usage: python3 scripts/hwdb_lint.py [--all] [--by-file]   (--all also lists literals with no hwdb entry)
-Log: tmp/logs/hwdb_lint.log. Exit 0 always (report only).
+Base check (always runs): literal CMIC/IPROC bases (hwdb cmic0, cmic1, cmic1_uboot, iproc_axi) in scripts/ and kernel/
+outside scripts/hwdb_lint_allow.txt (`path<TAB>0xBASE<TAB>reason`, one row per file+base) fail with exit 1; stale rows are reported.
+Log: tmp/logs/hwdb_lint.log. Exit 0 for the report, 1 on a new base literal.
 """
 import logging
 import pathlib
@@ -40,6 +42,42 @@ def files():
                 yield p
 
 
+BASE_DIRS = ("scripts", "kernel")
+BASE_NAMES = ("cmic0", "cmic1", "cmic1_uboot", "iproc_axi")
+ALLOW = ROOT / "scripts/hwdb_lint_allow.txt"
+
+
+def base_check(db):
+    """Literal CMIC/IPROC base addresses outside the allowlist. Returns the number of violations."""
+    bases = {db.addr(n): n for n in BASE_NAMES}
+    pat = re.compile(r"\b0[xX](%s)\b" % "|".join("0*%x" % b for b in bases), re.I)
+    allow = {}
+    for ln in ALLOW.read_text().splitlines() if ALLOW.exists() else []:
+        if ln.strip() and not ln.startswith("#"):
+            f = ln.split("\t")
+            allow[(f[0], int(f[1], 16))] = False
+    bad = 0
+    for d in BASE_DIRS:
+        for p in sorted((ROOT / d).rglob("*")):
+            if not (p.is_file() and p.suffix in EXT and not (SKIP_PARTS & set(p.parts))) or generated(p):
+                continue
+            rel = str(p.relative_to(ROOT))
+            for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+                for m in pat.finditer(line):
+                    a = int(m.group(1), 16)
+                    if (rel, a) in allow:
+                        allow[(rel, a)] = True
+                    else:
+                        bad += 1
+                        logging.info("BASE %s:%d 0x%08x is hwdb %s: use hwdb.cmic_base()/addr() or HW_%s_BASE, or add to %s",
+                                     rel, n, a, bases[a], bases[a].upper(), ALLOW.name)
+    for (f, a), used in allow.items():
+        if not used:
+            logging.info("STALE allowlist row %s 0x%08x (no such literal)", f, a)
+    logging.info("hwdb_lint base check: %d new literal(s)", bad)
+    return bad
+
+
 def main(argv):
     log = ROOT / "tmp/logs/hwdb_lint.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +107,7 @@ def main(argv):
         for f, c in sorted(per_file.items(), key=lambda x: -x[1]):
             logging.info("%5d %s", c, f)
     logging.info("hwdb_lint: %d literals match hwdb, %d do not, %d files with hits", hits, miss, len(per_file))
-    return 0
+    return 1 if base_check(db) else 0
 
 
 if __name__ == "__main__":

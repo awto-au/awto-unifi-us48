@@ -55,6 +55,7 @@ LOG = LOGS / "dev.log"
 sys.path.insert(0, str(REPO / "scripts"))
 
 import console  # noqa: E402
+import hwdb  # noqa: E402
 
 # $US48_IMAGE overrides (default: scripts/build_mainline.py output).
 IMAGE = Path(os.environ.get("US48_IMAGE") or REPO / "tmp/mainline/us48-mainline-debug.bin").resolve()
@@ -1257,7 +1258,7 @@ CHIPSTATE = [
 @command("dump the unit-1 tables that decide unicast-to-CPU (one line each), for diffing a working vs a failing state; "
          "--egr = EGR_ENABLE of all 30 logical ports instead (which ports stock left enabled)", args="[--egr]", kind="action")
 def cmd_chipstate(extra: list[str]) -> int:
-    b = 0x0A000000 + 0x31000
+    b = hwdb.cmic_base(1) + 0x31000
     fn = (f"sc(){{ devmem {b:#x} 32 0; devmem {b + 12:#x} 32 $1; devmem {b + 16:#x} 32 $2; devmem {b:#x} 32 1; n=0; "
           f"while [ $(( $(devmem {b:#x} 32) & 2 )) = 0 ] && [ $n -lt 50 ]; do n=$((n+1)); done; "
           f"echo $3 c=$(devmem {b:#x} 32) $(for i in 1 2 3 4 5 6 7 8; do [ $i -le $4 ] && devmem $(({b + 12}+4*i)) 32; done); "
@@ -1292,7 +1293,7 @@ def cmd_schan(extra: list[str]) -> int:
     if kind == "x":  # table-entry write (op 0x09): schan <u> x <blk> <addr> <w0> [w1 ...]
         vals = [int(x, 0) for x in extra[4:]]
         words = len(vals)
-    base = {"0": 0x48000000, "1": 0x0A000000}[unit]
+    base = hwdb.cmic_base(int(unit))
     hdr = {"r": 0x0B, "m": 0x07, "w": 0x0D, "x": 0x09}[kind] << 26 | blk << 20 | (4 * words) << 7
     b = base + 0x31000
     # Poll for DONE (b1) in the shell loop: an S-channel op answers in us, 50 polls = far above that.

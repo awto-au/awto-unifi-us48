@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Generate artifacts from hwdb/*.toml (hand facts only; the SDK regdb is not emitted).
 
-Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [ports_c] [regmap] [--check]   (no target = all)
+Usage: python3 scripts/hwdb_gen.py [c] [rust] [md] [ghidra] [ports] [ports_c] [regmap] [cabling] [--check]   (no target = all)
 Outputs: hwdb/gen/us48_hwdb.h, hwdb/gen/hwdb.rs, docs/hwdb-map.md, hwdb/gen/ghidra_import_hwdb.py,
          hwdb/gen/us48_unit1_regmap.h (regmap access tables of unit 1 AXI), hwdb/gen/ghidra_export_hwdb.py (copy of scripts/ghidra/hwdb_export.py), port table in docs/port-map.md,
-         hwdb/gen/us48_ports.h (driver port tables, ports_c).
+         hwdb/gen/us48_ports.h (driver port tables, ports_c); scripts/cabling.json labels (cabling).
 --check: fail if a generated file differs from disk (no write). Log: tmp/logs/hwdb_gen.log.
 """
+import json
 import logging
 import pathlib
 import re
@@ -290,6 +291,15 @@ def phy_cell(p):
     return "%s, no PHY" % ("SFP+" if "SFP+" in p["label"] else "SFP")
 
 
+def gen_cabling(db):
+    """scripts/cabling.json: `label` (fixed per-port field) from ports.toml; bench fields (module, far_end, link, updated) kept."""
+    path = ROOT / "scripts/cabling.json"
+    d = json.loads(path.read_text())
+    for e in d["ports"]:
+        e["label"] = db.port(e["front"])["label"]
+    put(path, json.dumps(d, indent=2, ensure_ascii=False) + "\n")
+
+
 def gen_ports(db):
     chip = {0: "unit 0 (BCM53344, host SoC)", 1: "unit 1 (BCM53346, PCIe)"}
     o = [PORT_BEGIN, "",
@@ -475,7 +485,7 @@ def main(argv):
     logging.basicConfig(level=logging.INFO, format="%(message)s",
                         handlers=[logging.FileHandler(log), logging.StreamHandler(sys.stdout)])
     check = "--check" in argv
-    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports", "ports_c", "regmap"]
+    targets = [a for a in argv[1:] if not a.startswith("--")] or ["c", "rust", "md", "ghidra", "ports", "ports_c", "regmap", "cabling"]
     db = hwdb.load()
     err = db.validate()
     if err:
@@ -484,7 +494,7 @@ def main(argv):
         return 1
     for t in targets:
         {"c": gen_c, "rust": gen_rust, "md": gen_md, "ghidra": gen_ghidra, "ports": gen_ports, "ports_c": gen_ports_c,
-         "regmap": gen_regmap}[t](db)
+         "cabling": gen_cabling, "regmap": gen_regmap}[t](db)
     bad = 0
     for p, text in sorted(WRITES.items()):
         if check:

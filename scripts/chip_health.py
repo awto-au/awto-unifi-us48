@@ -12,12 +12,15 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hwdb  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/chip_health.log"
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
 SSH_CAP_S = 20.0  # ~14 ops x ~50 devmem forks on a 1 GHz A9; 20 s backstop, expiry = FATAL
-CMIC0 = 0x48000000 + 0x31000
+CMIC0 = hwdb.cmic_base(0) + 0x31000
 L2X = 0x1C000000
 CHECKS = [("L2X[%#x]" % i, 0x07, 10, L2X | i, 4) for i in (0, 0x1FFF, 0x2000, 0x3FFF, 0x7FFF)] + [
     ("L2_ENTRY_PARITY_STATUS_0", 0x0B, 10, 0x1E010D00, 1), ("L2_ENTRY_PARITY_STATUS_1", 0x0B, 10, 0x1E010E00, 1),

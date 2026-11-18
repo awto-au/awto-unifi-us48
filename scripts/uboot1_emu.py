@@ -96,7 +96,7 @@ PHASES = [
     ("WDT", [(0x18039000, 0x1803A000), (0x19020600, 0x19020700)]),
     ("QSPI", [(0x18027000, 0x18028000), (0x1C000000, 0x1E000000)]),
     ("PCIe", [(0x18012000, 0x18014000), (0x18013000, 0x18014000)]),
-    ("CMIC", [(0x48000000, 0x49000000)]),
+    ("CMIC", [(hwdb.cmic_base(0), hwdb.cmic_base(0) + 0x1000000)]),
     ("SCU/L2/A9-priv", [(0x19020000, 0x19030000)]),
     ("DDR/PHY/shmoo", [(0x18010000, 0x18012000), (0x18014000, 0x18020000), (0x18030000, 0x18039000)]),
 ]
@@ -264,7 +264,7 @@ class Emu:
         p = ROOT / "tmp/logs/clock_trial.log"
         self.defaults[0x48010224] = 0x8344  # device id read by board init (docs/uboot.md s5)
         self.defaults.update(STATUS_DEFAULTS)
-        self.defaults[0x18000000] = 0xD060  # chipcommon id, 53344 decimal (I)
+        self.defaults[hwdb.addr("iproc_axi")] = 0xD060  # chipcommon id, 53344 decimal (I)
         if not p.exists():
             return
         for l in p.read_text().splitlines():

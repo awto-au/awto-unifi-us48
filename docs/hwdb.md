@@ -60,7 +60,9 @@
 - Suspect ranges (`SUSPECT`, plus `dmac`) run one per pass; blocked entries with `phase = "uboot"` apply to that state only; `--unblock NAME --only LO HI` tries one blocked range. `--top` logs TOP_SOFT_RESET_REG/_2, TOP_MISC_CONTROL_1, TOP_TS_PLL_STATUS (S-channel) after the TFTP bring-up, before `go`; `--top-only` stops there. Blocked `state = "answered"` = read on unit 0, no longer blocked.
 
 ## Lint
-- `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry. Report only.
+- `python3 scripts/hwdb_lint.py [--by-file] [--all]`: lists hard-coded 0x18/19/1b/1c/48xxxxxx literals that match an hwdb entry (report).
+  - Base check (exit 1): literal CMIC/IPROC bases (cmic0, cmic1, cmic1_uboot, iproc_axi) in scripts/ and kernel/ outside `scripts/hwdb_lint_allow.txt`. Scripts use `hwdb.cmic_base(unit, uboot=False)`, C uses `HW_CMIC0_BASE`/`HW_CMIC1_BASE`.
+  - `python3 scripts/hwdb_gen.py cabling` syncs `scripts/cabling.json` `label` from ports.toml; bench fields are kept.
 - Context collisions exist (0x1c000000 is also the L2X S-channel table id).
 
 ## Ghidra round-trip (run on uboot-1 and the ubnt app, 2026-11-15, #69)

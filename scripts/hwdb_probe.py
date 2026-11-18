@@ -125,7 +125,7 @@ def rows(suspect=None):
     for x in out:
         sus = [n for n, (lo, hi) in (SUSPECT | ({"dmac": (0x18020000, 0x18020fff)} if UNIT == 0 else {})).items() if x["kind"] == "sdk_iproc" and lo <= x["addr"] <= hi]
         if x["kind"] == "sdk_cmic" and UNIT == 1:
-            sus = ["cmic"]  # unit 1 CMIC as seen by a2 at 0x48000000 is untested: own run
+            sus = ["cmic"]  # unit 1 CMIC as seen by a2 (hwdb cmic0) is untested: own run
         if ONLY and not x["skip"] and not (ONLY[0] <= x["addr"] <= ONLY[1]):
             x["skip"] = "not in this run"
         elif ONLY:
