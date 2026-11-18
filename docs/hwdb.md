@@ -8,7 +8,7 @@
 - `hwdb/soc/*.toml`: spaces, regions, blocks, registers (memmap, clocks, periph, a9, paxb, cmic).
 - `hwdb/board/ports.toml`: front-panel port map (52 front + internal HiGig 28/29 on both chips).
 - `hwdb/fw/<binary>.toml`: vendor-binary functions (`uboot1`). Restricted TOML subset, see Ghidra round-trip.
-- `hwdb/gen/`: generated, committed: `us48_hwdb.h`, `hwdb.rs`, `ghidra_import_hwdb.py`, `ghidra_export_hwdb.py`.
+- `hwdb/gen/`: generated, committed: `us48_hwdb.h`, `hwdb.rs`, `ghidra_import_hwdb.py`, `ghidra_export_hwdb.py`, `us48_unit1_regmap.h`, `us48_ports.h`.
 - `docs/hwdb-map.md`: generated tables. `docs/port-map.md`: port table between markers is generated.
 
 ## Schema
@@ -76,3 +76,6 @@
 ## Port map
 - `hwdb/board/ports.toml` is the source; `scripts/us48_portmap.py [switchdrvr]` verifies the FastPath table (VA 0x1d8ecb4) and the OpenBCM p2l rule against it.
 - Regenerate the docs table: `python3 scripts/hwdb_gen.py ports`.
+- Driver port tables: `python3 scripts/hwdb_gen.py ports_c` -> `hwdb/gen/us48_ports.h` (`US48_PORTS_UNIT0/1`, `struct port_cfg` initialisers used by `kernel/us48-cmic`).
+  - Rows: copper fronts (`phy` gphy|octal) + ports with a `linux` name. Name `ge<front>` for copper, `linux` otherwise.
+  - vid: copper 100 + front, xe front. GPORT block = 2 + n of `QSGMII<n>`; lane from `lane`; octal = external MIIM bus.

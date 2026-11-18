@@ -41,7 +41,7 @@
 
 ## Module reload (#78, #56)
 
-- `us48_cmic` (core + unit 0 ge1) and `us48_cmic_xe` (unit 1 xe49/xe50/ge40) are reloadable on the fly.
+- `us48_cmic` (core + unit 0 ge1-ge24) and `us48_cmic_xe` (unit 1 ge25-ge48, xe49/xe50) are reloadable on the fly; copper ports are brought up at their first `ip link set up`.
 - Every load resets the chip and runs the full cold init, whatever state it is in (no ring-map guard: `BCM_HR2_INIT_FORCE`; awto-uboot keeps its guard). A load briefly resets the switch: traffic drops (ge1 = ssh), expected.
   - Unit 0: `bcm_hr2_u0_cold_init` (stock write list), unit 1: `bcm_hr2_u1_cold_init` with the minimum list `bcm_cmic_hr2_init1_min_data.h` (5541 ops, `scripts/gen_bcm_hr2_init1_min.py` from `init_phases.py --emit-min`).
   - Order: abort both DMA channels (logged as "left by bootloader" if one was running), TOP reset + cold init, credit release (`bcm_hr2_dma_init`), rings, ports.
