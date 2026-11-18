@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * us48_cca_gpio: ChipcommonA GPIO of both chips as a read-only gpio-chip (SFP presence, #21). Unit 0: platform device
- * (DT, MMIO DIN/DOUT/OUTEN). Unit 1: aux device of us48_pci (unit 1 AXI regmap). Never writes: a line that is an
- * output (OUTEN set) cannot be requested as input; outputs and IRQs (PoE reset, LEDs, PSE IRQs) belong to their owners.
+ * us48_cca_gpio: ChipcommonA GPIO of both chips (SFP presence #21, system LED #60). Unit 0: platform device
+ * (DT, MMIO DIN/DOUT/OUTEN). Unit 1: aux device of us48_pci (unit 1 AXI regmap). Writes only the unit 0 system LED
+ * pins 6/7 (docs/leds.md); every other line is input-only: an output (OUTEN set) cannot be requested as input.
  */
 #include <linux/auxiliary_bus.h>
 #include <linux/bits.h>
@@ -16,12 +16,16 @@
 
 #define CCA_NGPIO	12	/* stock GPIOA chip: 12 lines (docs/board.md GPIO map) */
 #define CCA_DIN		0
+#define CCA_DOUT	(HW_CCA_GPIO_DOUT - HW_CCA_GPIO_DIN)
 #define CCA_OUTEN	(HW_CCA_GPIO_OUTEN - HW_CCA_GPIO_DIN)
+/* Unit 0 system LED: stock gpiodev sets OUTEN 6/7 and writes DOUT 6/7 (kernel-pse.md 3.1); uboot-1 the same */
+#define CCA_U0_OUTPUTS	(BIT(6) | BIT(7))
 
 struct cca {
 	struct gpio_chip gc;
 	struct regmap *map;
 	unsigned int base;	/* regmap address of DIN */
+	u32 outputs;		/* lines this driver may drive */
 };
 
 static int cca_get_direction(struct gpio_chip *gc, unsigned int off)
@@ -44,8 +48,39 @@ static int cca_get(struct gpio_chip *gc, unsigned int off)
 	return ret ?: !!(v & BIT(off));
 }
 
-/* No direction_input/output, no set: gpiolib accepts an input request only while get_direction says IN. */
-static int cca_register(struct device *dev, struct regmap *map, unsigned int base, bool can_sleep)
+static int cca_set(struct gpio_chip *gc, unsigned int off, int val)
+{
+	struct cca *c = gpiochip_get_data(gc);
+
+	if (!(c->outputs & BIT(off)))
+		return -EPERM;
+	return regmap_update_bits(c->map, c->base + CCA_DOUT, BIT(off), val ? BIT(off) : 0);
+}
+
+/* Value first, then OUTEN: no glitch to the old DOUT level */
+static int cca_direction_output(struct gpio_chip *gc, unsigned int off, int val)
+{
+	struct cca *c = gpiochip_get_data(gc);
+	int ret = cca_set(gc, off, val);
+
+	return ret ?: regmap_update_bits(c->map, c->base + CCA_OUTEN, BIT(off), BIT(off));
+}
+
+/* Input request: drivable lines turn their output off; the others are accepted only while already inputs */
+static int cca_direction_input(struct gpio_chip *gc, unsigned int off)
+{
+	struct cca *c = gpiochip_get_data(gc);
+	int dir;
+
+	if (c->outputs & BIT(off))
+		return regmap_update_bits(c->map, c->base + CCA_OUTEN, BIT(off), 0);
+	dir = cca_get_direction(gc, off);
+	if (dir < 0)
+		return dir;
+	return dir == GPIO_LINE_DIRECTION_IN ? 0 : -EPERM;
+}
+
+static int cca_register(struct device *dev, struct regmap *map, unsigned int base, bool can_sleep, u32 outputs)
 {
 	struct cca *c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
 
@@ -53,6 +88,7 @@ static int cca_register(struct device *dev, struct regmap *map, unsigned int bas
 		return -ENOMEM;
 	c->map = map;
 	c->base = base;
+	c->outputs = outputs;
 	c->gc.label = dev_name(dev);
 	c->gc.parent = dev;
 	c->gc.owner = THIS_MODULE;
@@ -61,6 +97,9 @@ static int cca_register(struct device *dev, struct regmap *map, unsigned int bas
 	c->gc.can_sleep = can_sleep;
 	c->gc.get_direction = cca_get_direction;
 	c->gc.get = cca_get;
+	c->gc.set = cca_set;
+	c->gc.direction_input = cca_direction_input;
+	c->gc.direction_output = cca_direction_output;
 	return devm_gpiochip_add_data(dev, &c->gc, c);
 }
 
@@ -78,7 +117,7 @@ static int cca_plat_probe(struct platform_device *pdev)
 	map = devm_regmap_init_mmio(&pdev->dev, base, &cca_mmio_cfg);
 	if (IS_ERR(map))
 		return PTR_ERR(map);
-	return cca_register(&pdev->dev, map, 0, false);
+	return cca_register(&pdev->dev, map, 0, false, CCA_U0_OUTPUTS);
 }
 
 static const struct of_device_id cca_of_match[] = {
@@ -99,7 +138,7 @@ static int cca_aux_probe(struct auxiliary_device *adev, const struct auxiliary_d
 
 	if (IS_ERR_OR_NULL(map))
 		return map ? PTR_ERR(map) : -ENODEV;
-	return cca_register(&adev->dev, map, HW_CCA_BASE + HW_CCA_GPIO_DIN, true);
+	return cca_register(&adev->dev, map, HW_CCA_BASE + HW_CCA_GPIO_DIN, true, 0);
 }
 
 static const struct auxiliary_device_id cca_aux_ids[] = {
@@ -135,5 +174,5 @@ static void __exit cca_exit(void)
 module_init(cca_init);
 module_exit(cca_exit);
 
-MODULE_DESCRIPTION("UniFi US-48-500W ChipcommonA GPIO inputs (both chips), read-only gpio-chip");
+MODULE_DESCRIPTION("UniFi US-48-500W ChipcommonA GPIO (both chips): inputs, unit 0 system LED outputs");
 MODULE_LICENSE("GPL");

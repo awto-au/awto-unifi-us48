@@ -1395,6 +1395,7 @@ void us48_remove_common(struct us48_cmic *u)
 	int i;
 
 	schan_unit_set(u, false);
+	us48_led_unit_exit(u);
 	cancel_delayed_work_sync(&u->link_work);
 	/* ndo_stop of an open port stops the poll timer, NAPI and both channels. */
 	for (i = 0; i < u->nports; i++) {
@@ -1620,6 +1621,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		netdev_info(u->port[i]->ndev, "front %d (logical port %d), MAC %pM, VLAN %d\n", u->port[i]->cfg->front,
 			    u->port[i]->cfg->lport, u->port[i]->ndev->dev_addr, u->port[i]->vid);
 	}
+	us48_led_unit_init(u);
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 	schan_unit_set(u, true);
 	if (tsc_log)
@@ -1719,18 +1721,25 @@ static int __init us48_cmic_init(void)
 {
 	int ret = us48_sw_init();	/* unit 1 (us48_cmic_xe.ko) ports use it too */
 
-	if (ret || !unit0)
+	if (ret)
 		return ret;
-	ret = platform_driver_register(&us48_cmic_plat_driver);
+	ret = us48_led_init();
 	if (ret)
 		goto err_sw;
+	if (!unit0)
+		return 0;
+	ret = platform_driver_register(&us48_cmic_plat_driver);
+	if (ret)
+		goto err_led;
 	unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
 	if (IS_ERR(unit0_pdev)) {
 		ret = PTR_ERR(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
-		goto err_sw;
+		goto err_led;
 	}
 	return 0;
+err_led:
+	us48_led_exit();
 err_sw:
 	us48_sw_exit();
 	return ret;
@@ -1742,6 +1751,7 @@ static void __exit us48_cmic_exit(void)
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
+	us48_led_exit();
 	us48_sw_exit();
 }
 

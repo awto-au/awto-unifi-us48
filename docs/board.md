@@ -212,6 +212,8 @@ Sensor read `0x5f65e4(idx, out)`: `out[0]` status (2 = limit > value, 3 = limit 
 
 ## GPIO map (SoC ChipcommonA GPIO, `0x18000060` DIN / `0x64` DOUT / `0x68` OUTEN)
 
+Mainline use of the button and system LED lines: [leds.md](leds.md).
+
 Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux GPIO n = CCA bit n−4. C unless marked.
 
 | Linux GPIO | CCA bit | Function | Evidence |
@@ -372,6 +374,7 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
   - Other 256-byte LED programs: `0x1411a54` (`0x6f2e8`, sets data-RAM byte `0xbf`) and `0x1d51ba4` (`0x6f6a0`, sets data-RAM byte `0xbe` = count), both followed by `0x6ed04` / `0x6eb08` (CMIC LED pin config RMW). I: SDK locator/blink helpers.
   - Hidden `ubntdiag ledtest` ([stock-debug-cli.md](stock-debug-cli.md)) loads tiny test programs (68 B: `67 36` repeated, `0x15a3f34` / `0x15a4034`..`0x15a4434`) into LEDUP and writes the MSPI 2-bit-per-port frames (`0x5f6a40`), so link/act LEDs are LEDUP and PoE LEDs are MSPI. C (code), I (colour mapping).
   - Open: LEDUP serial pins (LED_CLK/LED_DATA, pad mux) and the external shift-register chain; front 49-52.
+  - Mainline: our own LEDUP program + driver, chain format and colours as board-test items: [leds.md](leds.md).
 
 ## Open questions
 

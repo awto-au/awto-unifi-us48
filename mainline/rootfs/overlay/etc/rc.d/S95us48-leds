@@ -1,0 +1,15 @@
+#!/bin/sh
+# End of boot (docs/leds.md): system LED from booting blink to steady white; port LEDs leave the booting pattern
+# (st1008f stage-0 rule: `clear` only while state = booting, so an error latched during boot stays).
+exec 2>/dev/kmsg
+W=/sys/class/leds/white:status
+if [ -d $W ]; then
+	echo none > $W/trigger
+	echo 1 > $W/brightness
+fi
+L=/sys/devices/platform/us48-leds
+if [ -r $L/state ]; then
+	case "$(cat $L/state)" in
+	booting*) echo 1 > $L/clear ;;
+	esac
+fi

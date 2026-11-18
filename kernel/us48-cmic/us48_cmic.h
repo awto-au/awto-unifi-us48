@@ -175,6 +175,7 @@ struct us48_cmic {
 	u32 l2ev, l2full, l2resyncs, l2mismatch, l2fast;	/* since the FIFO went on (logged when it goes off) */
 	bool l2resync;			/* FIFO was full or a pop failed: events may be lost; rtnl */
 	bool l2mod_on;			/* rtnl */
+	struct us48_ledu *leds;		/* LEDUP0 port LEDs (us48_cmic_led.c), NULL = none */
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */
@@ -223,6 +224,11 @@ int us48_higig_up(struct us48_cmic *u, const struct firmware *fw);
 void us48_higig_status(struct us48_cmic *u);
 
 bool us48_is_port(const struct net_device *nd);
+/* Port LEDs (us48_cmic_led.c, docs/leds.md): module init/exit, per unit after register_netdev / before unregister. */
+int us48_led_init(void);
+void us48_led_exit(void);
+void us48_led_unit_init(struct us48_cmic *u);
+void us48_led_unit_exit(struct us48_cmic *u);
 /* switchdev L2 offload, stage 1 (us48_cmic_sw.c, docs/switchdev.md); rtnl held unless noted. */
 #if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 int us48_sw_init(void);			/* module init, no rtnl */

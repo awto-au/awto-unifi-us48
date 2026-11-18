@@ -154,8 +154,37 @@ src = "common/bcm-cmic/bcm_cmic_hr2.c CMIC_RXBUF_EP_RLS_CRED"
 
 [block.cmic0.reg.LEDUP_CTRL]
 offset = 0x20000
-desc = "CMICd LED processor: control +0x20000 (bit 0 start), data RAM +0x20400, program RAM +0x20800"
-src = "docs/board.md LEDUP (0x120ed64 sequence)"
+sdk = "CMIC_LEDUP0_CTRL"
+fields = ["EN 0", "SCAN_INTRA_PORT_DELAY 3:1", "SCAN_START_DELAY 9:4"]
+desc = "CMICd LED processor 0: EN starts the program; the delays stay as found (docs/leds.md)"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_CTRL; docs/board.md LEDUP (0x120ed64 sequence)"
+
+[block.cmic0.reg.LEDUP_STATUS]
+offset = 0x20004
+access = "ro"
+sdk = "CMIC_LEDUP0_STATUS"
+fields = ["PC 7:0", "RUNNING 8", "INITIALISING 9"]
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_STATUS"
+
+[block.cmic0.reg.LEDUP_CLK_PARAMS]
+offset = 0x20050
+access = "ro"
+sdk = "CMIC_LEDUP0_CLK_PARAMS"
+fields = ["REFRESH_CYCLE_PERIOD 25:0", "LEDCLK_HALF_PERIOD 30:26"]
+desc = "reset 0x505b8d80 = half period 20, refresh 6000000 core clocks; read only by us (docs/leds.md)"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_CLK_PARAMS; hwdb/validation/u0-values.tsv"
+
+[block.cmic0.reg.LEDUP_DATA_RAM]
+offset = 0x20400
+sdk = "CMIC_LEDUP0_DATA_RAM"
+desc = "256 x 32-bit words, bits 7:0 used; 0x80-0xff = program state (docs/leds.md layout)"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_DATA_RAM (numels 256, stride 4)"
+
+[block.cmic0.reg.LEDUP_PROGRAM_RAM]
+offset = 0x20800
+sdk = "CMIC_LEDUP0_PROGRAM_RAM"
+desc = "256 x 32-bit words, one program byte each"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_PROGRAM_RAM (numels 256, stride 4)"
 
 [block.cmic_mspi]
 space = "axi0"
