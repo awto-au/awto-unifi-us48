@@ -78,10 +78,11 @@ struct port_cfg {
 	u8 front, lport, lane;
 	bool copper;
 	u16 vid;			/* private VLAN id */
-	u8 blk, phy;			/* copper: GPORT block, integrated GPHY address on internal MIIM bus 0 */
+	u8 blk, phy;			/* copper: GPORT block and MIIM PHY address */
+	bool external_phy;		/* copper PHY is on external MIIM bus 0 */
 };
 
-#define MAXPORTS	3
+#define MAXPORTS	26
 
 struct us48_cmic;
 
@@ -140,6 +141,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		      int nports, u8 modid, const struct firmware *fw, us48_serdes_init_t serdes_init, struct us48_cmic **out);
 /* Reset + full cold init of one chip (every load, whatever state it is in), DMA stopped first. unit 0 or 1. */
 int us48_chip_cold_init(struct device *dev, void __iomem *cmic, int unit);
+void us48_mdio_scan(struct us48_cmic *u);
 /* Unbind: stop link polling, unregister the netdevs (ndo_stop), stop DMA for good and self-check. */
 void us48_remove_common(struct us48_cmic *u);
 /* Stop link polling and DMA, park the ports in VLAN 1 (shutdown). */

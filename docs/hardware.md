@@ -28,7 +28,7 @@ boot log, `/proc/bus/pci/devices`, `/proc/interrupts`, `swctrl port|sfp show`.
 | CPU | see #17 | | 400 MHz (`arm_clk=400MHz`) | #17 |
 | DDR3 | see #55 | | 667 MHz | #55 |
 
-- Two-chip split: front 1-24 + 51-52 on the BCM53344, 25-50 on the BCM53346; 2x13G HiGig between them ([board.md](board.md#two-chip-layout)). Unit 0 (live scan): 16 integrated copper PHYs + one external octal PHY; unit 1 not scanned (board.md Port map).
+- Two-chip split: front 1-24 + 51-52 on the BCM53344, 25-50 on the BCM53346; 2x13G HiGig between them ([board.md](board.md#two-chip-layout)). Native-Linux scans (2026-11-17) confirm 16 integrated copper PHYs and eight external octal PHYs on each unit.
 - Do not infer PHY or PoE-controller part numbers from the model name.
 
 ## Console and boot

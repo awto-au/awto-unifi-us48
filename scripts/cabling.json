@@ -1,13 +1,13 @@
 {
   "_doc": "Current bench cabling of the US-48. Edit when a cable moves; docs/port-map.md describes the fixed port map only. Ports by panel label + stock front number.",
-  "updated": "2026-11-16",
+  "updated": "2026-11-17",
   "ports": [
     {
       "label": "SFP+ 1",
       "front": 49,
       "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic)",
-      "far_end": "sw1 lan7 (optic SN F2220031785); confirmed by sw1 FDB (xe49 MAC 02:75:73:34:38:31 learned on lan7), 2026-11-16, #87",
-      "link": "10G up with the flashed kernel slot (tx_credit_cycle), #78"
+      "far_end": "sw1 lan7 was FDB-verified on 2026-11-16 (#87); current endpoint is not identified because sw1 lan7 is down while xe49 is up. SW2 lan2 is not a peer: its AQR113C copper SFP+ cannot connect to this LC/SR optic.",
+      "link": "xe49 carrier 1 on RAM Linux build #105 at 15:24 AEDT; sw1 lan7 carrier 0 at about the same time. Current far end unresolved."
     },
     {
       "label": "SFP+ 2",
@@ -33,9 +33,9 @@
     {
       "label": "RJ45 17",
       "front": 17,
-      "module": "PoE camera",
-      "far_end": "camera",
-      "link": "100M up"
+      "module": "PoE camera (historical inventory)",
+      "far_end": "camera per 2026-11-16 inventory; current endpoint not verified",
+      "link": "100M up in the 2026-11-16 inventory; no carrier on RAM-booted native Linux build #105 (2026-11-17). SW2 lan2 is a 10GBASE-T gateway link, not the front-17 peer; see awto-au/awto-tl-st1008f#169"
     },
     {
       "label": "RJ45 40",

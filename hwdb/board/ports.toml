@@ -14,7 +14,7 @@ phy_bus = "int0"
 phy_addr = 0x9
 lane = "QSGMII0 lane 7"
 sdk = "ge0"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -26,9 +26,10 @@ logical = 3
 phys = 8
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x8
 lane = "QSGMII0 lane 6"
 sdk = "ge1"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -40,9 +41,10 @@ logical = 4
 phys = 7
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x7
 lane = "QSGMII0 lane 5"
 sdk = "ge2"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -54,9 +56,10 @@ logical = 5
 phys = 6
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x6
 lane = "QSGMII0 lane 4"
 sdk = "ge3"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -68,9 +71,10 @@ logical = 6
 phys = 5
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x4
 lane = "QSGMII0 lane 3"
 sdk = "ge4"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -82,9 +86,10 @@ logical = 7
 phys = 4
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x3
 lane = "QSGMII0 lane 2"
 sdk = "ge5"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -96,9 +101,10 @@ logical = 8
 phys = 3
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x2
 lane = "QSGMII0 lane 1"
 sdk = "ge6"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -110,9 +116,10 @@ logical = 9
 phys = 2
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x1
 lane = "QSGMII0 lane 0"
 sdk = "ge7"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -124,9 +131,10 @@ logical = 10
 phys = 10
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xb
 lane = "QSGMII1 lane 0"
 sdk = "ge8"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -138,9 +146,10 @@ logical = 11
 phys = 11
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xc
 lane = "QSGMII1 lane 1"
 sdk = "ge9"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -152,9 +161,10 @@ logical = 12
 phys = 12
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xd
 lane = "QSGMII1 lane 2"
 sdk = "ge10"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -166,9 +176,10 @@ logical = 13
 phys = 13
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xe
 lane = "QSGMII1 lane 3"
 sdk = "ge11"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -180,9 +191,10 @@ logical = 14
 phys = 14
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x10
 lane = "QSGMII1 lane 4"
 sdk = "ge12"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -194,9 +206,10 @@ logical = 15
 phys = 15
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x11
 lane = "QSGMII1 lane 5"
 sdk = "ge13"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -208,9 +221,10 @@ logical = 16
 phys = 16
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x12
 lane = "QSGMII1 lane 6"
 sdk = "ge14"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -222,9 +236,10 @@ logical = 17
 phys = 17
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x13
 lane = "QSGMII1 lane 7"
 sdk = "ge15"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -239,7 +254,7 @@ phy_bus = "ext0"
 phy_addr = 0x14
 lane = "QSGMII2 lane 0"
 sdk = "ge16"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -254,7 +269,7 @@ phy_bus = "ext0"
 phy_addr = 0x15
 lane = "QSGMII2 lane 1"
 sdk = "ge17"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -269,7 +284,7 @@ phy_bus = "ext0"
 phy_addr = 0x16
 lane = "QSGMII2 lane 2"
 sdk = "ge18"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -284,7 +299,7 @@ phy_bus = "ext0"
 phy_addr = 0x17
 lane = "QSGMII2 lane 3"
 sdk = "ge19"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -299,7 +314,7 @@ phy_bus = "ext0"
 phy_addr = 0x18
 lane = "QSGMII2 lane 4"
 sdk = "ge20"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -314,7 +329,7 @@ phy_bus = "ext0"
 phy_addr = 0x19
 lane = "QSGMII2 lane 5"
 sdk = "ge21"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -329,7 +344,7 @@ phy_bus = "ext0"
 phy_addr = 0x1a
 lane = "QSGMII2 lane 6"
 sdk = "ge22"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -344,7 +359,7 @@ phy_bus = "ext0"
 phy_addr = 0x1b
 lane = "QSGMII2 lane 7"
 sdk = "ge23"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -356,9 +371,10 @@ logical = 2
 phys = 9
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x9
 lane = "QSGMII0 lane 7"
 sdk = "ge0"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -370,9 +386,10 @@ logical = 3
 phys = 8
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x8
 lane = "QSGMII0 lane 6"
 sdk = "ge1"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -384,9 +401,10 @@ logical = 4
 phys = 7
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x7
 lane = "QSGMII0 lane 5"
 sdk = "ge2"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -398,9 +416,10 @@ logical = 5
 phys = 6
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x6
 lane = "QSGMII0 lane 4"
 sdk = "ge3"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -412,9 +431,10 @@ logical = 6
 phys = 5
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x4
 lane = "QSGMII0 lane 3"
 sdk = "ge4"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -426,9 +446,10 @@ logical = 7
 phys = 4
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x3
 lane = "QSGMII0 lane 2"
 sdk = "ge5"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -440,9 +461,10 @@ logical = 8
 phys = 3
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x2
 lane = "QSGMII0 lane 1"
 sdk = "ge6"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -454,9 +476,10 @@ logical = 9
 phys = 2
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x1
 lane = "QSGMII0 lane 0"
 sdk = "ge7"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -468,9 +491,10 @@ logical = 10
 phys = 10
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xb
 lane = "QSGMII1 lane 0"
 sdk = "ge8"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -482,9 +506,10 @@ logical = 11
 phys = 11
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xc
 lane = "QSGMII1 lane 1"
 sdk = "ge9"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -496,9 +521,10 @@ logical = 12
 phys = 12
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xd
 lane = "QSGMII1 lane 2"
 sdk = "ge10"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -510,9 +536,10 @@ logical = 13
 phys = 13
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0xe
 lane = "QSGMII1 lane 3"
 sdk = "ge11"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -524,9 +551,10 @@ logical = 14
 phys = 14
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x10
 lane = "QSGMII1 lane 4"
 sdk = "ge12"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -538,9 +566,10 @@ logical = 15
 phys = 15
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x11
 lane = "QSGMII1 lane 5"
 sdk = "ge13"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -552,9 +581,10 @@ logical = 16
 phys = 16
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x12
 lane = "QSGMII1 lane 6"
 sdk = "ge14"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -566,9 +596,10 @@ logical = 17
 phys = 17
 phy = "gphy"
 phy_bus = "int0"
+phy_addr = 0x13
 lane = "QSGMII1 lane 7"
 sdk = "ge15"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s4 MIIM formula; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; jack mapping inferred"
 conf = "I"
 
 [[port]]
@@ -583,7 +614,7 @@ phy_bus = "ext0"
 phy_addr = 0x14
 lane = "QSGMII2 lane 0"
 sdk = "ge16"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -598,7 +629,7 @@ phy_bus = "ext0"
 phy_addr = 0x15
 lane = "QSGMII2 lane 1"
 sdk = "ge17"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -613,7 +644,7 @@ phy_bus = "ext0"
 phy_addr = 0x16
 lane = "QSGMII2 lane 2"
 sdk = "ge18"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -628,7 +659,7 @@ phy_bus = "ext0"
 phy_addr = 0x17
 lane = "QSGMII2 lane 3"
 sdk = "ge19"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -643,7 +674,7 @@ phy_bus = "ext0"
 phy_addr = 0x18
 lane = "QSGMII2 lane 4"
 sdk = "ge20"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -658,7 +689,7 @@ phy_bus = "ext0"
 phy_addr = 0x19
 lane = "QSGMII2 lane 5"
 sdk = "ge21"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -673,7 +704,7 @@ phy_bus = "ext0"
 phy_addr = 0x1a
 lane = "QSGMII2 lane 6"
 sdk = "ge22"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]
@@ -688,7 +719,7 @@ phy_bus = "ext0"
 phy_addr = 0x1b
 lane = "QSGMII2 lane 7"
 sdk = "ge23"
-src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; unit 0 PHY addresses live-scanned 2026-11-12, unit 1 and GPHY addresses other than front 1 not read"
+src = "docs/board.md Port map; docs/driver-internals.md s13; OpenBCM p2l_mapping_24_2_2; bus-0 PHY IDs live-scanned on both chips 2026-11-17; front-to-PHY mapping remains unverified"
 conf = "I"
 
 [[port]]

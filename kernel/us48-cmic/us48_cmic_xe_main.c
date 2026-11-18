@@ -80,6 +80,28 @@ static int tsc_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops tsc_ops = { .set = tsc_set };
 module_param_cb(tsc, &tsc_ops, NULL, 0200);
 
+/* echo 1 > /sys/module/us48_cmic_xe/parameters/phy_scan: read internal/external bus-0 PHYs, no PHY writes. */
+static int phy_scan_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int scan;
+	int ret = kstrtouint(val, 0, &scan);
+
+	if (ret || !scan)
+		return ret;
+	mutex_lock(&dump_lock);
+	if (!dump_u)
+		ret = -ENODEV;
+	else {
+		us48_mdio_scan(dump_u);
+		ret = 0;
+	}
+	mutex_unlock(&dump_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops phy_scan_ops = { .set = phy_scan_set };
+module_param_cb(phy_scan, &phy_scan_ops, NULL, 0200);
+
 /* Run fn on the xe port of that front number under dump_lock (unbind waits for it). */
 static int xe_port_op(unsigned int front, u32 lo, u32 hi, int aer, bool restart)
 {

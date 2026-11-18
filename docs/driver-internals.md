@@ -177,7 +177,7 @@ OM `phy/PKG/bus/bcm56150_miim_int/bcm56150_miim_int.c`, `phy/PKG/chip/bcm56150/b
 - Live scan (issue #4) matches: p2..17 -> internal bus 0 addrs 1-4, 6-9, 11-14, 16-19 (16 PHYs). Logical 2 = phys 9 = addr 9 = front 1. C
   - Front 1-8 = logical 2-9 = phys 9..2 = addr 9, 8, 7, 6, 4, 3, 2, 1.
   - Front 9-16 = logical 10-17 = phys 10..17 = addr 11, 12, 13, 14, 16, 17, 18, 19.
-  - Front 17-24 = logical 18-25: external octal PHY (live: ext bus 0, addr 0x14-0x1b), OM expects internal bus 1 SerDes (QSGMII) for these ports. Mapping of 0x14-0x1b to ports not verified. I
+  - Front 17-24 = logical 18-25: external octal PHY. OpenBCM's `port_phy_addr_<logical>` maps logical 18-25 to external bus 0 addresses 0x14-0x1b; with the front-port map, front 17 maps to 0x14 through front 24 to 0x1b. Native Linux has confirmed these PHY IDs on both chips; cable-by-cable jack/partner validation remains. OM expects internal bus 1 SerDes (QSGMII) for these ports. C / I
 - Probe ID: `0x600d` / `0x85b0` (rev nibble masked) = "Internal Octal QSGMII Gigabit PHY" (BCM54282 family; driver reuses `bcm54282_drv`). C
 - PHY instance number (lane in octal): `inst = 9 - p` for p < 10, else `p - 2`. C
 - GPHY init sequence (OM `bcm56150_phy_init`, register names; addresses are in `phy/PKG/chip/bcm54282_defs.h`, not in the vendor subset): C
@@ -431,7 +431,7 @@ Question: front 1 (logical 2, phys 9, GPORT0 MAC 0, GPHY internal bus 0 addr 9) 
   - The "QSGMII" in the GPHY driver name / EEE field `EEE_CAPABILITY_USING_QSGMII_AN` refers to the GPHY's MAC-side interface, which is internal and has no MDIO-visible SerDes core in OM.
 - **Internal bus 1 addrs 2/4/6/8 (ID 0x600d8770) are TSC cores, not QSGMII.** C
   - `bcmi_tsc_xgxs_drv.c`: `BCM_SERDES_PHY_ID0 0x600d`, `ID1 0x8770`, SERDES_ID model 0x11 (section 9).
-  - QSGMII 65nm core ID is `0x0143`/`0xbff0` (reg 2/3), SERDES_ID0 model 0x07 (`bcmi_qsgmii_serdes_drv.c`). Not seen in the live scan (bus 1 addr 17 silent).
+  - QSGMII 65nm core ID is `0x0143`/`0xbff0` (reg 2/3), SERDES_ID0 model 0x07 (`bcmi_qsgmii_serdes_drv.c`). Native Linux scan (2026-11-17) found it on external bus 0 addr 0x1c; bus 1 addr 17 remains silent.
   - OM maps TSC lanes to bus 1 addr `1+(p-26)` (odd addrs for p26/28/30/32); live answers are at 2/4/6/8, i.e. +1. Offset unexplained (I).
 - Lane mapping for phys 9 (logical 2): C
   - GPORT0 MAC lane 7 (static analysis of the stock trace, #31; the earlier lane-0 reading was wrong and probably explains the zero MIBs; untested on HW).
@@ -471,6 +471,7 @@ S-channel words (header, address): READ_REG op 0x0b, header = `0x2c000000 | blk<
   3. exit: reg **0x1E <- 0x0087**, reg **0x1F <- 0x8000** (restores legacy meaning of 0x1E/0x1F).
 - Without step 1, reg 0x1E is the legacy `TEST1` (OM `BCM54282_TEST1r` = 0x1e RAW) so RDB reads return junk/0: matches the live "RDB 0x02a / 0x125 read 0". I
 - Legacy regs (0x00-0x1d) stay reachable in RDB mode; stock does enter/exit per access, so do not leave RDB mode on across other MIIM users.
+- The native shared MIIM RDB accessors now perform this enter/access/exit sequence for every operation, under the caller-held MIIM lock. A RAM-only hardware test verified distinct live values for `POWER_MII_CTRL`, `DSP_TAP10`, and `TOP_MISC_GLOBAL_RESET`; the first implementation omitted the enter/exit and its RDB reads were invalid.
 - Stock `phy_bcm542xx_reset_setup` (`0x10d116c`, C), RDB writes in order: 0x82b = 0x8400; rev-dependent block (0x28 = 0xc00, 0x152 = 0x8787, 0x156 = 0x17d, 0x28 = 0x400, 0x1c0 = 0xd771, 0x1c2 = 0x72, 0x1cf = 6, 0xd8 = 0x20, 0x1cc = 0x500, 0x1c5 = 0xc100, 0xff = 0x1000, 0xfb = 0x7c00 then 0, 0x2a = 0x6e2 or 0x6c2 per property `port_super_isolate` default 2); then always 0x28 = 0xc00, **0x125 = 0x011b**, **0x2a &= ~0x20**, 0x1f = 0xbc00. OM has the 0x82b, 0x125, 0x2a subset only (section 7). Meaning of the rev block and 0x28 is unknown (I).
 - Stock also uses a second address per octal (`phy_port_primary_and_offset`: primary lane addr and offset) for some RDB regs (0x83c); lane 0 of the octal = front 1 (addr 9). I
 
@@ -489,6 +490,12 @@ Order matters: PHY side first, then MAC. Skip steps whose read-only check alread
 - No QSGMII2X / TSC write is part of this sequence: none exists for GPORT0/1 in source or stock (12.1).
 - If check 1 shows LINK_STATUS=1 and checks 3/13 are already clean, steps 3-6 are no-ops and the remaining suspects are MAC reset/clock (step 7) and the S-channel port index / block pick for the MIB read (verify the same `P` hits `MAC_0`). I
 - Open: whether anything besides SUPER_ISOLATE / EXT_PWRDOWN gates the GPHY->MAC interface; stock's per-port enable (`phy_enable_set`, RDB reg 0 b11 + reg 0x1a bits) was seen but not fully traced (`0x10d0f54`, case 0x2b).
+
+### 12.6 Native Linux QSGMII2 initialization gap
+- The native `bcm_hr2_ge_bringup()` path initializes each external BCM54282 copper PHY and the GPORT2 MAC, but does not access the QSGMII65 core at external MIIM bus 0 address `0x1c` or run stock `phy_qsgmii65_init()` (`tmp/ghidra/out/switchdrvr/switchdrvr.c`, `0x10a58b4`). Stock's routine resets that core, polls reset completion, and configures its 1000X/AN controls (12.2).
+- Before a peer was attached, external PHY `0x14` and GPORT2 lane 0 were down and the QSGMII2 clock-valid bits `[23:16]` were zero. A short cable from front 17 (`ge17`) to front 8 (`ge8`) changed that: both PHYs report link, both MAC_MODE reads are `0x2a` (LINK_STATUS set, 1G), and `TOP_L1_RCVD_CLK_VALID_STATUS_1` is `0x000f0281` (QC2 low nibble `0xf`). The read-only scan reports `0x14` BMSR `0x79ed` / ANLPAR `0xc5e1` and internal PHY `0x01` BMSR `0x79ed` / ANLPAR `0xc1e1`.
+- The same representative test on unit 1, front 41 (`ge41`) to front 32 (`ge32`), also brought both ports up at 1G. External PHY `0x14` and internal PHY `0x01` report BMSR `0x79ed`, ANLPAR `0xc5e1` and `0xc1e1` respectively; both MAC_MODE reads are `0x2a`, and unit-1 `TOP_L1_RCVD_CLK_VALID_STATUS_1` is `0x000f0045` (QC2 low nibble `0xf`).
+- This proves the front-17 octal PHY-to-GPORT2 lane-0 link can come up with the current RAM-booted configuration. The missing explicit QSGMII65 init remains a source-level difference, not a demonstrated blocker for this lane. If another lane fails with a known peer, first inspect per-lane `XGXSSTATUS` (`0x8001`), `PLL_STATUS` (`0x8050`), `RX_SIGDET` (`0x80b4`), and 1000X status (`0x8304`, `0x8124`) through the `0x1c` indirect block/AER interface, using selector writes only; do not reset or configure the core based on the earlier no-peer state.
 
 ## 13. Unit-1 10G (TSC) status + recovery recipe
 

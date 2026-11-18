@@ -1,13 +1,13 @@
-# Gaps: what is missing for a full Linux/OpenWrt port
+# Gaps: what is missing for a full native Linux port
 
-Ranked by blocking effect. Snapshot 2026-11-14. Detail lives in the linked docs and issues.
+Ranked by blocking effect. Snapshot 2026-11-17. Detail lives in the linked docs and issues.
 
 | # | Gap | Why it matters | Evidence | Issue | Cheapest next step | Board? |
 |---|---|---|---|---|---|---|
-| 1 | Forwarding model: switchdev/DSA, VLAN/FDB/STP offload, bridge across both chips (HiGig 28/29) | Today each port is a private CPU-only VLAN; no switching in Linux | [driver-internals.md](driver-internals.md), [openwrt-port.md](openwrt-port.md) m4 | #57 (NEW), #4 | design doc `docs/switch-model.md`; software-bridge baseline | doc n, bench y |
+| 1 | Forwarding model: switchdev/DSA, VLAN/FDB/STP offload, bridge across both chips (HiGig 28/29) | Today each port is a private CPU-only VLAN; no switching in Linux | [switch-model.md](switch-model.md), [driver-internals.md](driver-internals.md) | #57, #4 | isolated software-bridge baseline, then same-chip and cross-HiGig hardware forwarding | bench y |
 | 2 | Large-frame RX loss on ge1 (>5 Mbit/s) | Management/CPU path unusable for real traffic | #56 | #56 | read GPORT RDBGC/RDROP + MMU drop counters, CPU-port COS limits | y |
-| 3 | Copper PHY/octal PHY Linux driver + CMIC MDIO bus; only fronts 1 and 40 verified | No link on 46 of 48 ports from our code | [hardware.md](hardware.md) unit 1 scans, [port-map.md](port-map.md) | #58 (NEW), #4, #31 | PHY ID + AN table for all ports, both units | y |
-| 4 | SerDes (QSGMII/TSC4) cold init, 10G SFP+/SFP, sfp/phylink (presence, TX-disable, EEPROM) | 4 cages incl. the 10G house uplink work only on a stock-initialised chip | [board.md](board.md) SFP, port-map | #58 (NEW), #31 | per-cage read-only status; identify bus-1 IDs 0x8770/0xbff0 | y |
+| 3 | Octal-PHY carrier and QSGMII2X/GPORT2 link | Representative 1G pairs on unit 0 (fronts 17/8) and unit 1 (fronts 41/32) both link; individual jacks are not cable-tested | [switch-model.md](switch-model.md), [driver-internals.md](driver-internals.md) §12.6 | #58, #4, #31 | Continue to ASIC forwarding; investigate individual copper ports only if inventory or use exposes an anomaly | y |
+| 4 | SFP+/TSC link, peer mapping, and cage control (presence, TX-disable, EEPROM) | `xe49` has PCS sync/link in mainline; `xe50` is down; `xe49` far end and packet path remain unverified | [switch-model.md](switch-model.md), [board.md](board.md) SFP | #58, #31 | Keep `xe49` as the representative SFP+ link; identify its far end and verify traffic if a known peer is available; investigate other cages only on anomalies | y |
 | 5 | Unit 1 (PCIe) path: IRQ instead of polling, RX stall, driver structure | Half the ports sit behind it | #4 comments, #46 | #4, #46 | RX counters on unit 1 vs unit 0 | y |
 | 6 | PoE: BCM59111 PSE driver, firmware load, per-port control, power budget (436 W) | Core product feature; today PoE is only turned off | [poe.md](poe.md), [kernel-pse.md](kernel-pse.md) | #26, #23, #24, #28 | userspace prototype on one card (needs owner OK) | y |
 | 7 | Flash layout, rootfs, sysupgrade A/B | No installable image; initramfs only | [openwrt-port.md](openwrt-port.md) m6, [hardware.md](hardware.md) flash map | #59 (NEW) | `docs/flash-layout.md`, RAM-boot squashfs test | doc n, test y |

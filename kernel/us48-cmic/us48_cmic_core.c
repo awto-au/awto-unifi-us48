@@ -28,12 +28,58 @@
 const struct port_cfg us48_unit1_cfgs[] = {
 	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 },
 	{ .name = "xe50", .vid = 50, .front = 50, .lport = 27, .lane = 2 },
-	/* Front 40 = logical 17, GPORT1 (block 3) lane 7, GPHY addr 19 (hardware.md, stock S-channel trace #31). */
+	/* GPHY addresses follow the physical-port mapping in docs/driver-internals.md section 4. */
+	{ .name = "ge25", .vid = 125, .front = 25, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 9 },
+	{ .name = "ge26", .vid = 126, .front = 26, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 8 },
+	{ .name = "ge27", .vid = 127, .front = 27, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 7 },
+	{ .name = "ge28", .vid = 128, .front = 28, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 6 },
+	{ .name = "ge29", .vid = 129, .front = 29, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 4 },
+	{ .name = "ge30", .vid = 130, .front = 30, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 3 },
+	{ .name = "ge31", .vid = 131, .front = 31, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 2 },
+	{ .name = "ge32", .vid = 132, .front = 32, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 1 },
+	{ .name = "ge33", .vid = 133, .front = 33, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 11 },
+	{ .name = "ge34", .vid = 134, .front = 34, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 12 },
+	{ .name = "ge35", .vid = 135, .front = 35, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 13 },
+	{ .name = "ge36", .vid = 136, .front = 36, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 14 },
+	{ .name = "ge37", .vid = 137, .front = 37, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 16 },
+	{ .name = "ge38", .vid = 138, .front = 38, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 17 },
+	{ .name = "ge39", .vid = 139, .front = 39, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 18 },
 	{ .name = "ge40", .vid = 40, .front = 40, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 19 },
+	{ .name = "ge41", .vid = 141, .front = 41, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true },
+	{ .name = "ge42", .vid = 142, .front = 42, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true },
+	{ .name = "ge43", .vid = 143, .front = 43, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true },
+	{ .name = "ge44", .vid = 144, .front = 44, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true },
+	{ .name = "ge45", .vid = 145, .front = 45, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true },
+	{ .name = "ge46", .vid = 146, .front = 46, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true },
+	{ .name = "ge47", .vid = 147, .front = 47, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true },
+	{ .name = "ge48", .vid = 148, .front = 48, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true },
 };
 /* Unit 0 (host SoC, AXI CMIC): front 1 = logical 2, GPORT0 (block 2) lane 7, GPHY addr 9; VLAN 101 (VLAN 1 = stock's). */
 static const struct port_cfg unit0_cfgs[] = {
 	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 9 },
+	{ .name = "ge2", .vid = 102, .front = 2, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 8 },
+	{ .name = "ge3", .vid = 103, .front = 3, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 7 },
+	{ .name = "ge4", .vid = 104, .front = 4, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 6 },
+	{ .name = "ge5", .vid = 105, .front = 5, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 4 },
+	{ .name = "ge6", .vid = 106, .front = 6, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 3 },
+	{ .name = "ge7", .vid = 107, .front = 7, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 2 },
+	{ .name = "ge8", .vid = 108, .front = 8, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 1 },
+	{ .name = "ge9", .vid = 109, .front = 9, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 11 },
+	{ .name = "ge10", .vid = 110, .front = 10, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 12 },
+	{ .name = "ge11", .vid = 111, .front = 11, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 13 },
+	{ .name = "ge12", .vid = 112, .front = 12, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 14 },
+	{ .name = "ge13", .vid = 113, .front = 13, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 16 },
+	{ .name = "ge14", .vid = 114, .front = 14, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 17 },
+	{ .name = "ge15", .vid = 115, .front = 15, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 18 },
+	{ .name = "ge16", .vid = 116, .front = 16, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 19 },
+	{ .name = "ge17", .vid = 117, .front = 17, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true },
+	{ .name = "ge18", .vid = 118, .front = 18, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true },
+	{ .name = "ge19", .vid = 119, .front = 19, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true },
+	{ .name = "ge20", .vid = 120, .front = 20, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true },
+	{ .name = "ge21", .vid = 121, .front = 21, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true },
+	{ .name = "ge22", .vid = 122, .front = 22, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true },
+	{ .name = "ge23", .vid = 123, .front = 23, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true },
+	{ .name = "ge24", .vid = 124, .front = 24, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true },
 };
 const int us48_unit1_nports = ARRAY_SIZE(us48_unit1_cfgs);
 EXPORT_SYMBOL_GPL(us48_unit1_cfgs);
@@ -320,24 +366,6 @@ int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c)
 }
 EXPORT_SYMBOL_GPL(us48_tsc_rx_restart);
 
-/* ---- integrated GPHY: clause 22 on internal bus 0 ---- */
-
-static int gphy_rd(struct us48_cmic *u, u8 phy, u8 reg, u16 *val)
-{
-	u32 st;
-	int ret;
-
-	wr(u, MIIM_CTRL, 0);
-	wr(u, MIIM_PARAM, BIT(25) | phy << 16);
-	wr(u, MIIM_ADDRESS, reg);
-	wr(u, MIIM_CTRL, BIT(1));
-	ret = readl_poll_timeout_atomic(u->cmic + MIIM_STAT, st, st & BIT(0), 1, MIIM_TIMEOUT_US);
-	if (!ret)
-		*val = rd(u, MIIM_READ_DATA) & 0xffff;
-	wr(u, MIIM_CTRL, 0);
-	return ret;
-}
-
 static struct us48_cmic *dbg_u;
 static const struct port_cfg *dbg_cfg;
 static DEFINE_MUTEX(dbg_lock);	/* the mib param vs unbind */
@@ -381,10 +409,98 @@ static int mib_set(const char *val, const struct kernel_param *kp)
 static const struct kernel_param_ops mib_ops = { .set = mib_set };
 module_param_cb(mib, &mib_ops, NULL, 0200);
 
+static void octal_phy_diag(struct us48_cmic *u, struct bcm_cmic_unit *cu, u8 phy)
+{
+	u16 aux, mode, slave, detect, isolate, dsp, reset;
+	int ret;
+
+	ret = bcm_cmic_miim_read(cu, false, 0, phy, 0x18, &aux);
+	if (!ret)
+		ret = bcm_cmic_miim_shadow_read(cu, false, 0, phy, 0x1f, &mode);
+	if (!ret)
+		ret = bcm_cmic_miim_shadow_read(cu, false, 0, phy, 0x15, &slave);
+	if (!ret)
+		ret = bcm_cmic_miim_shadow_read(cu, false, 0, phy, 0x1e, &detect);
+	if (!ret)
+		ret = bcm_cmic_miim_rdb_read(cu, false, 0, phy, 0x02a, &isolate);
+	if (!ret)
+		ret = bcm_cmic_miim_rdb_read(cu, false, 0, phy, 0x125, &dsp);
+	if (!ret)
+		ret = bcm_cmic_miim_rdb_read(cu, false, 0, phy, 0x82b, &reset);
+	if (ret) {
+		dev_warn(u->dev, "octal phy %02x vendor-state read failed: %d\n", phy, ret);
+		return;
+	}
+
+	dev_info(u->dev, "octal phy %02x AUX %04x MODE %04x SGMII %04x DETECT %04x "
+		 "POWER_MII %04x DSP_TAP10 %04x GLOBAL_RESET %04x\n",
+		 phy, aux, mode, slave, detect, isolate, dsp, reset);
+}
+
+/* Read both copper MDIO buses; vendor-register access writes selectors only, never PHY configuration data. */
+void us48_mdio_scan(struct us48_cmic *u)
+{
+	static const u8 regs[] = { 2, 3, 0, 1, 1, 4, 5, 9, 10 };
+	struct bcm_cmic_unit cu = { .base = u->cmic };
+	int bus, phy, i, ret;
+
+	mutex_lock(&u->mdio);
+	for (bus = 0; bus < 2; bus++) {
+		bool internal = !bus;
+
+		for (phy = 0; phy < 32; phy++) {
+			u16 v[ARRAY_SIZE(regs)];
+
+			for (i = 0; i < ARRAY_SIZE(regs); i++) {
+				ret = bcm_cmic_miim_read(&cu, internal, 0, phy, regs[i], &v[i]);
+				if (ret) {
+					dev_warn(u->dev, "mdio %s0 phy %02x reg %u read failed: %d\n",
+						 internal ? "int" : "ext", phy, regs[i], ret);
+					break;
+				}
+			}
+			if (ret)
+				continue;
+			if ((!v[0] && !v[1]) || v[0] == 0xffff || v[1] == 0xffff)
+				continue;
+			dev_info(u->dev, "mdio %s0 phy %02x id %04x:%04x BMCR %04x BMSR %04x link %u "
+				 "ANAR %04x ANLPAR %04x GBCR %04x GBSR %04x\n",
+				 internal ? "int" : "ext", phy, v[0], v[1], v[2], v[4], !!(v[4] & BIT(2)),
+				 v[5], v[6], v[7], v[8]);
+			if (!internal && v[0] == 0x600d && v[1] == 0x845b)
+				octal_phy_diag(u, &cu, phy);
+		}
+	}
+	mutex_unlock(&u->mdio);
+}
+EXPORT_SYMBOL_GPL(us48_mdio_scan);
+
+static int phy_scan_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int scan;
+	int ret = kstrtouint(val, 0, &scan);
+
+	if (ret || !scan)
+		return ret;
+	mutex_lock(&dbg_lock);
+	if (!dbg_u)
+		ret = -ENODEV;
+	else {
+		us48_mdio_scan(dbg_u);
+		ret = 0;
+	}
+	mutex_unlock(&dbg_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops phy_scan_ops = { .set = phy_scan_set };
+module_param_cb(phy_scan, &phy_scan_ops, NULL, 0200);
+MODULE_PARM_DESC(phy_scan, "1 = read copper status and octal-PHY vendor state on both MIIM bus-0s");
+
 static struct bcm_hr2_ge ge_of(const struct us48_port *p)
 {
 	return (struct bcm_hr2_ge){ .blk = p->cfg->blk, .lane = p->cfg->lane, .phy = p->cfg->phy, .lport = p->cfg->lport,
-				    .modid = p->u->modid, .vid = p->vid };
+				    .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy };
 }
 
 /* Shared core (common/bcm-cmic): stock's per-lane copper MAC init (docs/driver-internals.md 12), GPHY AN, private VLAN, PORT_TAB, link bitmap. */
@@ -430,8 +546,8 @@ static bool copper_link(struct us48_port *p, int *speed)
 	if (phy_dbg) {
 		u16 bmcr = 0, aux = 0;
 
-		gphy_rd(u, p->cfg->phy, 0, &bmcr);
-		gphy_rd(u, p->cfg->phy, 0x19, &aux);
+		bcm_cmic_miim_read(&cu, !p->cfg->external_phy, 0, p->cfg->phy, 0, &bmcr);
+		bcm_cmic_miim_read(&cu, !p->cfg->external_phy, 0, p->cfg->phy, 0x19, &aux);
 		netdev_info(p->ndev, "phy %d: BMCR %04x AUX19 %04x speed %d\n", p->cfg->phy, bmcr, aux, *speed);
 	}
 	mutex_unlock(&u->mdio);

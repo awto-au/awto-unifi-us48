@@ -10,21 +10,21 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 | Front | Panel label | Chip | Logical | Phys | PHY | SerDes lane | SDK name | Linux name | conf |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | RJ45 1 | unit 0 (BCM53344, host SoC) | 2 | 9 | integrated GPHY, int bus 0 addr 9 | QSGMII0 lane 7 | `ge0` |  | I |
-| 2 | RJ45 2 | unit 0 (BCM53344, host SoC) | 3 | 8 | integrated GPHY, int bus 0 | QSGMII0 lane 6 | `ge1` |  | I |
-| 3 | RJ45 3 | unit 0 (BCM53344, host SoC) | 4 | 7 | integrated GPHY, int bus 0 | QSGMII0 lane 5 | `ge2` |  | I |
-| 4 | RJ45 4 | unit 0 (BCM53344, host SoC) | 5 | 6 | integrated GPHY, int bus 0 | QSGMII0 lane 4 | `ge3` |  | I |
-| 5 | RJ45 5 | unit 0 (BCM53344, host SoC) | 6 | 5 | integrated GPHY, int bus 0 | QSGMII0 lane 3 | `ge4` |  | I |
-| 6 | RJ45 6 | unit 0 (BCM53344, host SoC) | 7 | 4 | integrated GPHY, int bus 0 | QSGMII0 lane 2 | `ge5` |  | I |
-| 7 | RJ45 7 | unit 0 (BCM53344, host SoC) | 8 | 3 | integrated GPHY, int bus 0 | QSGMII0 lane 1 | `ge6` |  | I |
-| 8 | RJ45 8 | unit 0 (BCM53344, host SoC) | 9 | 2 | integrated GPHY, int bus 0 | QSGMII0 lane 0 | `ge7` |  | I |
-| 9 | RJ45 9 | unit 0 (BCM53344, host SoC) | 10 | 10 | integrated GPHY, int bus 0 | QSGMII1 lane 0 | `ge8` |  | I |
-| 10 | RJ45 10 | unit 0 (BCM53344, host SoC) | 11 | 11 | integrated GPHY, int bus 0 | QSGMII1 lane 1 | `ge9` |  | I |
-| 11 | RJ45 11 | unit 0 (BCM53344, host SoC) | 12 | 12 | integrated GPHY, int bus 0 | QSGMII1 lane 2 | `ge10` |  | I |
-| 12 | RJ45 12 | unit 0 (BCM53344, host SoC) | 13 | 13 | integrated GPHY, int bus 0 | QSGMII1 lane 3 | `ge11` |  | I |
-| 13 | RJ45 13 | unit 0 (BCM53344, host SoC) | 14 | 14 | integrated GPHY, int bus 0 | QSGMII1 lane 4 | `ge12` |  | I |
-| 14 | RJ45 14 | unit 0 (BCM53344, host SoC) | 15 | 15 | integrated GPHY, int bus 0 | QSGMII1 lane 5 | `ge13` |  | I |
-| 15 | RJ45 15 | unit 0 (BCM53344, host SoC) | 16 | 16 | integrated GPHY, int bus 0 | QSGMII1 lane 6 | `ge14` |  | I |
-| 16 | RJ45 16 | unit 0 (BCM53344, host SoC) | 17 | 17 | integrated GPHY, int bus 0 | QSGMII1 lane 7 | `ge15` |  | I |
+| 2 | RJ45 2 | unit 0 (BCM53344, host SoC) | 3 | 8 | integrated GPHY, int bus 0 addr 8 | QSGMII0 lane 6 | `ge1` |  | I |
+| 3 | RJ45 3 | unit 0 (BCM53344, host SoC) | 4 | 7 | integrated GPHY, int bus 0 addr 7 | QSGMII0 lane 5 | `ge2` |  | I |
+| 4 | RJ45 4 | unit 0 (BCM53344, host SoC) | 5 | 6 | integrated GPHY, int bus 0 addr 6 | QSGMII0 lane 4 | `ge3` |  | I |
+| 5 | RJ45 5 | unit 0 (BCM53344, host SoC) | 6 | 5 | integrated GPHY, int bus 0 addr 4 | QSGMII0 lane 3 | `ge4` |  | I |
+| 6 | RJ45 6 | unit 0 (BCM53344, host SoC) | 7 | 4 | integrated GPHY, int bus 0 addr 3 | QSGMII0 lane 2 | `ge5` |  | I |
+| 7 | RJ45 7 | unit 0 (BCM53344, host SoC) | 8 | 3 | integrated GPHY, int bus 0 addr 2 | QSGMII0 lane 1 | `ge6` |  | I |
+| 8 | RJ45 8 | unit 0 (BCM53344, host SoC) | 9 | 2 | integrated GPHY, int bus 0 addr 1 | QSGMII0 lane 0 | `ge7` |  | I |
+| 9 | RJ45 9 | unit 0 (BCM53344, host SoC) | 10 | 10 | integrated GPHY, int bus 0 addr 11 | QSGMII1 lane 0 | `ge8` |  | I |
+| 10 | RJ45 10 | unit 0 (BCM53344, host SoC) | 11 | 11 | integrated GPHY, int bus 0 addr 12 | QSGMII1 lane 1 | `ge9` |  | I |
+| 11 | RJ45 11 | unit 0 (BCM53344, host SoC) | 12 | 12 | integrated GPHY, int bus 0 addr 13 | QSGMII1 lane 2 | `ge10` |  | I |
+| 12 | RJ45 12 | unit 0 (BCM53344, host SoC) | 13 | 13 | integrated GPHY, int bus 0 addr 14 | QSGMII1 lane 3 | `ge11` |  | I |
+| 13 | RJ45 13 | unit 0 (BCM53344, host SoC) | 14 | 14 | integrated GPHY, int bus 0 addr 16 | QSGMII1 lane 4 | `ge12` |  | I |
+| 14 | RJ45 14 | unit 0 (BCM53344, host SoC) | 15 | 15 | integrated GPHY, int bus 0 addr 17 | QSGMII1 lane 5 | `ge13` |  | I |
+| 15 | RJ45 15 | unit 0 (BCM53344, host SoC) | 16 | 16 | integrated GPHY, int bus 0 addr 18 | QSGMII1 lane 6 | `ge14` |  | I |
+| 16 | RJ45 16 | unit 0 (BCM53344, host SoC) | 17 | 17 | integrated GPHY, int bus 0 addr 19 | QSGMII1 lane 7 | `ge15` |  | I |
 | 17 | RJ45 17 | unit 0 (BCM53344, host SoC) | 18 | 18 | octal PHY, ext bus 0 `0x14` | QSGMII2 lane 0 | `ge16` |  | I |
 | 18 | RJ45 18 | unit 0 (BCM53344, host SoC) | 19 | 19 | octal PHY, ext bus 0 `0x15` | QSGMII2 lane 1 | `ge17` |  | I |
 | 19 | RJ45 19 | unit 0 (BCM53344, host SoC) | 20 | 20 | octal PHY, ext bus 0 `0x16` | QSGMII2 lane 2 | `ge18` |  | I |
@@ -33,22 +33,22 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 | 22 | RJ45 22 | unit 0 (BCM53344, host SoC) | 23 | 23 | octal PHY, ext bus 0 `0x19` | QSGMII2 lane 5 | `ge21` |  | I |
 | 23 | RJ45 23 | unit 0 (BCM53344, host SoC) | 24 | 24 | octal PHY, ext bus 0 `0x1a` | QSGMII2 lane 6 | `ge22` |  | I |
 | 24 | RJ45 24 | unit 0 (BCM53344, host SoC) | 25 | 25 | octal PHY, ext bus 0 `0x1b` | QSGMII2 lane 7 | `ge23` |  | I |
-| 25 | RJ45 25 | unit 1 (BCM53346, PCIe) | 2 | 9 | integrated GPHY, int bus 0 | QSGMII0 lane 7 | `ge0` |  | I |
-| 26 | RJ45 26 | unit 1 (BCM53346, PCIe) | 3 | 8 | integrated GPHY, int bus 0 | QSGMII0 lane 6 | `ge1` |  | I |
-| 27 | RJ45 27 | unit 1 (BCM53346, PCIe) | 4 | 7 | integrated GPHY, int bus 0 | QSGMII0 lane 5 | `ge2` |  | I |
-| 28 | RJ45 28 | unit 1 (BCM53346, PCIe) | 5 | 6 | integrated GPHY, int bus 0 | QSGMII0 lane 4 | `ge3` |  | I |
-| 29 | RJ45 29 | unit 1 (BCM53346, PCIe) | 6 | 5 | integrated GPHY, int bus 0 | QSGMII0 lane 3 | `ge4` |  | I |
-| 30 | RJ45 30 | unit 1 (BCM53346, PCIe) | 7 | 4 | integrated GPHY, int bus 0 | QSGMII0 lane 2 | `ge5` |  | I |
-| 31 | RJ45 31 | unit 1 (BCM53346, PCIe) | 8 | 3 | integrated GPHY, int bus 0 | QSGMII0 lane 1 | `ge6` |  | I |
-| 32 | RJ45 32 | unit 1 (BCM53346, PCIe) | 9 | 2 | integrated GPHY, int bus 0 | QSGMII0 lane 0 | `ge7` |  | I |
-| 33 | RJ45 33 | unit 1 (BCM53346, PCIe) | 10 | 10 | integrated GPHY, int bus 0 | QSGMII1 lane 0 | `ge8` |  | I |
-| 34 | RJ45 34 | unit 1 (BCM53346, PCIe) | 11 | 11 | integrated GPHY, int bus 0 | QSGMII1 lane 1 | `ge9` |  | I |
-| 35 | RJ45 35 | unit 1 (BCM53346, PCIe) | 12 | 12 | integrated GPHY, int bus 0 | QSGMII1 lane 2 | `ge10` |  | I |
-| 36 | RJ45 36 | unit 1 (BCM53346, PCIe) | 13 | 13 | integrated GPHY, int bus 0 | QSGMII1 lane 3 | `ge11` |  | I |
-| 37 | RJ45 37 | unit 1 (BCM53346, PCIe) | 14 | 14 | integrated GPHY, int bus 0 | QSGMII1 lane 4 | `ge12` |  | I |
-| 38 | RJ45 38 | unit 1 (BCM53346, PCIe) | 15 | 15 | integrated GPHY, int bus 0 | QSGMII1 lane 5 | `ge13` |  | I |
-| 39 | RJ45 39 | unit 1 (BCM53346, PCIe) | 16 | 16 | integrated GPHY, int bus 0 | QSGMII1 lane 6 | `ge14` |  | I |
-| 40 | RJ45 40 | unit 1 (BCM53346, PCIe) | 17 | 17 | integrated GPHY, int bus 0 | QSGMII1 lane 7 | `ge15` |  | I |
+| 25 | RJ45 25 | unit 1 (BCM53346, PCIe) | 2 | 9 | integrated GPHY, int bus 0 addr 9 | QSGMII0 lane 7 | `ge0` |  | I |
+| 26 | RJ45 26 | unit 1 (BCM53346, PCIe) | 3 | 8 | integrated GPHY, int bus 0 addr 8 | QSGMII0 lane 6 | `ge1` |  | I |
+| 27 | RJ45 27 | unit 1 (BCM53346, PCIe) | 4 | 7 | integrated GPHY, int bus 0 addr 7 | QSGMII0 lane 5 | `ge2` |  | I |
+| 28 | RJ45 28 | unit 1 (BCM53346, PCIe) | 5 | 6 | integrated GPHY, int bus 0 addr 6 | QSGMII0 lane 4 | `ge3` |  | I |
+| 29 | RJ45 29 | unit 1 (BCM53346, PCIe) | 6 | 5 | integrated GPHY, int bus 0 addr 4 | QSGMII0 lane 3 | `ge4` |  | I |
+| 30 | RJ45 30 | unit 1 (BCM53346, PCIe) | 7 | 4 | integrated GPHY, int bus 0 addr 3 | QSGMII0 lane 2 | `ge5` |  | I |
+| 31 | RJ45 31 | unit 1 (BCM53346, PCIe) | 8 | 3 | integrated GPHY, int bus 0 addr 2 | QSGMII0 lane 1 | `ge6` |  | I |
+| 32 | RJ45 32 | unit 1 (BCM53346, PCIe) | 9 | 2 | integrated GPHY, int bus 0 addr 1 | QSGMII0 lane 0 | `ge7` |  | I |
+| 33 | RJ45 33 | unit 1 (BCM53346, PCIe) | 10 | 10 | integrated GPHY, int bus 0 addr 11 | QSGMII1 lane 0 | `ge8` |  | I |
+| 34 | RJ45 34 | unit 1 (BCM53346, PCIe) | 11 | 11 | integrated GPHY, int bus 0 addr 12 | QSGMII1 lane 1 | `ge9` |  | I |
+| 35 | RJ45 35 | unit 1 (BCM53346, PCIe) | 12 | 12 | integrated GPHY, int bus 0 addr 13 | QSGMII1 lane 2 | `ge10` |  | I |
+| 36 | RJ45 36 | unit 1 (BCM53346, PCIe) | 13 | 13 | integrated GPHY, int bus 0 addr 14 | QSGMII1 lane 3 | `ge11` |  | I |
+| 37 | RJ45 37 | unit 1 (BCM53346, PCIe) | 14 | 14 | integrated GPHY, int bus 0 addr 16 | QSGMII1 lane 4 | `ge12` |  | I |
+| 38 | RJ45 38 | unit 1 (BCM53346, PCIe) | 15 | 15 | integrated GPHY, int bus 0 addr 17 | QSGMII1 lane 5 | `ge13` |  | I |
+| 39 | RJ45 39 | unit 1 (BCM53346, PCIe) | 16 | 16 | integrated GPHY, int bus 0 addr 18 | QSGMII1 lane 6 | `ge14` |  | I |
+| 40 | RJ45 40 | unit 1 (BCM53346, PCIe) | 17 | 17 | integrated GPHY, int bus 0 addr 19 | QSGMII1 lane 7 | `ge15` |  | I |
 | 41 | RJ45 41 | unit 1 (BCM53346, PCIe) | 18 | 18 | octal PHY, ext bus 0 `0x14` | QSGMII2 lane 0 | `ge16` |  | I |
 | 42 | RJ45 42 | unit 1 (BCM53346, PCIe) | 19 | 19 | octal PHY, ext bus 0 `0x15` | QSGMII2 lane 1 | `ge17` |  | I |
 | 43 | RJ45 43 | unit 1 (BCM53346, PCIe) | 20 | 20 | octal PHY, ext bus 0 `0x16` | QSGMII2 lane 2 | `ge18` |  | I |

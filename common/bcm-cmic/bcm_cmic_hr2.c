@@ -415,7 +415,7 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d)
 	return true;
 }
 
-/* ---- integrated-GPHY copper ports (unit 0 front 1 = ge1); generic over block/lane/lport, from us48_cmic.c ---- */
+/* ---- copper ports (unit 0 front 1 = ge1); generic over block/lane/lport, from us48_cmic.c ---- */
 
 #define GP_CC(l)		(0x10200 | (l))		/* GPORT UMAC COMMAND_CONFIG */
 #define GP_CC_BASE		0x01800058		/* reset released, RX/TX off, 1G code (stock's final init value) */
@@ -490,10 +490,75 @@ static void cpu_meter_off(struct bcm_cmic_unit *u)
 		bcm_cmic_reg_write(u, 12, 0x19c00 + (cos << 8), z, 2);
 }
 
+static int bcm54282_link_init(struct bcm_cmic_unit *u, u8 phy)
+{
+	u16 val;
+	int ret;
+
+	ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x82b, 0x8400);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x18, 0x0c00);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x125, 0x011b);
+	if (ret)
+		return ret;
+
+	ret = bcm_cmic_miim_rdb_read(u, false, 0, phy, 0x02a, &val);
+	if (ret)
+		return ret;
+	if (val & BIT(5)) {
+		ret = bcm_cmic_miim_rdb_write(u, false, 0, phy, 0x02a, val & ~BIT(5));
+		if (ret)
+			return ret;
+	}
+
+	ret = bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x1f, &val);
+	if (ret)
+		return ret;
+	val &= 0x03ff;
+	val &= ~(BIT(1) | BIT(2));
+	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1f, val);
+	if (ret)
+		return ret;
+
+	ret = bcm_cmic_miim_write(u, false, 0, phy, 9, 0x0600);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, false, 0, phy, 0, 0x1340);
+	if (ret)
+		return ret;
+
+	ret = bcm_cmic_miim_shadow_read(u, false, 0, phy, 0x15, &val);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x15, (val & 0x03ff) | BIT(0));
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_shadow_write(u, false, 0, phy, 0x1e, BIT(5));
+	if (ret)
+		return ret;
+
+	ret = bcm_cmic_miim_read(u, false, 0, phy, 0x10, &val);
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x10, val | BIT(5));
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, false, 0, phy, 0x18, 0x4c00);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 {
 	u8 b = ge->blk, l = ge->lane;
 	u32 link[2];
+	int ret;
+	bool internal = !ge->external_phy;
 
 	/* Stock's per-lane copper MAC init (docs/driver-internals.md 12): MAC left RX/TX off. */
 	gp_wr(u, b, 0x02020000, 2);			/* GPORT_CONFIG: CLR_CNT, then run with GPORT_EN */
@@ -506,9 +571,11 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
 	gp_wr(u, b, 0x02020800, 0x5ee);			/* GPORT_CNTMAXSIZE */
 	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
-	/* Stock leaves the GPHY powered down (BMCR 0x1940): AN enable + restart + FD + 1000, no power-down. */
-	if (bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340))
-		return -EIO;
+	/* Stock's copper-PHY bring-up: AN enable + restart + FD + 1000, power-down clear. */
+	ret = ge->external_phy ? bcm54282_link_init(u, ge->phy) :
+		bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, 0x1340);
+	if (ret)
+		return ret;
 	cpu_meter_off(u);
 	ge_vlan_init(u, ge);
 	ge_port_tab(u, ge->lport, ge->vid, true);
@@ -542,10 +609,13 @@ int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, cons
 bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed)
 {
 	u16 bmsr = 0, lpa = 0, st1000 = 0;
+	bool internal = !ge->external_phy;
 
 	/* Any failed read = link unknown = down: decoding a stale 0 would report "up 10M" (#46 flap). */
-	if (bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr) || bcm_cmic_miim_read(u, true, 0, ge->phy, 1, &bmsr) ||
-	    bcm_cmic_miim_read(u, true, 0, ge->phy, 5, &lpa) || bcm_cmic_miim_read(u, true, 0, ge->phy, 10, &st1000))
+	if (bcm_cmic_miim_read(u, internal, 0, ge->phy, 1, &bmsr) ||
+	    bcm_cmic_miim_read(u, internal, 0, ge->phy, 1, &bmsr) ||
+	    bcm_cmic_miim_read(u, internal, 0, ge->phy, 5, &lpa) ||
+	    bcm_cmic_miim_read(u, internal, 0, ge->phy, 10, &st1000))
 		return false;
 	*speed = (st1000 & BIT(11)) ? 1000 : (lpa & (BIT(8) | BIT(7))) ? 100 : 10;
 	return bmsr & BIT(2);

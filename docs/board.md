@@ -339,6 +339,7 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 - `phy_port_primary_and_offset_<logical>` (table `0x15a3eac`): logical 2..9 -> `0x0207..0x0200`, 10..17 -> `0x0a00..0x0a07`, 18..25 -> `0x1200..0x1207` (SDK properties; the live scan below shows only the last group is an external octal PHY). C.
 - `port_phy_addr_<logical>` set only for 18..25 -> `0x14..0x1b` (external MIIM bus 0). C.
 - **Live MIIM scan, unit 0** (2026-11-12, OpenWrt, `scripts/miim.py`): only **one external octal PHY**, at external bus 0 `0x14..0x1b` (ID `0x600d845b`, front 17..24). Front 1..16 use the **16 integrated copper PHYs** on internal bus 0, at `1..4, 6..9, 11..14, 16..19` (ID `0x600d85b0`). Internal bus 1 `2, 4, 6, 8` = SerDes cores (ID `0x600d8770`). The SDK-default 'external `0x02..0x09` / `0x0b..0x12`' map does not answer. C. Front 1 = internal addr 9 (link up 1000 FD to sw1, #4); other front -> address follow the reversed p2l for phys 2..9 (I, unverified). The 16 GPHYs power up with BMCR power-down set: a PHY driver must clear it.
+- **Native-Linux scan, both chips** (2026-11-17): external bus 0 `0x14..0x1b` responds as `0x600d:0x845b` on each chip; OpenBCM `port_phy_addr_<logical>` maps logical 18..25 to those addresses. All report BMCR `0x1140`, AN enabled, power-down clear, with no link partner. This confirms the configured logical-port addresses, not cable-by-cable jack wiring.
 - Other props: `phy_an_c73=0`, `phy_an_c37=3`, `trunk_extend=0x1`; unit 1 xe ports: `serdes_if_type_xe.1=9` (SFI), `serdes_preemphasis_xe.1=0x5a54`, `serdes_driver_current_xe.1=0x2020`. C.
 - SerDes: internal QSGMII block `(phys-2)/8` (3 blocks), lane `(phys-2)%8`; uplinks on TSC4 lanes phys 26, 28 (HiGig phys 30, 32). I: SDK table `_hurricane2_phy_addr_default`.
 - Front port (1..52) -> (unit, logical) from the FastPath table at `0x1d8ecb4` (52 x {slot 0, port-1, unit, logical}; lookup `0x5e35c4`). C.
@@ -348,9 +349,9 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 | 1..8 | 0 (53344) | 2..9 | integrated GPHY, internal bus 0 (front 1 = addr 9; rest TBD) |
 | 9..16 | 0 | 10..17 | integrated GPHY, internal bus 0 (addr per port TBD) |
 | 17..24 | 0 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` |
-| 25..32 | 1 (53346) | 2..9 | I: as unit 0 (not scanned) |
-| 33..40 | 1 | 10..17 | I: as unit 0 (not scanned) |
-| 41..48 | 1 | 18..25 | I: as unit 0, external `0x14..0x1b` (not scanned) |
+| 25..32 | 1 (53346) | 2..9 | integrated GPHY, internal bus 0 (IDs scanned; front/jack mapping inferred) |
+| 33..40 | 1 | 10..17 | integrated GPHY, internal bus 0 (IDs scanned; front/jack mapping inferred) |
+| 41..48 | 1 | 18..25 | external octal PHY, external bus 0 `0x14..0x1b` (IDs scanned; front/jack mapping inferred) |
 | 49, 50 | 1 | 26, 27 (`xe0`, `xe1`) | SFP+, no PHY seen |
 | 51, 52 | 0 | 26, 27 (`ge24`, `ge25`) | SFP, no PHY seen |
 
@@ -369,5 +370,5 @@ Config for board `0xb3440004` is injected into the SDK by `0x5fb5e0` (called fro
 - BCM59111 reg `0x2c`: formula decoded (`367 - 2·raw` °C); datasheet meaning of raw unchecked. Limit-table columns 0–2 purpose.
 - MSPI: power-on default of the board-IO chains (byte 0 bits 3:0 and 7:6 do nothing audible, #12); LED value colours; output-enable of CMIC GP0 (who sets it); same physical block as boot-flash QSPI?; source of `.poe_defconfig`.
 - SFP: pin polarity of TX disable (I), physical cage wiring of unit 1 pins (I); output-enable of CMIC GP2/GP3. Module EEPROMs of all four cages read by stock (`swctrl sfp show`; inventory in [hardware.md](hardware.md)), no 10G link on any cage yet (#31).
-- Port map: front -> MDIO address for ports 2..24 (unit 0 scanned; unit 1: front 40 = int bus 0 addr 19 verified, fronts 41-48 octal unverified); front 49–52 LEDs (#14); link LED value semantics. Panel labels and chip/lane map: [port-map.md](port-map.md).
+- Port map: PHY IDs/addresses are scanned on both units, but cable-by-cable front/jack assignments remain inferred except for the verified front-40 link; front 49–52 LEDs (#14); link LED value semantics. Panel labels and chip/lane map: [port-map.md](port-map.md).
 - EEPROM offsets of `manufid` / `mfgweek` / `qrid`; use of the `0x1ffe040` bytes.

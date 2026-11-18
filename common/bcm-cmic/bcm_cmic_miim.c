@@ -64,3 +64,57 @@ int bcm_cmic_miim_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy
 	}
 	return 0;
 }
+
+/* Shadow/RDB selector writes target address registers; data writes use the selected PHY register. */
+int bcm_cmic_miim_shadow_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 shadow, u16 *val)
+{
+	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1c, (shadow & 0x1f) << 10);
+
+	return ret ?: bcm_cmic_miim_read(u, internal, bus, phy, 0x1c, val);
+}
+
+int bcm_cmic_miim_shadow_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 shadow, u16 val)
+{
+	return bcm_cmic_miim_write(u, internal, bus, phy, 0x1c,
+				   BIT(15) | (shadow & 0x1f) << 10 | (val & 0x03ff));
+}
+
+static int miim_rdb_enter(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy)
+{
+	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x17, 0x0f7e);
+
+	return ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x15, 0x0000);
+}
+
+static int miim_rdb_exit(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy)
+{
+	int ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, 0x0087);
+
+	return ret ?: bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, 0x8000);
+}
+
+int bcm_cmic_miim_rdb_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *val)
+{
+	int ret = miim_rdb_enter(u, internal, bus, phy), exit_ret;
+
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, reg);
+	if (!ret)
+		ret = bcm_cmic_miim_read(u, internal, bus, phy, 0x1f, val);
+	exit_ret = miim_rdb_exit(u, internal, bus, phy);
+	return ret ?: exit_ret;
+}
+
+int bcm_cmic_miim_rdb_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val)
+{
+	int ret = miim_rdb_enter(u, internal, bus, phy), exit_ret;
+
+	if (ret)
+		return ret;
+	ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1e, reg);
+	if (!ret)
+		ret = bcm_cmic_miim_write(u, internal, bus, phy, 0x1f, val);
+	exit_ret = miim_rdb_exit(u, internal, bus, phy);
+	return ret ?: exit_ret;
+}

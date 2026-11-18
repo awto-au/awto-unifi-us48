@@ -64,6 +64,11 @@ int bcm_cmic_miim_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy,
 
 /* One clause-22 MIIM write. */
 int bcm_cmic_miim_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val);
+/* Broadcom clause-22 shadow and RDB data accesses; caller serializes the whole sequence. */
+int bcm_cmic_miim_shadow_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 shadow, u16 *val);
+int bcm_cmic_miim_shadow_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 shadow, u16 val);
+int bcm_cmic_miim_rdb_read(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 *val);
+int bcm_cmic_miim_rdb_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32 phy, u32 reg, u16 val);
 
 /*
  * HR2 unit-1 (BCM53346) front-panel port 50 (xe1, logical port 27) bring-up and CPU packet I/O.
@@ -118,7 +123,7 @@ int bcm_hr2_tx_start(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d, const u8 *f
 bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
 
 /*
- * Integrated-GPHY copper port (GPORT block + lane, GPHY on internal MIIM bus 0), e.g. unit 0 front 1:
+ * Copper port (GPORT block + lane, PHY on internal or external MIIM bus 0), e.g. unit 0 front 1:
  * blk 2, lane 7, logical 2, phy 9. Private VLAN `vid` holds the CPU and this port only (VLAN 1 is
  * stock's and may bridge ports); MAC left RX/TX off until bcm_hr2_ge_mac_set().
  * Frames reach the CPU via the static L2 entry (modid = unit's MY_MODID, port 0).
@@ -126,9 +131,10 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
 struct bcm_hr2_ge {
 	u8 blk, lane, phy, lport, modid;
 	u16 vid;
+	bool external_phy;
 };
 
-/* GPORT MAC init, GPHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
+/* GPORT MAC init, PHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
 /*
  * Unit 0 cold init (chip after power-on, no stock): CMIC SBUS ring map + timeout + MIIM rate, then the stock
