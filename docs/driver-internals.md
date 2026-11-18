@@ -793,6 +793,7 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
   | ge8 -> ge32 | ge8 100 | ge17 100 | 100/0 | 100/0 | ge41 100 | ge32 100 | 100 |
   | ge32 -> ge8 | ge32 100 | ge41 100 | 100/0 | 100/0 | ge17 100 | ge8 100 | 100 |
   - No copy on the source-side netdevs (ge8/ge17/ge41 in fwd); ge1 counters normal. The trunk hash picked port 28 for this flow.
+  - Re-run 2026-11-18 with #124/#125 (commit 3682294, no tool EGR_ENABLE writes, `schan` parameter): RAM image and the flashed kernel slot after a cold boot, both directions 100/100 every hop (HG 28), 28 writes / 28 kernel read-backs, restore 28/28, survey = pre-test; unit 1 L2 lookups answer (NACK for the test MACs, STATIC hit for ge41's own MAC). C
 - Learning (`--learn`: CML 8/8 on ge17/ge41; with CML 0 nothing is learned on either chip): unit 0 (SVL, key FID 0) A at mod 0 port 18, B at mod 1 port 18; unit 1 (key VLAN 200) A at mod 0 port 18, B at mod 1 port 18. The reverse run then went as known unicast through `MODPORT_MAP`. C
 - `restore` writes the values back (read back), deletes the test-learned L2 entries (TABLE_DELETE 0x26), survey = pre-test state.
 - devmem S-channel ops on unit 1 CMC0 raced the kernel's locked users (`us48_pci_schan`; the colliding reply is a PVTMON read, ack 0x30e00200): another op's ack in MSG0, garbage reads, once a stored garbage word (unit 1 `PORT_TAB[18]` = 0x91c00248). Fixed (#125): the tool goes through the kernel (15.5); no devmem S-channel left in it. C

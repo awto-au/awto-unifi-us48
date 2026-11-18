@@ -118,7 +118,7 @@ Related: #63, #69, #20, #73, [uboot.md](uboot.md), [uboot-second-stage.md](uboot
 ## Autoboot to Linux (#63, #73, 2026-11-15)
 
 - awto-uboot `CONFIG_BOOTDELAY=1`, `CONFIG_BOOTCOMMAND="us48boot"` (`uboot-port/cmd/us48boot.c`): `sf probe`, read the 64 B uImage header at `0x2e0000`, check magic + header CRC + length (<= 13 MiB - 64), read exactly header + data, `bootm` (data CRC checked). Any failure prints the reason and stays at the prompt; no fallback.
-- Flashed: uboot slot (read-back crc `e325f81a`, 847728 B), kernel slot = `us48-mainline-normal.bin` (crc `6dfd3b22`, 3717403 B). Env untouched.
+- Flashed: uboot slot (read-back crc `e325f81a`, 847728 B), kernel slot = `us48-mainline-normal.bin` (2026-11-18: commit 3682294, crc `06881787`, 3831249 B, #124/#125). Env untouched.
 - Catching the 1 s window: `dev.py _listen` sends a space every 20 ms from the `awto-uboot 20` banner until the prompt; uboot-1's own `autoboot:  0` line is not treated as a window.
 - `autochain_boot.py --full`: relay power-cycle, timestamps every stage, host-side ping + TCP :22 probes, ends 5 s after the shell prompt (or at ssh).
 
