@@ -147,6 +147,7 @@ struct us48_cmic {
 	u8 tsc_phy;			/* MIIM address of us48_tsc_rd/wr: 0 = TSC0_PHY; set only while holding mdio */
 	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */
 	u8 blk_ready;			/* bit = GPORT block whose block-wide init (+ octal top reset) ran */
+	u8 octal_off;			/* bit g = GPORT g octal powered down by pwrsave (us48_cmic_pwr.c); link_lock */
 	spinlock_t tx_lock;
 	int nopen;
 	bool quiesced;			/* DMA stopped for good: NAPI must not re-arm RX */
@@ -223,6 +224,12 @@ int us48_higig_up(struct us48_cmic *u, const struct firmware *fw);
 void us48_higig_status(struct us48_cmic *u);
 
 bool us48_is_port(const struct net_device *nd);
+/* Copper PHY MII_CTRL power (#133). */
+int us48_copper_power(struct us48_port *p, bool on);
+/* Power save of unused blocks (us48_cmic_pwr.c, #25): restore before the port setup, save after it, octal up on first open. */
+void us48_pwr_restore(struct us48_cmic *u);
+void us48_pwr_save(struct us48_cmic *u);
+int us48_pwr_octal_up(struct us48_port *p);
 /* switchdev L2 offload, stage 1 (us48_cmic_sw.c, docs/switchdev.md); rtnl held unless noted. */
 #if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 int us48_sw_init(void);			/* module init, no rtnl */

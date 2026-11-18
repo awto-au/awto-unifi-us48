@@ -654,7 +654,7 @@ static int copper_enable(struct us48_port *p)
 }
 
 /* Copper PHY power follows the netdev (#133): down = POWER_DOWN, the peer loses carrier; up = AN restart. */
-static int copper_power(struct us48_port *p, bool on)
+int us48_copper_power(struct us48_port *p, bool on)
 {
 	struct bcm_cmic_unit cu = p->u->cu;
 	struct bcm_hr2_ge ge = ge_of(p);
@@ -1283,13 +1283,13 @@ static int us48_open(struct net_device *nd)
 		int ret;
 
 		mutex_lock(&u->link_lock);
-		ret = copper_enable(p);
+		ret = us48_pwr_octal_up(p) ?: copper_enable(p);
 		mutex_unlock(&u->link_lock);
 		if (ret)
 			return ret;
 		us48_sw_port_reapply(p);	/* joined a bridge before the first open */
 	} else if (p->cfg->copper) {
-		int ret = copper_power(p, true);
+		int ret = us48_copper_power(p, true);
 
 		if (ret)
 			return ret;
@@ -1328,7 +1328,7 @@ static int us48_stop(struct net_device *nd)
 		netif_carrier_off(nd);
 	}
 	if (p->cfg->copper && p->copper_ready)
-		copper_power(p, false);
+		us48_copper_power(p, false);
 	mutex_unlock(&u->link_lock);
 	l2_op_cpu(p, 0x26);
 	if (--u->nopen == 0) {
@@ -1634,19 +1634,21 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		if (ret)
 			dev_err(dev, "SerDes bring-up failed (%d): 10G links stay down\n", ret);
 	}
+	us48_pwr_restore(u);
 	for (i = 0; i < u->nports; i++) {
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
 		/* Down until opened, as SDK _bcm_port_probe ("leave port disabled"); copper_enable() does VLAN + PORT_TAB. */
 		if (p->cfg->copper) {
-			copper_power(p, false);
+			us48_copper_power(p, false);
 			continue;
 		}
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);
 		bcm_hr2_umc_cpu_unblock(&u->cu, p->cfg->lport);	/* #127 */
 	}
+	us48_pwr_save(u);
 	if (!sbus(u, 0x0b, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2)) {
 		for (i = 0; i < u->nports; i++)
 			link[0] |= BIT(u->port[i]->cfg->lport);

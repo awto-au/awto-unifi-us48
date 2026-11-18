@@ -828,3 +828,21 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
 - Not covered: the CMIC CPS reset inside the unit 1 cold init (CMIC registers, no S-channel op) runs without `schan_lock`; a pvtmon op in flight then is not excluded.
 - `/sys/module/us48_cmic/parameters/schan` (0600, root): write request lines `<unit> <op> <blk> <addr hex> <words> [data hex...]` (`;` or newline separated, one write), read the results. Ops: `rreg rmem` (read), `wreg wmem` (read, write, read back, all under `schan_seq`; logged), `lookup delete` (L2 key = data). Result: `ok|mismatch|notfound|err ...`; `old`/`back` words for writes, `ack` + `:` reply words otherwise; lookup reply = response word + entry.
 - `TABLE_LOOKUP` (0x28) and LOOKUP/DELETE NACK = -ENOENT are in the shared core: unit 1 lookups need a us48_pci built with it (an older us48_pci sends no key and returns -EIO). C
+
+## 16. Power save of unused blocks (#25)
+- `us48_cmic.pwrsave` (0444, default 1; read at each unit's probe, unit 1 included): 1 = power down what no port uses, 0 = leave it on (A/B; restores a previous load's state). Code `kernel/us48-cmic/us48_cmic_pwr.c`. Thermal effect: #117.
+- Probe order: `us48_pwr_restore` (clear every bit below: TOP state survives the cold init, unit 0 TOP is never reset by a reload) -> port setup (copper PDN, 12.7) -> `us48_pwr_save`.
+- Live values before (2026-11-19, image 22811a7, both units unless noted): `XLPORT_XGXS0_CTRL` 0xe0 (PWRDWN, TSCCLK_EN, REFIN_EN; resets held; IDDQ 0) on unit 0 XLPORT0/1 and unit 1 XLPORT1 (unit 1 XLPORT0 0xae), `XLPORT_ENABLE_REG` 0 there, `XLPORT_POWER_SAVE` 0, `TOP_QSGMII2X_CTRL` 0x00080e00, `TOP_QGPHY_CTRL_0` 0, `TOP_CLOCKING_ENFORCE_PSG` 0x07ffffff. regdb reset values differ for the last three (#94).
+
+| Block | Mechanism | Source | Stock | Power up |
+|---|---|---|---|---|
+| Copper PHY never opened | MII_CTRL PDN | 12.7 (#133) | no (SDK yes) | first open: 0x1340 |
+| XLPORT/TSC with no port: unit 0 XLPORT0 (unless `sfp10g`), XLPORT1 (HiGig) both units | `XGXS0_CTRL` PWRDWN + IDDQ, TSCCLK_EN 0; `XLPORT_POWER_SAVE.XPORT_CORE0` 1; only if `XLPORT_ENABLE_REG` = 0 | OpenBCM 6.5.16 `_soc_hu2_power_Optimize` (`hurricane2.c:3949-3982`, from `soc_hurricane2_misc_init` :4474) | no: stock enables ports 0/2 of both XLPORTs (init-phases-u0/u1) | `xlport_up()` (HiGig `higig=1`, unit 0 `sfp10g`): POWER_SAVE 0, then the 0xe0.. XGXS sequence (clears IDDQ) |
+| QSGMII2X 0/1 (unused: GPORT0/1 run on the QGPHYs) | `TOP_QSGMII2X_CTRL.IDDQ` bits 6/7 | stock `soc_reset_bcm56150_a0` (switchdrvr 0x100827c, ~0x1009f44): 0x8342/0x8343 write field 0x78cb = 3 (one 0x8343 case 7) of reg 0xc495 | only for 0x8342/0x8343 | never (unused) |
+| GPHY octal GPORT0/1 with no port opened yet | `TOP_QGPHY_CTRL_0` EXT_PWRDOWN byte g, IDDQ_BIAS bits 2g/2g+1 | same stock branch: 0x8342 (OpenBCM p2l `8_0_0` = phys 2-9 only) writes field 0x5d5b = 0xff00, 0x78d8 = 0xc of reg 0xc493 -> bits 8-15 / quads 2-3 = GPORT1 | only for 0x8342/0x8343 | first open in the octal: bits cleared, PDN again on its other unopened ports, then the normal bring-up |
+| External octal GPORT2 (BCM54282) with no port opened yet | `TOP_QSGMII2X_CTRL.IDDQ` bit 8 | same branch, 0x8343 value 7 = instances 0-2 | as above | as above |
+
+- Field ids -> names: SDK `soc_field_t` is sorted by name. 0xc495 has one 3-bit field sorting below IDDQ_BIAS (0x78d8): IDDQ (INT_REFCLK_EN, PWRDWN, REFCLK_PD, REF_CLKFREQ_SEL sort above it). 0x78d8 > 0x78cb rules out FORCE_DLL_EN; 0x5d5b with 0xff00 = EXT_PWRDOWN (16 bits). C (ids, order), I (that the binary's enum is the sorted one).
+- Quad order inside an octal is not known (bit 2 = phys 10-13 or 14-17): only whole octals are gated.
+- Never gated: unit 0 GPORT0 (ge1, management, up from boot). An octal goes back down only by a reload (not when its ports go admin down again).
+- Not done, for Dan (no citation or owned by another branch): #25 comment of 2026-11-19.

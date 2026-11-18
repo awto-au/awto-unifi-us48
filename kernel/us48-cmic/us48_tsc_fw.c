@@ -395,6 +395,7 @@ MODULE_FIRMWARE("us48-tsc.bin");
 #define XLPORT_SOFT_RESET	0x2020c00
 #define XLPORT_MODE_REG		0x2020a00
 #define XLPORT_ENABLE_REG	0x2020b00
+#define XLPORT_POWER_SAVE	0x2020d00
 #define XLPORT_CONFIG(l)	(0x20000 | (l))
 #define XLPORT_TXFIFO_CTRL(l)	(0x20300 | (l))
 #define XLMAC_CTRL(l)		(0x60000 | (l))
@@ -503,6 +504,7 @@ static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg)
 	int i, ret = 0;
 
 #define XW(a, x)	(v = (x), us48_sbus(u, 0x0d, blk, (a), &v, 1))
+	ret = XW(XLPORT_POWER_SAVE, 0);		/* undo pwrsave (us48_cmic_pwr.c); xgxs[0] clears IDDQ, sets TSCCLK_EN */
 	for (i = 0; !ret && i < ARRAY_SIZE(xgxs); i++) {
 		ret = XW(XGXS0_CTRL, xgxs[i]);
 		tsc_delay(i == 2 ? XGXS_PLL_US : XGXS_STEP_US);
