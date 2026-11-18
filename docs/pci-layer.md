@@ -41,7 +41,6 @@ Aux devices `pvtmon` and `gpio` take their `of_node` from the DT child of the sa
 ## Consumers
 - `us48_cmic_xe`: aux driver of `us48_pci.cmic`. `us48_probe_common(dev, dma_dev, ...)`: devres/netdev parent = aux device, DMA = PCI device. Unit 0 front-end passes the platform device twice. C (builds)
 - `us48_a2`: remoteproc, a2-design.md.
-- `kernel/us48-cmic-test`: standalone scaffold with its own PCI driver; load only one PCI-ID owner at a time.
 - `rust/a2ctl`: bring-up tool, raw BAR access.
 
 ## Migration of us48_cmic: done
