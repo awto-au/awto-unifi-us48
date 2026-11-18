@@ -6,6 +6,7 @@ Per poll (one ssh, 8 s limit): /proc/uptime, loadavg, CPU idle % over the poll g
 switchdrvr/ubntapp present. Done = ready file + uptime >= min + CPU idle >= 90 % on 2 polls in a row.
 Bounds: max-s = 3x the ~4 min SDK init (user's figure); on expiry logs the last state and exits 1. Log: tmp/logs/stock_wait_ready.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import re
 import sys
@@ -16,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsc_lane_dump as d  # noqa: E402
 
 LOG = d.ROOT / "tmp/logs/stock_wait_ready.log"
-HOST = "192.168.25.206"
+HOST = _ipreg.ip("us48-mgmt")
 CMD = ("cat /proc/uptime /proc/loadavg; head -1 /proc/stat; "
        "ls /var/run/fastpath/ 2>&1 | tr '\\n' ' '; echo; ls -a /var/run/fastpath/ 2>&1 | grep -c ready; "
        "ps | grep -E 'switchdrvr|ubntapp|ubnt-' | grep -v grep | head -5")

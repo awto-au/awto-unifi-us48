@@ -6,6 +6,7 @@ Usage: scripts/chip_health.py [--host IP]    (log tmp/logs/chip_health.log; exit
 - Checks: L2X entries 0, 0x1fff, 0x2000, 0x3fff, 0x7fff read with ctrl == 2 (DONE, no NAK/error bits);
   L2_ENTRY_PARITY_STATUS_0/1 == 0; ING_HW_RESET_CONTROL_2 == 0.
 """
+import _ipreg  # noqa: E402
 import argparse
 import subprocess
 import sys
@@ -37,7 +38,7 @@ def op_cmd(opc: int, blk: int, addr: int, words: int) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="192.168.25.207")
+    ap.add_argument("--host", default=_ipreg.ip("us48-boot"))
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     script = "; ".join(f"echo '== {n}'; " + op_cmd(o, b, ad, w) for n, o, b, ad, w in CHECKS)

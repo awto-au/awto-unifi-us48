@@ -292,26 +292,31 @@ def phy_cell(p):
 
 
 def gen_cabling(db):
-    """scripts/cabling.json: `label` from ports.toml; bench fields (module, far_end, link, updated) kept; far_end must name the loop/sw1 peer."""
+    """scripts/cabling.json: `label` from ports.toml, sw1 far ends from lab.toml (generated); bench fields (module, link, updated) kept; far_end must name the loop peer."""
     path = ROOT / "scripts/cabling.json"
     d = json.loads(path.read_text())
     for e in d["ports"]:
         p = db.port(e["front"])
         e["label"] = p["label"]
-        want = (db.port(p["loop_peer"])["label"] if "loop_peer" in p else "sw1 " + p["sw1_peer"] if "sw1_peer" in p else None)
-        if want and want not in (e["far_end"] or ""):
-            raise SystemExit("cabling.json front %d: far_end %r does not name %r (ports.toml)" % (e["front"], e["far_end"], want))
+        lan = db.sw1_peer(e["front"])
+        if lan:
+            e["far_end"] = "sw1 " + lan
+        elif "loop_peer" in p:
+            want = db.port(p["loop_peer"])["label"]
+            if want not in (e["far_end"] or ""):
+                raise SystemExit("cabling.json front %d: far_end %r does not name %r (ports.toml)" % (e["front"], e["far_end"], want))
     put(path, json.dumps(d, indent=2, ensure_ascii=False) + "\n")
 
 
-def cable_cell(p):
+def cable_cell(db, p):
     c = []
+    lan = db.sw1_peer(p["front"]) if p["front"] else None
     if p.get("role") == "management":
-        c.append("management uplink (sw1)")
+        c.append("management uplink (sw1 %s)" % lan if lan else "management uplink (sw1)")
     if "loop_peer" in p:
         c.append("loop cable to front %d" % p["loop_peer"])
-    if "sw1_peer" in p:
-        c.append("sw1 %s" % p["sw1_peer"])
+    if lan and p.get("role") != "management":
+        c.append("sw1 %s" % lan)
     return ", ".join(c)
 
 
@@ -323,7 +328,7 @@ def gen_ports(db):
     for p in db.ports:
         o.append("| %s | %s | %s | %d | %d | %s | %s | %s | %s | %s | %s |" % (
             p["front"] or "-", p["label"], chip[p["unit"]], p["logical"], p["phys"], phy_cell(p), p.get("lane", ""),
-            ("`%s`" % p["sdk"]) if "sdk" in p else "", ("`%s`" % p["linux"]) if "linux" in p else "", cable_cell(p), p["conf"]))
+            ("`%s`" % p["sdk"]) if "sdk" in p else "", ("`%s`" % p["linux"]) if "linux" in p else "", cable_cell(db, p), p["conf"]))
     o += ["", PORT_END]
     path = ROOT / "docs/port-map.md"
     text = path.read_text()
@@ -363,6 +368,8 @@ def gen_ports_c(db):
         rows.sort(key=lambda p: (p["phy"] in ("gphy", "octal"), p["front"]))
         o += ["", "#define US48_PORTS_UNIT%d \\" % unit]
         o += ["\t%s, \\" % port_cfg(p) for p in rows[:-1]] + ["\t%s" % port_cfg(rows[-1])]
+    o += ["", "/* Driver MAC = US48_MAC_PREFIX, front (ports.toml mac_prefix) */",
+          "#define US48_MAC_PREFIX %s" % ", ".join("0x" + b for b in db.mac_prefix.split(":"))]
     o += ["", "#endif /* US48_PORTS_H */"]
     put(GEN / "us48_ports.h", "\n".join(o) + "\n")
 

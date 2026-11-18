@@ -7,6 +7,7 @@ Usage: scripts/cpu_sweep.py MHZ [--l2off IMAGE]   MHZ = 1550 (flash awto-uboot a
 - Fails on the first BUG/Oops/Bad page/bad magic/Unable to handle in dmesg or the console log, a stress md5 mismatch,
   ssh unreachable, or die >= 110 C / LM75 >= 80 C (fans -> 100 %, stop).
 """
+import _ipreg  # noqa: E402
 import json
 import re
 import subprocess
@@ -22,7 +23,7 @@ REPO = dev.REPO
 LOG = REPO / "tmp/logs/cpu_sweep.log"
 TIO_LOG = REPO / "tmp/logs/tio-us48.log"
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
-       "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", "root@192.168.25.207"]
+       "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", f"root@{_ipreg.ip('us48-boot')}"]
 BAD = re.compile(rb"BUG:|Oops|Bad page|bad magic|Unable to handle|Internal error|imbalanced put|Kernel panic|Bad pte|"
                  rb"Segmentation fault|Illegal instruction|unhandled prefetch|Unhandled fault", re.I)
 UP_S = 40.0     # handover -> ssh: 4 s userspace + ge1 up ~12 s (dev.py U2_PING_S) x 3 ; expiry = FAIL ssh
@@ -98,10 +99,10 @@ def step(mhz: int, image: str | None) -> dict:
     try:
         sess.write(b"\x03\r\n")
         sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
-        sess.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip 192.168.25.30")
+        sess.send_line(f"setenv ipaddr {dev.U2_IP}; setenv serverip {_ipreg.ip('selwyn-enp7s0')}")
         sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")
         for n in range(4):
-            sess.send_line("ping 192.168.25.30")
+            sess.send_line(f"ping {_ipreg.ip('selwyn-enp7s0')}")
             hit = sess.expect([b"is alive", b"not alive"], 16.0, "ping")
             sess.send_line("")
             sess.expect(dev.U2_PROMPTS, dev.BAUD_REPLY_S, "prompt")

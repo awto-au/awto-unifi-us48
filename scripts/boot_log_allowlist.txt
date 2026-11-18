@@ -1,0 +1,10 @@
+# boot_log_check.py allowlist. Row: `regex  # #NN reason`; regex is a fullmatch on the kernel line without timestamp.
+# Only lines that match the DENY words (warning/error/fail/timeout/...) need a row. Every row names an issue;
+# delete the row when the issue is fixed. Seeded 2026-11-19 from the last 7.4.0-rc1 boot in tmp/logs/console/us48-20261118-152738.log.
+iproc-pcie 18012000\.pcie: failed to set affinity for IRQ19  # #15 no iProc MSI in DT yet
+bcm-iproc-i2c 48000000\.i2c: error -6: IRQ index 0 not found  # #15 CMIC SMBus IRQ unknown, poll mode
+bcm-iproc-i2c 48000000\.i2c: NAK addr:0x51  # #15 SFP DDM probed with the cage empty
+bcm-iproc-i2c 48000000\.i2c: xfer failed  # #15 follows the 0x51 NAK
+us48_cmic: loading out-of-tree module taints kernel\.  # #41 module is out of tree until the upstream series
+us48_cmic_xe\.xe us48_pci\.cmic\.0: tsc uC mailbox ram [0-9a-f]{4} <- [0-9a-f]{4} lane \d: TIMEOUT after \d+ us \(mailbox [0-9a-f]{4}\)  # #105 xe50 lane 2 RX restart, DAC does not link
+us48_cmic_xe\.xe us48_pci\.cmic\.0: xe50: rx restart failed: -110  # #105 same

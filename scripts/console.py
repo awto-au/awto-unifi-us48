@@ -19,15 +19,20 @@ import termios
 import select
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lab  # noqa: E402
+import flash_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SOCK = ROOT / "tmp/tio.us48.sock"
 TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
 LOG = ROOT / "tmp/logs/console.log"
-# The Prolific PL2303 (067b:2303) adapter: udev names it either way depending on the host kernel (2026-11-18).
-_TTY_NAMES = ("usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0", "usb-067b_2303-if00-port0")
+# US-48 adapter by-id names (udev gives either per host kernel): awto-dan docs/lab/lab.toml.
+_TTY_NAMES = tuple(_lab.adapter("us48")["by_id"])
 TTY = os.environ.get("US48_TTY") or next(
     (p for p in (f"/dev/serial/by-id/{n}" for n in _TTY_NAMES) if os.path.exists(p)),
     f"/dev/serial/by-id/{_TTY_NAMES[0]}")
@@ -282,6 +287,7 @@ class Session:
         return struct.unpack("i", fcntl.ioctl(self.s.fileno(), termios.TIOCOUTQ, b"\0\0\0\0"))[0]
 
     def send_line(self, text: str) -> None:
+        flash_guard.check_cmd(text)  # #139: raises FlashGuardError before anything is typed
         log(f">> {text!r}")
         self.write(text.encode() + b"\r")
 

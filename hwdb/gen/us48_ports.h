@@ -63,4 +63,7 @@
 	{ .name = "ge47", .vid = 147, .front = 47, .lport = 24, .phys = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true }, \
 	{ .name = "ge48", .vid = 148, .front = 48, .lport = 25, .phys = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true }
 
+/* Driver MAC = US48_MAC_PREFIX, front (ports.toml mac_prefix) */
+#define US48_MAC_PREFIX 0x02, 0x75, 0x73, 0x34, 0x38
+
 #endif /* US48_PORTS_H */

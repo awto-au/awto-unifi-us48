@@ -9,6 +9,7 @@ Usage: scripts/u2_bisect.py [--no-cycle] [--here] [--groups 0,1,2,...]   (defaul
 - Ping budget: 4 s (first ping 30 s incl. cold init) = ARP + ICMP round trip on a link that is already up (<10 ms) plus the first-ping GPHY AN/link wait (~3 s).
   Expiry = Ctrl-C, step counted as RX fail. Log: tmp/logs/u2_bisect.log
 """
+import _ipreg  # noqa: E402
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from _cli import help_guard  # noqa: E402
 
 ORDER = [0, 1, 2, 3, 4, 5, 7, 6, 8]
 NAMES = ["cpu_cos_map", "egr_pri_cng_map", "source_trunk_map", "ipipe_mem", "epipe_mem", "ser", "gport12", "xlport", "other"]
-HOST = "192.168.25.30"
+HOST = _ipreg.ip("selwyn-enp7s0")
 PING_S = 4.0
 FIRST_PING_S = 30.0   # first ping runs the cold init replay (24.5k S-channel ops, ~5-10 s) before AN/ARP
 

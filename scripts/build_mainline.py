@@ -16,6 +16,7 @@ Usage: build_mainline.py [--keep-branch] [--save-patches] [--checkpatch] [--dtbs
   --keep-branch    build the branch as it is (after editing the tree); skips git am
   --save-patches   git format-patch BASE..BRANCH -> mainline/, rewriting only patches whose content changed (names kept), then exit
   --checkpatch     scripts/checkpatch.pl --strict on every commit of the branch, then exit
+  --venv-setup     (re)create tmp/dtschema-venv with dtschema==DTSCHEMA_PIN (needs network), then exit
   --dtbs-check     make dtbs_check for the new board DTS (dtschema from tmp/dtschema-venv), then exit
   --module-only    build the out-of-tree modules only (--tree/--build-dir: private tree + build dir, no staging)
 """
@@ -63,7 +64,9 @@ BRANCH = os.environ.get("US48_KERNEL_BRANCH", f"awto/us48/mainline-{BASE}")  # a
 FETCH_TIMEOUT, WORKTREE_TIMEOUT = 600, 300
 DTB = "broadcom/bcm53344-ubnt-unifi-us-48-500w.dtb"
 CROSS = "arm-linux-gnu-"  # dnf: gcc-arm-linux-gnu binutils-arm-linux-gnu
-VENV_BIN = ROOT / "tmp/dtschema-venv/bin"
+VENV = ROOT / "tmp/dtschema-venv"
+VENV_BIN = VENV / "bin"
+DTSCHEMA_PIN = "2026.9"  # PyPI release >= 2 weeks old; kernel needs >= 2024.4 (#141)
 SLOT_BYTES = 0xD00000  # dev.py SLOTS["linux"]: 13 MiB
 LOADADDR = "0x00018000"  # stock U-Boot writes ATAGs at 0x8000 after copying the image (docs/uboot.md)
 NICE = ["nice", "-n", "19", "ionice", "-c3"]
@@ -249,6 +252,30 @@ def make_env(venv: bool = False) -> dict:
 def kmake(*args, out=None, venv=False, jobs=None) -> None:
     out = out or MAKE_LOG
     run(NICE + ["make", f"-j{jobs or os.cpu_count()}", f"O={BUILD}", *args], out=out, env=make_env(venv))
+
+
+def venv_ok() -> bool:
+    py = VENV_BIN / "python"
+    return py.exists() and subprocess.run([str(py), "-c", "import dtschema"], capture_output=True).returncode == 0
+
+
+def venv_setup() -> int:
+    # pip over the network: 120 s covers dtschema + deps (~15 MB) at >=1 Mbit/s; expiry = abort
+    if VENV.exists():
+        shutil.rmtree(VENV)
+    for cmd in ([sys.executable, "-m", "venv", str(VENV)],
+                [str(VENV_BIN / "pip"), "install", f"dtschema=={DTSCHEMA_PIN}"]):
+        log("$ " + " ".join(cmd))
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            log("abort: venv setup step exceeded 120 s")
+            return 4
+        if r.returncode:
+            log(f"abort: rc={r.returncode}: {r.stderr.strip()[-400:]}")
+            return r.returncode
+    log(f"dtschema {DTSCHEMA_PIN} venv ready: {VENV}")
+    return 0 if venv_ok() else 4
 
 
 def dtbs_check(jobs: int) -> int:
@@ -444,6 +471,7 @@ def main() -> int:
     ap.add_argument("--save-patches", action="store_true")
     ap.add_argument("--checkpatch", action="store_true")
     ap.add_argument("--dtbs-check", action="store_true")
+    ap.add_argument("--venv-setup", action="store_true", help="(re)create tmp/dtschema-venv, then exit")
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--module-only", action="store_true",
                     help="build the out-of-tree modules (pci, a2, cmic, gpio, mspi, pvtmon, fan); staged into the rootfs unless --build-dir is given")
@@ -460,6 +488,11 @@ def main() -> int:
     if a.build_dir:
         BUILD = a.build_dir.resolve()
         MAKE_LOG = ROOT / "tmp/logs/build_modules-make.log"
+    if a.venv_setup:
+        return venv_setup()
+    if a.dtbs_check and not venv_ok():
+        log(f"abort: {VENV} missing or cannot import dtschema; run: python3 scripts/build_mainline.py --venv-setup (#141)")
+        return 4
     if a.module_only:
         if a.build_dir and not (BUILD / ".config").exists():
             configure_modules_only()

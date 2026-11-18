@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import _ipreg  # noqa: E402
 import json
 import re
 import socket
@@ -73,7 +74,7 @@ def _neigh_ip() -> str | None:
 def run() -> int:
     st = read_status() or {}
     st.setdefault("state", "unknown")
-    st.setdefault("ip", "192.168.25.206")  # DHCP reservation (ip-registry us48-mgmt); neigh table overrides
+    st.setdefault("ip", _ipreg.ip("us48-mgmt"))  # DHCP reservation (ip-registry us48-mgmt); neigh table overrides
     st.setdefault("ping", False)
 
     def save(**kv) -> None:

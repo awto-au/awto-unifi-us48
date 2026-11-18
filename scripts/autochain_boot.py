@@ -8,6 +8,7 @@
 - Budget: 40 s overall (expected ~12 s: uboot-1 ~6 s + DDR + PCIe + chain); expiry = FATAL with the last line.
   Stall: 15 s without a console line = hung (awto-uboot WDT is 10 s, so a hang shows as a repeated banner instead).
 """
+import _ipreg  # noqa: E402
 import argparse
 import sys
 import threading
@@ -27,7 +28,7 @@ STAGES = [(b"U-Boot usw", "uboot-1 banner"), (b"DDR Tune Completed", "DDR done")
           (b"Booting Linux", "kernel start"), (b"Freeing unused kernel", "kernel init done"),
           (b"starting pid", "userspace (rc.sh)"), (b"us48-net: done", "us48-net done"),
           (b"Please press Enter", "shell prompt"), (b"awto-uboot> ", "prompt")]
-BOARD_IP = "192.168.25.207"  # ip-registry us48-boot
+BOARD_IP = _ipreg.ip("us48-boot")  # ip-registry us48-boot
 # --full: autoboot to Linux. The stage list is cumulative: the awto-uboot/kernel names repeat across the two bootm hops,
 # so a name is only recorded once (the first occurrence). Expected total ~30 s; 120 s backstop, expiry = FATAL.
 FULL_OVERALL_S = 120.0

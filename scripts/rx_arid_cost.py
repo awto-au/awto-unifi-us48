@@ -9,6 +9,7 @@ Usage: rx_arid_cost.py [--values 3 2 1 0] [--reps 3] [--phases stopped running] 
 - Stops on: a2 not at a shell within A2_BOOT_S, a die >= TEMP_MAX_MC, a test failure. Register restored to 0x1f at the end.
 Log: tmp/logs/rx_arid_cost.log; results tmp/logs/rx_arid_cost.json.
 """
+import _ipreg  # noqa: E402
 import argparse
 import json
 import re
@@ -23,8 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/rx_arid_cost.log"
 JSON = ROOT / "tmp/logs/rx_arid_cost.json"
-HOST = "root@192.168.25.207"	# ip-registry us48-boot
-BOARD_IP = "192.168.25.207"
+HOST = f"root@{_ipreg.ip('us48-boot')}"	# ip-registry us48-boot
+BOARD_IP = _ipreg.ip("us48-boot")
 OPTS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
         "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8"]
 REG = "0x1801210c"	# PAXB0 RX_DEBUG_CONTROL_0 (hwdb gen: paxb0 0x18012000 + 0x10c); reset 0x1f, ARID count = bits 1:0

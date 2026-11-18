@@ -8,6 +8,7 @@ Host $US48_SSH (default root@192.168.25.207), ssh BatchMode like sfp_ddm.py; rec
 Logs: tmp/logs/pcie_harness.log (all), pcie_soak.log (one line per minute + hourly), pcie_soak_report.md, pcie_freeze-*.txt.
 Exit: 0 = pass / completed or operator stop, 1 = smoke failure or setup error, 2 = soak stopped on a failure (state frozen).
 """
+import _ipreg  # noqa: E402
 import argparse
 import datetime as dt
 import json
@@ -27,7 +28,7 @@ LOG = LOGDIR / "pcie_harness.log"
 SOAK_LOG = LOGDIR / "pcie_soak.log"
 REPORT = LOGDIR / "pcie_soak_report.md"
 SMOKE_JSON = LOGDIR / "pcie_smoke.json"
-HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
+HOST = os.environ.get("US48_SSH", f"root@{_ipreg.ip('us48-boot')}")
 DBG = "/sys/kernel/debug/us48_bustest"
 DEFAULT_FW = "us48-a2-bustest.elf"
 

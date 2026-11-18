@@ -4,6 +4,7 @@
 Usage: u2_run.py [--no-cycle] [--stay] "cmd" ["cmd" ...]   (reply per command printed; log tmp/logs/u2_run.log)
 Spaces every 20 ms from the awto-uboot banner until the prompt (same rule as dev.py _listen).
 """
+import _ipreg  # noqa: E402
 import subprocess
 import sys
 import time
@@ -13,7 +14,7 @@ import console
 from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-RELAY = ["/mnt/2tb/git/awto-terminal/.venv/bin/python3", str(ROOT / "scripts/relay_native.py"), "192.168.25.208"]
+RELAY = ["/mnt/2tb/git/awto-terminal/.venv/bin/python3", str(ROOT / "scripts/relay_native.py"), _ipreg.ip("so-th-1-relay")]
 # banner -> prompt measured ~1.0 s (docs/autochain.md); 15 s = cold start incl. uboot-1 + DDR; expiry = report tail
 WINDOW_S = 15.0
 # one command: reply ends at the prompt; 20 s cap (8 MiB crc32 uncached ~ few s), expiry = return what came

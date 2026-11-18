@@ -12,6 +12,8 @@ Usage: scripts/sw1_bounce.py --pair 49|50 [--exp a,b,c,d,e] [--wait-s 40]
 - Per experiment: sw1 carrier, board carrier, PCS_LIVE, sw1 dmesg lines, sw1 SerDes TGR_STD_0/1 of the port.
 - Log: tmp/logs/sw1_bounce.log
 """
+import _ipreg  # noqa: E402
+import os
 import argparse
 import re
 import subprocess
@@ -22,12 +24,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
 
+os.environ.setdefault("US48_BOARD_GUARD_ALLOW", "sw1")  # Dan 2026-11-16: sw1 lan3/6/7 bounces OK; lan5 stays refused
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_bounce.log"
-SW1 = "root@192.168.25.48"
-BOARD = "root@192.168.25.207"
+SW1 = f"root@{_ipreg.ip('st1008f-1-mgmt')}"
+BOARD = f"root@{_ipreg.ip('us48-boot')}"
 _DB = hwdb.lite()
-PAIRS = {str(p["front"]): (p["linux"], p["sw1_peer"], _DB.lane(p["front"])) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
+PAIRS = {str(f): (_DB.netdev(f), lan, _DB.lane(f)) for f, lan in _DB.sw1_cages().items()}
 RESTORE = _DB.sw1_ports()
 POLL_S = 0.5
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",

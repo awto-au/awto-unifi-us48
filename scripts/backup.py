@@ -12,6 +12,7 @@
 Usage: SSHPASS=... backup.py [--host HOST] [--user USER]
 """
 
+import _ipreg  # noqa: E402
 import argparse
 import hashlib
 import os
@@ -72,7 +73,7 @@ def remote_sha(base: list[str], dev: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--host", default=os.environ.get("SWITCH_HOST", "192.168.25.206"))  # DHCP reservation
+    ap.add_argument("--host", default=os.environ.get("SWITCH_HOST", _ipreg.ip("us48-mgmt")))  # DHCP reservation
     ap.add_argument("--user", default="ubnt")
     a = ap.parse_args()
     if not os.environ.get("SSHPASS"):

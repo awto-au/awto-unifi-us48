@@ -7,6 +7,7 @@ Usage: debug_exercise.py [a2|dma|net|reload|modules|leak|all ...]   (board alrea
 - a2 needs tmp/a2/zImage-normal (copy of build-normal zImage), tmp/a2/us48-a2.dtb, tmp/a2fw/us48-a2-boot.elf.
 - Log: tmp/logs/debug_exercise.log
 """
+import _ipreg  # noqa: E402
 import re
 import subprocess
 import sys
@@ -72,7 +73,7 @@ def t_dma() -> None:
 
 def t_net() -> None:
     O = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8"]
-    H = "root@192.168.25.207"
+    H = f"root@{_ipreg.ip('us48-boot')}"
     t = time.monotonic()
     r = subprocess.run(["bash", "-c", f"head -c 10485760 /dev/urandom | ssh {' '.join(O)} {H} 'wc -c'"], capture_output=True, text=True, timeout=60)
     log(f"tcp up 10 MiB: {r.stdout.strip()} B {10 / (time.monotonic() - t):.2f} MB/s")

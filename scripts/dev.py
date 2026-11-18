@@ -11,6 +11,7 @@ command here talks through its socket, so whatever dev.py does you see there.
 
 from __future__ import annotations
 
+import _ipreg  # noqa: E402
 import contextlib
 import json
 import os
@@ -55,6 +56,7 @@ LOG = LOGS / "dev.log"
 sys.path.insert(0, str(REPO / "scripts"))
 
 import console  # noqa: E402
+import flash_lock  # noqa: E402
 import hwdb  # noqa: E402
 
 # $US48_IMAGE overrides (default: scripts/build_mainline.py output).
@@ -71,9 +73,12 @@ STEPS: dict[str, tuple[str, list[str], bool]] = {
     "lint":      ("static analysis", [], True),
     "fmt-check": ("formatting check (no writes)", [], False),
     "fmt":       ("reformat in place", [], False),
+    "doc-check": ("docs links/anchors/index", [sys.executable, str(REPO / "scripts/doc_link_check.py")], False),
+    "check-log": ("saved boot log vs allowlist", [sys.executable, str(REPO / "scripts/boot_log_check.py"), "--skip-missing"], False),
+    "guard-selftest": ("guard self-tests (storm, flash, board)", [sys.executable, str(REPO / "scripts/guards_selftest.py")], False),
 }
-GATE = ["fmt-check", "lint", "test", "build"]
-CI = ["fmt-check", "lint", "test", "build"]
+GATE = ["fmt-check", "lint", "test", "doc-check", "check-log", "guard-selftest", "build"]
+CI = ["fmt-check", "lint", "test", "doc-check", "check-log", "guard-selftest", "build"]
 
 # --------------------------------------------------------------------------
 # Logging — local time, stderr + ./tmp/logs/dev.log, colour on TTY only.
@@ -144,7 +149,7 @@ ABORT_BUDGET_S = 2.0
 # Banner → "Hit any key": DDR shmoo restore + memtest + PCIe, measured ~1 s (2026-10-13). 10 s = stall detector;
 # seen once: hang at "Restoring Shmoo parameters" after a soft reboot → power-cycle.
 BANNER_TO_COUNTDOWN_S = 10
-SWITCH_IP = "192.168.25.206"
+SWITCH_IP = _ipreg.ip("us48-mgmt")
 # LAN ssh login + `reboot` returns in ~2 s; 15 s backstop. Expiry = ask for power-cycle, keep waiting for U-Boot.
 SSH_REBOOT_S = 15
 PROMPT = b"u-boot> "
@@ -438,7 +443,7 @@ def _serial_reboot(s: console.Session) -> bool:
 RELAY_GAP_S = 5.0
 RELAY_HTTP_S = 5
 RELAY_PY = "/mnt/2tb/git/awto-terminal/.venv/bin/python3"  # has aioesphomeapi
-RELAY_DEFAULT = "192.168.25.208"  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
+RELAY_DEFAULT = _ipreg.ip("so-th-1-relay")  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
 
 
 RELAY_TRIES = 3	# #111: one relay_native call timed out once (TimeoutError) and left the board off
@@ -706,11 +711,24 @@ def _bootm_watch(s: console.Session, slot: str = "linux", prompt: bytes | list[b
 
 
 def _uboot_cmd(s: console.Session, cmd: str, ok_pat: bytes | list[bytes], budget_s: float, what: str) -> str | None:
+    """Sends one U-Boot command. sf erase takes tmp/flash_write.lock (storm_watch must not cut power mid-write);
+    it is dropped after the sf write/update, or on a failure."""
+    words = cmd.split()
+    sf_op = words[1] if words[:1] == ["sf"] and len(words) > 1 else ""
+    if sf_op == "erase":
+        if flash_lock.stop_requested():
+            log("storm guard asked the flash flow to stop (tmp/flash_write.stop): not starting another write", "FATAL")
+            return None
+        flash_lock.acquire(cmd)
     s.send_line(cmd)
     try:
         s.expect(ok_pat if isinstance(ok_pat, list) else [ok_pat], budget_s, what)
-        return s.read_idle(0.3, 2.0).decode(errors="replace")
+        out = s.read_idle(0.3, 2.0).decode(errors="replace")
+        if sf_op in ("write", "update"):
+            flash_lock.release()
+        return out
     except console.Timeout as e:
+        flash_lock.release()
         log(str(e), "FATAL")
         return None
 
@@ -745,7 +763,7 @@ U2_PROMPT = b"awto-uboot> "
 U2_PROMPTS = [b"awto-uboot> ", b"uboot-2> "]
 # ge1 first start after power-up: cold init ~7 s + GPHY AN ~3.2 s + ARP = ~11.5 s measured 2026-11-15; 15 s = 1.3x, expiry = warn and try anyway.
 U2_PING_S = 15.0
-U2_IP = "192.168.25.207"
+U2_IP = _ipreg.ip("us48-boot")
 TFTP_SERVE = REPO / "scripts/tftp_serve.py"
 TFTP_DIR = REPO / "tmp/tftp"
 # tftp_serve.py start (python + bind) ~0.2 s; polled every 0.1 s, 3 s = 15x. Expiry = RuntimeError, server killed.
@@ -1317,7 +1335,7 @@ def cmd_schan(extra: list[str]) -> int:
          args="[module.ko] [--ip A.B.C.D] [--ping A.B.C.D] [-- insmod args...]", kind="action")
 def cmd_cmic_load(extra: list[str]) -> int:
     ko = REPO / "kernel/us48-cmic/us48_cmic.ko"
-    ip, ping, mod_args = os.environ.get("US48_IP", "192.168.25.207"), "192.168.25.11", ""
+    ip, ping, mod_args = os.environ.get("US48_IP", _ipreg.ip("us48-boot")), _ipreg.ip("lizard-eno1"), ""
     rest = list(extra)
     if "--" in rest:
         i = rest.index("--")
@@ -1516,6 +1534,33 @@ def cmd_doctor(_extra: list[str]) -> int:
     return 0
 
 
+@command("check doc links, anchors and that docs/README.md lists every doc once (offline)",
+         args="[extra .md files]", kind="meta")
+def cmd_doc_check(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/doc_link_check.py"), *extra], cwd=REPO)
+
+
+@command("fail on a warning/error line not in scripts/boot_log_allowlist.txt in a saved boot log (offline)",
+         args="[--log FILE] [--boot N] [--all]", kind="meta")
+def cmd_check_log(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/boot_log_check.py"), *extra], cwd=REPO)
+
+
+@command("run the guard self-tests: storm_watch, flash_guard, board_guard (no board, no NIC, no relay)", kind="meta")
+def cmd_guard_selftest(_extra: list[str]) -> int:
+    return run_step("guard-selftest")
+
+
+@command("storm guard (singleton, started automatically for hardware commands)", args="[--stop] [--status] [--selftest]", kind="meta")
+def cmd_storm_watch(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/storm_watch.py"), *(extra or ["--status"])], cwd=REPO)
+
+
+@command("check console lines against the protected flash regions (hwdb/board/flash.toml)", args='[--selftest | "line" ...]', kind="meta")
+def cmd_flash_guard(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/flash_guard.py"), *(extra or ["--selftest"])], cwd=REPO)
+
+
 @command("fail-fast pre-commit gate: " + " + ".join(GATE), kind="aggregate")
 def cmd_gate(_extra: list[str]) -> int:
     for name in GATE:
@@ -1644,6 +1689,13 @@ def check_args(meta: dict, extra: list[str]) -> str | None:
     return None
 
 
+def _storm_guard() -> None:
+    """One detached storm_watch --guard (singleton by pidfile lock); a second start exits at once."""
+    LOGS.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([sys.executable, str(REPO / "scripts/storm_watch.py"), "--guard"], cwd=REPO,
+                     stdout=subprocess.DEVNULL, stderr=(LOGS / "storm_watch.log").open("a"), start_new_session=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help", "help"):
@@ -1659,6 +1711,12 @@ def main(argv: list[str] | None = None) -> int:
     err = check_args(meta, extra)
     if err:
         return command_usage(name, meta, err)
+    if meta["kind"] == "action":  # hardware command: board_guard refuses protected targets, storm guard watches the NIC
+        rc = subprocess.call([sys.executable, str(REPO / "scripts/board_guard.py"), name, *extra], cwd=REPO)
+        if rc:
+            log(f"{name}: refused by scripts/board_guard.py (awto-dan docs/lab/lab.toml, #139)", "FATAL")
+            return rc
+        _storm_guard()
     rc = meta["fn"](extra)
     return 0 if rc == SKIPPED else rc
 

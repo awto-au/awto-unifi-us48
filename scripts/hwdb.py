@@ -173,6 +173,7 @@ class Db:
         self.sdk_sbus_regs = {}
         self.sdk_sbus_mems = {}
         self.ports = []
+        self.mac_prefix = None
         self.hw = {}  # "sdk_iproc.NAME" / "sdk_cmic.NAME" -> {seen, reset_ok?, ro_ok?, date?, unit?, why?} from hwdb/validation/*.toml
         self.hw0 = {}  # same for unit 0 (hwdb/validation/u0.toml); self.hw = unit 1 (u1.toml)
         self.blocked = []  # hwdb/validation/*-blocked.toml entries; "unit" key added (from the file name uN-)
@@ -209,6 +210,7 @@ class Db:
             bn.comments = b.get("comment", [])
             self.binaries[n] = bn
         self.ports.extend(d.get("port", []))
+        self.mac_prefix = d.get("mac_prefix", self.mac_prefix)
 
     def resolve_like(self):
         for b in self.blocks.values():
@@ -336,12 +338,19 @@ class Db:
         return int(re.fullmatch(r"(?:QSGMII\d|TSC) lane (\d)", self.port(front)["lane"]).group(1))
 
     def sw1_peer(self, front):
-        """sw1 port on the far end of an SFP/SFP+ port, or None."""
-        return self.port(front).get("sw1_peer")
+        """sw1 port on the far end of a front port (awto-dan docs/lab/lab.toml, scripts/_lab.py), or None."""
+        import _lab
+        far = _lab.peers("us48", self.netdev(front), "sw1")
+        return _lab.end(far[0])[1] if far else None
+
+    def sw1_cages(self):
+        """{front: sw1 port} of the SFP/SFP+ ports with a sw1 far end in lab.toml."""
+        return {p["front"]: self.sw1_peer(p["front"]) for p in self.ports
+                if p["front"] and p["phy"] == "none" and self.sw1_peer(p["front"])}
 
     def sw1_ports(self):
         """Sorted sw1 ports cabled to the SFP/SFP+ ports (admin state to restore after a test)."""
-        return tuple(sorted(p["sw1_peer"] for p in self.ports if "sw1_peer" in p))
+        return tuple(sorted(self.sw1_cages().values()))
 
     def gport(self, front):
         """(GPORT S-channel block, lane) of a QSGMII copper port."""
@@ -373,6 +382,10 @@ class Db:
 
     def mgmt_netdev(self):
         return self.netdev(self.mgmt_front())
+
+    def probe_netdevs(self, unit):
+        """Netdevs with role unit1_probe on that unit (the copper port checked next to xe49/xe50)."""
+        return [self.netdev(p["front"]) for p in self.ports if p.get("role") == "unit1_probe" and p["unit"] == unit]
 
     def hand_blocks(self):
         return [b for b in self.blocks.values() if b.origin == "hand"]
@@ -462,6 +475,8 @@ class Db:
                             self.addr(ref)
                         except KeyError:
                             err.append("func %s.%s: reg ref %s unresolved" % (bn.name, f.name, ref))
+        if not re.fullmatch(r"([0-9a-f]{2}:){4}[0-9a-f]{2}", self.mac_prefix or ""):
+            err.append("mac_prefix %r is not five hex bytes" % self.mac_prefix)
         for p in self.ports:
             for k in ("front", "label", "unit", "logical", "phys", "phy", "src", "conf"):
                 if k not in p:
@@ -515,8 +530,8 @@ def lite():
 
 
 def mac(front):
-    """Driver MAC of a front port: 02:75:73:34:38:<front> (kernel/us48-cmic/us48_cmic_core.c)."""
-    return "02:75:73:34:38:%02x" % front
+    """Driver MAC of a front port: ports.toml mac_prefix + front (US48_MAC_PREFIX in hwdb/gen/us48_ports.h)."""
+    return "%s:%02x" % (lite().mac_prefix, front)
 
 
 def main(argv):

@@ -9,6 +9,7 @@ Usage:
 Output lines: "<front> <aer> <reg-hex> <val-hex>" and "mac <front> <name> <val>". Log: tmp/logs/tsc_lane_dump.log
 Bounds: ours = one ssh per front (~1 s), stock = one ssh per front (~100 MIIM reads x ~30 us + ssh); 30 s ssh limit each.
 """
+import _ipreg  # noqa: E402
 import os
 import re
 import subprocess
@@ -144,7 +145,7 @@ def main() -> int:
     if a[0] == "ours":
         ours(ROOT / opt("--out", "tmp/tsc_dump/ours.txt"))
     elif a[0] == "stock":
-        stock(ROOT / opt("--out", "tmp/tsc_dump/stock.txt"), opt("--host", os.environ.get("US48_SWITCH_IP", "192.168.25.206")), opt("--base", ""))
+        stock(ROOT / opt("--out", "tmp/tsc_dump/stock.txt"), opt("--host", os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt"))), opt("--base", ""))
     elif a[0] == "diff" and len(a) == 3:
         diff(Path(a[1]), Path(a[2]))
     else:

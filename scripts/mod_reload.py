@@ -11,6 +11,7 @@ Usage: mod_reload.py <module> [insmod args...] [--host H] [--limit-s N] [--no-ne
 - Host $US48_SSH (default root@192.168.25.207), ssh BatchMode like pcie_harness.py. Log: tmp/logs/mod_reload.log.
 - Exit: 0 reloaded + done marker seen, 1 failed or marker missing.
 """
+import _ipreg  # noqa: E402
 import argparse
 import os
 import subprocess
@@ -21,16 +22,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/mod_reload.log"
-HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
+HOST = os.environ.get("US48_SSH", f"root@{_ipreg.ip('us48-boot')}")
 BOARD_LOG = "/tmp/mod_reload.log"
 BOARD_SH = "/tmp/mod_reload.sh"
-IP = "192.168.25.207/24"	# ip-registry us48-boot, same as mainline/rootfs/overlay/etc/rc.d/S04us48-net
+IP = f"{_ipreg.ip('us48-boot')}/24"	# ip-registry us48-boot, same as mainline/rootfs/overlay/etc/rc.d/S04us48-net
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
 
 _DB = hwdb.lite()
 MGMT = _DB.mgmt_netdev()
-NETDEVS = {"us48_cmic": [MGMT], "us48_cmic_xe": [p["linux"] for p in _DB.ports if p["unit"] == 1 and "linux" in p and p["front"]] + ["ge40"]}
+NETDEVS = {"us48_cmic": [MGMT], "us48_cmic_xe": [p["linux"] for p in _DB.ports if p["unit"] == 1 and "linux" in p and p["front"]] + _DB.probe_netdevs(1)}
 DEFAULT_ARGS = {"us48_cmic": ["unit0=1"]}
 # One ssh round trip on the LAN is < 1 s; connect 2 s = the board is rebooting/reloading, not slow.
 CONNECT_S = 2
