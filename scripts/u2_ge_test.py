@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """u2_ge_test — one pass at the uboot-2 prompt: ping the host, TFTP an image, crc32 vs host, rate.
 
-Usage: scripts/u2_ge_test.py [--image FILE] [--no-ping]   (--no-ping: TFTP is the first network op after boot)   (default tmp/tftp/us48-initramfs.bin; board at the awto-uboot> prompt)
+Usage: scripts/u2_ge_test.py [--image FILE] [--no-ping]   (--no-ping: TFTP is the first network op after boot)   (default tmp/mainline/us48-mainline-normal.bin; board at the awto-uboot> prompt)
 - Active port = uboot-2 `ethact` (ge1 default); set it by hand first to test xe1.
 - Single transfer, no repeats (Dan: no soaks). Log: tmp/logs/u2_ge_test.log
 """
@@ -20,8 +20,10 @@ PING_S = 15.0  # ARP + ICMP; GPHY AN up to 4 s in start(), sw1 STP may add more;
 
 def main() -> int:
     args = sys.argv[1:]
-    img = Path(args[args.index("--image") + 1]) if "--image" in args else dev.TFTP_DIR / dev.U2_IMAGE
-    name = dev._u2_image(["--image", str(img)])
+    img = Path(args[args.index("--image") + 1]) if "--image" in args else dev.U2_DEFAULT_IMAGE
+    name = dev._u2_image(["--image", str(img), "--debug"], "u2_ge_test (transfer + crc only, any profile)")
+    if name is None:
+        return 1
     size = (dev.TFTP_DIR / name).stat().st_size
     host_crc = zlib.crc32((dev.TFTP_DIR / name).read_bytes()) & 0xFFFFFFFF
     if not dev._ensure_console():

@@ -754,7 +754,8 @@ TFTP_START_S = 3.0
 # slowest measured 8.5 MB run (~180 s). Expiry = log the last output and give up, board stays at the prompt.
 U2_TFTP_STALL_S = 70.0
 U2_TFTP_CAP_S = 540.0
-U2_IMAGE = "us48-mainline-debug.bin"
+# u2-boot --from tftp / flash-kernel0 default: the normal profile (#112: the old debug default bit 3 agents)
+U2_DEFAULT_IMAGE = REPO / "tmp/mainline/us48-mainline-normal.bin"
 
 
 def _host_ip_for(board_ip: str) -> str | None:
@@ -867,25 +868,47 @@ def cmd_tftp_serve(_extra: list[str]) -> int:
     return 0
 
 
-def _u2_image(extra: list[str]) -> str:
-    """Name of the image in TFTP_DIR: --image FILE (copied there if elsewhere), else U2_IMAGE."""
-    if "--image" not in extra:
-        return U2_IMAGE
-    f = Path(extra[extra.index("--image") + 1]).resolve()
+def _image_profile(f: Path) -> str:
+    """normal | debug | unknown, from the uImage name build_mainline.py writes ('US-48 mainline <release>')."""
+    with f.open("rb") as fh:
+        hdr = fh.read(64)
+    name = hdr[32:64].rstrip(b"\0").decode(errors="replace") if hdr[:4] == bytes.fromhex("27051956") else ""
+    return "normal" if "-norm" in name else "debug" if "-dbg" in name else "unknown"
+
+
+def _u2_image(extra: list[str], what: str) -> str | None:
+    """Image for a uboot-2 TFTP load: --image FILE, else U2_DEFAULT_IMAGE. Logged with its profile; a non-normal image
+    (debug or unknown build) needs --debug (#112). Copied into TFTP_DIR; returns its name there, None = refused."""
+    f = Path(extra[extra.index("--image") + 1] if "--image" in extra else U2_DEFAULT_IMAGE).resolve()
+    if not f.is_file():
+        log(f"{what}: image {f} missing (scripts/build_mainline.py --profile normal)", "FATAL")
+        return None
+    prof = _image_profile(f)
+    log(f"{what}: image {f} ({prof} profile, {f.stat().st_size} B{', default' if '--image' not in extra else ''})", "ALERT")
+    if prof != "normal" and "--debug" not in extra:
+        log(f"{what}: {prof} image refused: pass --debug to use it", "FATAL")
+        return None
     if f.parent != TFTP_DIR.resolve():
         shutil.copy2(f, TFTP_DIR / f.name)
     return f.name
 
 
-@command("uboot-2 (at its prompt): load the mainline image into RAM (flash slot or TFTP) and bootm it", args="[--from flash|tftp] [--image FILE]",
+@command("uboot-2 (at its prompt): load the mainline image into RAM (flash slot or TFTP) and bootm it; tftp default "
+         "image = normal profile, a debug image needs --debug", args="[--from flash|tftp] [--image FILE] [--debug]",
          kind="action")
 def cmd_u2_boot(extra: list[str]) -> int:
     src = extra[extra.index("--from") + 1] if "--from" in extra else "flash"
     if src not in ("flash", "tftp") or not _ensure_console():
-        log("usage: u2-boot [--from flash|tftp] [--image FILE]", "ERROR")
+        log("usage: u2-boot [--from flash|tftp] [--image FILE] [--debug]", "ERROR")
         return 2
-    img = _u2_image(extra)
     name, off, length, _img = _slot(["--slot", "linux"])
+    if src == "tftp":
+        img = _u2_image(extra, "u2-boot --from tftp")
+        if img is None:
+            return 2
+    else:
+        log(f"u2-boot --from flash{' (default)' if '--from' not in extra else ''}: boots the image already in kernel0 "
+            f"slot {name}, not a new build (use --from tftp for that)", "ALERT")
     s = console.Session()
     try:
         s.write(b"\x03\r\n")  # abort a running TFTP retry loop or a half-typed line
@@ -974,7 +997,7 @@ def cmd_boot_ram(extra: list[str]) -> int:
 
 @command("write an image to a kernel0 slot: uboot-2 TFTP -> RAM -> sf erase/write + read-back CRC, then boot it "
          "(--serial: old loady path, off by default)",
-         args="[--slot linux] [--image FILE] [--no-boot] [--serial [--baud N]]", kind="action")
+         args="[--slot linux] [--image FILE] [--debug] [--no-boot] [--serial [--baud N]]", kind="action")
 def cmd_flash_kernel0(extra: list[str]) -> int:
     if "--serial" not in extra:
         return _flash_kernel0_u2(extra)
@@ -989,7 +1012,9 @@ def _flash_kernel0_u2(extra: list[str]) -> int:
         return 1
     if not _ensure_console():
         return 1
-    name = _u2_image(extra if "--image" in extra else ["--image", str(IMAGE)])
+    name = _u2_image(extra, "flash-kernel0")
+    if name is None:
+        return 2
     size = (TFTP_DIR / name).stat().st_size
     if size > slot_len:
         log(f"image {size} B > slot {slot} 0x{slot_len:x}", "FATAL")
