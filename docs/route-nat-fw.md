@@ -1,7 +1,7 @@
 # Copper routing, NAT, firewall tests (#40)
 
 - Goal: CPU-path routing/NAT/firewall numbers with the existing loop cables, no switch-table writes. Tool: `scripts/route_nat_fw_test.py` (dry-run by default, `--apply` acts over ssh on the board).
-- Image: base `mainline/us48_defconfig` (both profiles) has network namespaces + nftables as modules; `nft` and `modprobe` are in the rootfs (below). Not yet run on the board.
+- Image: base `mainline/us48_defconfig` (both profiles) has network namespaces + nftables as modules; `nft` and `modprobe` are in the rootfs (below). Results: #40.
 
 ## Topology
 
@@ -21,7 +21,12 @@ v6: 2001:db8:48:10::/64 and 2001:db8:48:20::/64 (::1 router, ::2 hosts)
 
 - `route_nat_fw_test.py setup|route|nat|fw|flowtable|teardown|all [--apply] [--no-v6] [--mib N]`; log `tmp/logs/route_nat_fw_test.log`.
 - Dry-run prints every board command. `all` = setup, route, nat, fw, flowtable, then teardown in a `finally`.
-- Netns without `iproute2`: busybox `unshare -n sleep` holds a namespace, `ip link set geN netns PID` moves the port in, `nsenter -t PID -n` runs commands in it. Counters come from `/proc/net/dev` inside each namespace (sysfs shows the root namespace only).
+- Netns without `iproute2`: busybox `unshare -n sh -c 'read x <> fifo'` holds a namespace (fifo never written), `ip link set geN netns PID` moves the port in, `nsenter -t PID -n` runs commands in it. Counters come from `/proc/net/dev` inside each namespace (sysfs shows the root namespace only).
+- busybox gaps: `ip` has no `nodad` and no `neigh add` (setup polls carrier, then DAD until no address is tentative); `nc -l` listens dual-stack (peer check reads `tcp6`, v4-mapped).
+- nft: `fwd` is a keyword (chain `rnf_fwd`); `masquerade` takes options, so `}` goes on its own line.
+- Per transfer: temps before/after (stop die >= 108 C, LM75 >= 78 C), `/proc/stat` CPU busy + softirq, router rx pps (ge17+ge41, `/proc/1/net/dev`).
+- Teardown verifies: snapshot state equal (link-local addresses ignored), ge8/ge32 in the root ns, no holders/listeners, no `rnf_` tables, no `/tmp/rnf`.
+- IPv6 on the unit 0 cable fails: NDP multicast does not reach the CPU (#127); use `--no-v6` until fixed.
 - Modules (`modprobe`, `modules.dep` from host `depmod`, built by `build_mainline.py`): nf_conntrack, nf_nat, nf_tables, nft_ct, nft_chain_nat, nft_nat, nft_masq, nft_limit, nft_log, nft_reject(_inet), nf_flow_table(_inet), nft_flow_offload. They stay loaded after teardown until reboot.
 - TCP test: `dd` 10 MiB through busybox `nc` between the namespaces, receiver counts bytes (must be exactly N MiB), MB/s from `/proc/uptime` (10 ms resolution).
 - Limits: 15 s per board command, 30 s per 10 MiB transfer; expiry = step fails, logged with the command, restore runs.

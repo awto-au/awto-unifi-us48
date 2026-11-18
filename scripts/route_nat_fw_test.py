@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _cli import help_guard  # noqa: E402
+import _board  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/route_nat_fw_test.log"
@@ -35,6 +36,8 @@ SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o
        "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8"]
 CALL_S = 15.0      # one board command: busybox/ip/nft take < 1 s each; 15 s covers a slow module load
 XFER_S = 30.0      # 10 MiB TCP; see the docstring
+DAD_S = 2.5        # IPv6 DAD, see wait_dad()
+LINK_S = 5.0       # 1000BASE-T AN ~3 s + 1 s driver link poll, 1.25x (copper_check.py LINK_LIMIT_S)
 STATE = "/tmp/rnf"
 MODULES = ["nf_conntrack", "nf_nat", "nf_tables", "nft_ct", "nft_chain_nat", "nft_nat", "nft_masq", "nft_limit", "nft_log",
            "nft_reject", "nft_reject_inet", "nf_flow_table", "nf_flow_table_inet", "nft_flow_offload"]
@@ -43,6 +46,25 @@ NET = {"A": ("10.48.10.2", "2001:db8:48:10::2"), "R1": ("10.48.10.1", "2001:db8:
        "R2": ("10.48.20.1", "2001:db8:48:20::1"), "B": ("10.48.20.2", "2001:db8:48:20::2")}
 TABLES = ("rnf_nat", "rnf_fw", "rnf_ft")
 PORT_RE = r"\bge(8|17|32|41)\b"
+# state saved by setup and compared after teardown: admin up, ipv6 disable, addresses, router-port forwarding, nft rule lines
+SNAP_CMD = ("for p in ge8 ge17 ge32 ge41; do echo \"link $p $(ip -o link show $p | grep -c '[<,]UP[,>]')\"; "
+            "echo \"v6dis $p $(cat /proc/sys/net/ipv6/conf/$p/disable_ipv6)\"; "
+            "ip -o addr show dev $p | sed \"s/^/addr $p /\"; done; "
+            "for f in /proc/sys/net/ipv4/conf/ge17/forwarding /proc/sys/net/ipv4/conf/ge41/forwarding "
+            "/proc/sys/net/ipv6/conf/ge17/force_forwarding /proc/sys/net/ipv6/conf/ge41/force_forwarding; do echo \"fwd $f $(cat $f)\"; done; "
+            "echo \"nftn $(nft list ruleset | wc -l)\"")
+
+
+def snap_norm(text: str) -> list[str]:
+    """Snapshot lines comparable across a down/up: link-local addresses dropped, addr lines cut to port + family + prefix."""
+    out = []
+    for ln in text.splitlines():
+        f = ln.split()
+        if not f or (f[0] == "addr" and "scope link" in ln):
+            continue
+        m = re.search(r"(inet6?) (\S+)", ln) if f[0] == "addr" else None
+        out.append(f"addr {f[1]} {m.group(1)} {m.group(2)}" if m else " ".join(f))
+    return sorted(out)
 
 
 class Fail(Exception):
@@ -100,6 +122,34 @@ def snapshot_ports(ctx: Ctx) -> str:
                             f" cat /sys/class/net/{p}/master 2>/dev/null; true" for p in PORTS.values()), quiet=True)
 
 
+def wait_link(ctx: Ctx) -> None:
+    """Poll carrier on the router ports (the cable peers ge8/ge32 share it). Limit as copper_check.py LINK_LIMIT_S."""
+    t0 = time.monotonic()
+    while ctx.apply:
+        out = ctx.sh("cat /sys/class/net/ge17/carrier /sys/class/net/ge41/carrier", check=False, quiet=True).split()
+        el = time.monotonic() - t0
+        if out == ["1", "1"]:
+            ctx.log(f"carrier ge17+ge41 after {el:.1f} s")
+            return
+        if el > LINK_S:
+            raise Fail(f"no carrier on ge17/ge41 after {el:.1f} s (limit {LINK_S} s): {out}")
+
+
+def wait_dad(ctx: Ctx) -> None:
+    """Poll until no test address is tentative. DAD: <= 1 s random delay + 1 probe x RetransTimer 1 s (RFC 4862/4861) = 2 s; 1.25x."""
+    cmd = "; ".join([ns("A", "ip -6 addr show dev ge8"), ns("B", "ip -6 addr show dev ge32"),
+                     "ip -6 addr show dev ge17", "ip -6 addr show dev ge41"])
+    t0 = time.monotonic()
+    while ctx.apply:
+        out = ctx.sh(cmd, quiet=True)
+        el = time.monotonic() - t0
+        if "tentative" not in out and "dadfailed" not in out:
+            ctx.log(f"v6 DAD done after {el:.1f} s")
+            return
+        if "dadfailed" in out or el > DAD_S:
+            raise Fail(f"v6 DAD not done after {el:.1f} s (limit {DAD_S} s): {out}")
+
+
 def setup(ctx: Ctx) -> None:
     ctx.log("setup: snapshot, modules, namespaces, addresses, routes, forwarding")
     if ctx.apply and ctx.sh(f"test -e {STATE}/snapshot && echo yes || echo no", quiet=True) == "yes":
@@ -110,18 +160,15 @@ def setup(ctx: Ctx) -> None:
         out = ctx.sh(f"ls /sys/class/net/{p}/master 2>/dev/null; true", quiet=True)
         if out:
             raise Fail(f"{p} has a master device (bridge?): refusing")
-    ctx.sh("{ for p in ge8 ge17 ge32 ge41; do echo \"link $p $(ip -o link show $p | grep -c '[<,]UP[,>]')\"; "
-           "echo \"v6dis $p $(cat /proc/sys/net/ipv6/conf/$p/disable_ipv6)\"; "
-           "ip -o addr show dev $p | sed \"s/^/addr $p /\"; done; "
-           "for f in /proc/sys/net/ipv4/conf/ge17/forwarding /proc/sys/net/ipv4/conf/ge41/forwarding "
-           "/proc/sys/net/ipv6/conf/ge17/force_forwarding /proc/sys/net/ipv6/conf/ge41/force_forwarding; do echo \"fwd $f $(cat $f)\"; done; "
-           f"echo \"nftn $(nft list ruleset | wc -l)\"; }} > {STATE}/snapshot.tmp && mv {STATE}/snapshot.tmp {STATE}/snapshot")
+    ctx.sh(f"{{ {SNAP_CMD}; }} > {STATE}/snapshot.tmp && mv {STATE}/snapshot.tmp {STATE}/snapshot")
     try:
         for m in MODULES:
             ctx.sh(f"modprobe {m}")
         for which in ("A", "B"):
-            # unshare execs sleep (held until teardown kills it) in a new netns; its pid is the namespace handle (nsenter -t, ip link set ... netns PID)
-            ctx.sh(f"setsid unshare -n sleep 2000000000 </dev/null >/dev/null 2>&1 & echo $! > {STATE}/{which}.pid")
+            # unshare execs sh blocked reading a never-written fifo (held until teardown kills it) in a new netns;
+            # its pid is the namespace handle (nsenter -t, ip link set ... netns PID)
+            ctx.sh(f"mkfifo {STATE}/hold{which}; setsid unshare -n sh -c 'read x <> {STATE}/hold{which}' </dev/null >/dev/null 2>&1 & "
+                   f"echo $! > {STATE}/{which}.pid")
             ctx.sh(f"test -d /proc/$(cat {STATE}/{which}.pid)/ns && echo ok")
         for which in ("A", "B"):
             p = PORTS[which]
@@ -133,7 +180,7 @@ def setup(ctx: Ctx) -> None:
             cmds = ["ip link set lo up", f"ip link set {p} up", f"ip addr add {v4}/24 dev {p}", f"ip route add default via {sub}.{gw}"]
             if ctx.v6:
                 pre = "2001:db8:48:10" if which == "A" else "2001:db8:48:20"
-                cmds += [f"ip -6 addr add {v6}/64 dev {p} nodad", f"ip -6 route add default via {pre}::1"]
+                cmds += [f"ip -6 addr add {v6}/64 dev {p}", f"ip -6 route add default via {pre}::1"]  # busybox ip: no nodad
             for c in cmds:
                 ctx.sh(ns(which, c))
         for which in ("R1", "R2"):
@@ -145,7 +192,10 @@ def setup(ctx: Ctx) -> None:
             ctx.sh(f"echo 1 > /proc/sys/net/ipv4/conf/{p}/forwarding")
             if ctx.v6:
                 ctx.sh(f"echo 0 > /proc/sys/net/ipv6/conf/{p}/disable_ipv6; echo 1 > /proc/sys/net/ipv6/conf/{p}/force_forwarding; "
-                       f"ip -6 addr add {v6}/64 dev {p} nodad")
+                       f"ip -6 addr add {v6}/64 dev {p}")
+        wait_link(ctx)
+        if ctx.v6:
+            wait_dad(ctx)
         if ctx.apply:
             ctx.sh(ns("A", "ip link show ge8") + "; " + ns("B", "ip link show ge32"))
         ctx.log("setup done")
@@ -196,26 +246,67 @@ def transfer(ctx: Ctx, src: str, dst: str, port: int, label: str) -> float:
     rx = f"{STATE}/rx{port}.log"
     listen = f"sh -c 'nc -l -p {port} | dd of=/dev/null bs=64k count={n} iflag=fullblock'"
     ctx.sh(f"{ns(dst, listen)} > {rx} 2>&1 </dev/null & true", quiet=True)
-    send = (f"sh -c 'a=$(cut -d\" \" -f1 /proc/uptime); dd if=/dev/zero bs=64k count={n} 2>/dev/null | nc {dst_ip} {port}; "
-            f"b=$(cut -d\" \" -f1 /proc/uptime); echo T $a $b'")
+    # around the transfer: uptime, cpu line of /proc/stat, router port counters (/proc/1/net = root namespace)
+    probe = "cut -d\" \" -f1 /proc/uptime; head -n 1 /proc/stat; grep -E \"ge17:|ge41:\" /proc/1/net/dev"
+    send = (f"sh -c 'echo P0; {probe}; dd if=/dev/zero bs=64k count={n} 2>/dev/null | nc {dst_ip} {port}; "
+            f"echo P1; {probe}'")
+    thermal(ctx, f"before {label} {src}->{dst}")
     out = ctx.sh(ns(src, send), limit=XFER_S, quiet=True)
     if not ctx.apply:
         return 0.0
+    thermal(ctx, f"after {label} {src}->{dst}")
     got = ""
     for _ in range(5):  # receiver dd writes its summary after the sender returned; each read is one ssh round trip
         got = ctx.sh(f"cat {rx}", quiet=True)
         if re.search(r"\d+ bytes", got):
             break
     ctx.sh("pkill -f '[n]c -l -p'; true", quiet=True)
-    m = re.search(r"T ([\d.]+) ([\d.]+)", out)
+    p0, p1 = parse_probe(out, "P0"), parse_probe(out, "P1")
     b = re.search(r"(\d+) bytes", got)
     nbytes = int(b.group(1)) if b else 0
-    ok = bool(m) and nbytes == ctx.mib * 1048576
-    mbps = 0.0
-    if m and float(m.group(2)) > float(m.group(1)):
-        mbps = nbytes / 1e6 / (float(m.group(2)) - float(m.group(1)))
-    ctx.check(f"{label} {src}->{dst} {ctx.mib} MiB", ok, f"{mbps:.2f} MB/s ({mbps * 8:.0f} Mbit/s), receiver {nbytes} B")
+    ok = bool(p0 and p1) and nbytes == ctx.mib * 1048576
+    mbps, extra = 0.0, ""
+    if p0 and p1 and p1["t"] > p0["t"]:
+        dt = p1["t"] - p0["t"]
+        mbps = nbytes / 1e6 / dt
+        tot = sum(p1["cpu"]) - sum(p0["cpu"])
+        idle = (p1["cpu"][3] + p1["cpu"][4]) - (p0["cpu"][3] + p0["cpu"][4])
+        sirq = p1["cpu"][6] - p0["cpu"][6]
+        rx = sum(p1["rx"].values()) - sum(p0["rx"].values())  # packets the router received (both ports: data + ACKs)
+        extra = (f", router rx {rx / dt:.0f} pps" + (f", CPU busy {100 * (tot - idle) / tot:.0f} % (softirq {100 * sirq / tot:.0f} %)"
+                                                      if tot > 0 else ""))
+        ctx.results.setdefault("xfer", []).append((label, src, dst, mbps, rx / dt, 100 * (tot - idle) / tot if tot else 0.0))
+    ctx.check(f"{label} {src}->{dst} {ctx.mib} MiB", ok, f"{mbps:.2f} MB/s ({mbps * 8:.0f} Mbit/s), receiver {nbytes} B{extra}")
     return mbps
+
+
+def parse_probe(out: str, tag: str) -> dict | None:
+    """Lines after `tag`: uptime, /proc/stat cpu line, ge17/ge41 /proc/net/dev lines."""
+    ln = out.splitlines()
+    if tag not in ln:
+        return None
+    i = ln.index(tag)
+    try:
+        cpu = [int(x) for x in ln[i + 2].split()[1:8]]
+        rx = {}
+        for d in ln[i + 3:i + 5]:
+            m = re.match(r"\s*(ge\d+):\s*(.*)", d)
+            if m:
+                rx[m.group(1)] = int(m.group(2).split()[1])
+        return {"t": float(ln[i + 1]), "cpu": cpu, "rx": rx}
+    except (IndexError, ValueError):
+        return None
+
+
+def thermal(ctx: Ctx, when: str) -> None:
+    """Thermal stop (Dan): die >= 108 C or any LM75 >= 78 C -> Fail (callers' finally/teardown restores)."""
+    if not ctx.apply:
+        return
+    t = _board.temps()
+    ctx.log(f"temps {when}: " + ", ".join(f"{k} {v:.1f}" for k, v in sorted(t.items())))
+    hot = _board.too_hot(t)
+    if hot:
+        raise Fail(f"thermal stop {when}: {hot}")
 
 
 def both_ways(ctx: Ctx, label: str) -> tuple:
@@ -261,15 +352,20 @@ def nat(ctx: Ctx) -> None:
     ctx.log("nat test: masquerade on ge41 for 10.48.10.0/24")
     try:
         nft(ctx, "table ip rnf_nat {\n chain post { type nat hook postrouting priority srcnat; policy accept;\n"
-                 "  oifname \"ge41\" ip saddr 10.48.10.0/24 counter masquerade }\n }")
+                 "  oifname \"ge41\" ip saddr 10.48.10.0/24 counter masquerade\n }\n}")  # masquerade takes options: '}' on its own line
         # hold one A->B connection open so B's socket table shows the peer address it sees
-        ctx.sh(ns("B", "sh -c 'nc -l -p 5004 > /dev/null 2>&1 &'") + "; true", quiet=True)
-        ctx.sh(ns("A", "sh -c 'tail -f /dev/null | nc 10.48.20.2 5004 > /dev/null 2>&1 &'") + "; true", quiet=True)
-        tcp = ctx.sh(ns("B", "cat /proc/net/tcp"), quiet=True)
-        seen = any(f[2].startswith("0114300A:") and f[3] == "01" for f in (ln.split() for ln in tcp.splitlines()[1:]) if len(f) > 3)
+        # stdin = a never-written fifo: an EOF on stdin would half-close the connection
+        ctx.sh(f"mkfifo {STATE}/holdN; " + ns("B", f"sh -c 'nc -l -p 5004 <> {STATE}/holdN > /dev/null 2>&1 &'") + "; true", quiet=True)
+        ctx.sh(ns("A", f"sh -c 'nc 10.48.20.2 5004 <> {STATE}/holdN > /dev/null 2>&1 &'") + "; true", quiet=True)
+        # busybox nc -l listens dual-stack: the socket is in tcp6 with a v4-mapped peer (...FFFF0000 0114300A)
+        tcp = ctx.sh(ns("B", "cat /proc/net/tcp /proc/net/tcp6"), quiet=True)
+        rows = [f for f in (ln.split() for ln in tcp.splitlines()) if len(f) > 3 and f[0] != "sl"]
+        # local :138C = port 5004; remote 0114300A = 10.48.20.1 (little-endian hex); st 01 = ESTABLISHED
+        seen = any(f[1].endswith(":138C") and f[2].split(":")[0].endswith("0114300A") and f[3] == "01" for f in rows)
+        ctx.log("B tcp table: " + " | ".join(" ".join(f[1:4]) for f in rows))
         ctx.check("nat: B sees the router 10.48.20.1 as peer of A's connection", seen)
         ct = ctx.sh("cat /proc/net/nf_conntrack", quiet=True)
-        line = next((ln for ln in ct.splitlines() if "dport=5004" in ln), "")
+        line = next((ln for ln in ct.splitlines() if "dport=5004" in ln and "ESTABLISHED" in ln), "")  # the held connection
         ctx.check("nat: conntrack has the SNAT tuple (reply dst 10.48.20.1)", "src=10.48.10.2" in line and "dst=10.48.20.1" in line, line[:160])
         n = ctx.sh("cat /proc/sys/net/netfilter/nf_conntrack_count", quiet=True)
         ctx.log(f"conntrack entries: {n}")
@@ -279,7 +375,7 @@ def nat(ctx: Ctx) -> None:
         ctx.log("nat counters: " + ctx.sh("nft list table ip rnf_nat | grep counter", check=False, quiet=True))
         ctx.results["nat"] = (a, b)
     finally:
-        ctx.sh("pkill -f '[n]c -l -p 5004'; pkill -f '[n]c 10.48.20.2 5004'; pkill -f '[t]ail -f /dev/null'; true", quiet=True)
+        ctx.sh(f"pkill -f '[n]c -l -p 5004'; pkill -f '[n]c 10.48.20.2 5004'; rm -f {STATE}/holdN; true", quiet=True)
         del_tables(ctx)
 
 
@@ -298,7 +394,7 @@ def fw(ctx: Ctx) -> None:
  counter c_icmp { }
  counter c_drop { }
  counter c_pass { }
- chain fwd { type filter hook forward priority filter; policy accept;
+ chain rnf_fwd { type filter hook forward priority filter; policy accept;
   meta l4proto { icmp, ipv6-icmp } counter name c_icmp accept
   iifname "ge17" oifname "ge41" tcp dport 5001 counter name c_drop drop
   tcp dport 5002 counter name c_pass accept
@@ -320,7 +416,7 @@ def fw(ctx: Ctx) -> None:
  counter c_new_ok { }
  counter c_drop_rev { }
  counter c_invalid { }
- chain fwd { type filter hook forward priority filter; policy drop;
+ chain rnf_fwd { type filter hook forward priority filter; policy drop;
   ct state invalid counter name c_invalid drop
   ct state established,related counter name c_est accept
   iifname "ge17" oifname "ge41" ct state new tcp dport 5002 counter name c_new_ok accept
@@ -346,12 +442,12 @@ def fw(ctx: Ctx) -> None:
 
 FT = """table inet rnf_ft {
  flowtable ft { hook ingress priority 0; devices = { ge17, ge41 }; }
- chain fwd { type filter hook forward priority filter; policy accept;
+ chain rnf_fwd { type filter hook forward priority filter; policy accept;
   meta l4proto { tcp, udp } flow add @ft
  }
 }"""
 NAT = ("table ip rnf_nat {\n chain post { type nat hook postrouting priority srcnat; policy accept;\n"
-       "  oifname \"ge41\" ip saddr 10.48.10.0/24 masquerade }\n }")
+       "  oifname \"ge41\" ip saddr 10.48.10.0/24 masquerade\n }\n}")
 
 
 def flowtable(ctx: Ctx) -> None:
@@ -393,7 +489,7 @@ def teardown(ctx: Ctx) -> None:
             errs.append(str(e))
             return ""
 
-    step("pkill -f '[n]c -l -p'; pkill -f '[n]c 10.48'; pkill -f '[t]ail -f /dev/null'; true")
+    step("pkill -f '[n]c -l -p'; pkill -f '[n]c 10.48'; true")
     del_tables(ctx)
     snap = ctx.sh(f"cat {STATE}/snapshot 2>/dev/null; true", quiet=True) if ctx.apply else ""
     if ctx.apply and not snap:
@@ -426,10 +522,19 @@ def teardown(ctx: Ctx) -> None:
             step(f"echo {f[2]} > {f[1]}")
         elif f[0] == "nftn" and f[1] == "0":
             step("nft flush ruleset")
-    step(f"rm -f {STATE}/snapshot {STATE}/rx*.log; rmdir {STATE} 2>/dev/null; true")
+    step(f"rm -f {STATE}/snapshot {STATE}/rx*.log {STATE}/hold*; rmdir {STATE} 2>/dev/null; true")
     if ctx.apply:
-        out = ctx.sh("for p in ge8 ge17 ge32 ge41; do echo $p $(ip -o link show $p | grep -c 'state UP'); done; nft list ruleset | wc -l; ip netns list 2>/dev/null; true", quiet=True)
-        ctx.log("after teardown: " + out.replace("\n", " | "))
+        # verify: state equals the snapshot, ports in the root namespace, no holders/listeners, no rnf tables
+        now = ctx.sh(SNAP_CMD, check=False, quiet=True)
+        diff = sorted(set(snap_norm(snap)) ^ set(snap_norm(now)))
+        left = ctx.sh("ls /sys/class/net | grep -cE '^ge(8|32)$'; ps | grep -cE '[r]ead x <> /tmp/rnf|[n]c (-l -p|10\\.48)'; "
+                      "nft list tables | grep -c rnf_; ls -d /tmp/rnf 2>/dev/null | wc -l; true", check=False, quiet=True).split()
+        ctx.log(f"after teardown: state diff vs snapshot {diff or 'none'}; ge8+ge32 in root ns {left[0:1]}, "
+                f"holders/listeners {left[1:2]}, rnf tables {left[2:3]}, state dir {left[3:4]}")
+        if diff:
+            errs.append(f"state differs from the snapshot: {diff}")
+        if left != ["2", "0", "0", "0"]:
+            errs.append(f"leftovers (ports in root ns, holders, rnf tables, state dir): {left}")
     if errs:
         raise Fail("teardown errors: " + "; ".join(errs))
     ctx.log("teardown done")
