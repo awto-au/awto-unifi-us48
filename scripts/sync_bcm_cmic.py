@@ -53,6 +53,14 @@ def sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
+def tree_hash() -> str:
+    """One digest of the shared core as staged (names + contents), for build logs."""
+    h = hashlib.sha256()
+    for n, rel in sorted(mapping().items()):
+        h.update(n.encode() + b"\0" + (SRC / rel).read_bytes())
+    return h.hexdigest()[:16]
+
+
 def stage(dest: Path) -> int:
     if dest.exists():
         shutil.rmtree(dest)
@@ -70,10 +78,11 @@ def check(dest: Path) -> int:
         log(f"check: {dest} absent, skipped")
         return 0
     bad = [n for n, rel in mapping().items() if not (dest / n).exists() or sha(dest / n) != sha(SRC / rel)]
+    bad += [p.name for p in sorted(dest.iterdir()) if p.name not in mapping()]
     if bad:
         log(f"DRIFT in {dest}: {bad}")
         return 1
-    log(f"check: {dest} identical to common/bcm-cmic ({len(mapping())} files)")
+    log(f"check: {dest} identical to common/bcm-cmic ({len(mapping())} files, digest {tree_hash()})")
     return 0
 
 

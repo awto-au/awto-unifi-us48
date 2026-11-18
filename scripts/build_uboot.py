@@ -325,6 +325,11 @@ def build(jobs: int) -> int:
     for bad in A2_FORBID if A2 else ():
         if bad in cfg:
             die(f"{bad} must be off for the a2 target (#83)")
+    r = subprocess.run([sys.executable, "-I", str(SYNC), "check", "--dest", str(TREE / CORE_DIR)], capture_output=True,
+                       text=True, env=dict(os.environ, US48_REPO=str(ROOT)))
+    log(r.stdout.strip())
+    if r.returncode:
+        die("staged lib/bcm-cmic differs from common/bcm-cmic right before make (#128)")
     if run(NICE + ["make", o, f"-j{jobs}"]):
         return 1
     return 0

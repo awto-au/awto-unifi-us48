@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 
 #include "us48_cmic.h"
+#include "us48_hwdb.h"
 
 enum { TSC_RMW, TSC_DELAY, TSC_LANE_RESET, TSC_UC_RX, TSC_FW, TSC_PLL, TSC_CRC, TSC_UC_CMD };
 enum { TSC_LANE, TSC_SHARED, TSC_PAIR, TSC_ALL };
@@ -333,6 +334,10 @@ EXPORT_SYMBOL_GPL(us48_tsc_media_check);
 
 static int xlport_up(struct us48_cmic *u, u32 blk, u32 mode, u32 cfg);
 
+/* Unit 1 internal-bus MDC divisor: chip reset value 0x10006 (regdb CMIC_RATE_ADJUST_INT_MDIO); cold init sets 40. #108 */
+static uint tsc_mdc_div = 6;
+module_param(tsc_mdc_div, uint, 0644);
+
 int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 {
 	static const struct tsc_step mode = { .reg = TSC_SETUP_REG, .mask = TSC_SETUP_MODE_MASK | BIT(3), .val = 0 };
@@ -348,6 +353,8 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 		if (ret)
 			return ret;
 	}
+	if (u->modid)
+		iowrite32(1 << 16 | max(tsc_mdc_div, 2u), u->cmic + HW_CMIC0_RATE_ADJUST_INT_MDIO);
 	mutex_lock(&u->mdio);
 	/* PhyConfig_Mode: 4 x 1-lane ports (PORT_MODE_SEL 0, SINGLE_PORT_MODE 0). */
 	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, tsc_stage0, ARRAY_SIZE(tsc_stage0), 0, STAGE0_LANE_MASK, fw);

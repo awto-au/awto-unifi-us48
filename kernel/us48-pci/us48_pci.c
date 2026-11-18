@@ -52,6 +52,7 @@ struct us48_pci {
 	struct regmap *map;
 	struct mutex win_lock;	/* IMAP0_7 + window page, OARR_0/OMAP_0, every unit 1 AXI access */
 	struct mutex schan_lock;
+	bool chip_init;			/* unit 1 cold init running (guarded by schan_lock): pollers get -EAGAIN */
 	bool alive;
 	bool page_valid;
 	bool out_mapped;
@@ -101,6 +102,30 @@ int us48_pci_schan(struct us48_pci *p, u32 op, u32 blk, u32 addr, u32 *data, int
 	return ret;
 }
 EXPORT_SYMBOL_GPL(us48_pci_schan);
+
+/* Mark the chip's cold init (CPS_RESET clears the sensors): us48_pci_schan_poll fails with -EAGAIN until it ends. */
+void us48_pci_chip_init(struct us48_pci *p, bool on)
+{
+	mutex_lock(&p->schan_lock);
+	p->chip_init = on;
+	mutex_unlock(&p->schan_lock);
+}
+EXPORT_SYMBOL_GPL(us48_pci_chip_init);
+
+/* Background-poller variant of us48_pci_schan: -EAGAIN while the chip is in its cold init. */
+int us48_pci_schan_poll(struct us48_pci *p, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
+{
+	int ret;
+
+	mutex_lock(&p->schan_lock);
+	if (p->chip_init)
+		ret = -EAGAIN;
+	else
+		ret = us48_pci_link_ok(p) ? -ENODEV : bcm_cmic_schan_op(&p->cmic, op, blk, addr, data, words, ack);
+	mutex_unlock(&p->schan_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(us48_pci_schan_poll);
 
 /* --- unit 1 AXI regmap: IMAP0_7 selects the 4 KiB page, the window shows it. win_lock is the regmap lock. --- */
 

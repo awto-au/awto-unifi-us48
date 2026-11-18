@@ -34,7 +34,9 @@ static int us48_xe_probe(struct auxiliary_device *adev, const struct auxiliary_d
 	if (request_firmware(&fw, "us48-tsc.bin", &adev->dev))
 		fw = NULL;
 	/* Every load resets the chip and runs the full cold init; DMA is stopped first. */
+	us48_pci_chip_init(p, true);
 	ret = us48_chip_cold_init(&adev->dev, us48_pci_cmic_base(p), xe_schan, p, 1);
+	us48_pci_chip_init(p, false);
 	/* devres on the aux device (netdev memory), DMA on the PCI device (mask, window limit) */
 	ret = ret ?: us48_probe_common(&adev->dev, us48_pci_dev(p), us48_pci_cmic_base(p), xe_schan, p, us48_unit1_cfgs,
 				       us48_unit1_nports, 1, fw, us48_tsc_init, &u);

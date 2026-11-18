@@ -53,6 +53,9 @@ void us48_pci_win_put(struct us48_pci *p);
 void __iomem *us48_pci_cmic_base(struct us48_pci *p);
 /* One S-channel op on the unit-1 CMIC (serialised). See bcm_cmic.h for args. */
 int us48_pci_schan(struct us48_pci *p, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
+/* Pollers (pvtmon): like us48_pci_schan, -EAGAIN while us48_pci_chip_init(p, true) is set (cold init, #108). */
+int us48_pci_schan_poll(struct us48_pci *p, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
+void us48_pci_chip_init(struct us48_pci *p, bool on);
 
 /* 0 if the endpoint answers config reads (link up, PERST released), else -ENODEV. */
 int us48_pci_link_ok(struct us48_pci *p);
