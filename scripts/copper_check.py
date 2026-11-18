@@ -84,14 +84,13 @@ def main() -> int:
     names = set(sh("ls /sys/class/net").split())
     want = {f"ge{i}" for i in range(1, 49)} | {"xe49", "xe50"}
     check("netdevs", want <= names, f"{len(want & names)}/50 present" + (f", missing {sorted(want - names)}" if want - names else ""))
-    d0 = len(dmesg_lines())
     test_ports = []
     for gphy, octal, second in PAIRS:
         sh(f"ip link set {gphy} up; ip link set {octal} up")
         test_ports += [gphy, octal]
         ok, el = wait_carrier((gphy, octal))
-        new = dmesg_lines()[d0:]
-        speed = {d: [ln for ln in new if f" {d}: link up" in ln][-1:] for d in (gphy, octal)}
+        allm = dmesg_lines()	# a port already up before this run has its link line earlier
+        speed = {d: [ln for ln in allm if f" {d}: link " in ln][-1:] for d in (gphy, octal)}
         g1000 = all(s and s[0].endswith("1000M") for s in speed.values())
         check(f"link {gphy}<->{octal}", ok and g1000, f"carrier after {el:.1f} s, {speed}")
         if a.no_octal or not ok:

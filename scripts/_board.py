@@ -16,6 +16,7 @@ CALL_S = 15.0
 CMIC = {0: 0x48000000, 1: 0x0A000000}	# unit 0 AXI CMIC, unit 1 CMIC BAR as mapped on the host (dev.py schan)
 SCHAN = 0x31000
 OP = {"rreg": 0x0B, "rmem": 0x07, "wreg": 0x0D, "wmem": 0x09}
+BATCH = 8	# ops per ssh call: one long command line (some 60 KB) made dropbear reset the connection
 
 
 def ssh(cmd: str, call_s: float = CALL_S) -> tuple[int, str]:
@@ -44,6 +45,8 @@ def _op_sh(unit: int, op: str, blk: int, addr: int, words: int, data: list[int] 
 
 def schan_batch(ops: list[tuple]) -> list[list[int]]:
     """ops: (unit, op, blk, addr, words, data|None). Returns per op [ctrl, word0, ...]; raises on ssh/S-channel error."""
+    if len(ops) > BATCH:
+        return schan_batch(ops[:BATCH]) + schan_batch(ops[BATCH:])
     if not ops:
         return []
     rc, out = ssh("; ".join(_op_sh(*o) for o in ops))
