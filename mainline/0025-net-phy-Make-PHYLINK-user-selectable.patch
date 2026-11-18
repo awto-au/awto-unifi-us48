@@ -1,0 +1,28 @@
+From e667a9cfe10923b28d53fc9bacf82c1e42d0b7ca Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Thu, 19 Nov 2026 01:38:43 +1100
+Subject: [PATCH 25/26] net: phy: Make PHYLINK user-selectable
+
+The symbol has no prompt, so a kernel without an in-tree MAC driver
+that selects it cannot enable PHYLINK, nor SFP, which depends on it.
+Out-of-tree MAC drivers then cannot use the SFP cage support. Add a
+prompt; the default stays n.
+
+Signed-off-by: TODO
+---
+ drivers/net/phy/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 30e9d22c8..87fa2b88a 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -4,7 +4,7 @@
+ #
+ 
+ config PHYLINK
+-	tristate
++	tristate "PHYlink (for out-of-tree MAC drivers)"
+ 	select PHYLIB
+ 	select SWPHY
+ 	help

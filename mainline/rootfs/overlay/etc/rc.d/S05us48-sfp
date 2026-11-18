@@ -1,0 +1,11 @@
+#!/bin/sh
+# SFP cage GPIO providers + PoE controller temperatures (#21): the built-in sfp sockets wait for these gpio-chips
+# (CMIC GP = TX disable, ChipcommonA = presence; unit 1 ones are us48_pci aux devices, loaded by S04).
+# bcm59111: read-only hwmon (reg 0x2c only). Modules already loaded are skipped.
+
+M=/lib/modules/$(uname -r)
+exec 2>/dev/kmsg
+for m in us48_cmic_gpio us48_cca_gpio bcm59111; do
+	[ -d /sys/module/$m ] && continue
+	insmod $M/$m.ko || echo "us48-sfp: insmod $m failed rc=$?" > /dev/kmsg
+done

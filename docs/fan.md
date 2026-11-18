@@ -106,6 +106,18 @@ Policy is in the DT thermal zones, no daemon. Modules are loaded by `us48-therma
 | Fan | `kernel/us48-fan` | SPI client: hwmon `pwm1` (127/179/230/255 = 50/70/90/100 %) + `pwm1_enable` (1 manual, 2 thermal), cooling device `us48-fan` states 0-3 |
 | DT | `mainline/0013` | `thermal-zones`: LM75 trip 80 C active, hysteresis 10 C; die trip 110 C, hysteresis 10 C (quiet rule); maps `<&fan 3 3>`; step_wise |
 
+Every temperature source in Linux (#21; `scripts/sensors_test.py` lists them):
+
+| Source | Driver | hwmon name / label | Thermal zone (fan policy) |
+|---|---|---|---|
+| LM75 x4 (`0x48..0x4b`, mux ch 6) | upstream `lm75` | `lm75` / `TEMP-1..4` (DT `label`) | `lm75-48/49/4a/4b`, 80 C trip |
+| Die, both chips | `kernel/us48-pvtmon` | `die0`, `die1` (zone name) | `die0`, `die1`, 110 C trip |
+| BCM59111 x12 (reg `0x2c`, mux ch 4/5) | `kernel/bcm59111` (read-only hwmon; PSE part = #26) | `bcm59111` / `PoE-01..12` | none: no documented fan policy (stock only shows alert limits, board.md), quiet rule unchanged |
+| SFP modules with DDM | upstream `sfp` | `sfp_49..sfp_52`: temp, vcc, bias, TX/RX power | none |
+
+- `us48,watch-zones` unchanged (no new zones).
+- BCM59111: `367 - 2 x raw` C, raw <= `0x53` = invalid (`-ENODATA`); a chip without firmware NAKs (I2C error). No ±49 C filter (stock monitor policy, not hardware).
+
 MSPI verdict (spi-bcm-qspi vs CMIC MSPI at `0x48001500`):
 - Registers match: SPCR0/1, NEWQP/ENDQP, SPCR2, STATUS, CPTQP, TXRAM `+0x40` stride 8, RXRAM `+0xc0`, CDRAM `+0x140` (hwdb `mspi` = `cmic_mspi`; `drivers/spi/spi-bcm-qspi.c` offsets and bit fields identical, CDRAM PCS/CONT/BITSE/DT).
 - `+0x180` is iProc `MSPI_WRITE_LOCK`, CMIC `CMICM_BSPI_MAST_N_BOOT` (bus claim). spi-bcm-qspi writes it only with a BSPI resource; stock SDK and fand set it to 1.

@@ -696,7 +696,7 @@ static void copper_poll(struct us48_port *p)
 		    up ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
 }
 
-/* Copper: only open ports (never-opened ones have no GPORT/VLAN init). xe: PCS live status 0xc154 b1 link. */
+/* Copper only, open ports only (never-opened ones have no GPORT/VLAN init). xe carrier: phylink (us48_cmic_phylink.c). */
 static void link_work_fn(struct work_struct *w)
 {
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, link_work);
@@ -704,38 +704,13 @@ static void link_work_fn(struct work_struct *w)
 
 	for (i = 0; i < u->nports; i++) {
 		struct us48_port *p = u->port[i];
-		u16 v = 0;
-		bool up;
 
-		if (p->cfg->copper) {
-			mutex_lock(&u->link_lock);
-			if (p->open && p->copper_ready)
-				copper_poll(p);
-			mutex_unlock(&u->link_lock);
+		if (!p->cfg->copper)
 			continue;
-		}
-		mutex_lock(&u->mdio);
-		up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
-		mutex_unlock(&u->mdio);
-		if (up != netif_carrier_ok(p->ndev)) {
-			if (up)
-				netif_carrier_on(p->ndev);
-			else
-				netif_carrier_off(p->ndev);
-			netdev_info(p->ndev, "link %s\n", up ? "up" : "down");
-		}
-		/* The RX adaptation of the boot init leaves 2-13 % PCS link drops and FCS errors on the optic lane; a restart once linked clears them (#87). */
-		if (up && !p->rx_tuned) {
-			p->rx_tuned = true;
-			us48_tsc_rx_restart(u, p->cfg);
-		}
-		/* Hot-plug: a swapped module may need the other FIRMWARE_MODE before it can link (#105). */
-		if (!up && p->fw_mode >= 0 && READ_ONCE(p->open) && ++p->media_tick >= MEDIA_POLL_TICKS) {
-			p->media_tick = 0;
-			mutex_lock(&u->link_lock);
-			us48_tsc_media_check(p, false);
-			mutex_unlock(&u->link_lock);
-		}
+		mutex_lock(&u->link_lock);
+		if (p->open && p->copper_ready)
+			copper_poll(p);
+		mutex_unlock(&u->link_lock);
 	}
 	schedule_delayed_work(&u->link_work, msecs_to_jiffies(LINK_POLL_MS));
 }
@@ -1277,8 +1252,6 @@ static int us48_open(struct net_device *nd)
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
 	mutex_lock(&u->link_lock);
-	if (!p->cfg->copper && p->fw_mode >= 0)
-		us48_tsc_media_check(p, false);		/* module may have changed while down (#105) */
 	p->open = true;
 	mutex_unlock(&u->link_lock);
 	if (u->nopen++ == 0) {
@@ -1288,6 +1261,8 @@ static int us48_open(struct net_device *nd)
 		hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
 	}
 	netif_start_queue(nd);
+	if (p->pl)
+		phylink_start(p->pl);	/* sfp TX enable; pcs_config sets the lane mode for the module in the cage */
 	return 0;
 }
 
@@ -1296,6 +1271,8 @@ static int us48_stop(struct net_device *nd)
 	struct us48_port *p = netdev_priv(nd);
 	struct us48_cmic *u = p->u;
 
+	if (p->pl)
+		phylink_stop(p->pl);
 	netif_stop_queue(nd);
 	mutex_lock(&u->link_lock);
 	p->open = false;
@@ -1425,6 +1402,8 @@ void us48_remove_common(struct us48_cmic *u)
 			unregister_netdev(u->port[i]->ndev);
 			u->port[i]->registered = false;
 		}
+		if (u->port[i])
+			us48_xe_phylink_destroy(u->port[i]);
 	}
 	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
@@ -1592,7 +1571,6 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		p->rx_vid = p->vid;
 		p->learning = true;		/* bridge default BR_LEARNING */
 		p->fw_mode = -1;
-		p->media = -1;
 		u->port[i] = p;
 		SET_NETDEV_DEV(nd, dev);
 		nd->netdev_ops = &us48_netdev_ops;
@@ -1629,6 +1607,9 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		sbus(u, 0x0d, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2);
 	}
 
+	for (i = 0; i < u->nports; i++)
+		if (!u->port[i]->cfg->copper)
+			us48_xe_phylink_create(u->port[i]);	/* failure logged: that port has no link */
 	for (i = 0; i < u->nports; i++) {
 		ret = register_netdev(u->port[i]->ndev);
 		if (ret) {

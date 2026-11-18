@@ -94,6 +94,10 @@ CONFIG_NET_CORE=y
 CONFIG_NETDEVICES=y
 CONFIG_ETHERNET=y
 CONFIG_TUN=y
+# SFP cages (#21): sfp sockets (ID, DDM hwmon, ethtool -m, hot-plug, TX disable) + phylink for the xe ports; PHYLINK prompt = mainline/0025
+CONFIG_PHYLINK=y
+CONFIG_SFP=y
+CONFIG_ETHTOOL_NETLINK=y
 # Route/NAT/firewall tests (docs/route-nat-fw.md): netns + nftables (nf_tables, conntrack, NAT, SW flowtable) as modules, loaded by modprobe
 CONFIG_NAMESPACES=y
 CONFIG_NET_NS=y

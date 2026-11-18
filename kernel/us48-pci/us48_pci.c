@@ -39,7 +39,7 @@
 /* awto-uboot board/ubiquiti/us48/pcie.c: set before its first unit 1 BAR2 read, cleared after it */
 #define U1_MARK_PROBING	0x31554d43U
 
-enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_PVTMON, ADEV_GPIO, ADEV_NUM };
+enum { ADEV_A2, ADEV_CMIC, ADEV_CLK, ADEV_BUSTEST, ADEV_PVTMON, ADEV_GPIO, ADEV_CCA, ADEV_NUM };
 
 struct us48_pci_adev {
 	struct auxiliary_device adev;
@@ -417,7 +417,7 @@ static int us48_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	static const char * const names[ADEV_NUM] = {
 		[ADEV_A2] = US48_PCI_AUX_A2, [ADEV_CMIC] = US48_PCI_AUX_CMIC, [ADEV_CLK] = US48_PCI_AUX_CLK,
 		[ADEV_BUSTEST] = US48_PCI_AUX_BUSTEST, [ADEV_PVTMON] = US48_PCI_AUX_PVTMON,
-		[ADEV_GPIO] = US48_PCI_AUX_GPIO,
+		[ADEV_GPIO] = US48_PCI_AUX_GPIO, [ADEV_CCA] = US48_PCI_AUX_CCA,
 	};
 	struct regmap_config axi_cfg;
 	struct us48_pci *p;

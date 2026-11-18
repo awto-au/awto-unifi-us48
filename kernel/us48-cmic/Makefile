@@ -4,11 +4,11 @@ BCM := $(src)/../../common/bcm-cmic
 BCM_FILES := bcm_cmic_schan.c bcm_cmic_miim.c bcm_cmic_hr2.c bcm_cmic_hr2_init.c bcm_cmic.h
 
 obj-m := us48_cmic.o us48_cmic_xe.o
-us48_cmic-y := us48_cmic_core.o us48_cmic_sw.o us48_tsc_fw.o bcm_cmic_schan.o bcm_cmic_miim.o bcm_cmic_hr2.o bcm_cmic_hr2_init.o
+us48_cmic-y := us48_cmic_core.o us48_cmic_sw.o us48_cmic_phylink.o us48_tsc_fw.o bcm_cmic_schan.o bcm_cmic_miim.o bcm_cmic_hr2.o bcm_cmic_hr2_init.o
 us48_cmic_xe-y := us48_cmic_xe_main.o
 # -I$(BCM): the generated init data headers are included from common/, not copied
 ccflags-y += -I$(src) -I$(src)/../us48-pci -I$(src)/../../hwdb/gen -I$(BCM)
 
 $(addprefix $(obj)/,$(BCM_FILES)): $(obj)/%: $(BCM)/%
 	$(Q)cp $< $@
-$(addprefix $(obj)/,us48_cmic_core.o us48_cmic_sw.o bcm_cmic_schan.o bcm_cmic_miim.o bcm_cmic_hr2.o bcm_cmic_hr2_init.o): $(obj)/bcm_cmic.h
+$(addprefix $(obj)/,us48_cmic_core.o us48_cmic_sw.o us48_cmic_phylink.o bcm_cmic_schan.o bcm_cmic_miim.o bcm_cmic_hr2.o bcm_cmic_hr2_init.o): $(obj)/bcm_cmic.h

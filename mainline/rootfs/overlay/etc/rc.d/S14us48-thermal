@@ -5,5 +5,6 @@
 M=/lib/modules/$(uname -r)
 exec 2>/dev/kmsg
 for m in us48_cmic_gpio us48_cmic_mspi us48_pvtmon us48_fan; do
+	[ -d /sys/module/$m ] && continue	# us48_cmic_gpio: loaded by S05us48-sfp
 	insmod $M/$m.ko || echo "us48-thermal: insmod $m failed rc=$?" > /dev/kmsg
 done
