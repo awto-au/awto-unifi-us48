@@ -17,6 +17,7 @@
 
 int bcm_cmic_schan_raw(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack)
 {
+	bool pop = op == BCM_SCHAN_FIFO_POP;
 	bool keyed = op == BCM_SCHAN_TABLE_LOOKUP || op == BCM_SCHAN_TABLE_DELETE;
 	bool send = op == BCM_SCHAN_WRITE_REG || op == BCM_SCHAN_WRITE_MEM || op == BCM_SCHAN_TABLE_INSERT ||
 		    keyed;
@@ -29,7 +30,8 @@ int bcm_cmic_schan_raw(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *
 		return -EINVAL;
 
 	writel(0, ctrl_reg);
-	writel(op << 26 | blk << 20 | (4 * words) << 7, u->base + BCM_CMIC_SCHAN_MSG(0));
+	/* FIFO_POP: data_byte_len 0 (SDK mem_soc_common.c _soc_mem_pop) */
+	writel(op << 26 | blk << 20 | (pop ? 0 : 4 * words) << 7, u->base + BCM_CMIC_SCHAN_MSG(0));
 	writel(addr, u->base + BCM_CMIC_SCHAN_MSG(1));
 	for (i = 0; send && i < words; i++)
 		writel(data[i], u->base + BCM_CMIC_SCHAN_MSG(2 + i));
@@ -43,8 +45,8 @@ int bcm_cmic_schan_raw(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *
 	}
 	if (ack)
 		*ack = readl(u->base + BCM_CMIC_SCHAN_MSG(0));
-	/* key not in the table: an answer, not a fault (no abort, no log) */
-	if (keyed && (ctrl & SCHAN_DONE) && (ctrl & SCHAN_ERRS) == SCHAN_NACK) {
+	/* key not in the table / FIFO empty: an answer, not a fault (no abort, no log) */
+	if ((keyed || pop) && (ctrl & SCHAN_DONE) && (ctrl & SCHAN_ERRS) == SCHAN_NACK) {
 		writel(0, ctrl_reg);
 		return -ENOENT;
 	}

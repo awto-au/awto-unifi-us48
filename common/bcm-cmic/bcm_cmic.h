@@ -35,11 +35,12 @@ struct bcm_cmic_unit {
 #define BCM_SCHAN_TABLE_INSERT		0x24
 #define BCM_SCHAN_TABLE_DELETE		0x26
 #define BCM_SCHAN_TABLE_LOOKUP		0x28	/* key = data[words]; reply = response word + entry: data[words + 1] */
+#define BCM_SCHAN_FIFO_POP		0x2a	/* SDK include/soc/schanmsg.h FIFO_POP_CMD_MSG; reply = entry: data[words] */
 
 /*
- * One S-channel op. Header = op<<26 | blk<<20 | 4*words<<7, address word = addr (block only in the
- * header). Reads fill data[words] from the reply; ack (optional) gets the reply header.
- * LOOKUP/DELETE NACK (key not in the table) = -ENOENT, quiet, ack filled.
+ * One S-channel op. Header = op<<26 | blk<<20 | 4*words<<7 (FIFO_POP: 0, SDK _soc_mem_pop), address word = addr
+ * (block only in the header). Reads fill data[words] from the reply; ack (optional) gets the reply header.
+ * LOOKUP/DELETE NACK (key not in the table) and FIFO_POP NACK (FIFO empty) = -ENOENT, quiet, ack filled.
  * Raw and unguarded: callers own the write policy. Goes through u->schan_op when set.
  */
 int bcm_cmic_schan_op(struct bcm_cmic_unit *u, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);

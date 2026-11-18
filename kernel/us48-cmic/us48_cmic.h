@@ -166,13 +166,18 @@ struct us48_cmic {
 	unsigned int tx_run;		/* end of the chain the engine runs; tx_tail..tx_run in flight */
 	unsigned int tx_tail;		/* oldest unreaped slot */
 	struct us48_br br[US48_BR_MAX];	/* switchdev bridges on this unit; rtnl */
+	u8 l2_modid;			/* MODULE_ID of own ports in L2X/L2_USER_ENTRY (PORT_TAB.MY_MODID); rtnl */
 	int l2u_bpdu;			/* L2_USER_ENTRY index of the BPDU trap, -1 = none */
 	bool l2u_ours;			/* we wrote it (removed with the last bridge) */
-	struct delayed_work l2poll;	/* L2X diff -> bridge FDB (us48_cmic_sw.c), runs while a bridge exists */
+	struct delayed_work l2mod;	/* L2_MOD_FIFO drain -> bridge FDB (us48_cmic_sw.c), runs while a bridge exists */
 	struct us48_l2rec *l2shadow;	/* L2X_ENTRIES: entries reported to the bridge; rtnl */
-	u32 *l2buf;			/* one poll chunk of raw L2X entries */
-	int l2poll_idx;			/* first index of the next chunk */
-	bool l2poll_on;			/* rtnl */
+	u32 *l2buf;			/* one resync chunk of raw L2X entries */
+	u32 *l2pop;			/* popped L2_MOD_FIFO entries */
+	unsigned long l2resync_at;	/* jiffies: earliest next overflow resync */
+	unsigned long l2check_at;	/* jiffies: next consistency walk */
+	u32 l2ev, l2full, l2resyncs, l2mismatch;	/* since the FIFO went on (logged when it goes off) */
+	bool l2resync;			/* FIFO was full or a pop failed: events may be lost; rtnl */
+	bool l2mod_on;			/* rtnl */
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */
