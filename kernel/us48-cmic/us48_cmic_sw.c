@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * us48_cmic switchdev L2 offload, stage 1 (docs/switchdev.md, #57): a VLAN-unaware Linux bridge = one ASIC VLAN + STG per
- * unit. HW learns and ages; bridge static/local FDB entries -> L2X; port STP state -> STG_TAB/EGR_VLAN_STG.
+ * unit. HW learns and ages (L2 poll reports it to the bridge); static/local FDB -> L2X; STP state -> STG_TAB/EGR_VLAN_STG.
  * One hardware domain per unit: cross-unit bridge traffic goes through the CPU (HiGig offload = stage 2). All state: rtnl.
  */
 #include <linux/etherdevice.h>
@@ -73,6 +73,20 @@ struct fld {
 struct us48_host {
 	struct list_head node;
 	u8 mac[ETH_ALEN];
+};
+
+/*
+ * HW-learned entries -> bridge: periodic L2X diff, as the SDK default on HR2 (L2MODE_POLL: soc_feature_l2_modfifo but not
+ * l2_modfifo_def, soc/esw/l2xmsg.c soc_l2x_mode_cfg_get). Same pace as its _soc_l2x_thread: 3 s pass in 8 chunks.
+ */
+#define L2POLL_CHUNKS		8
+#define L2POLL_CHUNK		(L2X_ENTRIES / L2POLL_CHUNKS)
+#define L2POLL_MS		(3000 / L2POLL_CHUNKS)	/* bcm/esw/l2.c l2xmsg_thread_usec default 3000000 */
+
+struct us48_l2rec {
+	u8 mac[ETH_ALEN];
+	u16 vid;			/* 0 = nothing reported for this index */
+	u8 lport;
 };
 
 static struct workqueue_struct *sw_wq;
@@ -464,6 +478,126 @@ found:
 	return 0;
 }
 
+/* Bridge port of this unit with logical port lport in the bridge VLAN vid, else NULL. */
+static struct us48_port *l2_port(struct us48_cmic *u, u16 vid, u8 lport)
+{
+	int i;
+
+	for (i = 0; i < u->nports; i++) {
+		struct us48_port *p = u->port[i];
+
+		if (p && p->cfg->lport == lport && p->br && p->br->dev && p->br->vid == vid)
+			return p;
+	}
+	return NULL;
+}
+
+static void l2_notify(struct us48_port *p, const u8 *mac, bool add)
+{
+	struct switchdev_notifier_fdb_info info = { .addr = mac, .vid = 0, .offloaded = true };
+
+	call_switchdev_notifiers(add ? SWITCHDEV_FDB_ADD_TO_BRIDGE : SWITCHDEV_FDB_DEL_TO_BRIDGE, p->ndev, &info.info, NULL);
+}
+
+/* What the bridge should see for one L2X entry: dynamic, own module, not trunk/CPU, port in a bridge VLAN (never private). */
+static void l2_rec(struct us48_cmic *u, const u32 *e, struct us48_l2rec *r)
+{
+	memset(r, 0, sizeof(*r));
+	if (!ent_get(e, L2_VALID) || ent_get(e, L2_KEY_TYPE) || ent_get(e, L2_STATIC) || ent_get(e, L2_CPU) ||
+	    ent_get(e, L2_T) || ent_get(e, L2_MODULE_ID) != u->modid)
+		return;
+	if (!l2_port(u, ent_get(e, L2_VLAN_ID), ent_get(e, L2_PORT_NUM)))
+		return;
+	r->vid = ent_get(e, L2_VLAN_ID);
+	r->lport = ent_get(e, L2_PORT_NUM);
+	u64_to_ether_addr(ent_get(e, L2_MAC), r->mac);
+}
+
+/* One chunk: S-channel reads without rtnl, then diff + notify under rtnl (memory only). */
+static void l2poll_fn(struct work_struct *w)
+{
+	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, l2poll);
+	DECLARE_BITMAP(bad, L2POLL_CHUNK);
+	int base = u->l2poll_idx, i, nbad = 0, add = 0, del = 0;
+
+	bitmap_zero(bad, L2POLL_CHUNK);
+	for (i = 0; i < L2POLL_CHUNK; i++) {
+		if ((i & 255) == 255)
+			cond_resched();
+		if (mrd(u, BLK_IPIPE, L2X + base + i, &u->l2buf[4 * i], 4)) {
+			__set_bit(i, bad);
+			nbad++;
+		}
+	}
+	rtnl_lock();
+	if (!u->l2poll_on) {
+		memset(u->l2shadow, 0, L2X_ENTRIES * sizeof(*u->l2shadow));
+		u->l2poll_idx = 0;
+		rtnl_unlock();
+		return;
+	}
+	for (i = 0; i < L2POLL_CHUNK; i++) {
+		struct us48_l2rec *o = &u->l2shadow[base + i], n;
+		struct us48_port *p;
+
+		if (test_bit(i, bad))
+			continue;
+		l2_rec(u, &u->l2buf[4 * i], &n);
+		if (!memcmp(o, &n, sizeof(n)))
+			continue;
+		p = o->vid ? l2_port(u, o->vid, o->lport) : NULL;
+		if (p) {
+			l2_notify(p, o->mac, false);
+			del++;
+		}
+		p = n.vid ? l2_port(u, n.vid, n.lport) : NULL;
+		if (p) {
+			l2_notify(p, n.mac, true);
+			add++;
+		}
+		*o = n;
+	}
+	rtnl_unlock();
+	if (nbad)
+		dev_warn_ratelimited(u->dev, "switchdev: L2 poll %d-%d: %d reads failed\n", base, base + L2POLL_CHUNK - 1, nbad);
+	if (add || del)
+		dev_dbg(u->dev, "switchdev: L2 poll %d-%d: %d learned, %d gone\n", base, base + L2POLL_CHUNK - 1, add, del);
+	u->l2poll_idx = (base + L2POLL_CHUNK) % L2X_ENTRIES;
+	queue_delayed_work(system_wq, &u->l2poll, msecs_to_jiffies(L2POLL_MS));
+}
+
+/* First bridge on the unit: start the poll (buffers kept until unit exit). */
+static void l2poll_start(struct us48_cmic *u)
+{
+	if (u->l2poll_on)
+		return;
+	if (!u->l2shadow) {
+		u->l2shadow = kvcalloc(L2X_ENTRIES, sizeof(*u->l2shadow), GFP_KERNEL);
+		u->l2buf = kvcalloc(L2POLL_CHUNK * 4, sizeof(u32), GFP_KERNEL);
+		if (!u->l2shadow || !u->l2buf) {
+			kvfree(u->l2shadow);
+			kvfree(u->l2buf);
+			u->l2shadow = NULL;
+			u->l2buf = NULL;
+			dev_warn(u->dev, "switchdev: no memory for the L2 poll: HW-learned entries not shown in the bridge\n");
+			return;
+		}
+	}
+	u->l2poll_on = true;
+	queue_delayed_work(system_wq, &u->l2poll, 0);
+	dev_info(u->dev, "switchdev: L2 poll on (%d x %d entries, %d ms apart)\n", L2POLL_CHUNKS, L2POLL_CHUNK, L2POLL_MS);
+}
+
+/* Port left vid: the bridge drops its FDB entries itself; forget ours so a later join reports afresh. */
+static void l2_forget(struct us48_cmic *u, u16 vid, int lport)
+{
+	int i;
+
+	for (i = 0; u->l2shadow && i < L2X_ENTRIES; i++)
+		if (u->l2shadow[i].vid == vid && (lport < 0 || u->l2shadow[i].lport == lport))
+			memset(&u->l2shadow[i], 0, sizeof(u->l2shadow[i]));
+}
+
 static void br_release(struct us48_cmic *u, struct us48_br *b)
 {
 	struct us48_host *h, *t;
@@ -474,10 +608,13 @@ static void br_release(struct us48_cmic *u, struct us48_br *b)
 		kfree(h);
 	}
 	br_vlan_destroy(u, b);
+	l2_forget(u, b->vid, -1);
 	b->dev = NULL;
 	b->members = 0;
-	if (!br_any(u))
+	if (!br_any(u)) {
 		l2u_bpdu_put(u);
+		u->l2poll_on = false;	/* the work sees it under rtnl and stops */
+	}
 }
 
 /* Bridge slot for br on this unit, ASIC VLAN created on first use; NULL = no offload (logged). */
@@ -504,6 +641,7 @@ static struct us48_br *br_get(struct us48_cmic *u, struct net_device *br)
 		return NULL;
 	}
 	age_set(u, br_get_ageing_time(br));
+	l2poll_start(u);
 	return b;
 }
 
@@ -543,6 +681,7 @@ static void hw_leave(struct us48_port *p, struct us48_br *b)
 	if (ret)
 		netdev_err(p->ndev, "switchdev: leave VLAN %u: write failed (%d)\n", b->vid, ret);
 	port_flush(p, b, true);
+	l2_forget(u, b->vid, lp);
 }
 
 static int sw_can_join(struct us48_port *p, struct net_device *br, struct netlink_ext_ack *extack)
@@ -896,6 +1035,19 @@ void us48_sw_unit_init(struct us48_cmic *u)
 		u->br[i].stg = SW_STG_BASE + i;
 		INIT_LIST_HEAD(&u->br[i].hosts);
 	}
+	INIT_DELAYED_WORK(&u->l2poll, l2poll_fn);
+}
+
+void us48_sw_unit_exit(struct us48_cmic *u)
+{
+	rtnl_lock();
+	u->l2poll_on = false;
+	rtnl_unlock();
+	cancel_delayed_work_sync(&u->l2poll);
+	kvfree(u->l2shadow);
+	kvfree(u->l2buf);
+	u->l2shadow = NULL;
+	u->l2buf = NULL;
 }
 
 int us48_sw_init(void)

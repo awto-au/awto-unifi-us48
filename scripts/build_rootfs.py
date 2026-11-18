@@ -4,12 +4,13 @@
 - Toolchain: musl-cross-make (clone in /mnt/1tnvme/git-mirrors/richfelker) builds gcc + musl, soft-float EABI,
   Cortex-A9, once into /mnt/1tnvme/toolchains/ (symlink tmp/musl-arm, or $US48_MUSL_TC). Kernel + modules use the
   Fedora `arm-linux-gnu-gcc` (build_mainline.py). Fedora's cross gcc is hard-float only (VFP libgcc): unusable here.
-- Sources: busybox/dropbear/nftables (+libmnl, libnftnl) tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
+- Sources: busybox/dropbear/nftables (+libmnl, libnftnl)/iproute2 tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
 - Our files: mainline/rootfs/{busybox.config,authorized_keys,overlay/}; overlay is copied over the stage as is.
 - Stage: tmp/mainline/rootfs (build_mainline.py adds modules + firmware, then packs it as the initramfs).
 - Log: tmp/logs/build_rootfs.log.
 
 - nft (nftables 1.1.7, static, mini-gmp) is staged in both profiles; cached in tmp/rootfs/tools-bin/nft.
+- bridge (iproute2 7.3.0, static) likewise, /usr/sbin/bridge; cached in tmp/rootfs/tools-bin/bridge.
 
 - --tools (#84, debug image only): static test tools into <stage>/usr/bin: memtester, cyclictest (rt-tests, with the
   tools/numa-stub libnuma stand-in), tinymembench, plus tools/us48bench.c and tools/rngtest.c. Built tools are cached in
@@ -69,6 +70,9 @@ LIBNFTNL = ("libnftnl-1.3.2", "https://www.netfilter.org/pub/libnftnl/libnftnl-1
             "c97abc3409f8fa396b4462b2bb7f147a3a47a4ddc97cfa0b2f18890c9cfde8b0")
 NFTABLES = ("nftables-1.1.7", "https://www.netfilter.org/pub/nftables/nftables-1.1.7.tar.xz",
             "a6fbf060d8d4fff001517a2b94f356bb4366bfbf0ba366366f9d27cc38caa58f")
+# iproute2 `bridge` (switchdev FDB tests, docs/switchdev.md): static, no libmnl/libelf/libcap/selinux
+IPROUTE2 = ("iproute2-7.3.0", "https://mirrors.edge.kernel.org/pub/linux/utils/net/iproute2/iproute2-7.3.0.tar.xz",
+            "5c1789d290bba048a6135ed1ab81b0402dd0fb528d1f1421765c42b1fc3d6289")
 MEMTESTER = ("memtester-4.7.1", "https://pyropus.ca/software/memtester/old-versions/memtester-4.7.1.tar.gz",
              "e427de663f7bd22d1ebee8af12506a852c010bd4fcbca1e0e6b02972d298b5bb")
 RTTESTS = ("rt-tests-2.11", "https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.gz",
@@ -280,6 +284,31 @@ def build_nft(jobs: int, stage: Path) -> None:
     log(f"nft staged: {(dst / 'nft').stat().st_size} B")
 
 
+def static_only(f: Path) -> None:
+    hdr = subprocess.run([f"{CROSS}readelf", "-l", str(f)], capture_output=True, text=True).stdout
+    if "INTERP" in hdr or "Program Headers" not in hdr:
+        raise SystemExit(f"{f} is dynamically linked (PT_INTERP) or unreadable: the rootfs has no musl loader; delete it to rebuild")
+
+
+def build_bridge(jobs: int, stage: Path) -> None:
+    """iproute2 `bridge` static against musl, built once into TOOLS_BIN (delete to rebuild); busybox has no bridge applet."""
+    TOOLS_BIN.mkdir(parents=True, exist_ok=True)
+    if not (TOOLS_BIN / "bridge").exists():
+        src = unpack(IPROUTE2, WORK / "src")
+        # PKG_CONFIG_LIBDIR empty: configure must not pick up host libs (libmnl, libelf, libcap, selinux)
+        env = dict(os.environ, CC=" ".join(cc_cmd()), AR=f"{CROSS}ar", PKG_CONFIG_LIBDIR=str(WORK / "no-pkgconfig"))
+        run(["./configure"], cwd=src, env=env)
+        run(["make", f"-j{jobs}", "SUBDIRS=lib bridge", "SHARED=0", "LDFLAGS=-static", f"CC={env['CC']}", f"AR={CROSS}ar"],
+            cwd=src, env=env)
+        run([f"{CROSS}strip", str(src / "bridge/bridge")])
+        shutil.copy2(src / "bridge/bridge", TOOLS_BIN / "bridge")
+    static_only(TOOLS_BIN / "bridge")
+    dst = stage / "usr/sbin"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(TOOLS_BIN / "bridge", dst / "bridge")
+    log(f"bridge staged: {(dst / 'bridge').stat().st_size} B")
+
+
 def build_tools(jobs: int, stage: Path) -> None:
     """Static test tools (#84) into stage/usr/bin; each is built once into TOOLS_BIN (delete to rebuild)."""
     TOOLS_BIN.mkdir(parents=True, exist_ok=True)
@@ -332,6 +361,7 @@ def build(stage: Path, jobs: int = os.cpu_count() or 4, tools: bool = False) -> 
     build_busybox(jobs, stage)
     build_dropbear(jobs, stage)
     build_nft(jobs, stage)
+    build_bridge(jobs, stage)
     if tools:
         build_tools(jobs, stage)
     shutil.copytree(SRC / "overlay", stage, symlinks=True, dirs_exist_ok=True)

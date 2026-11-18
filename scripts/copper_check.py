@@ -3,8 +3,9 @@
 
 Usage: copper_check.py [--no-octal] [--down]
 - netdevs: ge1-ge48 + xe49/xe50 exist.
-- pairs: ip link set up the loop pairs ge8<->ge17 (unit 0) and ge32<->ge41 (unit 1, scripts/cabling.json); both ends
-  must reach carrier at 1000M.
+- pairs: ip link set up the loop pairs ge8<->ge17 (unit 0) and ge32<->ge41 (unit 1, scripts/cabling.json); decided from
+  state, not a log line (#130): both ends carrier 1, operstate up, link_speed 1000, and 2 ARP probes (arping -D) each
+  way counted in the far end's rx_packets. A link that was already up passes the same way.
 - octal: with a pair linked, ip link set up a second port of the same octal (ge18 / ge42): the linked pair must keep
   carrier and log no 'link down' over 3 link polls, and the second port must not run the block init (octal top reset).
   Judged from the driver's /sys/class/net/<port>/copper_ready + block_ready (#126): bring-up runs once per module load,
@@ -28,6 +29,9 @@ PAIRS = [("ge8", "ge17", "ge18"), ("ge32", "ge41", "ge42")]	# (GPHY end, octal e
 LINK_LIMIT_S = 5.0
 LINK_POLL_S = 1.0	# driver LINK_POLL_MS
 POLL_S = 0.25
+ARP_N = 2		# probes per direction across the loop cable
+ARP_W_S = 3		# busybox arping: 2 probes 1 s apart + 1 s for the last = 2 s; 1.25x, rounded up (whole seconds)
+ARP_TARGET = "10.48.31.1"	# unused test address: DAD probes need a target, nothing answers
 results: list[tuple[str, bool, str]] = []
 
 
@@ -60,6 +64,32 @@ def copper_state(dev: str) -> tuple[bool, bool] | None:
     """(copper_ready, block_ready) from the us48_cmic netdev sysfs attrs; None if the driver has none."""
     out = sh(f"cat /sys/class/net/{dev}/copper_ready /sys/class/net/{dev}/block_ready 2>/dev/null").split()
     return (out[0] == "1", out[1] == "1") if len(out) == 2 else None
+
+
+def link_state(*devs: str) -> dict[str, tuple[str, str]]:
+    """{dev: (operstate, link_speed)} from sysfs (link_speed: us48_cmic copper attr, #130)."""
+    out = sh(" ; ".join(f"echo {d} $(cat /sys/class/net/{d}/operstate) $(cat /sys/class/net/{d}/link_speed 2>/dev/null || echo -)"
+                        for d in devs))
+    return {f[0]: (f[1], f[2]) for f in (ln.split() for ln in out.splitlines()) if len(f) == 3}
+
+
+def rx_tx(*devs: str) -> dict[str, tuple[int, int]]:
+    out = sh(" ; ".join(f"echo {d} $(cat /sys/class/net/{d}/statistics/rx_packets /sys/class/net/{d}/statistics/tx_packets)"
+                        for d in devs))
+    return {f[0]: (int(f[1]), int(f[2])) for f in (ln.split() for ln in out.splitlines()) if len(f) == 3}
+
+
+def cross_frames(a: str, b: str) -> dict[str, int]:
+    """ARP probes (DAD mode: sender 0.0.0.0, no address needed) a -> b and b -> a; {"a>b": far-end rx delta, ...}.
+    The rx delta can include other frames; tx delta < ARP_N means the probe was not sent (counted as 0)."""
+    res = {}
+    for src, dst in ((a, b), (b, a)):
+        c0 = rx_tx(src, dst)
+        sh(f"arping -D -q -c {ARP_N} -w {ARP_W_S} -I {src} {ARP_TARGET}")
+        c1 = rx_tx(src, dst)
+        sent = c1[src][1] - c0[src][1]
+        res[f"{src}>{dst}"] = c1[dst][0] - c0[dst][0] if sent >= ARP_N else 0
+    return res
 
 
 def dmesg_lines() -> list[str]:
@@ -97,10 +127,12 @@ def main() -> int:
         sh(f"ip link set {gphy} up; ip link set {octal} up")
         test_ports += [gphy, octal]
         ok, el = wait_carrier((gphy, octal))
-        allm = dmesg_lines()	# a port already up before this run has its link line earlier
-        speed = {d: [ln for ln in allm if f" {d}: link " in ln][-1:] for d in (gphy, octal)}
-        g1000 = all(s and s[0].endswith("1000M") for s in speed.values())
-        check(f"link {gphy}<->{octal}", ok and g1000, f"carrier after {el:.1f} s, {speed}")
+        st = link_state(gphy, octal)
+        g1000 = all(s == ("up", "1000") for s in st.values())
+        frames = cross_frames(gphy, octal) if ok else {}
+        crossed = bool(frames) and all(n >= ARP_N for n in frames.values())
+        check(f"link {gphy}<->{octal}", ok and g1000 and crossed,
+              f"carrier after {el:.1f} s, (operstate, Mb/s) {st}, far-end rx of {ARP_N} probes {frames}")
         if a.no_octal or not ok:
             continue
         pre = copper_state(second)

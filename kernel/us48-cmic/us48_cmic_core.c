@@ -686,6 +686,7 @@ static void copper_poll(struct us48_port *p)
 		return;
 	if (up) {
 		bcm_hr2_ge_mac_up(&cu, &ge, speed);
+		WRITE_ONCE(p->speed, speed);
 		netif_carrier_on(p->ndev);
 	} else {
 		bcm_hr2_ge_mac_down(&cu, &ge);
@@ -1339,9 +1340,20 @@ static ssize_t block_ready_show(struct device *d, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RO(block_ready);
 
+/* Mb/s the MAC was set to at the last link up; 0 without carrier (#130). */
+static ssize_t link_speed_show(struct device *d, struct device_attribute *attr, char *buf)
+{
+	struct net_device *nd = to_net_dev(d);
+	struct us48_port *p = netdev_priv(nd);
+
+	return sysfs_emit(buf, "%d\n", netif_carrier_ok(nd) ? READ_ONCE(p->speed) : 0);
+}
+static DEVICE_ATTR_RO(link_speed);
+
 static struct attribute *us48_copper_attrs[] = {
 	&dev_attr_copper_ready.attr,
 	&dev_attr_block_ready.attr,
+	&dev_attr_link_speed.attr,
 	NULL
 };
 static const struct attribute_group us48_copper_group = { .attrs = us48_copper_attrs };
@@ -1414,6 +1426,7 @@ void us48_remove_common(struct us48_cmic *u)
 			u->port[i]->registered = false;
 		}
 	}
+	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
 	hrtimer_cancel(&u->poll_timer);
 	WRITE_ONCE(u->quiesced, true);

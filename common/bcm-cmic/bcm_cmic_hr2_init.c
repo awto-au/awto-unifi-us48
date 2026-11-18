@@ -297,6 +297,14 @@ int bcm_hr2_u1_cold_init(struct bcm_cmic_unit *u, unsigned int mask, int *ops, i
 	wr(u, CMIC_RATE_ADJUST, 1 << 16 | 40);
 	wr(u, CMIC_RATE_ADJUST_INT, 1 << 16 | 40);
 	replay(u, hr2_init1, ARRAY_SIZE(hr2_init1), mask, 0, ~0U, ops, errs);
+	if (mask & 0x100) {
+		/* L2_AGE_TIMER AGE_ENA + 300 s: stock's run-time write after VLAN 1 (bde_stock_init.log u1 83485 ms, #131) */
+		u32 age = 0x0010012c;
+
+		if (bcm_cmic_schan_op(u, 0x0d, 10, 0x02000400, &age, 1, NULL))
+			(*errs)++;
+		(*ops)++;
+	}
 	/* DMA to host RAM over PCIe: remap case A (docs/driver-internals.md 14.1): AXI bit 32 for every host address; after the CPS_RESET of the replay */
 	wr(u, 0x31474, 0x144d2450);
 	wr(u, 0x31478, 0x19617595);

@@ -3,7 +3,8 @@
 
 Usage: switchdev_test.py <preflight|bpdu|fdb|stp|mgmt|all> [--apply]
 - Dry-run by default (prints every board command). all = preflight, bpdu, fdb, stp. mgmt runs only when named.
-- preflight (read only): module params, ports, ASIC VLANs 4000-4007 free, L2_USER_ENTRY, L2_AGE_TIMER, ING_CONFIG_64.SVL_ENABLE.
+- preflight (read only): module params, ports, ASIC VLANs 4000-4007 free, L2_USER_ENTRY, L2_AGE_TIMER (both units = stock
+  0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE.
 - bpdu: brA{ge8} + brB{ge17}, STP on (kernel-minimum timers): two ASIC VLANs, the cable joins them, no loop possible.
   Pass = both bridges agree on one root (BPDUs crossed the ASIC to the CPU in listening = HW blocking state), both ports
   forwarding, STG reads 3 for both. Without the BPDU trap each bridge stays its own root: safe fail.
@@ -21,7 +22,9 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|stp|mgmt|all> [--apply]
 - Timers: STP fd 2 s, hello 1 s, max_age 6 s (kernel minimum). Settle limit 1.25 x (2 fd + hello) = 6.25 s; expiry = FAIL.
   bpdu uses fd 6 s: roots must agree while both ports listen (HW SP_TREE 1); GPORT MIB + netdev counters of a 4 s window.
 - Temps before/after each step (stop: die >= 108 C, LM75 >= 78 C). Exit 0 pass, 1 fail, 2 usage/precondition.
-- Not testable with busybox (no iproute2 `bridge`): static FDB add/del, `bridge fdb show` self entries (ndo_fdb_dump).
+  fdb also (iproute2 `bridge` in the rootfs): A shows in `bridge fdb show` as extern_learn + offload within one L2 poll
+  pass (driver L2X diff); static `bridge fdb add/del` on ge9 lands in / leaves L2X; with ageing 10 s and A silent, HW
+  ageing removes A from L2X and the bridge (limit 1.25 x (2 x 10 s + one pass)). Board deadman 130 s for this step.
 - Log: tmp/logs/switchdev_test.log
 """
 import queue
@@ -61,6 +64,12 @@ SAMPLE_S = 0.5
 SAMPLE_STALL_S = 2.5    # 5 sampler periods without a line = sampler/ssh dead
 PING_S = 4.0            # 3 echoes at 1 s = 2 s + ARP + ssh start
 LINK_S = 5.0            # 1000BASE-T AN ~3 s + 1 s driver link poll, 1.25x (copper_check.py LINK_LIMIT_S)
+MAC_STATIC = "02:75:73:34:38:aa"          # test-only static FDB entry on ge9
+POLL_PASS_S = 3.0 + 3.0 / 8              # driver L2 poll: full pass + one chunk (us48_cmic_sw.c L2POLL_*)
+AGE_S = 10                               # ageing_time 1000 cs in the fdb step
+AGE_WAIT_S = 1.25 * (2 * AGE_S + POLL_PASS_S)   # hit-bit ageing: gone 1-2 periods after the last frame, then one poll pass
+PING2_S = 2.0           # 2 echoes 0.5 s apart + 1 s reply wait = 1.5 s, 1.25x
+FDB_DEADMAN_S = 130     # fdb step ~65 s (20 s base + 2 poll waits 8.4 + static 2 + ping 2 + ageing 29.2) x2
 STATE = "/tmp/swd"
 BRIDGES = ("brA", "brB", "brsw", "brstp", "brmg")
 NET_A, NET_BR = "10.48.30.2", "10.48.30.1"
@@ -139,12 +148,12 @@ class Board:
         e, f = self.rmems(name, [idx])
         return e[0], f
 
-    def rreg(self, name: str) -> tuple[int, dict]:
+    def rreg(self, name: str, unit: int = 0) -> tuple[int, dict]:
         a, f = reg(name)
         if not self.apply:
-            log(f"DRY read {name}")
+            log(f"DRY read {name} unit {unit}")
             return 0, f
-        r = _board.schan_batch([(0, "rreg", IPIPE, a, 2, None)])[0]
+        r = _board.schan_batch([(unit, "rreg", IPIPE, a, 2, None)])[0]
         if r["status"] != "ok":
             raise Fail(f"read {name}: {r['line']}")
         return r["data"][0] | (r["data"][1] << 32 if len(r["data"]) > 1 else 0), f
@@ -219,13 +228,13 @@ class Sampler:
     """One long-lived ssh: a line every SAMPLE_S with uptime, cpu jiffies, rx/tx of the root-ns ports, brport states,
     ge1 enslaved, guard alive, guard message (as stp_loop_test.py)."""
 
-    def __init__(self, ports: tuple):
+    def __init__(self, ports: tuple, deadman_s: int = DEADMAN_S):
         self.ports = ports
         st = " ".join(f"$(cat /sys/class/net/{p}/brport/state 2>/dev/null || echo -)" for p in ports)
         sel = " ".join(f"/^ *{p}:/{{v{i}=$3\" \"$11}}" for i, p in enumerate(ports))
         prn = "\" \"".join(f"(v{i}==\"\"?\"0 0\":v{i})" for i in range(len(ports)))
         awk = f"awk '{sel} END{{print {prn}}}' /proc/net/dev"
-        n = int(DEADMAN_S / SAMPLE_S)
+        n = int(deadman_s / SAMPLE_S)
         loop = (f"i=0; while [ $i -lt {n} ]; do i=$((i+1)); echo \"S $(cut -d' ' -f1 /proc/uptime) "
                 f"$(head -n 1 /proc/stat | cut -d' ' -f3-9) $({awk}) {st} "
                 f"$(test -e /sys/class/net/ge1/master && echo 1 || echo 0) "
@@ -396,8 +405,9 @@ def preflight(b: Board) -> None:
             if mac == 0x0180c2000000 and field(e, *f["BPDU"]):
                 trap.append(i)
     log(f"  BPDU trap before any bridge: {trap or 'none (the driver adds one with the first bridge)'}")
-    v, f = b.rreg("L2_AGE_TIMER")
-    log(f"  L2_AGE_TIMER {v:#x}: AGE_ENA {field([v & 0xffffffff], *f['AGE_ENA'])} AGE_VAL {field([v & 0xffffffff], *f['AGE_VAL'])} s")
+    ages = [b.rreg("L2_AGE_TIMER", u)[0] & 0xffffffff for u in (0, 1)]
+    b.check("L2_AGE_TIMER = stock 0x0010012c (AGE_ENA, 300 s), both units (#131)", ages == [0x0010012c] * 2,
+            f"unit 0 {ages[0]:#010x}, unit 1 {ages[1]:#010x}")
     v, f = b.rreg("ING_CONFIG_64")
     log(f"  ING_CONFIG_64 {v:#x}: SVL_ENABLE {(v >> f['SVL_ENABLE'][0]) & 1}")
     up = b.sh("; ".join(f"echo {p} $(ip -o link show {p} | grep -c '[<,]UP[,>]')" for p in LP), quiet=True)
@@ -478,6 +488,24 @@ def step_bpdu(b: Board) -> bool:
         thermal(b, "after bpdu")
 
 
+def fdb_line(b: Board, mac: str) -> str | None:
+    """brsw's own FDB entry for mac (`bridge fdb show`, not the port's self entries from ndo_fdb_dump)."""
+    out = b.sh("bridge fdb show br brsw", quiet=True)
+    return next((ln.strip() for ln in out.splitlines() if ln.startswith(mac) and "self" not in ln.split()), None)
+
+
+def fdb_wait(b: Board, sm: "Sampler", mac: str, present: bool, limit: float) -> tuple[float, str | None]:
+    """Until mac is (not) in brsw's FDB, one check per sampler line (guards stay on); returns (elapsed, last line)."""
+    sm.grace = sm.q.qsize() + 3
+    t0 = sm.next()["t"]
+    while True:
+        sm.grace = sm.q.qsize() + 3    # `bridge fdb show` = one L2X walk per port (S-channel busy-wait); fdb has no loop, pps guard stays
+        ln = fdb_line(b, mac)
+        el = sm.next()["t"] - t0
+        if (ln is not None) == present or el > limit:
+            return el, ln
+
+
 def step_fdb(b: Board) -> None:
     log("=== fdb: brsw{ge8, ge9}, STP off; host A = ge17 in a netns")
     ports = ("ge8", "ge9")
@@ -486,16 +514,17 @@ def step_fdb(b: Board) -> None:
     thermal(b, "before fdb")
     vid, sm, ns = 4000, None, f"nsenter -t $(cat {STATE}/A.pid) -n"
     try:
-        guard_start(b, ports)
+        guard_start(b, ports, FDB_DEADMAN_S)
         b.sh(f"mkfifo {STATE}/holdA; setsid unshare -n sh -c 'read x <> {STATE}/holdA' </dev/null >/dev/null 2>&1 & "
              f"echo $! > {STATE}/A.pid")
         b.sh(f"ip link set ge17 down; ip link set ge17 netns $(cat {STATE}/A.pid); "
-             f"{ns} sh -c 'ip link set lo up; ip link set ge17 up; ip addr add {NET_A}/24 dev ge17'")
+             f"{ns} sh -c 'echo 1 > /proc/sys/net/ipv6/conf/ge17/disable_ipv6 2>/dev/null; ip link set lo up; "
+             f"ip link set ge17 up; ip addr add {NET_A}/24 dev ge17'")    # no IPv6 ND/MLD from A: the ageing check needs A silent
         br_make(b, "brsw", False)
         b.sh(f"ip addr add {NET_BR}/24 dev brsw; brctl addif brsw ge8; brctl addif brsw ge9")
         vid, stg = offload_info(b, "brsw")
         if b.apply:
-            sm = Sampler(ports)
+            sm = Sampler(ports, FDB_DEADMAN_S)
             sm.next()
         # ge17 went down/up for the netns move: wait for carrier (both cable ends), samples keep the guards running
         while sm:
@@ -530,9 +559,20 @@ def step_fdb(b: Board) -> None:
         a = b.l2_lookup(vid, MAC_GE17)
         b.check("fdb HW learned host A on ge8", bool(a) and a["PORT_NUM"] == LP["ge8"] and not a["STATIC_BIT"] and a["MODULE_ID"] == 0,
                 str(a))
+        el, ln = fdb_wait(b, sm, MAC_GE17, True, POLL_PASS_S * 1.25)
+        b.check("fdb HW-learned A in bridge fdb (L2 poll)", ln is not None and "dev ge8" in ln and "offload" in ln.split()
+                and "extern_learn" in ln.split(), f"{el:.1f} s (limit {POLL_PASS_S * 1.25:.2f} s): {ln!r}")
         brmac = b.sh("cat /sys/class/net/brsw/address", quiet=True)
         h = b.l2_lookup(vid, brmac)
         b.check("fdb host entry brsw -> CPU", bool(h) and h["CPU"] == 1 and h["STATIC_BIT"] == 1 and h["PORT_NUM"] == 0, f"{brmac} {h}")
+        # static FDB to a port: ADD_TO_DEVICE -> static L2X entry, OFFLOADED back; del removes it
+        b.sh(f"bridge fdb add {MAC_STATIC} dev ge9 master static")
+        ln, s = fdb_line(b, MAC_STATIC), b.l2_lookup(vid, MAC_STATIC)
+        b.check("fdb static add -> L2X", bool(s) and s["STATIC_BIT"] == 1 and s["PORT_NUM"] == LP["ge9"] and not s["CPU"]
+                and ln is not None and "offload" in ln.split(), f"L2 {s}, fdb {ln!r}")
+        b.sh(f"bridge fdb del {MAC_STATIC} dev ge9 master")
+        ln, s = fdb_line(b, MAC_STATIC), b.l2_lookup(vid, MAC_STATIC)
+        b.check("fdb static del -> L2X gone", s is None and ln is None, f"L2 {s}, fdb {ln!r}")
         # learning off: CML 0 + dynamic flush; on again
         b.sh("echo 0 > /sys/class/net/ge8/brport/learning")
         e, f = b.rmem("PORT_TAB", LP["ge8"])
@@ -544,9 +584,20 @@ def step_fdb(b: Board) -> None:
         rc_out = b.sh("echo 0 > /sys/class/net/ge8/brport/unicast_flood 2>&1; echo rc=$?; cat /sys/class/net/ge8/brport/unicast_flood",
                       check=False, quiet=True)
         b.check("fdb flood off refused", "rc=0" not in rc_out and rc_out.splitlines()[-1:] == ["1"], rc_out.replace("\n", " | "))
+        # A again (learning off flushed it), then silent: HW ageing must remove it from L2X and from the bridge
+        b.sh(f"{ns} ping -c 2 -i 0.5 -W 1 {NET_BR} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
+        sm.grace = sm.q.qsize() + 4    # queued samples cover the learning/flood steps: L2X flush walks (no loop in fdb)
+        sm.wait(PING2_S)
+        b.sh(f"kill $(cat {STATE}/ping.pid) 2>/dev/null; true", check=False, quiet=True)
+        el, ln = fdb_wait(b, sm, MAC_GE17, True, POLL_PASS_S * 1.25)
+        b.check("fdb A re-learned in bridge fdb", ln is not None and "extern_learn" in ln.split(), f"{el:.1f} s: {ln!r}")
         b.sh("echo 1000 > /sys/class/net/brsw/bridge/ageing_time")
         v, f = b.rreg("L2_AGE_TIMER")
         b.check("fdb ageing 10 s", field([v & 0xffffffff], *f["AGE_VAL"]) == 10, f"L2_AGE_TIMER {v:#x}")
+        el, ln = fdb_wait(b, sm, MAC_GE17, False, AGE_WAIT_S)
+        a = b.l2_lookup(vid, MAC_GE17)
+        b.check("fdb HW ageing removes A (L2X + bridge fdb)", ln is None and a is None,
+                f"{el:.1f} s after ageing 10 s (limit {AGE_WAIT_S:.2f} s): fdb {ln!r}, L2 {a}")
         b.sh("echo 30000 > /sys/class/net/brsw/bridge/ageing_time")
         v, f = b.rreg("L2_AGE_TIMER")
         b.check("fdb ageing 300 s restored", (v & 0xffffffff) == 0x0010012c, f"L2_AGE_TIMER {v:#x}")
@@ -556,7 +607,7 @@ def step_fdb(b: Board) -> None:
         if sm:
             sm.stop()
         teardown(b)
-        verify_restored(b, "fdb", [vid], before, [(vid, MAC_GE17)])
+        verify_restored(b, "fdb", [vid], before, [(vid, MAC_GE17), (vid, MAC_STATIC)])
         thermal(b, "after fdb")
 
 

@@ -38,7 +38,7 @@
 - Modules: `/lib/modules/<release>/*.ko` (loaded by explicit insmod order in the rc scripts; `us48_a2` and `us48_bustest` are loaded by hand). Firmware: `/lib/firmware/us48-a2*.elf` (from `tmp/a2fw`).
 - initramfs = a gen_init_cpio list of the stage (all uid/gid 0), written by `build_mainline.py`; modules are stripped of debug info.
 - Debug profile only: static test tools in `/usr/bin` (`build_rootfs.py --tools`, docs/core-bringup.md); in-tree `=m` modules (`pl330`, `dmatest`, torture, `test_*`) are staged into `/lib/modules/<release>` by `build_mainline.py`.
-- Network tests (`docs/route-nat-fw.md`): `nft` (nftables 1.1.7, static, mini-gmp, 0.8 MB) in `/usr/sbin`, netfilter/nf_tables/flowtable as `=m` modules in both profiles, `modules.dep` from host `depmod` so busybox `modprobe` works (`CONFIG_MODPROBE`); `unshare`/`nsenter` from busybox.
+- Network tests (`docs/route-nat-fw.md`): `nft` (nftables 1.1.7, static, mini-gmp, 0.8 MB) in `/usr/sbin`, netfilter/nf_tables/flowtable as `=m` modules in both profiles, `modules.dep` from host `depmod` so busybox `modprobe` works (`CONFIG_MODPROBE`); `unshare`/`nsenter` from busybox. iproute2 `bridge` (7.3.0, static, 0.2 MB) in `/usr/sbin` for the switchdev FDB tests.
 - Stage is rebuilt on every `build_mainline.py` run (`tmp/mainline/rootfs`); the busybox/dropbear builds are a few seconds each.
 
 ## Module reload (#78, #56)

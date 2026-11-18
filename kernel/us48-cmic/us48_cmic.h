@@ -120,6 +120,7 @@ struct us48_port {
 	s8 fw_mode;			/* xe: lane FIRMWARE_MODE set (0 optic, 2 passive cable); -1 = TSC not initialised */
 	s8 media;			/* xe: last A0h result (1 passive, 0 other, -1 absent/unreadable), #105 */
 	u8 media_tick;			/* xe: link polls since the last media check while open + link down */
+	u16 speed;			/* copper: Mb/s of the last MAC link up (sysfs link_speed) */
 	struct us48_br *br;		/* offloaded bridge (switchdev), NULL = private VLAN; rtnl */
 	u8 stp;				/* BR_STATE_* of the port in br */
 	bool learning;			/* BR_LEARNING: PORT_TAB CML 8 while in br */
@@ -167,6 +168,11 @@ struct us48_cmic {
 	struct us48_br br[US48_BR_MAX];	/* switchdev bridges on this unit; rtnl */
 	int l2u_bpdu;			/* L2_USER_ENTRY index of the BPDU trap, -1 = none */
 	bool l2u_ours;			/* we wrote it (removed with the last bridge) */
+	struct delayed_work l2poll;	/* L2X diff -> bridge FDB (us48_cmic_sw.c), runs while a bridge exists */
+	struct us48_l2rec *l2shadow;	/* L2X_ENTRIES: entries reported to the bridge; rtnl */
+	u32 *l2buf;			/* one poll chunk of raw L2X entries */
+	int l2poll_idx;			/* first index of the next chunk */
+	bool l2poll_on;			/* rtnl */
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */
@@ -217,6 +223,7 @@ bool us48_is_port(const struct net_device *nd);
 int us48_sw_init(void);			/* module init, no rtnl */
 void us48_sw_exit(void);		/* module exit, no rtnl */
 void us48_sw_unit_init(struct us48_cmic *u);	/* probe, before the netdevs register */
+void us48_sw_unit_exit(struct us48_cmic *u);	/* remove, after the netdevs are gone, no rtnl */
 void us48_sw_port_reapply(struct us48_port *p);	/* after copper bring-up rewrote PORT_TAB */
 int us48_sw_parent_id(struct net_device *nd, struct netdev_phys_item_id *ppid);
 int us48_sw_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb, struct net_device *dev,
@@ -225,6 +232,7 @@ int us48_sw_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb, struct ne
 static inline int us48_sw_init(void) { return 0; }
 static inline void us48_sw_exit(void) { }
 static inline void us48_sw_unit_init(struct us48_cmic *u) { }
+static inline void us48_sw_unit_exit(struct us48_cmic *u) { }
 static inline void us48_sw_port_reapply(struct us48_port *p) { }
 #endif
 
