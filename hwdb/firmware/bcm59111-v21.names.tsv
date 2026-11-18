@@ -1,0 +1,359 @@
+# BCM59111 v21 firmware names (hwdb/firmware/bcm59111-v21.bin, CODE base 0x1A00). Applied by scripts/poe_fw_ghidra.py.
+# addr<TAB>name<TAB>kind<TAB>comment<TAB>source<TAB>confidence (C confirmed by code bytes, I inferred). Spaces: CODE, EXTMEM (XRAM), INTMEM (IRAM), SFR.
+CODE:43BD	keil_IMUL	func	?C?IMUL 16x16->16, R6:R7 = R6:R7 * R4:R5; bytes identical to RTD keil_IMUL	poe-fw-re	C
+CODE:43CF	keil_LLDXDATA	func	?C?LLDXDATA R4..R7 = 4 bytes at xdata @DPTR (big-endian)	poe-fw-re	C
+CODE:43DB	keil_LSTXDATA	func	?C?LSTXDATA store R4..R7 to xdata @DPTR	poe-fw-re	C
+CODE:43E7	keil_OFFXADD	func	DPTR += A*B (record index scaling; identical to RTD keil_DPTR_add_AxB)	poe-fw-re	C
+CODE:43F3	keil_LDGPTR_CODE	func	R3:R2:R1 = 3 bytes at code @DPTR (generic-pointer constant load, tag 0xFF)	poe-fw-re	I
+CODE:43FF	keil_CCASE	func	?C?CCASE switch helper, 3-byte {hi,lo,value} inline table; identical to RTD keil_CCASE	poe-fw-re	C
+CODE:4425	keil_ICALL	func	?C?ICALL indirect call via R2:R1: MOV DPH,R2;MOV DPL,R1;CLR A;JMP @A+DPTR; identical to RTD keil_ICALL	poe-fw-re	C
+CODE:1B00	rom_entry_stub	func	LJMP startup; hook-area entry the ROM calls first	poe-fw-re	C
+CODE:50EA	startup_idata_clear	func	STARTUP.A51 IDATALOOP: MOV R0,#0xFF;CLR A;MOV @R0,A;DJNZ R0; then LCALL user-init stub 0x1AFC; no XDATA clear, no SP init	poe-fw-re	C
+CODE:1AFC	user_init_stub	func	empty RET (Keil STARTUP user hook position)	poe-fw-re	I
+CODE:50F3	init_i2c_status	func	SFR 0xDD=0xB0 (I2C slave enable), 0x804A=0	poe-fw-re	I
+CODE:3CE3	main	func	hook 0: P1[3:0] address pins -> 0x29; P0.0 strap selects register init set; init, then main loop 0x3D1A	poe-fw-re	C
+CODE:3D1A	main_loop	func	poll 230D, run per-channel state pointer (0x50AB) for flags 0x23.1..4, thermal check, 804A reload	poe-fw-re	C
+CODE:3D92	reload_after_i2c_error	func	clears 804A, re-initialises (4CBA)	poe-fw-re	I
+CODE:3F10	isr_i2c_slave	func	hook 1: I2C slave: SFR DD status, F5 ctrl, F6 tx, F7 rx; auto-increment register pointer 0x35	poe-fw-re	C
+CODE:4879	isr_event_ext	func	hook 2: 0x8017 event flags, 0x80BF..C3, sets 0x23.1..4, SFR 0x93=0x3F	poe-fw-re	I
+CODE:4EBA	isr_periodic	func	hook 3, low priority (CLR IP.1 ... SETB IP.1): 1B03,37D2,34D0,29EE,316B	poe-fw-re	C
+CODE:4255	isr_chan0	func	hook 4: SFR BC events -> block 0x8078 flags	poe-fw-re	C
+CODE:40DD	isr_chan1	func	hook 5: SFR BD events -> block 0x808A flags	poe-fw-re	C
+CODE:42CD	isr_chan2	func	hook 6: SFR BE events -> block 0x809C flags	poe-fw-re	C
+CODE:4345	isr_chan3	func	hook 7: SFR BF events -> block 0x80AE flags	poe-fw-re	C
+CODE:4FCD	isr_timer1_tick	func	hook 8: TR1 off, reload TL1=F4 TH1=E5, tick 3C1E, TR1 on	poe-fw-re	C
+CODE:3C1E	tick_timers	func	per-tick: decrement per-channel timers (two arrays), on expiry set block flags and 0x23.n service flag	poe-fw-re	I
+CODE:47AB	host_reg_dispatch	func	DPTR=table: reg(0x35)*3 -> [FF hi lo] -> ICALL; INC 0x35 (auto-increment)	poe-fw-re	C
+CODE:2F7B	wh_op_mod	func	write 0x12 OP_MOD: store, SETB 0x23.1..4 (re-run all channel state machines)	poe-fw-re	C
+CODE:482F	apply_op_mod_shadow	func	OP_MOD 2 bits/channel -> IRAM 0x41 shadow (masks 03/0C/30/C0)	poe-fw-re	I
+CODE:4B0D	apply_op_mod_shadow2	func	second OP_MOD consumer	poe-fw-re	I
+CODE:4071	init_fw_rev_crc	func	0x8041=0x15 FW_REV, 0x805E:5F=0x00E4, 0x8075=0xAA CRC_STATUS	poe-fw-re	C
+CODE:4B40	init_regs_set_a	func	register defaults when P0.0 strap = 1 (table 0x1903)	poe-fw-re	I
+CODE:4C90	init_regs_set_b	func	register defaults when P0.0 strap = 0 (table 0x1900)	poe-fw-re	I
+CODE:4089	init_hp_defaults	func	0x804B/50/55 per-channel config init	poe-fw-re	I
+CODE:40A2	init_icut_defaults	func	0x804C/51/56	poe-fw-re	I
+CODE:40B0	init_ilim_defaults	func	0x804D/52/57	poe-fw-re	I
+CODE:3922	init_hw_channels	func	clears all channel blocks/timers, arms every channel to st_port_reset, sets SFR defaults (A1-A4=F0, C9=0F, E5-E8=04, T2CON bits, 0xFF=60)	poe-fw-re	C
+CODE:442B	write_cm_vm_regs	func	store R5,R4,R3,R2 to 0x8030+4*R7 (CM lo/hi, VM lo/hi) host registers	poe-fw-re	C
+CODE:49FF	arm_channel	func	R7=channel, R4:R5=next state ptr (0 = keep), R3=delay ticks (0 = keep); SETB 0x23.(ch+1); ptr -> block+0x0F, delay -> block+0x11	poe-fw-re	C
+CODE:49F9	arm_channel_cur	func	arm_channel with R7=*IBP, R3=9	poe-fw-re	I
+CODE:50AB	run_state	func	load state ptr from @DPTR (block+0x0F) and jump to it (called from main loop)	poe-fw-re	C
+CODE:5024	set_timer	func	R7=channel, R5=timer index, R3:R2 = value; stores into the channel timer array	poe-fw-re	I
+CODE:4E1A	int_raise_pwr_good	func	INT 0x8004 |= mask(4C23); if INT_MASK bit3 and 0x8017.7: SETB 0xF8.0 (host INT line)	poe-fw-re	I
+CODE:4E3D	int_raise_class	func	INT 0x8004 |= 0x10<<ch (4C2B); same INT line logic	poe-fw-re	I
+CODE:500A	set_thermal_status	func	0x800A |= R7; 0x800B = same; if mask set raise INT	poe-fw-re	I
+CODE:5043	int_line_update	func	if (INT_MASK & R7) and 0x8017.7: SETB 0xF8.0 (host INT output)	poe-fw-re	I
+CODE:5031	wh_int_mask	func	write 0x01 INT_MASK: store; if no pending INT bit: CLR 0xF8.0	poe-fw-re	C
+CODE:4FE2	wh_cfg42	func	write 0x42: store 0x8042; SFR F9 = 0x0B if (v&0x1E)==0x16 else 0x0A	poe-fw-re	C
+CODE:4FF6	port_output_gate	func	R7=channel R5=enable: SFR C9 mask clear (R5!=0) / set (R5==0)	poe-fw-re	I
+CODE:4A31	st_power_on	func	ORL SFR F1 with port mask (4C23 hp / 4C2F pair); arms st_power_good	poe-fw-re	I
+CODE:4ED5	set_chan_sfr_a	func	SFR A1..A4[R7] = R5 (per-channel limit/config)	poe-fw-re	I
+CODE:4AA1	set_chan_ctrl_field	func	SFR B1..B4[R7] bits 5:4 = R5	poe-fw-re	I
+CODE:497E	set_chan_ctrl_bit2	func	SFR B1..B4[R7] bit2 = (R5 ? clear : set)	poe-fw-re	I
+CODE:4B71	update_chan_limit	func	SFR A1..A4[R7] = calc_limit(R7)	poe-fw-re	I
+CODE:3334	calc_limit	func	limit value from 0x8047/48/4C/4D/51/52/56/57 (ICUT/ILIM config) for A1..A4	poe-fw-re	I
+CODE:3651	calc_scaled	func	scaling using keil_IMUL and SFR D9..DB	poe-fw-re	I
+CODE:34D0	meas_temperature	func	periodic: 0x802C temperature, 0x802E/2F, 0x80F1; uses math unit E9..EF	poe-fw-re	I
+CODE:37D2	meas_counters_math	func	periodic: math unit E9..EF, SFR AB..AD	poe-fw-re	I
+CODE:1B03	meas_chan_scan	func	periodic first step: per-channel measurement via SFR AB..AF,B5..B7 and math unit E9..EF	poe-fw-re	I
+CODE:29EE	periodic_port_monitor	func	periodic: CM/VM (442B), event latches 0x8000..0x8008, arms st_fault_shutdown / st_disconnect_cleanup / st_idle	poe-fw-re	I
+CODE:316B	periodic_chan_status	func	periodic: round-robin channel status via 0x8076, 0x80C0, SFR D0 bank 2	poe-fw-re	I
+CODE:230D	poll_common	func	main-loop poll: INT/event/status 0x8000..0x8010, flag bits, 0x80BF..C3	poe-fw-re	I
+CODE:3E5D	poll_detect_class_regs	func	writes SAT_P1..4 0x800C..0F from IRAM results	poe-fw-re	I
+CODE:3DA6	chan_event_latch	func	round-robin 0x8076 latch of 0x80C0/0x80C4 channel events into block flags (+1 bit6), SETB 0x23.n	poe-fw-re	I
+CODE:45A7	hp_enabled_default	func	returns 0 if HP config byte == 0x80 else 1 (0x8048/4D/52/57)	poe-fw-re	I
+CODE:46FC	load_math_unit	func	loads E9..EE from 0x8048.. (ILIM/ICUT) config for limit conversion	poe-fw-re	I
+CODE:4AD7	st_port_reset	func	clear per-channel enables and counters, next st_port_shutdown	poe-fw-re	I
+CODE:2EE0	st_port_shutdown	func	clear event latches 0x8006..09, clear INT bits, re-apply OP_MOD, next st_port_cfg (2 ticks)	poe-fw-re	I
+CODE:44ED	st_port_cfg	func	clear flags, apply per-port config (ctrl/ilim/B1..B4/C9 gate), zero CM/VM, next st_mode_select	poe-fw-re	I
+CODE:454A	st_mode_select	func	by OP_MOD: shutdown -> st_port_reset (1 tick); else st_detect_arm (3 ticks) or st_power_request (10 ticks)	poe-fw-re	I
+CODE:46AB	st_detect_arm	func	if DET_CLASS_EN (0x8014) bit set: request detect, next st_detect_start; else idle	poe-fw-re	I
+CODE:4601	st_detect_start	func	wait flag +1.6 (detect request), write SFR D1..D4=1 (start detection), arm st_detect_wait	poe-fw-re	I
+CODE:1A60	st_detect_wait	func	detection measurement wait/sample (SFR D1..D4, A8), next st_detect_result (4 ticks)	poe-fw-re	I
+CODE:3B3C	st_detect_result	func	detect code = SFR D1..D4 >> 4; store to SAT_Pn (0x0C+ch) low nibble; code 4 (good) -> st_class_gate (8 ticks), else st_detect_invalid (15 ticks) / st_detect_ok_wait (5 ticks)	poe-fw-re	I
+CODE:48BE	st_detect_invalid	func	increment invalid-signature counter 0x8060+4*ch; if not open-circuit: st_retry_wait_a (16 ticks) else idle	poe-fw-re	I
+CODE:5091	st_retry_wait_a	func	timer 0x02/C8, next st_wait_b1	poe-fw-re	I
+CODE:509E	st_retry_wait_b	func	timer 0x02/C8, next st_wait_b3	poe-fw-re	I
+CODE:4F09	st_wait_b1	func	wait flag +5.1, clear, next st_idle (2 ticks)	poe-fw-re	I
+CODE:4BA2	st_wait_b3	func	wait flag +5.1 / +5.3, restart timers, next st_retry_wait_a	poe-fw-re	I
+CODE:4F23	st_detect_ok_wait	func	wait flag +5.4, clear, next st_chan_enable	poe-fw-re	I
+CODE:4DF5	st_chan_enable	func	0x80C0 |= channel mask, next st_class_hw_start	poe-fw-re	I
+CODE:49BD	st_class_hw_start	func	wait +1.6, SFR D5/D6 |= mask (hw class start), timer 0x0864, next st_class_wait	poe-fw-re	I
+CODE:3A30	st_class_wait	func	classification wait: +0.3 event, 0x8076 index	poe-fw-re	I
+CODE:41D9	st_class_gate	func	if class not enabled (0x8014) -> st_power_request (10 ticks) else start class (0x8103), timer, next st_class_done	poe-fw-re	I
+CODE:47E4	st_class_done	func	wait class events +4.2 / +4.1, store class nibble (4658), next st_class_eval	poe-fw-re	I
+CODE:448D	st_class_eval	func	class = (0x42+ch)>>4 & 7; valid -> st_idle path / st_power_request, invalid -> st_power_request	poe-fw-re	I
+CODE:3FBE	st_power_request	func	mode 0 -> st_port_reset; 1 -> idle; 2 -> st_power_on (10 ticks); 3 -> st_poweron_hold	poe-fw-re	I
+CODE:4FB7	st_poweron_hold	func	timer 0x14 ticks, next st_wait_b7	poe-fw-re	I
+CODE:4E80	st_wait_b7	func	wait flag +5.7, clear, next st_port_cfg (2 ticks)	poe-fw-re	I
+CODE:2F8C	st_power_good	func	after power-on: update SAT_PWR 0x8010 enable/good bits, INT 0x8002 |= 0x41, power-good timers; next idle	poe-fw-re	I
+CODE:4D5C	st_fault_shutdown	func	armed by periodic_port_monitor (12 ticks): set fault state bits, long timer 0x20/4B, next st_fault_cooldown	poe-fw-re	I
+CODE:4E9D	st_fault_cooldown	func	wait flag +5.5 (cooldown expired), clear, next st_idle	poe-fw-re	I
+CODE:4F9F	st_disconnect_cleanup	func	armed by periodic_port_monitor (14 ticks): clear timer, timer 0x40/1E, next st_wait_b6	poe-fw-re	I
+CODE:4E60	st_wait_b6	func	wait flag +5.6, clear, next st_port_cfg	poe-fw-re	I
+CODE:4F3D	st_wait_b6b	func	wait flag +5.6, next st_power_request	poe-fw-re	I
+CODE:4EEF	st_idle	func	idle: arm timer 0x3C (0x8000), next st_wait_b7	poe-fw-re	I
+CODE:50FC	wh_dis_sen_en	func	host write handler reg 0x13 (DIS_SEN_EN): store XRAM 0x8013, SETB dirty bit	poe-fw-re	C
+CODE:5105	wh_det_class_en	func	host write handler reg 0x14 (DET_CLASS_EN): store XRAM 0x8014, SETB dirty bit	poe-fw-re	C
+CODE:518C	wh_reg_15	func	host write handler reg 0x15 (REG_15): store XRAM 0x8015, SETB dirty bit	poe-fw-re	C
+CODE:510E	wh_reg_17	func	host write handler reg 0x17 (REG_17): store XRAM 0x8017, SETB dirty bit	poe-fw-re	C
+CODE:50C2	wh_pb_detclass	func	host write handler reg 0x18 (PB_DETCLASS): store XRAM 0x8018, SETB dirty bit	poe-fw-re	C
+CODE:50CC	wh_pb_pwr	func	host write handler reg 0x19 (PB_PWR): store XRAM 0x8019, SETB dirty bit	poe-fw-re	C
+CODE:50D6	wh_pb_reset	func	host write handler reg 0x1A (PB_RESET): store XRAM 0x801A, SETB dirty bit	poe-fw-re	C
+CODE:5117	wh_reg_1e	func	host write handler reg 0x1E (REG_1E): store XRAM 0x801E, SETB dirty bit	poe-fw-re	C
+CODE:5120	wh_reg_1f	func	host write handler reg 0x1F (REG_1F): store XRAM 0x801F, SETB dirty bit	poe-fw-re	C
+CODE:5129	wh_hp_en	func	host write handler reg 0x44 (HP_EN): store XRAM 0x8044, SETB dirty bit	poe-fw-re	C
+CODE:5193	wh_reg_46	func	host write handler reg 0x46 (REG_46): store XRAM 0x8046, SETB dirty bit	poe-fw-re	C
+CODE:5132	wh_reg_47	func	host write handler reg 0x47 (REG_47): store XRAM 0x8047, SETB dirty bit	poe-fw-re	C
+CODE:513B	wh_reg_48	func	host write handler reg 0x48 (REG_48): store XRAM 0x8048, SETB dirty bit	poe-fw-re	C
+CODE:519A	wh_reg_4b	func	host write handler reg 0x4B (REG_4B): store XRAM 0x804B, SETB dirty bit	poe-fw-re	C
+CODE:5144	wh_reg_4c	func	host write handler reg 0x4C (REG_4C): store XRAM 0x804C, SETB dirty bit	poe-fw-re	C
+CODE:514D	wh_reg_4d	func	host write handler reg 0x4D (REG_4D): store XRAM 0x804D, SETB dirty bit	poe-fw-re	C
+CODE:51A1	wh_reg_50	func	host write handler reg 0x50 (REG_50): store XRAM 0x8050, SETB dirty bit	poe-fw-re	C
+CODE:5156	wh_reg_51	func	host write handler reg 0x51 (REG_51): store XRAM 0x8051, SETB dirty bit	poe-fw-re	C
+CODE:515F	wh_reg_52	func	host write handler reg 0x52 (REG_52): store XRAM 0x8052, SETB dirty bit	poe-fw-re	C
+CODE:51A8	wh_reg_55	func	host write handler reg 0x55 (REG_55): store XRAM 0x8055, SETB dirty bit	poe-fw-re	C
+CODE:5168	wh_reg_56	func	host write handler reg 0x56 (REG_56): store XRAM 0x8056, SETB dirty bit	poe-fw-re	C
+CODE:5171	wh_reg_57	func	host write handler reg 0x57 (REG_57): store XRAM 0x8057, SETB dirty bit	poe-fw-re	C
+CODE:517A	wh_reg_5e	func	host write handler reg 0x5E (REG_5E): store XRAM 0x805E, SETB dirty bit	poe-fw-re	C
+CODE:5183	wh_reg_5f	func	host write handler reg 0x5F (REG_5F): store XRAM 0x805F, SETB dirty bit	poe-fw-re	C
+CODE:4F57	rh_pwr_evt_clr	func	host read handler reg 0x03 (PWR_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-re	C
+CODE:4F6F	rh_det_evt_clr	func	host read handler reg 0x05 (DET_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-re	C
+CODE:4D0E	rh_fault_evt_clr	func	host read handler reg 0x07 (FAULT_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-re	C
+CODE:4D35	rh_evt8_clr	func	host read handler reg 0x09 (EVT8_CLR): clear-on-read of the sibling event registers	poe-fw-re	C
+CODE:4F87	rh_therm_evt_clr	func	host read handler reg 0x0B (THERM_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-re	C
+CODE:51B6	rh_cnt_p1_0	func	host read handler reg 0x60 counter: clear after read	poe-fw-re	I
+CODE:51BC	rh_cnt_p1_1	func	host read handler reg 0x61 counter: clear after read	poe-fw-re	I
+CODE:51C2	rh_cnt_p1_2	func	host read handler reg 0x62 counter: clear after read	poe-fw-re	I
+CODE:51C8	rh_cnt_p1_3	func	host read handler reg 0x63 counter: clear after read	poe-fw-re	I
+CODE:51CE	rh_cnt_p2_0	func	host read handler reg 0x64 counter: clear after read	poe-fw-re	I
+CODE:51D4	rh_cnt_p2_1	func	host read handler reg 0x65 counter: clear after read	poe-fw-re	I
+CODE:51DA	rh_cnt_p2_2	func	host read handler reg 0x66 counter: clear after read	poe-fw-re	I
+CODE:51E0	rh_cnt_p2_3	func	host read handler reg 0x67 counter: clear after read	poe-fw-re	I
+CODE:51E6	rh_cnt_p3_0	func	host read handler reg 0x68 counter: clear after read	poe-fw-re	I
+CODE:51EC	rh_cnt_p3_1	func	host read handler reg 0x69 counter: clear after read	poe-fw-re	I
+CODE:51F2	rh_cnt_p3_2	func	host read handler reg 0x6A counter: clear after read	poe-fw-re	I
+CODE:51F8	rh_cnt_p3_3	func	host read handler reg 0x6B counter: clear after read	poe-fw-re	I
+CODE:51FE	rh_cnt_p4_0	func	host read handler reg 0x6C counter: clear after read	poe-fw-re	I
+CODE:5204	rh_cnt_p4_1	func	host read handler reg 0x6D counter: clear after read	poe-fw-re	I
+CODE:520A	rh_cnt_p4_2	func	host read handler reg 0x6E counter: clear after read	poe-fw-re	I
+CODE:5210	rh_cnt_p4_3	func	host read handler reg 0x6F counter: clear after read	poe-fw-re	I
+CODE:1A00	hook_slot0	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A03	hook_slot1	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A06	hook_slot2	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A09	hook_slot3	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A0C	hook_slot4	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A0F	hook_slot5	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A12	hook_slot6	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A15	hook_slot7	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A18	hook_slot8	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A1B	hook_slot9	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A1E	hook_slot10	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A21	hook_slot11	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A24	hook_slot12	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A27	hook_slot13	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:1A2A	hook_slot14	label	hook table record [FF hi lo] = Keil generic code pointer (tag 0xFF)	poe-fw-re	C
+CODE:26EE	host_write_table	label	128 x [FF hi lo]: write handler per host register, default 0x5260 (RET)	poe-fw-re	C
+CODE:286E	host_read_table	label	128 x [FF hi lo]: read post-process per host register, default 0x5223 (RET)	poe-fw-re	C
+CODE:4C23	tbl_mask_lo	label	01 02 04 08: per-channel low-nibble mask	poe-fw-re	C
+CODE:4C27	tbl_mask_hi	label	10 20 40 80: per-channel high-nibble mask	poe-fw-re	C
+CODE:4C2B	tbl_mask_hi2	label	10 20 40 80	poe-fw-re	C
+CODE:4C2F	tbl_mask_pair	label	11 22 44 88: enable+good pair mask	poe-fw-re	C
+CODE:5300	str_image_tag	label	POETEC_IMAGE+... feature string	poe-fw-re	C
+EXTMEM:8000	HR_00_INT	var	host register 0x00	poe-fw-re	C
+EXTMEM:8001	HR_01_INT_MASK	var	host register 0x01	poe-fw-re	C
+EXTMEM:8002	HR_02_PWR_EVT	var	host register 0x02	poe-fw-re	C
+EXTMEM:8003	HR_03_PWR_EVT_CLR	var	host register 0x03	poe-fw-re	C
+EXTMEM:8004	HR_04_DET_EVT	var	host register 0x04	poe-fw-re	C
+EXTMEM:8005	HR_05_DET_EVT_CLR	var	host register 0x05	poe-fw-re	C
+EXTMEM:8006	HR_06_FAULT_EVT	var	host register 0x06	poe-fw-re	C
+EXTMEM:8007	HR_07_FAULT_EVT_CLR	var	host register 0x07	poe-fw-re	C
+EXTMEM:8008	HR_08_EVT8	var	host register 0x08	poe-fw-re	C
+EXTMEM:8009	HR_09_EVT8_CLR	var	host register 0x09	poe-fw-re	C
+EXTMEM:800A	HR_0A_THERM_EVT	var	host register 0x0A	poe-fw-re	C
+EXTMEM:800B	HR_0B_THERM_EVT_CLR	var	host register 0x0B	poe-fw-re	C
+EXTMEM:800C	HR_0C_SAT_P1	var	host register 0x0C	poe-fw-re	C
+EXTMEM:800D	HR_0D_SAT_P2	var	host register 0x0D	poe-fw-re	C
+EXTMEM:800E	HR_0E_SAT_P3	var	host register 0x0E	poe-fw-re	C
+EXTMEM:800F	HR_0F_SAT_P4	var	host register 0x0F	poe-fw-re	C
+EXTMEM:8010	HR_10_SAT_PWR	var	host register 0x10	poe-fw-re	C
+EXTMEM:8011	HR_11	var	host register 0x11	poe-fw-re	I
+EXTMEM:8012	HR_12_OP_MOD	var	host register 0x12	poe-fw-re	C
+EXTMEM:8013	HR_13_DIS_SEN_EN	var	host register 0x13	poe-fw-re	C
+EXTMEM:8014	HR_14_DET_CLASS_EN	var	host register 0x14	poe-fw-re	C
+EXTMEM:8015	HR_15	var	host register 0x15	poe-fw-re	I
+EXTMEM:8016	HR_16	var	host register 0x16	poe-fw-re	I
+EXTMEM:8017	HR_17	var	host register 0x17	poe-fw-re	I
+EXTMEM:8018	HR_18_PB_DETCLASS	var	host register 0x18	poe-fw-re	C
+EXTMEM:8019	HR_19_PB_PWR	var	host register 0x19	poe-fw-re	C
+EXTMEM:801A	HR_1A_PB_RESET	var	host register 0x1A	poe-fw-re	C
+EXTMEM:801B	HR_1B	var	host register 0x1B	poe-fw-re	I
+EXTMEM:801C	HR_1C	var	host register 0x1C	poe-fw-re	I
+EXTMEM:801D	HR_1D	var	host register 0x1D	poe-fw-re	I
+EXTMEM:801E	HR_1E	var	host register 0x1E	poe-fw-re	I
+EXTMEM:801F	HR_1F	var	host register 0x1F	poe-fw-re	I
+EXTMEM:8020	HR_20	var	host register 0x20	poe-fw-re	I
+EXTMEM:8021	HR_21	var	host register 0x21	poe-fw-re	I
+EXTMEM:8022	HR_22	var	host register 0x22	poe-fw-re	I
+EXTMEM:8023	HR_23	var	host register 0x23	poe-fw-re	I
+EXTMEM:8024	HR_24	var	host register 0x24	poe-fw-re	I
+EXTMEM:8025	HR_25	var	host register 0x25	poe-fw-re	I
+EXTMEM:8026	HR_26	var	host register 0x26	poe-fw-re	I
+EXTMEM:8027	HR_27	var	host register 0x27	poe-fw-re	I
+EXTMEM:8028	HR_28	var	host register 0x28	poe-fw-re	I
+EXTMEM:8029	HR_29	var	host register 0x29	poe-fw-re	I
+EXTMEM:802A	HR_2A	var	host register 0x2A	poe-fw-re	I
+EXTMEM:802B	HR_2B	var	host register 0x2B	poe-fw-re	I
+EXTMEM:802C	HR_2C_TEMP	var	host register 0x2C	poe-fw-re	C
+EXTMEM:802D	HR_2D	var	host register 0x2D	poe-fw-re	I
+EXTMEM:802E	HR_2E	var	host register 0x2E	poe-fw-re	I
+EXTMEM:802F	HR_2F	var	host register 0x2F	poe-fw-re	I
+EXTMEM:8030	HR_30_CM_P1_L	var	host register 0x30	poe-fw-re	I
+EXTMEM:8031	HR_31_CM_P1_H	var	host register 0x31	poe-fw-re	I
+EXTMEM:8032	HR_32_VM_P1_L	var	host register 0x32	poe-fw-re	I
+EXTMEM:8033	HR_33_VM_P1_H	var	host register 0x33	poe-fw-re	I
+EXTMEM:8034	HR_34_CM_P2_L	var	host register 0x34	poe-fw-re	I
+EXTMEM:8035	HR_35_CM_P2_H	var	host register 0x35	poe-fw-re	I
+EXTMEM:8036	HR_36_VM_P2_L	var	host register 0x36	poe-fw-re	I
+EXTMEM:8037	HR_37_VM_P2_H	var	host register 0x37	poe-fw-re	I
+EXTMEM:8038	HR_38_CM_P3_L	var	host register 0x38	poe-fw-re	I
+EXTMEM:8039	HR_39_CM_P3_H	var	host register 0x39	poe-fw-re	I
+EXTMEM:803A	HR_3A_VM_P3_L	var	host register 0x3A	poe-fw-re	I
+EXTMEM:803B	HR_3B_VM_P3_H	var	host register 0x3B	poe-fw-re	I
+EXTMEM:803C	HR_3C_CM_P4_L	var	host register 0x3C	poe-fw-re	I
+EXTMEM:803D	HR_3D_CM_P4_H	var	host register 0x3D	poe-fw-re	I
+EXTMEM:803E	HR_3E_VM_P4_L	var	host register 0x3E	poe-fw-re	I
+EXTMEM:803F	HR_3F_VM_P4_H	var	host register 0x3F	poe-fw-re	I
+EXTMEM:8040	HR_40	var	host register 0x40	poe-fw-re	I
+EXTMEM:8041	HR_41_FW_REV	var	host register 0x41	poe-fw-re	C
+EXTMEM:8042	HR_42_CFG42	var	host register 0x42	poe-fw-re	C
+EXTMEM:8043	HR_43_DEV_ID	var	host register 0x43	poe-fw-re	C
+EXTMEM:8044	HR_44_HP_EN	var	host register 0x44	poe-fw-re	C
+EXTMEM:8045	HR_45	var	host register 0x45	poe-fw-re	I
+EXTMEM:8046	HR_46	var	host register 0x46	poe-fw-re	I
+EXTMEM:8047	HR_47	var	host register 0x47	poe-fw-re	I
+EXTMEM:8048	HR_48	var	host register 0x48	poe-fw-re	I
+EXTMEM:8049	HR_49	var	host register 0x49	poe-fw-re	I
+EXTMEM:804A	HR_4A	var	host register 0x4A	poe-fw-re	I
+EXTMEM:804B	HR_4B	var	host register 0x4B	poe-fw-re	I
+EXTMEM:804C	HR_4C	var	host register 0x4C	poe-fw-re	I
+EXTMEM:804D	HR_4D	var	host register 0x4D	poe-fw-re	I
+EXTMEM:804E	HR_4E	var	host register 0x4E	poe-fw-re	I
+EXTMEM:804F	HR_4F	var	host register 0x4F	poe-fw-re	I
+EXTMEM:8050	HR_50	var	host register 0x50	poe-fw-re	I
+EXTMEM:8051	HR_51	var	host register 0x51	poe-fw-re	I
+EXTMEM:8052	HR_52	var	host register 0x52	poe-fw-re	I
+EXTMEM:8053	HR_53	var	host register 0x53	poe-fw-re	I
+EXTMEM:8054	HR_54	var	host register 0x54	poe-fw-re	I
+EXTMEM:8055	HR_55	var	host register 0x55	poe-fw-re	I
+EXTMEM:8056	HR_56	var	host register 0x56	poe-fw-re	I
+EXTMEM:8057	HR_57	var	host register 0x57	poe-fw-re	I
+EXTMEM:8058	HR_58	var	host register 0x58	poe-fw-re	I
+EXTMEM:8059	HR_59	var	host register 0x59	poe-fw-re	I
+EXTMEM:805A	HR_5A	var	host register 0x5A	poe-fw-re	I
+EXTMEM:805B	HR_5B	var	host register 0x5B	poe-fw-re	I
+EXTMEM:805C	HR_5C	var	host register 0x5C	poe-fw-re	I
+EXTMEM:805D	HR_5D	var	host register 0x5D	poe-fw-re	I
+EXTMEM:805E	HR_5E	var	host register 0x5E	poe-fw-re	I
+EXTMEM:805F	HR_5F	var	host register 0x5F	poe-fw-re	I
+EXTMEM:8060	HR_60_CNT_P1_0	var	host register 0x60	poe-fw-re	I
+EXTMEM:8061	HR_61_CNT_P1_1	var	host register 0x61	poe-fw-re	I
+EXTMEM:8062	HR_62_CNT_P1_2	var	host register 0x62	poe-fw-re	I
+EXTMEM:8063	HR_63_CNT_P1_3	var	host register 0x63	poe-fw-re	I
+EXTMEM:8064	HR_64_CNT_P2_0	var	host register 0x64	poe-fw-re	I
+EXTMEM:8065	HR_65_CNT_P2_1	var	host register 0x65	poe-fw-re	I
+EXTMEM:8066	HR_66_CNT_P2_2	var	host register 0x66	poe-fw-re	I
+EXTMEM:8067	HR_67_CNT_P2_3	var	host register 0x67	poe-fw-re	I
+EXTMEM:8068	HR_68_CNT_P3_0	var	host register 0x68	poe-fw-re	I
+EXTMEM:8069	HR_69_CNT_P3_1	var	host register 0x69	poe-fw-re	I
+EXTMEM:806A	HR_6A_CNT_P3_2	var	host register 0x6A	poe-fw-re	I
+EXTMEM:806B	HR_6B_CNT_P3_3	var	host register 0x6B	poe-fw-re	I
+EXTMEM:806C	HR_6C_CNT_P4_0	var	host register 0x6C	poe-fw-re	I
+EXTMEM:806D	HR_6D_CNT_P4_1	var	host register 0x6D	poe-fw-re	I
+EXTMEM:806E	HR_6E_CNT_P4_2	var	host register 0x6E	poe-fw-re	I
+EXTMEM:806F	HR_6F_CNT_P4_3	var	host register 0x6F	poe-fw-re	I
+EXTMEM:8070	HR_70	var	host register 0x70	poe-fw-re	I
+EXTMEM:8071	HR_71	var	host register 0x71	poe-fw-re	I
+EXTMEM:8072	HR_72	var	host register 0x72	poe-fw-re	I
+EXTMEM:8073	HR_73	var	host register 0x73	poe-fw-re	I
+EXTMEM:8074	HR_74	var	host register 0x74	poe-fw-re	I
+EXTMEM:8075	HR_75_CRC_STATUS	var	host register 0x75	poe-fw-re	C
+EXTMEM:8078	ch0_flags_a	var	channel 0 block: event flags A (set by isr_chan0)	poe-fw-re	I
+EXTMEM:8079	ch0_flags_b	var	event flags B	poe-fw-re	I
+EXTMEM:807C	ch0_wait_a	var	state wait flags (set by tick/ISR)	poe-fw-re	I
+EXTMEM:807D	ch0_wait_b	var	state wait flags +5: bit1/3/4/5/6/7 = timer/events waited on by st_wait_*	poe-fw-re	I
+EXTMEM:8087	ch0_state_ptr	var	hi byte of per-channel state handler pointer (lo at +0x10)	poe-fw-re	C
+EXTMEM:8089	ch0_delay	var	delay ticks written by arm_channel	poe-fw-re	I
+EXTMEM:808A	ch1_flags_a	var	channel 1 block: event flags A (set by isr_chan1)	poe-fw-re	I
+EXTMEM:808B	ch1_flags_b	var	event flags B	poe-fw-re	I
+EXTMEM:808E	ch1_wait_a	var	state wait flags (set by tick/ISR)	poe-fw-re	I
+EXTMEM:808F	ch1_wait_b	var	state wait flags +5: bit1/3/4/5/6/7 = timer/events waited on by st_wait_*	poe-fw-re	I
+EXTMEM:8099	ch1_state_ptr	var	hi byte of per-channel state handler pointer (lo at +0x10)	poe-fw-re	C
+EXTMEM:809B	ch1_delay	var	delay ticks written by arm_channel	poe-fw-re	I
+EXTMEM:809C	ch2_flags_a	var	channel 2 block: event flags A (set by isr_chan2)	poe-fw-re	I
+EXTMEM:809D	ch2_flags_b	var	event flags B	poe-fw-re	I
+EXTMEM:80A0	ch2_wait_a	var	state wait flags (set by tick/ISR)	poe-fw-re	I
+EXTMEM:80A1	ch2_wait_b	var	state wait flags +5: bit1/3/4/5/6/7 = timer/events waited on by st_wait_*	poe-fw-re	I
+EXTMEM:80AB	ch2_state_ptr	var	hi byte of per-channel state handler pointer (lo at +0x10)	poe-fw-re	C
+EXTMEM:80AD	ch2_delay	var	delay ticks written by arm_channel	poe-fw-re	I
+EXTMEM:80AE	ch3_flags_a	var	channel 3 block: event flags A (set by isr_chan3)	poe-fw-re	I
+EXTMEM:80AF	ch3_flags_b	var	event flags B	poe-fw-re	I
+EXTMEM:80B2	ch3_wait_a	var	state wait flags (set by tick/ISR)	poe-fw-re	I
+EXTMEM:80B3	ch3_wait_b	var	state wait flags +5: bit1/3/4/5/6/7 = timer/events waited on by st_wait_*	poe-fw-re	I
+EXTMEM:80BD	ch3_state_ptr	var	hi byte of per-channel state handler pointer (lo at +0x10)	poe-fw-re	C
+EXTMEM:80BF	ch3_delay	var	delay ticks written by arm_channel	poe-fw-re	I
+EXTMEM:8076	rr_chan	var	round-robin channel index (0..3)	poe-fw-re	I
+EXTMEM:8133	cur_chan	var	current channel scratch (set by 1F74)	poe-fw-re	I
+EXTMEM:8140	init_idx	var	channel loop counter in init_hw_channels	poe-fw-re	I
+EXTMEM:80F2	tick_idx	var	channel loop counter in tick_timers	poe-fw-re	I
+EXTMEM:804A	i2c_error_flag	var	set by I2C ISR on bus error; main loop reloads	poe-fw-re	C
+EXTMEM:8042	i2c_status_shadow	var	bit0 set on I2C error; written by host reg 0x42	poe-fw-re	C
+EXTMEM:8017	cfg17	var	bit7 = host INT output enable (tested before SETB 0xF8.0)	poe-fw-re	I
+EXTMEM:80BF	ev_global	var	event latch (ISR 2)	poe-fw-re	I
+EXTMEM:80C0	ev_chan_mask	var	per-channel event mask	poe-fw-re	I
+EXTMEM:80C4	ev_chan_req	var	per-channel request bits (low nibble) / ack (high)	poe-fw-re	I
+INTMEM:007C	ibp	var	software (idata) argument stack pointer, grows down (DEC 0x7C; MOV @R0,AR7); helper 1F6A pushes R7, handlers INC 0x7C	poe-fw-re	I
+INTMEM:0020	bits20	var	bit flags: 20.0 = push-button detect/class (wh 0x18)	poe-fw-re	I
+INTMEM:0023	bits23	var	23.1..4 = channel 0..3 state machine service flags (set by arm_channel/ISRs, cleared by main loop)	poe-fw-re	C
+INTMEM:0029	addr_pins	var	P1[3:0] address pins	poe-fw-re	C
+INTMEM:0030	i2c_ptr_phase	var	1 = next received byte is the register pointer	poe-fw-re	C
+INTMEM:0032	i2c_wdata	var	I2C received data byte for write handlers	poe-fw-re	C
+INTMEM:0034	i2c_rx	var	I2C status code from SFR F7	poe-fw-re	C
+INTMEM:0035	i2c_regptr	var	host register pointer, auto-incremented by host_reg_dispatch	poe-fw-re	C
+INTMEM:0041	op_mod_shadow	var	OP_MOD shadow	poe-fw-re	I
+INTMEM:0042	chan_sat0	var	per-channel result shadow 0x42..0x45: low nibble detect, bits 6:4 class	poe-fw-re	I
+SFR:BC	CH0_EVENT	var	channel 0 event flags, write-1-clear	poe-fw-re	C
+SFR:BD	CH1_EVENT	var	channel 1	poe-fw-re	C
+SFR:BE	CH2_EVENT	var	channel 2	poe-fw-re	C
+SFR:BF	CH3_EVENT	var	channel 3	poe-fw-re	C
+SFR:DD	I2C_STATUS	var	I2C slave status/control	poe-fw-re	C
+SFR:F5	I2C_CTRL	var	I2C slave control	poe-fw-re	I
+SFR:F6	I2C_TX	var	I2C transmit data	poe-fw-re	C
+SFR:F7	I2C_RX	var	I2C received byte / status code	poe-fw-re	C
+SFR:F9	I2C_MODE	var	0x0A/0x0B set by host reg 0x42	poe-fw-re	I
+SFR:F8	INT_OUT	var	bit0 = host INT line (SETB when INT&MASK pending, CLR when none); not DW8051 EIP	poe-fw-re	I
+SFR:A1	CH0_LIMIT	var	per-channel config A, init 0xF0	poe-fw-re	I
+SFR:A2	CH1_LIMIT	var		poe-fw-re	I
+SFR:A3	CH2_LIMIT	var		poe-fw-re	I
+SFR:A4	CH3_LIMIT	var		poe-fw-re	I
+SFR:B1	CH0_CTRL	var	per-channel control: bit2, bits5:4, bit7	poe-fw-re	I
+SFR:B2	CH1_CTRL	var		poe-fw-re	I
+SFR:B3	CH2_CTRL	var		poe-fw-re	I
+SFR:B4	CH3_CTRL	var		poe-fw-re	I
+SFR:D1	CH0_DET	var	detect start (write 1) / result	poe-fw-re	I
+SFR:D2	CH1_DET	var		poe-fw-re	I
+SFR:D3	CH2_DET	var		poe-fw-re	I
+SFR:D4	CH3_DET	var		poe-fw-re	I
+SFR:D5	CLASS_START_A	var	per-channel mask	poe-fw-re	I
+SFR:D6	CLASS_START_B	var	per-channel mask	poe-fw-re	I
+SFR:C9	PORT_GATE	var	per-channel output gate mask (init 0x0F)	poe-fw-re	I
+SFR:F1	PWR_EN_SET	var	per-channel power enable (ORL mask)	poe-fw-re	I
+SFR:F2	PWR_EN_CLR	var	per-channel power disable	poe-fw-re	I
+SFR:E9	MATH0	var	math/measurement unit operand bytes E9..EE, command EF	poe-fw-re	I
+SFR:EF	MATH_CMD	var	command 0x23/0x26/0x2E	poe-fw-re	I
+SFR:93	MUX_SEL	var	P2[2:0]|0x28 at init; 0x3F in ISR 2	poe-fw-re	I
+SFR:95	EV95	var	event bits 0/1 (ack by writing 1/2)	poe-fw-re	I
+SFR:96	MASK96	var	init 0xFF	poe-fw-re	I
+SFR:AB	ADC_CTRL	var	measurement control	poe-fw-re	I
+SFR:AC	ADC_HI	var		poe-fw-re	I
+SFR:AD	ADC_LO	var		poe-fw-re	I

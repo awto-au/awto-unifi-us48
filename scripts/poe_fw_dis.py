@@ -217,6 +217,21 @@ def listing(code: bytes, insns, entries, labels=None):
     return "\n".join(lines) + "\n"
 
 
+def data_regions(code: bytes):
+    """[start,end) of [FF hi lo] record tables (host dispatch tables): >= 8 records at stride 3 with hi in 0x1A..0x5F."""
+    out, pc, n = [], BASE + 0x60, len(code)
+    while pc + 24 < n:
+        k = 0
+        while pc + 3 * k + 2 < n and code[pc + 3 * k] == 0xFF and 0x1A <= code[pc + 3 * k + 1] <= 0x5F:
+            k += 1
+        if k >= 8:
+            out.append((pc, pc + 3 * k))
+            pc += 3 * k
+        else:
+            pc += 1
+    return out
+
+
 def sweep(code: bytes):
     """Linear sweep from 0x60 to the end of code (last byte that is not 0x00/0xFF pad, string region excluded)."""
     end = len(code)
@@ -229,7 +244,11 @@ def sweep(code: bytes):
             end -= 1
     insns, entries = {}, {BASE + 0x60}
     pc = BASE + 0x60
+    skip = dict(data_regions(code))
     while pc < end:
+        if pc in skip:
+            pc = skip[pc]
+            continue
         i = decode(code, pc)
         insns[pc] = i
         if i.flow == "call" and i.target is not None and BASE <= i.target < len(code):

@@ -1,0 +1,338 @@
+addr	name	size	callers	comment
+1A60	st_detect_wait	156	0	detection measurement wait/sample (SFR D1..D4, A8), next st_detect_result (4 ticks) [I]
+1AFC	user_init_stub	1	1	empty RET (Keil STARTUP user hook position) [I]
+1AFD	FUN_CODE_1afd	1	0	
+1AFE	FUN_CODE_1afe	1	0	
+1AFF	FUN_CODE_1aff	1	0	
+1B00	rom_entry_stub	3	0	LJMP startup; hook-area entry the ROM calls first [C]
+1B03	meas_chan_scan	484	1	periodic first step: per-channel measurement via SFR AB..AF,B5..B7 and math unit E9..EF [I]
+1F11	FUN_CODE_1f11	18	2	
+1F23	FUN_CODE_1f23	2	3	
+1F25	FUN_CODE_1f25	2	1	
+1F27	FUN_CODE_1f27	14	5	
+1F35	FUN_CODE_1f35	6	5	
+1F3B	FUN_CODE_1f3b	3	4	
+1F3E	FUN_CODE_1f3e	14	10	
+1F4C	FUN_CODE_1f4c	15	2	
+1F5B	FUN_CODE_1f5b	1	3	
+1F5C	FUN_CODE_1f5c	1	3	
+1F5D	FUN_CODE_1f5d	13	9	
+1F6A	FUN_CODE_1f6a	8	14	
+1F72	FUN_CODE_1f72	2	1	
+1F74	FUN_CODE_1f74	9	6	
+1F7D	FUN_CODE_1f7d	12	2	
+1F89	FUN_CODE_1f89	4	1	
+1F8D	FUN_CODE_1f8d	5	1	
+1F92	FUN_CODE_1f92	1	1	
+1F93	FUN_CODE_1f93	14	7	
+1FA1	FUN_CODE_1fa1	1	4	
+1FA2	FUN_CODE_1fa2	1	2	
+1FA3	FUN_CODE_1fa3	13	7	
+1FB0	FUN_CODE_1fb0	3	2	
+1FB3	FUN_CODE_1fb3	2	1	
+1FB5	FUN_CODE_1fb5	14	7	
+1FC3	FUN_CODE_1fc3	11	2	
+1FCE	FUN_CODE_1fce	3	2	
+1FD1	FUN_CODE_1fd1	1	1	
+1FD2	FUN_CODE_1fd2	14	4	
+1FE0	FUN_CODE_1fe0	2	3	
+1FE2	FUN_CODE_1fe2	2	0	
+1FE4	FUN_CODE_1fe4	1	1	
+1FE5	FUN_CODE_1fe5	15	3	
+1FF4	FUN_CODE_1ff4	2	2	
+1FF6	FUN_CODE_1ff6	2	2	
+1FF8	FUN_CODE_1ff8	14	5	
+2006	FUN_CODE_2006	2	7	
+2008	FUN_CODE_2008	15	1	
+2017	FUN_CODE_2017	1	1	
+2018	FUN_CODE_2018	14	2	
+2026	FUN_CODE_2026	3	2	
+2029	FUN_CODE_2029	1	3	
+202A	FUN_CODE_202a	1	1	
+202B	FUN_CODE_202b	14	2	
+2039	FUN_CODE_2039	5	1	
+203E	FUN_CODE_203e	14	2	
+204C	FUN_CODE_204c	3	2	
+204F	FUN_CODE_204f	5	1	
+2054	FUN_CODE_2054	2	1	
+2056	FUN_CODE_2056	3	1	
+2059	FUN_CODE_2059	8	3	
+2061	FUN_CODE_2061	15	0	
+2070	FUN_CODE_2070	6	0	
+2076	FUN_CODE_2076	1	1	
+2077	FUN_CODE_2077	13	0	
+2084	FUN_CODE_2084	1	2	
+2085	FUN_CODE_2085	1	1	
+2086	FUN_CODE_2086	14	5	
+2094	FUN_CODE_2094	2	2	
+2096	FUN_CODE_2096	9	7	
+209F	FUN_CODE_209f	1	3	
+20A0	FUN_CODE_20a0	1	1	
+20A1	FUN_CODE_20a1	15	3	
+20B0	FUN_CODE_20b0	5	0	
+20B5	FUN_CODE_20b5	14	1	
+20C3	FUN_CODE_20c3	1	1	
+20C4	FUN_CODE_20c4	1	1	
+20C5	FUN_CODE_20c5	14	1	
+20D3	FUN_CODE_20d3	1	1	
+20D4	FUN_CODE_20d4	1	1	
+20D5	FUN_CODE_20d5	14	0	
+20E3	FUN_CODE_20e3	2	0	
+20E5	FUN_CODE_20e5	14	1	
+20F3	FUN_CODE_20f3	19	0	
+2106	FUN_CODE_2106	15	1	
+2115	FUN_CODE_2115	1	3	
+2116	FUN_CODE_2116	15	1	
+2125	FUN_CODE_2125	1	1	
+2126	FUN_CODE_2126	14	2	
+2134	FUN_CODE_2134	1	2	
+2135	FUN_CODE_2135	14	1	
+2143	FUN_CODE_2143	16	2	
+2153	FUN_CODE_2153	1	1	
+2154	FUN_CODE_2154	7	1	
+215B	FUN_CODE_215b	4	1	
+215F	FUN_CODE_215f	17	1	
+2170	FUN_CODE_2170	1	2	
+2171	FUN_CODE_2171	15	1	
+2180	FUN_CODE_2180	3	1	
+2183	FUN_CODE_2183	1	1	
+2184	FUN_CODE_2184	9	1	
+218D	FUN_CODE_218d	5	2	
+2192	FUN_CODE_2192	7	2	
+2199	FUN_CODE_2199	10	2	
+21A3	FUN_CODE_21a3	1	1	
+21A4	FUN_CODE_21a4	14	1	
+21B2	FUN_CODE_21b2	7	8	
+21B9	FUN_CODE_21b9	14	1	
+21C7	FUN_CODE_21c7	4	1	
+21CB	FUN_CODE_21cb	8	0	
+21D3	FUN_CODE_21d3	3	1	
+21D6	FUN_CODE_21d6	7	1	
+21DD	FUN_CODE_21dd	7	5	
+21E4	FUN_CODE_21e4	19	2	
+21F7	FUN_CODE_21f7	6	2	
+21FD	FUN_CODE_21fd	8	1	
+2205	FUN_CODE_2205	7	1	
+220C	FUN_CODE_220c	7	0	
+2213	FUN_CODE_2213	10	1	
+221D	FUN_CODE_221d	8	1	
+2225	FUN_CODE_2225	4	2	
+2229	FUN_CODE_2229	8	1	
+2231	FUN_CODE_2231	1	2	
+2232	FUN_CODE_2232	9	1	
+223B	FUN_CODE_223b	15	1	
+224A	FUN_CODE_224a	14	1	
+2258	FUN_CODE_2258	4	1	
+225C	FUN_CODE_225c	7	1	
+2263	FUN_CODE_2263	9	2	
+226C	FUN_CODE_226c	7	1	
+2273	FUN_CODE_2273	9	1	
+227C	FUN_CODE_227c	13	2	
+2289	FUN_CODE_2289	7	1	
+2290	FUN_CODE_2290	7	1	
+2297	FUN_CODE_2297	13	1	
+22A4	FUN_CODE_22a4	12	2	
+22B0	FUN_CODE_22b0	12	1	
+22BC	FUN_CODE_22bc	12	2	
+22C8	FUN_CODE_22c8	8	1	
+22D0	FUN_CODE_22d0	8	0	
+22D8	FUN_CODE_22d8	1	0	
+22D9	FUN_CODE_22d9	7	0	
+22E0	FUN_CODE_22e0	11	1	
+22EB	FUN_CODE_22eb	10	2	
+22F5	FUN_CODE_22f5	10	2	
+22FF	FUN_CODE_22ff	7	2	
+2306	FUN_CODE_2306	7	1	
+230D	poll_common	903	1	main-loop poll: INT/event/status 0x8000..0x8010, flag bits, 0x80BF..C3 [I]
+2694	FUN_CODE_2694	11	1	
+269F	FUN_CODE_269f	17	1	
+26B0	FUN_CODE_26b0	17	1	
+26C1	FUN_CODE_26c1	17	1	
+26D2	FUN_CODE_26d2	17	1	
+26E3	FUN_CODE_26e3	11	1	
+29EE	periodic_port_monitor	651	1	periodic: CM/VM (442B), event latches 0x8000..0x8008, arms st_fault_shutdown / st_disconnect_cleanup / st_idle [I]
+2EE0	st_port_shutdown	155	0	clear event latches 0x8006..09, clear INT bits, re-apply OP_MOD, next st_port_cfg (2 ticks) [I]
+2F7B	wh_op_mod	15	0	write 0x12 OP_MOD: store, SETB 0x23.1..4 (re-run all channel state machines) [C]
+2F8C	st_power_good	355	0	after power-on: update SAT_PWR 0x8010 enable/good bits, INT 0x8002 |= 0x41, power-good timers; next idle [I]
+30EF	FUN_CODE_30ef	105	0	
+316B	periodic_chan_status	95	1	periodic: round-robin channel status via 0x8076, 0x80C0, SFR D0 bank 2 [I]
+31E1	FUN_CODE_31e1	10	1	
+31EB	FUN_CODE_31eb	35	1	
+3311	FUN_CODE_3311	35	2	
+3334	calc_limit	412	1	limit value from 0x8047/48/4C/4D/51/52/56/57 (ICUT/ILIM config) for A1..A4 [I]
+34D0	meas_temperature	385	1	periodic: 0x802C temperature, 0x802E/2F, 0x80F1; uses math unit E9..EF [I]
+3651	calc_scaled	375	1	scaling using keil_IMUL and SFR D9..DB [I]
+37C8	FUN_CODE_37c8	10	1	
+37D2	meas_counters_math	227	1	periodic: math unit E9..EF, SFR AB..AD [I]
+3922	init_hw_channels	270	1	clears all channel blocks/timers, arms every channel to st_port_reset, sets SFR defaults (A1-A4=F0, C9=0F, E5-E8=04, T2CON bits, 0xFF=60) [C]
+3A30	st_class_wait	268	0	classification wait: +0.3 event, 0x8076 index [I]
+3B3C	st_detect_result	226	0	detect code = SFR D1..D4 >> 4; store to SAT_Pn (0x0C+ch) low nibble; code 4 (good) -> st_class_gate (8 ticks), else st_detect_invalid (15 ticks) / st_detect_ok_wait (5 ticks) [I]
+3C1E	tick_timers	197	1	per-tick: decrement per-channel timers (two arrays), on expiry set block flags and 0x23.n service flag [I]
+3CE3	main	55	0	hook 0: P1[3:0] address pins -> 0x29; P0.0 strap selects register init set; init, then main loop 0x3D1A [C]
+3D1A	main_loop	120	0	poll 230D, run per-channel state pointer (0x50AB) for flags 0x23.1..4, thermal check, 804A reload [C]
+3D92	reload_after_i2c_error	20	1	clears 804A, re-initialises (4CBA) [I]
+3DA6	chan_event_latch	183	1	round-robin 0x8076 latch of 0x80C0/0x80C4 channel events into block flags (+1 bit6), SETB 0x23.n [I]
+3E5D	poll_detect_class_regs	157	1	writes SAT_P1..4 0x800C..0F from IRAM results [I]
+3EFA	FUN_CODE_3efa	11	1	
+3F05	FUN_CODE_3f05	11	1	
+3F10	isr_i2c_slave	174	0	hook 1: I2C slave: SFR DD status, F5 ctrl, F6 tx, F7 rx; auto-increment register pointer 0x35 [C]
+3FBE	st_power_request	146	0	mode 0 -> st_port_reset; 1 -> idle; 2 -> st_power_on (10 ticks); 3 -> st_poweron_hold [I]
+4050	FUN_CODE_4050	3	1	
+4053	FUN_CODE_4053	3	2	
+4056	FUN_CODE_4056	1	2	
+4057	FUN_CODE_4057	15	2	
+4066	FUN_CODE_4066	11	1	
+4071	init_fw_rev_crc	24	2	0x8041=0x15 FW_REV, 0x805E:5F=0x00E4, 0x8075=0xAA CRC_STATUS [C]
+4089	init_hp_defaults	17	2	0x804B/50/55 per-channel config init [I]
+409A	FUN_CODE_409a	8	1	
+40A2	init_icut_defaults	14	2	0x804C/51/56 [I]
+40B0	init_ilim_defaults	14	2	0x804D/52/57 [I]
+40BE	FUN_CODE_40be	12	2	
+40CA	FUN_CODE_40ca	8	3	
+40D2	FUN_CODE_40d2	11	2	
+40DD	isr_chan1	127	0	hook 5: SFR BD events -> block 0x808A flags [C]
+415C	FUN_CODE_415c	125	1	
+41D9	st_class_gate	124	0	if class not enabled (0x8014) -> st_power_request (10 ticks) else start class (0x8103), timer, next st_class_done [I]
+4255	isr_chan0	120	0	hook 4: SFR BC events -> block 0x8078 flags [C]
+42CD	isr_chan2	120	0	hook 6: SFR BE events -> block 0x809C flags [C]
+4345	isr_chan3	120	0	hook 7: SFR BF events -> block 0x80AE flags [C]
+43BD	keil_IMUL	18	1	?C?IMUL 16x16->16, R6:R7 = R6:R7 * R4:R5; bytes identical to RTD keil_IMUL [C]
+43CF	keil_LLDXDATA	12	1	?C?LLDXDATA R4..R7 = 4 bytes at xdata @DPTR (big-endian) [C]
+43DB	keil_LSTXDATA	12	1	?C?LSTXDATA store R4..R7 to xdata @DPTR [C]
+43E7	keil_OFFXADD	12	1	DPTR += A*B (record index scaling; identical to RTD keil_DPTR_add_AxB) [C]
+43F3	keil_LDGPTR_CODE	12	2	R3:R2:R1 = 3 bytes at code @DPTR (generic-pointer constant load, tag 0xFF) [I]
+43FF	keil_CCASE	38	1	?C?CCASE switch helper, 3-byte {hi,lo,value} inline table; identical to RTD keil_CCASE [C]
+4425	keil_ICALL	6	2	?C?ICALL indirect call via R2:R1: MOV DPH,R2;MOV DPL,R1;CLR A;JMP @A+DPTR; identical to RTD keil_ICALL [C]
+442B	write_cm_vm_regs	98	1	store R5,R4,R3,R2 to 0x8030+4*R7 (CM lo/hi, VM lo/hi) host registers [C]
+448D	st_class_eval	96	0	class = (0x42+ch)>>4 & 7; valid -> st_idle path / st_power_request, invalid -> st_power_request [I]
+44ED	st_port_cfg	93	0	clear flags, apply per-port config (ctrl/ilim/B1..B4/C9 gate), zero CM/VM, next st_mode_select [I]
+454A	st_mode_select	93	0	by OP_MOD: shutdown -> st_port_reset (1 tick); else st_detect_arm (3 ticks) or st_power_request (10 ticks) [I]
+45A7	hp_enabled_default	90	1	returns 0 if HP config byte == 0x80 else 1 (0x8048/4D/52/57) [I]
+4601	st_detect_start	87	0	wait flag +1.6 (detect request), write SFR D1..D4=1 (start detection), arm st_detect_wait [I]
+4658	FUN_CODE_4658	83	3	
+46AB	st_detect_arm	81	0	if DET_CLASS_EN (0x8014) bit set: request detect, next st_detect_start; else idle [I]
+46FC	load_math_unit	79	1	loads E9..EE from 0x8048.. (ILIM/ICUT) config for limit conversion [I]
+4764	FUN_CODE_4764	19	1	
+4777	FUN_CODE_4777	24	1	
+478F	FUN_CODE_478f	1	1	
+4790	FUN_CODE_4790	6	0	
+4796	FUN_CODE_4796	2	1	
+4798	FUN_CODE_4798	19	1	
+47AB	host_reg_dispatch	17	1	DPTR=table: reg(0x35)*3 -> [FF hi lo] -> ICALL; INC 0x35 (auto-increment) [C]
+47BC	FUN_CODE_47bc	8	4	
+47C4	FUN_CODE_47c4	8	4	
+47CC	FUN_CODE_47cc	8	4	
+47D4	FUN_CODE_47d4	8	4	
+47DC	FUN_CODE_47dc	8	4	
+47E4	st_class_done	62	0	wait class events +4.2 / +4.1, store class nibble (4658), next st_class_eval [I]
+4822	FUN_CODE_4822	13	0	
+482F	apply_op_mod_shadow	74	2	OP_MOD 2 bits/channel -> IRAM 0x41 shadow (masks 03/0C/30/C0) [I]
+4879	isr_event_ext	69	0	hook 2: 0x8017 event flags, 0x80BF..C3, sets 0x23.1..4, SFR 0x93=0x3F [I]
+48BE	st_detect_invalid	66	0	increment invalid-signature counter 0x8060+4*ch; if not open-circuit: st_retry_wait_a (16 ticks) else idle [I]
+4900	FUN_CODE_4900	63	1	
+493F	FUN_CODE_493f	63	1	
+497E	set_chan_ctrl_bit2	63	2	SFR B1..B4[R7] bit2 = (R5 ? clear : set) [I]
+49BD	st_class_hw_start	60	0	wait +1.6, SFR D5/D6 |= mask (hw class start), timer 0x0864, next st_class_wait [I]
+49F9	arm_channel_cur	6	2	arm_channel with R7=*IBP, R3=9 [I]
+49FF	arm_channel	50	27	R7=channel, R4:R5=next state ptr (0 = keep), R3=delay ticks (0 = keep); SETB 0x23.(ch+1); ptr -> block+0x0F, delay -> block+0x11 [C]
+4A31	st_power_on	45	0	ORL SFR F1 with port mask (4C23 hp / 4C2F pair); arms st_power_good [I]
+4A5E	FUN_CODE_4a5e	11	1	
+4A69	FUN_CODE_4a69	56	2	
+4AA1	set_chan_ctrl_field	54	3	SFR B1..B4[R7] bits 5:4 = R5 [I]
+4AD7	st_port_reset	54	0	clear per-channel enables and counters, next st_port_shutdown [I]
+4B0D	apply_op_mod_shadow2	51	0	second OP_MOD consumer [I]
+4B40	init_regs_set_a	49	1	register defaults when P0.0 strap = 1 (table 0x1903) [I]
+4B71	update_chan_limit	49	5	SFR A1..A4[R7] = calc_limit(R7) [I]
+4BA2	st_wait_b3	49	0	wait flag +5.1 / +5.3, restart timers, next st_retry_wait_a [I]
+4BD3	FUN_CODE_4bd3	48	4	
+4C33	FUN_CODE_4c33	47	4	
+4C62	FUN_CODE_4c62	46	2	
+4C90	init_regs_set_b	42	1	register defaults when P0.0 strap = 0 (table 0x1900) [I]
+4CBA	FUN_CODE_4cba	42	1	
+4CE4	FUN_CODE_4ce4	42	1	
+4D0E	rh_fault_evt_clr	39	0	host read handler reg 0x07 (FAULT_EVT_CLR): clear-on-read of the sibling event registers [C]
+4D35	rh_evt8_clr	39	0	host read handler reg 0x09 (EVT8_CLR): clear-on-read of the sibling event registers [C]
+4D5C	st_fault_shutdown	39	0	armed by periodic_port_monitor (12 ticks): set fault state bits, long timer 0x20/4B, next st_fault_cooldown [I]
+4D83	FUN_CODE_4d83	39	2	
+4DAA	FUN_CODE_4daa	38	1	
+4DD0	FUN_CODE_4dd0	37	2	
+4DF5	st_chan_enable	37	0	0x80C0 |= channel mask, next st_class_hw_start [I]
+4E1A	int_raise_pwr_good	35	2	INT 0x8004 |= mask(4C23); if INT_MASK bit3 and 0x8017.7: SETB 0xF8.0 (host INT line) [I]
+4E3D	int_raise_class	14	1	INT 0x8004 |= 0x10<<ch (4C2B); same INT line logic [I]
+4E4B	FUN_CODE_4e4b	21	0	
+4E60	st_wait_b6	32	0	wait flag +5.6, clear, next st_port_cfg [I]
+4E80	st_wait_b7	29	0	wait flag +5.7, clear, next st_port_cfg (2 ticks) [I]
+4E9D	st_fault_cooldown	29	0	wait flag +5.5 (cooldown expired), clear, next st_idle [I]
+4EBA	isr_periodic	27	0	hook 3, low priority (CLR IP.1 ... SETB IP.1): 1B03,37D2,34D0,29EE,316B [C]
+4ED5	set_chan_sfr_a	26	1	SFR A1..A4[R7] = R5 (per-channel limit/config) [I]
+4EEF	st_idle	26	0	idle: arm timer 0x3C (0x8000), next st_wait_b7 [I]
+4F09	st_wait_b1	26	0	wait flag +5.1, clear, next st_idle (2 ticks) [I]
+4F23	st_detect_ok_wait	26	0	wait flag +5.4, clear, next st_chan_enable [I]
+4F3D	st_wait_b6b	26	0	wait flag +5.6, next st_power_request [I]
+4F57	rh_pwr_evt_clr	24	0	host read handler reg 0x03 (PWR_EVT_CLR): clear-on-read of the sibling event registers [C]
+4F6F	rh_det_evt_clr	24	0	host read handler reg 0x05 (DET_EVT_CLR): clear-on-read of the sibling event registers [C]
+4F87	rh_therm_evt_clr	24	0	host read handler reg 0x0B (THERM_EVT_CLR): clear-on-read of the sibling event registers [C]
+4F9F	st_disconnect_cleanup	24	0	armed by periodic_port_monitor (14 ticks): clear timer, timer 0x40/1E, next st_wait_b6 [I]
+4FB7	st_poweron_hold	22	0	timer 0x14 ticks, next st_wait_b7 [I]
+4FCD	isr_timer1_tick	21	0	hook 8: TR1 off, reload TL1=F4 TH1=E5, tick 3C1E, TR1 on [C]
+4FE2	wh_cfg42	20	0	write 0x42: store 0x8042; SFR F9 = 0x0B if (v&0x1E)==0x16 else 0x0A [C]
+4FF6	port_output_gate	20	2	R7=channel R5=enable: SFR C9 mask clear (R5!=0) / set (R5==0) [I]
+500A	set_thermal_status	20	1	0x800A |= R7; 0x800B = same; if mask set raise INT [I]
+501E	FUN_CODE_501e	6	1	
+5024	set_timer	13	8	R7=channel, R5=timer index, R3:R2 = value; stores into the channel timer array [I]
+5031	wh_int_mask	18	0	write 0x01 INT_MASK: store; if no pending INT bit: CLR 0xF8.0 [C]
+5043	int_line_update	18	2	if (INT_MASK & R7) and 0x8017.7: SETB 0xF8.0 (host INT output) [I]
+5055	FUN_CODE_5055	16	5	
+5065	FUN_CODE_5065	15	1	
+5074	FUN_CODE_5074	15	1	
+5083	FUN_CODE_5083	14	1	
+5091	st_retry_wait_a	13	0	timer 0x02/C8, next st_wait_b1 [I]
+509E	st_retry_wait_b	13	0	timer 0x02/C8, next st_wait_b3 [I]
+50AB	run_state	12	1	load state ptr from @DPTR (block+0x0F) and jump to it (called from main loop) [C]
+50B7	FUN_CODE_50b7	11	1	
+50C2	wh_pb_detclass	10	0	host write handler reg 0x18 (PB_DETCLASS): store XRAM 0x8018, SETB dirty bit [C]
+50CC	wh_pb_pwr	10	0	host write handler reg 0x19 (PB_PWR): store XRAM 0x8019, SETB dirty bit [C]
+50D6	wh_pb_reset	10	0	host write handler reg 0x1A (PB_RESET): store XRAM 0x801A, SETB dirty bit [C]
+50E0	FUN_CODE_50e0	10	5	
+50EA	startup_idata_clear	9	0	STARTUP.A51 IDATALOOP: MOV R0,#0xFF;CLR A;MOV @R0,A;DJNZ R0; then LCALL user-init stub 0x1AFC; no XDATA clear, no SP init [C]
+50F3	init_i2c_status	9	1	SFR 0xDD=0xB0 (I2C slave enable), 0x804A=0 [I]
+50FC	wh_dis_sen_en	9	0	host write handler reg 0x13 (DIS_SEN_EN): store XRAM 0x8013, SETB dirty bit [C]
+5105	wh_det_class_en	9	0	host write handler reg 0x14 (DET_CLASS_EN): store XRAM 0x8014, SETB dirty bit [C]
+510E	wh_reg_17	9	0	host write handler reg 0x17 (REG_17): store XRAM 0x8017, SETB dirty bit [C]
+5117	wh_reg_1e	9	0	host write handler reg 0x1E (REG_1E): store XRAM 0x801E, SETB dirty bit [C]
+5120	wh_reg_1f	9	0	host write handler reg 0x1F (REG_1F): store XRAM 0x801F, SETB dirty bit [C]
+5129	wh_hp_en	9	0	host write handler reg 0x44 (HP_EN): store XRAM 0x8044, SETB dirty bit [C]
+5132	wh_reg_47	9	0	host write handler reg 0x47 (REG_47): store XRAM 0x8047, SETB dirty bit [C]
+513B	wh_reg_48	9	0	host write handler reg 0x48 (REG_48): store XRAM 0x8048, SETB dirty bit [C]
+5144	wh_reg_4c	9	0	host write handler reg 0x4C (REG_4C): store XRAM 0x804C, SETB dirty bit [C]
+514D	wh_reg_4d	9	0	host write handler reg 0x4D (REG_4D): store XRAM 0x804D, SETB dirty bit [C]
+5156	wh_reg_51	9	0	host write handler reg 0x51 (REG_51): store XRAM 0x8051, SETB dirty bit [C]
+515F	wh_reg_52	9	0	host write handler reg 0x52 (REG_52): store XRAM 0x8052, SETB dirty bit [C]
+5168	wh_reg_56	9	0	host write handler reg 0x56 (REG_56): store XRAM 0x8056, SETB dirty bit [C]
+5171	wh_reg_57	9	0	host write handler reg 0x57 (REG_57): store XRAM 0x8057, SETB dirty bit [C]
+517A	wh_reg_5e	9	0	host write handler reg 0x5E (REG_5E): store XRAM 0x805E, SETB dirty bit [C]
+5183	wh_reg_5f	9	0	host write handler reg 0x5F (REG_5F): store XRAM 0x805F, SETB dirty bit [C]
+518C	wh_reg_15	7	0	host write handler reg 0x15 (REG_15): store XRAM 0x8015, SETB dirty bit [C]
+5193	wh_reg_46	7	0	host write handler reg 0x46 (REG_46): store XRAM 0x8046, SETB dirty bit [C]
+519A	wh_reg_4b	7	0	host write handler reg 0x4B (REG_4B): store XRAM 0x804B, SETB dirty bit [C]
+51A1	wh_reg_50	7	0	host write handler reg 0x50 (REG_50): store XRAM 0x8050, SETB dirty bit [C]
+51A8	wh_reg_55	7	0	host write handler reg 0x55 (REG_55): store XRAM 0x8055, SETB dirty bit [C]
+51AF	FUN_CODE_51af	7	1	
+51B6	rh_cnt_p1_0	6	0	host read handler reg 0x60 counter: clear after read [I]
+51BC	rh_cnt_p1_1	6	0	host read handler reg 0x61 counter: clear after read [I]
+51C2	rh_cnt_p1_2	6	0	host read handler reg 0x62 counter: clear after read [I]
+51C8	rh_cnt_p1_3	6	0	host read handler reg 0x63 counter: clear after read [I]
+51CE	rh_cnt_p2_0	6	0	host read handler reg 0x64 counter: clear after read [I]
+51D4	rh_cnt_p2_1	6	0	host read handler reg 0x65 counter: clear after read [I]
+51DA	rh_cnt_p2_2	6	0	host read handler reg 0x66 counter: clear after read [I]
+51E0	rh_cnt_p2_3	6	0	host read handler reg 0x67 counter: clear after read [I]
+51E6	rh_cnt_p3_0	6	0	host read handler reg 0x68 counter: clear after read [I]
+51EC	rh_cnt_p3_1	6	0	host read handler reg 0x69 counter: clear after read [I]
+51F2	rh_cnt_p3_2	6	0	host read handler reg 0x6A counter: clear after read [I]
+51F8	rh_cnt_p3_3	6	0	host read handler reg 0x6B counter: clear after read [I]
+51FE	rh_cnt_p4_0	6	0	host read handler reg 0x6C counter: clear after read [I]
+5204	rh_cnt_p4_1	6	0	host read handler reg 0x6D counter: clear after read [I]
+520A	rh_cnt_p4_2	6	0	host read handler reg 0x6E counter: clear after read [I]
+5210	rh_cnt_p4_3	6	0	host read handler reg 0x6F counter: clear after read [I]
+5216	FUN_CODE_5216	5	1	
+521B	FUN_CODE_521b	5	1	
