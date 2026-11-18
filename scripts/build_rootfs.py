@@ -4,10 +4,12 @@
 - Toolchain: musl-cross-make (clone in /mnt/1tnvme/git-mirrors/richfelker) builds gcc + musl, soft-float EABI,
   Cortex-A9, once into /mnt/1tnvme/toolchains/ (symlink tmp/musl-arm, or $US48_MUSL_TC). Kernel + modules use the
   Fedora `arm-linux-gnu-gcc` (build_mainline.py). Fedora's cross gcc is hard-float only (VFP libgcc): unusable here.
-- Sources: busybox/dropbear tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
+- Sources: busybox/dropbear/nftables (+libmnl, libnftnl) tarballs in /mnt/1tnvme/toolchains/dl (sha256 pinned below); mcm fetches its own.
 - Our files: mainline/rootfs/{busybox.config,authorized_keys,overlay/}; overlay is copied over the stage as is.
 - Stage: tmp/mainline/rootfs (build_mainline.py adds modules + firmware, then packs it as the initramfs).
 - Log: tmp/logs/build_rootfs.log.
+
+- nft (nftables 1.1.7, static, mini-gmp) is staged in both profiles; cached in tmp/rootfs/tools-bin/nft.
 
 - --tools (#84, debug image only): static test tools into <stage>/usr/bin: memtester, cyclictest (rt-tests, with the
   tools/numa-stub libnuma stand-in), tinymembench, plus tools/us48bench.c and tools/rngtest.c. Built tools are cached in
@@ -60,6 +62,13 @@ BUSYBOX = ("busybox-1.37.0", "https://busybox.net/downloads/busybox-1.37.0.tar.b
 DROPBEAR = ("dropbear-2026.94", "https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2",
             "e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81")
 
+# nft (route/NAT/firewall tests, docs/route-nat-fw.md): static, mini-gmp, no readline/json/python
+LIBMNL = ("libmnl-1.0.5", "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2",
+          "274b9b919ef3152bfb3da3a13c950dd60d6e2bcd54230ffeca298d03b40d0525")
+LIBNFTNL = ("libnftnl-1.3.2", "https://www.netfilter.org/pub/libnftnl/libnftnl-1.3.2.tar.xz",
+            "c97abc3409f8fa396b4462b2bb7f147a3a47a4ddc97cfa0b2f18890c9cfde8b0")
+NFTABLES = ("nftables-1.1.7", "https://www.netfilter.org/pub/nftables/nftables-1.1.7.tar.xz",
+            "a6fbf060d8d4fff001517a2b94f356bb4366bfbf0ba366366f9d27cc38caa58f")
 MEMTESTER = ("memtester-4.7.1", "https://pyropus.ca/software/memtester/old-versions/memtester-4.7.1.tar.gz",
              "e427de663f7bd22d1ebee8af12506a852c010bd4fcbca1e0e6b02972d298b5bb")
 RTTESTS = ("rt-tests-2.11", "https://www.kernel.org/pub/linux/utils/rt-tests/rt-tests-2.11.tar.gz",
@@ -80,7 +89,7 @@ BUSYBOX_OPTS = {
     "FEATURE_SYSLOGD_CFG": "n", "KLOGD": "n", "TASKSET": "y", "FEATURE_TASKSET_FANCY": "y",
     "NC": "y", "TIMEOUT": "y", "LSPCI": "y", "MICROCOM": "n", "IFCONFIG": "y", "IP": "y", "IPADDR": "y",
     "IPLINK": "y", "IPROUTE": "y", "FEATURE_IP_ADDRESS": "y", "FEATURE_IP_LINK": "y", "FEATURE_IP_ROUTE": "y",
-    "RX": "y", "WATCHDOG": "y", "SHA1_HWACCEL": "n", "SHA256_HWACCEL": "n", "INSMOD": "y", "RMMOD": "y", "LSMOD": "y", "MODPROBE": "n", "DEPMOD": "n", "MODINFO": "n",
+    "RX": "y", "WATCHDOG": "y", "SHA1_HWACCEL": "n", "SHA256_HWACCEL": "n", "INSMOD": "y", "RMMOD": "y", "LSMOD": "y", "MODPROBE": "y", "DEPMOD": "n", "MODINFO": "n",
     "HWCLOCK": "n", "UDHCPC": "n", "UDHCPD": "n", "DHCPRELAY": "n", "DUMPLEASES": "n",
     "INETD": "n", "TELNETD": "n", "TELNET": "n", "FTPD": "n", "HTTPD": "n", "NTPD": "n",
     "SH_IS_ASH": "y", "ASH": "y", "ASH_JOB_CONTROL": "y", "FEATURE_EDITING": "y",
@@ -239,6 +248,34 @@ def build_dropbear(jobs: int, stage: Path) -> None:
         link.symlink_to("/usr/sbin/dropbearmulti")  # dropbearmulti dispatches on argv[0]
 
 
+def build_nft(jobs: int, stage: Path) -> None:
+    """nft (nftables) static against musl: libmnl + libnftnl + mini-gmp; built once into TOOLS_BIN (delete to rebuild)."""
+    TOOLS_BIN.mkdir(parents=True, exist_ok=True)
+    if not (TOOLS_BIN / "nft").exists():
+        prefix = WORK / "nft-prefix"
+        if prefix.exists():
+            shutil.rmtree(prefix)
+        cc = " ".join(cc_cmd())
+        env = dict(os.environ, PKG_CONFIG_PATH=f"{prefix}/lib/pkgconfig", PKG_CONFIG_LIBDIR=f"{prefix}/lib/pkgconfig")
+        common = ["--host=arm-linux-gnueabi", "--enable-static", "--disable-shared", f"--prefix={prefix}", f"CC={cc}"]
+        src = unpack(LIBMNL, WORK / "src")
+        run(["./configure", *common], cwd=src, env=env)
+        run(["make", f"-j{jobs}", "install"], cwd=src, env=env)
+        src = unpack(LIBNFTNL, WORK / "src")
+        run(["./configure", *common], cwd=src, env=env)
+        run(["make", f"-j{jobs}", "install"], cwd=src, env=env)
+        src = unpack(NFTABLES, WORK / "src")
+        run(["./configure", *common, "--without-cli", "--without-json", "--disable-python", "--disable-man-doc",
+             "--disable-debug", "--with-mini-gmp", "LDFLAGS=-static"], cwd=src, env=env)
+        run(["make", f"-j{jobs}"], cwd=src, env=env)
+        run([f"{CROSS}strip", str(src / "src/nft")])
+        shutil.copy2(src / "src/nft", TOOLS_BIN / "nft")
+    dst = stage / "usr/sbin"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(TOOLS_BIN / "nft", dst / "nft")
+    log(f"nft staged: {(dst / 'nft').stat().st_size} B")
+
+
 def build_tools(jobs: int, stage: Path) -> None:
     """Static test tools (#84) into stage/usr/bin; each is built once into TOOLS_BIN (delete to rebuild)."""
     TOOLS_BIN.mkdir(parents=True, exist_ok=True)
@@ -290,6 +327,7 @@ def build(stage: Path, jobs: int = os.cpu_count() or 4, tools: bool = False) -> 
     ensure_toolchain(jobs)
     build_busybox(jobs, stage)
     build_dropbear(jobs, stage)
+    build_nft(jobs, stage)
     if tools:
         build_tools(jobs, stage)
     shutil.copytree(SRC / "overlay", stage, symlinks=True, dirs_exist_ok=True)
