@@ -42,6 +42,13 @@ def files():
                 yield p
 
 
+def tracked_files():
+    """Paths tracked by git (relative to ROOT), or None outside a git checkout."""
+    import subprocess
+    r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], capture_output=True, text=True, timeout=30)
+    return set(r.stdout.split("\0")) if r.returncode == 0 else None
+
+
 BASE_DIRS = ("scripts", "kernel")
 BASE_NAMES = ("cmic0", "cmic1", "cmic1_uboot", "iproc_axi")
 ALLOW = ROOT / "scripts/hwdb_lint_allow.txt"
@@ -57,9 +64,12 @@ def base_check(db):
             f = ln.split("\t")
             allow[(f[0], int(f[1], 16))] = False
     bad = 0
+    tracked = tracked_files()  # gitignored build copies (kernel/us48-cmic/bcm_cmic.h etc.) are not ours to lint
     for d in BASE_DIRS:
         for p in sorted((ROOT / d).rglob("*")):
             if not (p.is_file() and p.suffix in EXT and not (SKIP_PARTS & set(p.parts))) or generated(p):
+                continue
+            if tracked is not None and str(p.relative_to(ROOT)) not in tracked:
                 continue
             rel = str(p.relative_to(ROOT))
             for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
