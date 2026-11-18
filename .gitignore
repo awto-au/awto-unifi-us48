@@ -2,5 +2,8 @@ tmp/
 private/
 __pycache__/
 .venv/
+.ruff_cache/
+# local Claude Code permissions (machine-specific ssh rules)
+.claude/
 sources/**/*.pdf
 common/bcm-cmic/bcm_cmic_hr2_init1_data.h
