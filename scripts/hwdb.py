@@ -338,12 +338,19 @@ class Db:
         return int(re.fullmatch(r"(?:QSGMII\d|TSC) lane (\d)", self.port(front)["lane"]).group(1))
 
     def sw1_peer(self, front):
-        """sw1 port on the far end of an SFP/SFP+ port, or None."""
-        return self.port(front).get("sw1_peer")
+        """sw1 port on the far end of a front port (awto-dan docs/lab/lab.toml, scripts/_lab.py), or None."""
+        import _lab
+        far = _lab.peers("us48", self.netdev(front), "sw1")
+        return _lab.end(far[0])[1] if far else None
+
+    def sw1_cages(self):
+        """{front: sw1 port} of the SFP/SFP+ ports with a sw1 far end in lab.toml."""
+        return {p["front"]: self.sw1_peer(p["front"]) for p in self.ports
+                if p["front"] and p["phy"] == "none" and self.sw1_peer(p["front"])}
 
     def sw1_ports(self):
         """Sorted sw1 ports cabled to the SFP/SFP+ ports (admin state to restore after a test)."""
-        return tuple(sorted(p["sw1_peer"] for p in self.ports if "sw1_peer" in p))
+        return tuple(sorted(self.sw1_cages().values()))
 
     def gport(self, front):
         """(GPORT S-channel block, lane) of a QSGMII copper port."""

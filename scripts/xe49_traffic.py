@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
+import _lab  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/xe49_traffic.log"
@@ -31,8 +32,8 @@ SW1_IP = "192.168.25.48"
 PORT = 5201
 STALL_S = 15.0
 _DB = hwdb.lite()
-MAC = {p["linux"]: hwdb.mac(p["front"]) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
-SW1_PEER = {p["linux"]: p["sw1_peer"] for p in _DB.ports if "sw1_peer" in p and "linux" in p}
+MAC = {_DB.netdev(f): hwdb.mac(f) for f in _DB.sw1_cages()}
+SW1_PEER = {_DB.netdev(f): lan for f, lan in _DB.sw1_cages().items()}
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",
        "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
 
@@ -163,8 +164,8 @@ def main() -> int:
     ap.add_argument("--peer", default="192.168.25.30", help="this host's address on the house LAN")
     ap.add_argument("--mib", default="10,100")
     a = ap.parse_args()
-    if a.lan in ("lan5", "lan8"):
-        sys.exit("refusing lan5/lan8")
+    if _lab.is_protected("sw1", a.lan) or a.lan == "lan8":
+        sys.exit("refusing a protected sw1 port (lab.toml) or lan8")
     _LOCAL = a.peer
     sizes = [int(x) for x in a.mib.split(",")]
     old = ssh(BOARD, "cat /proc/sys/net/ipv4/conf/all/arp_ignore").strip()

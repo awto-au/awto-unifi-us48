@@ -41,14 +41,14 @@
       "label": "SFP+ 1",
       "front": 49,
       "module": "FS SFP-10GSR-85 SN F2130412904 (10G SR optic)",
-      "far_end": "sw1 lan7 (optic SN F2220031785; FDB-verified 2026-11-16, #87)",
+      "far_end": "sw1 lan7",
       "link": "xe49 local PCS up, but sw1 lan7 cannot lock our TX since 2026-11-17 (#109); a local PCS status is not a link"
     },
     {
       "label": "SFP+ 2",
       "front": 50,
       "module": "FS SFP-10G-T (10GBASE-T copper SFP+)",
-      "far_end": "sw1 lan3 (#110)",
+      "far_end": "sw1 lan3",
       "link": "module bring-up open (#110); Cisco DAC parked (#105)"
     },
     {

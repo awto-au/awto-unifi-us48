@@ -9,7 +9,7 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 
 | Front | Panel label | Chip | Logical | Phys | PHY | SerDes lane | SDK name | Linux name | Fixed cabling | conf |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | RJ45 1 | unit 0 (BCM53344, host SoC) | 2 | 9 | integrated GPHY, int bus 0 addr 9 | QSGMII0 lane 7 | `ge0` |  | management uplink (sw1) | I |
+| 1 | RJ45 1 | unit 0 (BCM53344, host SoC) | 2 | 9 | integrated GPHY, int bus 0 addr 9 | QSGMII0 lane 7 | `ge0` |  | management uplink (sw1 lan2) | I |
 | 2 | RJ45 2 | unit 0 (BCM53344, host SoC) | 3 | 8 | integrated GPHY, int bus 0 addr 8 | QSGMII0 lane 6 | `ge1` |  |  | I |
 | 3 | RJ45 3 | unit 0 (BCM53344, host SoC) | 4 | 7 | integrated GPHY, int bus 0 addr 7 | QSGMII0 lane 5 | `ge2` |  |  | I |
 | 4 | RJ45 4 | unit 0 (BCM53344, host SoC) | 5 | 6 | integrated GPHY, int bus 0 addr 6 | QSGMII0 lane 4 | `ge3` |  |  | I |
@@ -73,7 +73,7 @@ Detail and evidence: [board.md](board.md) (Port map, SFP ports 49-52), [driver-i
 
 ## Current cabling
 - Lives in [scripts/cabling.json](../scripts/cabling.json) (module, far end, link state per port); this doc is the fixed map only.
-- Fixed cabling (loop cables, sw1 far ends, management): column "Fixed cabling" above, from `ports.toml` (`loop_peer`, `sw1_peer`, `role`).
+- Fixed cabling (loop cables, sw1 far ends, management): column "Fixed cabling" above: loop cables and management from `ports.toml` (`loop_peer`, `role`), sw1 far ends from awto-dan `docs/lab/lab.toml` (inter-unit cabling, verification state).
 - sw1 has three links to the US-48 (1G copper, SFP, SFP+): stock bridges them with STP off. Test with one link up, or set the others down on sw1 (runtime). Carrier is independent of forwarding.
 
 ## Which software drives which chip

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sw1_link_test as t  # noqa: E402
 import tsc_lane_dump as d  # noqa: E402
 import hwdb  # noqa: E402
+import _lab  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/stock_sw1_probe.log"
 
@@ -48,7 +49,7 @@ def main() -> int:
     ap.add_argument("--period-s", type=float, default=5.0)
     ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", "192.168.25.206"))
     a = ap.parse_args()
-    if not re.fullmatch(r"lan[1-8]", a.sw1) or a.sw1 == "lan5":
+    if not re.fullmatch(r"lan[1-8]", a.sw1) or _lab.is_protected("sw1", a.sw1):
         sys.exit("refusing sw1 port")
     orig = {l: t.admin_up(l) for l in t.RESTORE}
     log(f"original admin state {orig}")

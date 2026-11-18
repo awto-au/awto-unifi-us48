@@ -93,7 +93,7 @@ def base_check(db):
 
 def port_check(db):
     """Literal loop-cable netdevs, sw1 peers, management netdev and front MACs in scripts/*.py outside the allowlist."""
-    toks = {db.netdev(f) for g in db.loop_pairs() for f in g[1:]} | {p["sw1_peer"] for p in db.ports if "sw1_peer" in p}
+    toks = {db.netdev(f) for g in db.loop_pairs() for f in g[1:]} | set(db.sw1_cages().values())
     toks.add(db.mgmt_netdev())
     pat = re.compile(r"[\"'](%s)[\"']|(02:75:73:34:38:(?:0[1-9a-f]|[12][0-9a-f]|3[0-4]))\b" % "|".join(sorted(toks)), re.I)
     allow = {}

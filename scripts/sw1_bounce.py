@@ -27,7 +27,7 @@ LOG = ROOT / "tmp/logs/sw1_bounce.log"
 SW1 = "root@192.168.25.48"
 BOARD = "root@192.168.25.207"
 _DB = hwdb.lite()
-PAIRS = {str(p["front"]): (p["linux"], p["sw1_peer"], _DB.lane(p["front"])) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
+PAIRS = {str(f): (_DB.netdev(f), lan, _DB.lane(f)) for f, lan in _DB.sw1_cages().items()}
 RESTORE = _DB.sw1_ports()
 POLL_S = 0.5
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no",

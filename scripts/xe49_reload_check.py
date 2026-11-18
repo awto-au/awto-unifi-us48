@@ -46,8 +46,8 @@ def main() -> int:
     ap.add_argument("--lan", default=t.SW1_PEER["xe49"])
     ap.add_argument("--ip", default="192.168.25.209")
     a = ap.parse_args()
-    if a.lan in ("lan5", "lan8"):
-        sys.exit("refusing lan5/lan8")
+    if t._lab.is_protected("sw1", a.lan) or a.lan == "lan8":
+        sys.exit("refusing a protected sw1 port (lab.toml) or lan8")
     mac = t.MAC[a.xe]
     bad = 0
     for i in range(1, a.n + 1):
