@@ -229,7 +229,12 @@ def main() -> int:
     if a.stop:
         return stop()
     if a.status:
-        print(PIDFILE.read_text().strip() if PIDFILE.exists() else "not running")
+        pid = PIDFILE.read_text().strip() if PIDFILE.exists() else ""
+        try:
+            os.kill(int(pid), 0)
+            print(pid)
+        except (ValueError, OSError):  # no pidfile, or a stale one left by --stop / a crash
+            print("not running")
         return 0
     PIDFILE.parent.mkdir(parents=True, exist_ok=True)
     lock = PIDFILE.with_suffix(".lock").open("w")
