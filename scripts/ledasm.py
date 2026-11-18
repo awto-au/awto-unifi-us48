@@ -408,7 +408,11 @@ def main() -> int:
         i = args.index("--verify")
         asm, hexf = Path(args[i + 1]), Path(args[i + 2])
         prog, _, _ = assemble(asm.read_text(), asm.name)
-        ref = bytes(int(t, 16) for t in hexf.read_text().split())
+        txt = hexf.read_text()
+        blocks = re.findall(r"ledcode '([^']*)'", txt.replace("\\\n", " "))  # .soc: any ledcode block may match
+        refs = [bytes(int(t, 16) for t in re.findall(r"\b[0-9A-Fa-f]{2}\b", b)) for b in blocks] or \
+               [bytes(int(t, 16) for t in txt.split())]
+        ref = next((r for r in refs if r[:len(prog)] == prog and not any(r[len(prog):])), refs[0])
         ok = ref[:len(prog)] == prog and not any(ref[len(prog):])
         log(f"verify {asm.name}: {len(prog)} B, {'MATCH' if ok else 'DIFFER'} vs {hexf.name}")
         if not ok:
