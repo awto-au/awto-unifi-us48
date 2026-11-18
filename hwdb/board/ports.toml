@@ -786,9 +786,11 @@ unit = 0
 logical = 28
 phys = 30
 phy = "higig"
-lane = "TSC lane unknown"
-src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
-conf = "I"
+phy_bus = "int1"
+phy_addr = 0x5
+lane = "TSC1 lanes 0-1 (dual), XLPORT1 port 0; peer u1-hg28"
+src = "docs/driver-internals.md 15 (stock-warm capture; peer by TX electrical idle on the far end, 2026-11-18)"
+conf = "C"
 
 [[port]]
 front = 0
@@ -798,9 +800,11 @@ unit = 0
 logical = 29
 phys = 32
 phy = "higig"
-lane = "TSC lane unknown"
-src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
-conf = "I"
+phy_bus = "int1"
+phy_addr = 0x5
+lane = "TSC1 lanes 2-3 (dual), XLPORT1 port 2; peer u1-hg29"
+src = "docs/driver-internals.md 15 (stock-warm capture; peer by TX electrical idle on the far end, 2026-11-18)"
+conf = "C"
 
 [[port]]
 front = 0
@@ -810,9 +814,11 @@ unit = 1
 logical = 28
 phys = 30
 phy = "higig"
-lane = "TSC lane unknown"
-src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
-conf = "I"
+phy_bus = "int1"
+phy_addr = 0x5
+lane = "TSC1 lanes 0-1 (dual), XLPORT1 port 0; peer u0-hg28"
+src = "docs/driver-internals.md 15 (stock-warm capture; peer by TX electrical idle on the far end, 2026-11-18)"
+conf = "C"
 
 [[port]]
 front = 0
@@ -822,6 +828,8 @@ unit = 1
 logical = 29
 phys = 32
 phy = "higig"
-lane = "TSC lane unknown"
-src = "docs/port-map.md (2 x 13G HiGig between the chips); docs/board.md Port map"
-conf = "I"
+phy_bus = "int1"
+phy_addr = 0x5
+lane = "TSC1 lanes 2-3 (dual), XLPORT1 port 2; peer u0-hg29"
+src = "docs/driver-internals.md 15 (stock-warm capture; peer by TX electrical idle on the far end, 2026-11-18)"
+conf = "C"

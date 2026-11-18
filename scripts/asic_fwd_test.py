@@ -54,8 +54,8 @@ def survey() -> int:
     for u in (0, 1):
         got = {}
         ops = [(u, "reg", IPIPE, 0x46002700, 1), (u, "reg", IPIPE, 0x46002c00, 1), (u, "reg", IPIPE, 0x46002600, 1),
-               (u, "reg", IPIPE, 0x46002b00, 1), (u, "reg", IPIPE, 0x46006900, 1), (u, "reg", IPIPE, 0x46006901, 1),
-               (u, "reg", IPIPE, 0x46006b00, 1), (u, "reg", IPIPE, 0x46006b01, 1),
+               (u, "reg", IPIPE, 0x46002b00, 1), (u, "reg", IPIPE, 0x46006900, 1), (u, "reg", IPIPE, 0x46006a00, 1),
+               (u, "reg", IPIPE, 0x46006b00, 1), (u, "reg", IPIPE, 0x46006c00, 1),
                (u, "reg", XLP1, 0x2020b00, 1), (u, "reg", XLP1, 0x2020a00, 1)]
         names = ["EPC_LINK_BMAP_64", "LINK_STATUS_64", "HIGIG_TRUNK_CONTROL", "HG_TRUNK_FAILOVER_ENABLE",
                  "HG_TRUNK_BITMAP[0]", "HG_TRUNK_BITMAP[1]", "HG_TRUNK_GROUP[0]", "HG_TRUNK_GROUP[1]",
