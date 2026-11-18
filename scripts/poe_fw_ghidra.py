@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Headless Ghidra import / labelling of the BCM59111 v21 PSE firmware (docs/poe-fw.md section 13, #26).
 
-Usage: poe_fw_ghidra.py import|regen [--image PATH]
+Usage: poe_fw_ghidra.py import|regen [--image PATH]  (v21 default; Meraki: --image hwdb/firmware/bcm59111-meraki.bin)
   import = create tmp/ghidra/poefw project, import the image (BinaryLoader, 8051:BE:16:default, base 0x1A00, ROM < 0x1A00
            undefined), seed functions (hook table, host dispatch tables, state-handler pointers, call targets), analyse,
            apply hwdb/firmware/bcm59111-v21.names.tsv, export.
@@ -68,18 +68,25 @@ def main() -> int:
     if "--image" in a:
         img = Path(a[a.index("--image") + 1])
     cmd = a[0]
-    names = ROOT / "hwdb/firmware/bcm59111-v21.names.tsv"
-    out = ROOT / "tmp/poe-fw/ghidra"
+    v21 = img.stem.endswith("v21")
+    names = ROOT / f"hwdb/firmware/{img.stem}.names.tsv"
+    out = ROOT / "tmp/poe-fw/ghidra" / img.stem
     out.mkdir(parents=True, exist_ok=True)
     PROJ_DIR.mkdir(parents=True, exist_ok=True)
     code = bytes(D.BASE) + img.read_bytes()
     insns, L, ents, host, states, tables = R.analyse(code)
     seeds = out / "seeds.txt"
     seeds.write_text("# CODE entry points (poe_fw_re.analyse)\n" + "".join(f"0x{e:04X}\n" for e in ents if e < 0x5220))
+    abi = ROOT / f"hwdb/firmware/{img.stem}.abi.tsv"
+    subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_autoname.py"), str(img), "--names", str(names)], check=True)
+    subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_abi.py"), str(img), "--out", str(abi)], check=True)
     sp = ROOT / "scripts/ghidra"
     tail = ["-scriptPath", str(sp), "-postScript", "EnsureFunctions.java", str(names),
             "-postScript", "ApplyPoeNames.java", str(names),
-            "-postScript", "ExportPoe.java", str(ROOT / "hwdb/firmware/bcm59111-v21.functions.tsv"),
+            *(["-postScript", "ApplyPoeProtocol.java", str(ROOT / "hwdb/firmware/bcm59111-regs.tsv"),
+               str(ROOT / "hwdb/firmware/bcm59111-protocol.tsv")] if v21 else []),  # regs TSV handler addresses are v21
+            "-postScript", "ApplyKeilAbi.java", str(abi),
+            "-postScript", "ExportPoe.java", str(ROOT / f"hwdb/firmware/{img.stem}.functions.tsv"),
             str(out / "decompiled.c"), str(out / "listing.tsv")]
     base = ["analyzeHeadless", str(PROJ_DIR), PROJ]
     if cmd == "import":

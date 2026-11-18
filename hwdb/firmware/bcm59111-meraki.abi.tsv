@@ -1,0 +1,102 @@
+# addr	ret	args: Keil register ABI inferred by scripts/poe_fw_abi.py (confidence I)
+1F58	void	R7
+1F5B	void	R7
+1F5C	void	R7
+1F6A	byte	
+1F72	byte	
+1F7D	void	R7
+1F7E	void	R7
+1FC3	void	R7
+2006	void	R7
+2009	void	R7
+200A	void	R7
+202A	void	R5
+2067	void	R7
+2069	void	R7
+2083	void	R7
+2089	void	R5
+2097	void	R7
+2098	void	R7
+20A7	byte	
+20A9	byte	
+20D5	void	R7
+20D6	void	R7
+20E5	void	R7
+2117	void	R7
+2118	void	R7
+2127	void	R7
+2128	void	R7
+2137	void	R7
+2146	void	R7
+2165	void	R7
+218F	byte	
+2194	byte	
+219B	byte	
+21B3	void	R7
+21D7	void	R7
+21E1	byte	
+21E8	void	R7
+2201	void	R6
+2209	byte	
+2210	byte	
+2221	byte	
+2233	byte	
+2249	void	R6
+226F	byte	
+228C	byte	
+229A	void	R6
+22A7	byte	
+22AE	void	R7
+22BA	word	R4:R5
+22CE	void	R5
+22D6	word	
+22D7	word	
+22DE	void	R6:R7
+22F3	byte	
+22FD	byte	
+2696	byte	
+26A7	byte	
+26B8	byte	
+26C9	byte	
+2C9A	byte	
+336D	byte	R7
+368B	void	R7,R5
+3802	byte	
+3DCC	byte	
+4192	byte	
+419E	byte	
+41A6	byte	
+440E	void	R4:R5:R6:R7
+4420	word	
+442C	void	R4:R5:R6:R7
+44E8	void	R7,R4:R5,R2:R3
+4607	byte	R7
+46B6	void	R7
+475A	void	R5
+47C2	long	R4:R5:R6:R7
+47D5	long	R4:R5:R6:R7
+49A8	byte	R6:R7
+49E7	void	R7,R5
+4A26	void	R7,R5
+4AA7	void	R7
+4AD9	void	R7
+4B11	void	R7,R5
+4BE1	byte	R7
+4CA2	void	R7
+4CFA	byte	
+4D24	void	R7
+4D4E	void	R7,R5
+4DEB	void	R7
+4E12	void	R7,R5
+4E1E	void	R5
+4E4B	void	R6
+4F18	void	R7,R5
+5025	byte	
+5039	void	R7,R5
+504D	byte	R7
+5086	void	R7
+5098	void	R7
+50B7	void	R7
+50C6	byte	R7
+5132	byte	
+5201	byte	

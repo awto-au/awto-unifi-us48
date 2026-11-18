@@ -67,7 +67,7 @@ Two dispatch tables, one 3-byte entry `[FF hi lo]` per register 0x00..0x75 (v21:
 Main loop (v21 0x3D1A, after start-up 0x3CE3..0x3D17) (C):
 1. `LCALL 0x230D` (v21): common poll: INT/event/status registers 0x8000..0x8010, flag bits.
 2. For each channel `c` (flags `0x23.1..4`, set by the channel ISRs): clear the flag, `R7 = c`, `DPTR = 0x8087 / 0x8099 / 0x80AB / 0x80BD`, `LCALL 0x50AB`. 0x50AB loads a 16-bit code pointer from XRAM at `DPTR` (channel block + 0x0F) and jumps to it: **per-channel state pointer** (state handlers are re-armed with `R4:R5 = next-state address, R3 = delay ticks, LCALL 0x49FF`).
-3. Over-temperature: `0x802C < 0x40` and `0x800A.7 == 0` -> `LCALL 0x500A` with `R7 = 0x80` (sets a bit in 0x800A/B: thermal status). Timer word `0x5F:0x5E` vs `0x02AA` gates a second check.
+3. Over-temperature: `0x802C < 0x40` and `0x800A.7 == 0` -> `LCALL 0x500A` with `R7 = 0x80` (SUP_EVT 0x800A/B, §14). Timer word `0x5F:0x5E` vs `0x02AA` gates a second check.
 4. `0x804A != 0` -> clear and `LCALL 0x3D92` (reload after I2C error), then `LJMP 0x3D1A`.
 
 State handlers (27 `R4:R5` constants, 22 distinct, v21): 0x2EE0 0x2F8C 0x3B3C 0x3FBE 0x41D9 0x448D 0x44ED 0x454A 0x4601 0x46AB 0x48BE 0x4A31 0x4AD7 0x4D5C 0x4DF5 0x4E60 0x4E9D 0x4EEF (idle, 9 users) 0x4F23 0x4F9F 0x4FB7 0x5091 0x509E. Typical (0x4EEF idle): re-arm; (0x4F09): wait for status bit 1 in the channel's flag byte, clear it, set next state 0x4EEF with delay 2; (0x4F23): wait bit 4, next state 0x4DF5. The chain is the detect -> classify -> power-up -> monitor sequence ([poe.md](poe.md) section 3 detect nibble / class nibble / power-good). State names and transitions: §11.
@@ -91,8 +91,8 @@ State handlers (27 `R4:R5` constants, 22 distinct, v21): 0x2EE0 0x2F8C 0x3B3C 0x
 ## 7. Open
 
 - ROM (< 0x1A00): vector table, I2C slave glue, CRC check, `FW_DWN_CTRL` handling. Not available; would settle the slot-to-vector mapping.
-- Exact meaning of the PSE peripheral SFRs (§8), the E9..EF math unit and the 0x80C0..0x80C4 / 0x80F1 / 0x8103 / 0x8124.. scratch blocks; tick period (timer 1 reload 0xE5F4, CPU clock unknown).
-- Not fully reversed: calibration `1B03`, `34D0`, `37D2`, `29EE`, `316B` are named by role only (I); about 250 of 390 functions are still `FUN_xxxx` (callers / callees / XRAM per function: `scripts/poe_fw_re.py` -> `tmp/poe-fw/re/functions.tsv`).
+- Exact meaning of the PSE peripheral SFRs (§8), the E9..EF math unit and the 0x80C0..0x80C4 / 0x80F1 / 0x8103 / 0x8124.. scratch blocks; CPU clock only estimated (§17).
+- Every function is named or described (§14); the measurement chain and math unit are inferred (I), analog register semantics (AB/AC/AD, B5..B7, D1..D6) are still unconfirmed.
 - Where class / budget policy lives (docs/poe.md section 7 "inside the chip FW"): class code is kept per channel (IRAM 0x42..0x45) and read by the host; no power-budget logic found (I).
 
 ## 8. Core: SFR fingerprint (`scripts/poe_fw_sfr.py`, log `tmp/logs/poe_fw_sfr.log`)
@@ -150,7 +150,7 @@ Reference: awto-ddc Keil-compiled RTD firmware (`~/vendors/realtek/analysis/jxc-
 
 ## 11. Per-channel state machine (v21)
 
-Block at `0x8078 + 0x12*c` (c = 0..3): +0 / +1 event flags set by `isr_chan<c>`, +4 / +5 wait flags (timer expiry, events polled by `st_wait_*`), +0x0F:+0x10 state pointer, +0x11 delay ticks. `arm_channel(R7 = c, R4:R5 = next, R3 = delay)` sets service flag `0x23.(c+1)`; the main loop clears it and jumps through the pointer (`run_state` 0x50AB); `tick_timers` (0x3C1E, timer 1 reload TL1/TH1 = 0xF4/0xE5) counts delays down. Tick period depends on the unknown CPU clock. Names/comments: names TSV. All [I] unless tagged.
+Block at `0x8078 + 0x12*c` (c = 0..3): +0 / +1 event flags set by `isr_chan<c>`, +4 / +5 wait flags (timer expiry, events polled by `st_wait_*`), +0x0F:+0x10 state pointer, +0x11 delay ticks. `arm_channel(R7 = c, R4:R5 = next, R3 = delay)` sets service flag `0x23.(c+1)`; the main loop clears it and jumps through the pointer (`run_state` 0x50AB); `tick_timers` (0x3C1E, timer 1 reload TL1/TH1 = 0xF4/0xE5) counts delays down. Tick = 10 ms, f_cpu ~ 8 MHz (§17). Names/comments: names TSV. All [I] unless tagged.
 
 | State | Addr | Role | Next (delay ticks) |
 |---|---|---|---|
@@ -175,7 +175,7 @@ Block at `0x8078 + 0x12*c` (c = 0..3): +0 / +1 event flags set by `isr_chan<c>`,
 | `st_idle` | 4EEF | arm timer 0x3C | `st_wait_b7` -> `st_port_cfg` |
 | waits / kicks | 4F09 4BA2 4E60 4F3D 4E80 5091 509E 4F23 4DF5 49BD 3A30 4E9D | `st_wait_b1/b3/b6/b6b/b7`, `st_retry_wait_a/b`, `st_detect_ok_wait`, `st_chan_enable`, `st_class_hw_start` (D5/D6 masks), `st_class_wait`, `st_fault_cooldown` | |
 
-802.3 mapping (I): detect = `st_detect_*`, classification = `st_class_*`, power-up = `st_power_*`, disconnect / MPS = DIS_SEN_EN (0x13) + `st_disconnect_cleanup`, overload / thermal = `st_fault_shutdown` and `set_thermal_status` (0x500A; main loop `0x802C < 0x40`). IEEE 802.3af/at limits per delay were not derived: CPU clock and tick are unknown.
+802.3 mapping (I): detect = `st_detect_*`, classification = `st_class_*`, power-up = `st_power_*`, disconnect / MPS = DIS_SEN_EN (0x13) + `st_disconnect_cleanup`, overload / thermal = `st_fault_shutdown` and `set_thermal_status` (0x500A; main loop `0x802C < 0x40`). Tick-to-802.3 window mapping: §17.
 
 ## 12. Timing (awto-ddc DW8051 model, `scripts/poe_fw_timing.py`)
 
@@ -188,12 +188,47 @@ Assumes DW8051 (4 clk/cycle, MOVX = 2 + CKCON; CKCON never written = reset 1; da
 | write byte, reg 0x13 handler | 61 | 157 | 628 |
 | register-pointer byte | 30 | 76 | 304 |
 
-Host register read latency = the read path; time = clk / f_cpu (unknown, set by the ROM). The image sets no CKCON stretch.
+Host register read latency = the read path; time = clk / f_cpu (~8 MHz estimate, §17). The image sets no CKCON stretch.
 
 ## 13. Ghidra (`scripts/poe_fw_ghidra.py`, Java in `scripts/ghidra/`)
 
 - `python3 scripts/poe_fw_ghidra.py import`: headless Ghidra 12.2 (`~/.local/bin/analyzeHeadless`), BinaryLoader, `8051:BE:16:default`, base 0x1A00 (ROM < 0x1A00 undefined), seeds (hooks, dispatch tables, state pointers, call targets), `ApplyPoeNames.java` (spaces CODE / EXTMEM = XRAM / INTMEM / SFR), `ExportPoe.java`. `regen` re-applies names (~6 s each).
 - Project `tmp/ghidra/poefw` in the main checkout (Ghidra rejects dot-prefixed path elements such as `.claude/worktrees`); log `tmp/logs/poe_fw_ghidra.log`.
-- Committed: `hwdb/firmware/bcm59111-v21.names.tsv` (357 names / comments: functions, host handlers, tables, XRAM regs, channel block, IRAM, SFR), `bcm59111-v21.functions.tsv` (337 functions). Not committed: `tmp/poe-fw/ghidra/decompiled.c`, `listing.tsv`, `tmp/poe-fw/re/*` (call graph, XRAM / IRAM xref, annotated listing from `scripts/poe_fw_re.py`).
-- `EnsureFunctions.java`, `SeedFile.java` copied from awto-ddc `re/ghidra` (same author); `ApplyPoeNames.java` follows awto-ddc `ApplyRegLabels.java` (labels only). Keil register ABI is not modelled, so decompiled signatures are poor; `FixKeilReturns.java` not ported (no non-returning Keil helpers here).
+- Committed: `hwdb/firmware/bcm59111-v21.names.tsv` (~460 rows), `bcm59111-regs.tsv`, `bcm59111-protocol.tsv`, `bcm59111-v21.abi.tsv`, `bcm59111-v21.functions.tsv`, Meraki equivalents. Not committed: `tmp/poe-fw/ghidra/decompiled.c`, `listing.tsv`, `tmp/poe-fw/re/*` (call graph, XRAM / IRAM xref, annotated listing from `scripts/poe_fw_re.py`).
+- `EnsureFunctions.java`, `SeedFile.java` copied from awto-ddc `re/ghidra` (same author); `ApplyPoeNames.java` follows awto-ddc `ApplyRegLabels.java` (labels only). Keil register ABI: `scripts/poe_fw_abi.py` infers register signatures (R7 / R6:R7 / R4..R7 returns, R7 / R5 / R3 args; 102 functions, rest use the IBP stack) -> `hwdb/firmware/bcm59111-v21.abi.tsv`, applied as custom-storage signatures by `ApplyKeilAbi.java` (the 8051 module has no Keil calling convention); decompile improves but IBP-stack functions still read poorly. `FixKeilReturns.java` not ported (no non-returning Keil helpers here). Also `ApplyPoeProtocol.java` (§15), `--image` for Meraki (§16).
 - Other tools: `poe_fw_sfr.py` (SFR fingerprint), `poe_fw_re.py` (inventory, xref).
+
+## 14. Function inventory, measurement chain, math unit, scratch XRAM
+
+Every function has a name or description: 137 hand rows (`hwdb/firmware/bcm59111-v21.names.tsv`, source `poe-fw-re`) + 190 pattern rows (source `poe-fw-auto`, `scripts/poe_fw_autoname.py`: channel-block / array pointer calculators `ptr_s<stride>_<base>`, `leaf_*`, `xstate_*`, `hostreg_*`, `chcfg_*`, `detcls_*`, `meas_*`, `math_*`; callers / XRAM / SFR in the comment). 3 unnamed Ghidra stubs remain. All [I] except library, host handlers, ISRs.
+
+Periodic ISR (hook 3) order: `meas_cur_offset_trim` (1B03) -> `meas_temp_calib` (37D2) -> `meas_convert_cm_vm_temp` (34D0) -> `periodic_dc_mux_scheduler` (29EE) -> `periodic_detcls_sequencer` (316B).
+
+- Analog front end (I): SFR `AB` = register index (`c|4`, `c|8`, `0x24`, `0x28`, `0x2C`, `0x30` ...), `AC:AD` = 16-bit data (read after setting AB, write to trim); `B5` = ADC input select (2c+1, 2c+9), `B7` / `B6` = 8-bit signed ADC results; `AF` = mux / trigger written by the DC scheduler (1, 2, 3, 5).
+- `meas_cur_offset_trim`: per channel, counter IRAM 0x25+c: < 20 settle (accumulator 0x80E5+2c cleared), 20..26 accumulate 7 samples, at 27 reset and `>>3` on the math unit, result written back to AB=c|4 (offset trim loop).
+- `meas_temp_calib`: temperature sensor AB=0x2C, offset IRAM 0x4E:4F, slope 0x4A:4B, clamp 0..0x3FF, feeds back AB=0x30. `meas_convert_cm_vm_temp`: scales raw words with `math_mul16` (x11, x3201 or x6403 depending on the HP bit) and `math_shr32` (>>10), TEMP 0x802C = (IRAM 0x5C:5D) >> 1, 0x802E:2F.
+- `periodic_dc_mux_scheduler`: sub-state 0x8134 (1..5) steps the analog mux (AF), reads CM / VM words (0x813B, 0x813D), publishes CM/VM host registers via `write_cm_vm_regs`, latches events 0x8000..0x8008.
+- `periodic_detcls_sequencer`: per-channel hardware probe sequencer, 7-byte records at 0x8104+7c, `keil_CCASE` on the record state (3, 4, 5, 6, 0x0A, 0x0D), writes D5/D6 (`0x20 | c<<6` ...) to step detection / classification.
+- **Math unit E9..EF** (I, medium): 16x16 -> 32 unsigned multiply: load `E9:EA` (a, lsb in E9) and write `ED:EE` (b, lsb in ED): the write starts the multiply, result in `E9..EC` (EC = msb) after ~1 NOP (`math_mul16` 0x4764). 32-bit logical right shift: load `E9..EC`, write `EF = 0x20 | n`, result in `E9..EC` after ~8-18 NOPs (`math_shr32` 0x4777; seen `0x23` >>3, `0x26` >>6, `0x2A` >>10, `0x2E` >>14). Signs are handled in software (abs value, then negate).
+- Scratch XRAM (all [I], names in the TSV): 0x80C0 / 0x80C4 per-channel event masks and requests, 0x8103 detect/class-active channel bits, 0x8104+7c detect/class records, 0x80DD..0x80F0 per-channel word arrays (0x80E5+2c offset accumulators), 0x80F1 / 0x80F2 loop indices, 0x8124 `rr_phase`, 0x8129 HP flag, 0x812A / 0x812E math scratch, 0x8132 / 0x8133 channel scratch, 0x8134..0x813E DC scheduler (state, tick, channel, value, flag, CM word, VM word), 0x8140 init index.
+- Host register 0x42 is `WDT_TIME` (UDM name): `wh_wdt_time` selects SFR `F9` = 0x0B / 0x0A (watchdog period, I). `set_sup_event` (0x500A) raises SUP_EVT 0x80 when TEMP raw (0x802C) < 0x40 (invalid sensor), not a thermal trip (corrects section 5).
+
+## 15. Protocol documentation in the Ghidra database
+
+- Committed sources: `hwdb/firmware/bcm59111-regs.tsv` (128 host registers: name, access, clear-on-read, write / read handler address, meaning, source, confidence; names from UDM GPL `drivers/net/power/bcm59111.h` fetched with `gh api`, stock use from docs/poe.md, image behaviour from this analysis), `hwdb/firmware/bcm59111-protocol.tsv` (49 opcodes of the 12-byte Broadcom PoE control protocol, source svanheule.net 2026-11-19; Broadcom SDK `src/soc/i2c/bcm59101.c` cited as the I2C-side packet-format reference only).
+- `scripts/ghidra/ApplyPoeProtocol.java` (run by `poe_fw_ghidra.py`): enums `poe_host_reg` and `poe_cmd` under `/BCM59111`, labels `HR_xx_<name>` + plate comments on EXTMEM 0x8000+r, handlers renamed `wh_<name>` / `rh_<name>` with plate comments (48 handlers). Regenerates with `poe_fw_ghidra.py import`.
+- **The 12-byte protocol is not in the v21 image** (C): no UART SFR use (SCON / SBUF / T2 baud), no 12-byte buffer (`MOVX @Ri` 0), no checksum loop (no `ADD A,@Ri`), no command-opcode switch (the `CCASE` users are the I2C status-code and detect/class sequencer switches), no 0xAF / 0xFD / 0xFE / 0xFF reply constants. The image is only the I2C register slave (§9). The opcode table is reference equates for the SoC-to-MCU UART protocol of the Realtek front-end MCUs, not an interface of this firmware. The register interface is the UDM / Meraki one.
+
+## 16. Meraki v18 vs v21 (`scripts/poe_fw_diff.py`, `hwdb/firmware/bcm59111-meraki.names.tsv`)
+
+324 v21 vs 308 Meraki functions (normalised bytes: absolute code addresses masked): **267 same, 29 changed (>= 0.6 similar), 28 gone, 12 new**; most gone / new / changed are shared-tail relocation (the same code split differently: v21 `periodic_dc_mux_scheduler` 29EE = Meraki 29E5 + 2C9A). Host interface identical: I2C ISR logic, write and read handler lists, register defaults. Meraki names are carried to same / changed functions (`bcm59111-meraki.names.tsv`, `.functions.tsv`, `.abi.tsv`; `poe_fw_ghidra.py import --image hwdb/firmware/bcm59111-meraki.bin`).
+
+Functional differences found (I): FW_REV 0x12 vs 0x15 (`init_fw_rev_crc`); `st_power_good` has an extra per-channel branch in v18 (`JNB ACC.0`, a class-derived value `>>3 & 0x1F`) and different state-pointer constants; `st_port_cfg` v18 also clears a bit (`ANL #F7`) in a per-channel byte; `update_chan_limit` v18 has a `DIV AB` path (limit calculation), v21 does not; `chcfg_4DD0` v18 ORs SFR F2 from a table inline, v21 through a helper; v21 string adds `DEFAULT_AF_AUTO_MODE` (no separate code body found; likely register defaults). No threshold constants differ in the matched functions (temperature `0x40`, counters `0x14/0x1B`, MUL constants equal).
+
+## 17. Tick period and 802.3 windows
+
+- Timer 1: `TMOD |= 0x10` (mode 1, 16-bit), `isr_timer1_tick` reloads TL1/TH1 = 0xF4/0xE5 -> 0xE5F4, so 0x10000 - 0xE5F4 = **6668 timer counts per tick**. Timer count rate = f_cpu / 12 (classic and DW8051 default; DW8051 CKCON T1M is never set). **tick = 6668 * 12 / f_cpu = 80016 / f_cpu**.
+- Delays ([I]) as ticks: arm delays (`arm_channel` R3): `st_detect_wait` -> result 4, result -> class gate 8, invalid 15, ok-wait 5, retry wait 16, mode select -> power request 10 / detect arm 3, port shutdown -> cfg 2. Event timers (`set_timer` R5): detect start 50 (0x32), idle 60 (0x3C), class gate 20, power-up hold 20 (0x14), disconnect cleanup 30 (0x1E), fault cool-down 75 (0x4B), class hardware start 100 (0x64), retry wait 200 (0xC8), 250 (0xFA).
+- Anchors: detect start 50 ticks = IEEE 802.3 Tdet max 500 ms (tick <= 10 ms); disconnect cleanup 30 ticks = Tmpdo min 300 ms (tick >= 10 ms); power-up hold 20 ticks <= Tpon 400 ms (tick <= 20 ms); class gate 20 ticks within a 200 ms slot (Tclass 6..75 ms measure window is inside it); retry wait 200 ticks = 2.0 s (re-detect spacing); fault cool-down 75 ticks = 750 ms.
+- Result: tick = **10 ms** (both anchors tight), hence **f_cpu ~ 8.0 MHz** (80016 / 0.010 = 8.0016 MHz; tick 10.002 ms). Confidence low-medium: the mapping of each timer to an 802.3 window is inferred; one wrong anchor shifts the clock by integer factors (tick 5 / 20 ms = 16 / 4 MHz). Not forced independently by the code.
+- Consequence for section 12: at 8 MHz a DW8051 cycle (4 clk) is 0.5 us, so the I2C read-byte path (139 cycles) is ~70 us; a classic 12-clk core would take ~210 us. Host I2C at 400 kHz (22.5 us per byte) therefore outruns the slave ISR unless the ROM / hardware stretches the clock (SFR F5 ack control).

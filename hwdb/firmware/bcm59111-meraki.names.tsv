@@ -1,0 +1,325 @@
+# BCM59111 Meraki (v18) names, carried from v21 by scripts/poe_fw_diff.py (same = identical normalised bytes, changed = aligned, differs). CODE base 0x1A00.
+# addr<TAB>name<TAB>kind<TAB>comment<TAB>source<TAB>confidence
+CODE:1B03	meas_cur_offset_trim	func	periodic step 1, per channel (IRAM 0x60 = 0..3): ADC (B5 select 2c+1 / 2c+9, B7 data, B6) offset auto-zero. Counter IRAM 0x25+c: <20 settle (accumulator 0x80E5+2c cleared), 20..26 accumulate 7 samples, at 27 reset and >>3 via math unit (EF=0x23); result written to analog reg AB=c|4 (AC:AD)	poe-fw-diff	I
+CODE:1F11	xstate_1F11	func	private XRAM state (0x8076..0x8140). callers 29EE,2EE0,454A; XRAM 8133	poe-fw-diff	I
+CODE:1F23	ptr_s12_8078_1F23	func	DPTR = 0x8078 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x0 in the block). callers 29EE,2F8C,47DC,497E	poe-fw-diff	I
+CODE:1F25	ptr_s12_8078_1F25	func	DPTR = 0x8078 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x0 in the block). callers 29EE,44ED	poe-fw-diff	I
+CODE:1F27	ptr_s12_8078_1F27	func	DPTR = 0x8078 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x0 in the block). callers 1A60,29EE,2F8C,3922,4601,4CBA; SFR 82,83,F0	poe-fw-diff	I
+CODE:1F35	ptr_s12_807C_1F35	func	DPTR = 0x807C + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x4 in the block). callers 4B71,4E60,4EEF,4F23	poe-fw-diff	I
+CODE:1F3B	ptr_s12_807C_1F3B	func	DPTR = 0x807C + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x4 in the block). callers 29EE,3FBE,4B71,4E60,4E9D	poe-fw-diff	I
+CODE:1F3E	ptr_s12_807C_1F3E	func	DPTR = 0x807C + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x4 in the block). callers 1A60,29EE,2EE0,3922,3C1E,44ED; SFR 82,83,F0	poe-fw-diff	I
+CODE:1F4C	ptr_s02_80DE_1F4C	func	DPTR = 0x80DE + idx*2. callers 1A60,3922; SFR 82,83,E0 [changed 0.89]	poe-fw-diff	I
+CODE:1F5B	ptr_s02_80DE_1F5B	func	DPTR = 0x80DE + idx*2. callers 29EE,3922,3B3C,44ED	poe-fw-diff	I
+CODE:1F5C	ptr_s02_80DE_1F5C	func	DPTR = 0x80DE + idx*2. callers 3922,4CBA,4DD0	poe-fw-diff	I
+CODE:1F5D	ptr_s02_80DE_1F5D	func	DPTR = 0x80DE + idx*2. callers 29EE,2F8C,30EF,34D0,3922,3B3C; SFR 82,83,E0	poe-fw-diff	I
+CODE:1F6A	leaf_1F6A	func	register/IRAM leaf helper. callers 1A60,2F8C,3FBE,41D9,448D,44ED	poe-fw-diff	I
+CODE:1F72	leaf_1F72	func	register/IRAM leaf helper. callers 3B3C	poe-fw-diff	I
+CODE:1F74	xstate_1F74	func	private XRAM state (0x8076..0x8140). callers 3651,4658,482F,4B0D,4BD3,4C33; XRAM 8133	poe-fw-diff	I
+CODE:1F8C	leaf_1F7D	func	register/IRAM leaf helper. callers 5091,509E	poe-fw-diff	I
+CODE:1F98	ptr_s12_8087_1F89	func	DPTR = 0x8087 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xf in the block). callers 4FB7	poe-fw-diff	I
+CODE:1F9C	ptr_s12_8087_1F8D	func	DPTR = 0x8087 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xf in the block). callers 4EEF	poe-fw-diff	I
+CODE:1FA1	ptr_s12_8087_1F92	func	DPTR = 0x8087 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xf in the block). callers 3922	poe-fw-diff	I
+CODE:1FA2	ptr_s12_8087_1F93	func	DPTR = 0x8087 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xf in the block). callers 29EE,2F8C,41D9,4601,497E,49FF; SFR 82,83,F0	poe-fw-diff	I
+CODE:1F7D	ptr_s02_80DD_1FA1	func	DPTR = 0x80DD + idx*2. callers 2F8C,3922,4AD7 [changed 1.00]	poe-fw-diff	I
+CODE:1F7E	ptr_s02_80DD_1FA2	func	DPTR = 0x80DD + idx*2. callers 29EE,4D5C [changed 1.00]	poe-fw-diff	I
+CODE:1F7F	ptr_s02_80DD_1FA3	func	DPTR = 0x80DD + idx*2. callers 29EE,3922,448D,4658,47DC,4AD7; SFR 82,83,E0	poe-fw-diff	I
+CODE:1FB0	ptr_s07_8104_1FB0	func	DPTR = 0x8104 + idx*7. callers 316B; XRAM 8076	poe-fw-diff	I
+CODE:1FB3	ptr_s07_8104_1FB3	func	DPTR = 0x8104 + idx*7. callers 34D0	poe-fw-diff	I
+CODE:1FB5	ptr_s07_8104_1FB5	func	DPTR = 0x8104 + idx*7. callers 316B,34D0,3922,497E; SFR 82,83,F0	poe-fw-diff	I
+CODE:1FC3	hostreg_1FC3	func	host register accessor / event latch. callers 41D9,46AB; XRAM 8014; SFR A8	poe-fw-diff	I
+CODE:1FCE	ptr_s12_807A_1FCE	func	DPTR = 0x807A + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x2 in the block). callers 29EE,3FBE,454A	poe-fw-diff	I
+CODE:1FD1	ptr_s12_807A_1FD1	func	DPTR = 0x807A + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x2 in the block). callers 29EE	poe-fw-diff	I
+CODE:1FD2	ptr_s12_807A_1FD2	func	DPTR = 0x807A + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x2 in the block). callers 2EE0,3922,3FBE,454A; SFR 82,83,F0	poe-fw-diff	I
+CODE:1FE0	ptr_s12_807B_1FE0	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 1A60,3FBE,448D; SFR A8	poe-fw-diff	I
+CODE:1FE2	ptr_s12_807B_1FE2	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 29EE	poe-fw-diff	I
+CODE:1FE4	ptr_s12_807B_1FE4	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 454A	poe-fw-diff	I
+CODE:1FE5	ptr_s12_807B_1FE5	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 29EE,2F8C,41D9,4601; SFR 82,83,F0	poe-fw-diff	I
+CODE:1FF4	ptr_s12_807E_1FF4	func	DPTR = 0x807E + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x6 in the block). callers 3FBE,4F9F	poe-fw-diff	I
+CODE:1FF6	ptr_s12_807E_1FF6	func	DPTR = 0x807E + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x6 in the block). callers 3B3C,3FBE	poe-fw-diff	I
+CODE:1FF8	ptr_s12_807E_1FF8	func	DPTR = 0x807E + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x6 in the block). callers 2EE0,2F8C,3922,3C1E,5065; SFR 82,83,F0	poe-fw-diff	I
+CODE:2019	ptr_s12_807D_2006	func	DPTR = 0x807D + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x5 in the block). callers 1A60,3FBE,4B71,4E9D,4EEF,4F23	poe-fw-diff	I
+CODE:201B	ptr_s12_807D_2008	func	DPTR = 0x807D + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x5 in the block). callers 47DC; SFR 82,83,F0	poe-fw-diff	I
+CODE:202A	ptr_s07_8107_2017	func	DPTR = 0x8107 + idx*7. callers 316B	poe-fw-diff	I
+CODE:202B	ptr_s07_8107_2018	func	DPTR = 0x8107 + idx*7. callers 316B; SFR 82,83,F0	poe-fw-diff	I
+CODE:2006	ptr_s12_8081_2026	func	DPTR = 0x8081 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x9 in the block). callers 3922,44ED	poe-fw-diff	I
+CODE:2009	ptr_s12_8081_2029	func	DPTR = 0x8081 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x9 in the block). callers 1A60,316B,3C1E [changed 1.00]	poe-fw-diff	I
+CODE:200A	ptr_s12_8081_202A	func	DPTR = 0x8081 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x9 in the block). callers 5024 [changed 1.00]	poe-fw-diff	I
+CODE:203D	ptr_s12_8081_202B	func	DPTR = 0x8081 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x9 in the block). callers 3C1E,47DC; SFR 82,83,F0 [changed 0.90]	poe-fw-diff	I
+CODE:204C	ptr_s07_8109_2039	func	DPTR = 0x8109 + idx*7. callers 3922	poe-fw-diff	I
+CODE:2051	ptr_s07_8109_203E	func	DPTR = 0x8109 + idx*7. callers 316B,34D0,3922; SFR 82,83,F0	poe-fw-diff	I
+CODE:205F	xstate_204C	func	private XRAM state (0x8076..0x8140). callers 3B3C,4658; XRAM 8133	poe-fw-diff	I
+CODE:2062	leaf_204F	func	register/IRAM leaf helper. callers 4658	poe-fw-diff	I
+CODE:2067	leaf_2054	func	register/IRAM leaf helper. callers 3B3C	poe-fw-diff	I
+CODE:2069	leaf_2056	func	register/IRAM leaf helper. callers 1A60,29EE	poe-fw-diff	I
+CODE:206C	leaf_2059	func	register/IRAM leaf helper. callers 29EE,3B3C,4658,4AD7; SFR 82,83	poe-fw-diff	I
+CODE:2074	host_2061	func	host register(s) 0x8000..0x8075 + private state. callers 29EE; XRAM 8002,8133; SFR A8	poe-fw-diff	I
+CODE:2083	leaf_2070	func	register/IRAM leaf helper. callers 29EE	poe-fw-diff	I
+CODE:2089	leaf_2076	func	register/IRAM leaf helper. callers 30EF	poe-fw-diff	I
+CODE:208A	hostreg_2077	func	host register accessor / event latch. callers 29EE; XRAM 8002,8003,8010	poe-fw-diff	I
+CODE:2097	ptr_s12_8077_2084	func	DPTR = 0x8077 + idx*18. callers 2F8C,34D0	poe-fw-diff	I
+CODE:2098	ptr_s12_8077_2085	func	DPTR = 0x8077 + idx*18. callers 49FF	poe-fw-diff	I
+CODE:2099	ptr_s12_8077_2086	func	DPTR = 0x8077 + idx*18. callers 29EE,2F8C,316B,34D0,3922; SFR 82,83,F0	poe-fw-diff	I
+CODE:20A7	leaf_2094	func	register/IRAM leaf helper. callers 2EE0,454A; SFR A8	poe-fw-diff	I
+CODE:20A9	fn_2096	func	glue. callers 1A60,2F8C,3FBE,41D9,448D,454A	poe-fw-diff	I
+CODE:203B	ptr_s12_8079_209F	func	DPTR = 0x8079 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x1 in the block). callers 1A60,2F8C,4601 [changed 1.00]	poe-fw-diff	I
+CODE:203C	ptr_s12_8079_20A0	func	DPTR = 0x8079 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x1 in the block). callers 3DA6 [changed 1.00]	poe-fw-diff	I
+CODE:200B	ptr_s12_8079_20A1	func	DPTR = 0x8079 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x1 in the block). callers 29EE,47DC,497E; SFR 82,83,F0 [changed 0.90]	poe-fw-diff	I
+CODE:20B2	ptr_s07_8105_20B0	func	DPTR = 0x8105 + idx*7. callers 316B; XRAM 8076	poe-fw-diff	I
+CODE:20B7	ptr_s07_8105_20B5	func	DPTR = 0x8105 + idx*7. callers 316B,34D0; SFR 82,83,F0	poe-fw-diff	I
+CODE:20C5	ptr_s06_80C7_20C3	func	DPTR = 0x80C7 + idx*6. callers 29EE	poe-fw-diff	I
+CODE:20C6	ptr_s06_80C7_20C4	func	DPTR = 0x80C7 + idx*6. callers 34D0	poe-fw-diff	I
+CODE:20C7	ptr_s06_80C7_20C5	func	DPTR = 0x80C7 + idx*6. callers 34D0; SFR 82,83,F0	poe-fw-diff	I
+CODE:20D5	ptr_s07_8108_20D3	func	DPTR = 0x8108 + idx*7. callers 316B,34D0	poe-fw-diff	I
+CODE:20D6	ptr_s07_8108_20D4	func	DPTR = 0x8108 + idx*7. callers 316B	poe-fw-diff	I
+CODE:20D7	ptr_s07_8108_20D5	func	DPTR = 0x8108 + idx*7. callers 316B; SFR 82,83,F0	poe-fw-diff	I
+CODE:20E5	ptr_s07_8106_20E3	func	DPTR = 0x8106 + idx*7. callers 316B	poe-fw-diff	I
+CODE:20E7	ptr_s07_8106_20E5	func	DPTR = 0x8106 + idx*7. callers 316B,3922; SFR 82,83,F0	poe-fw-diff	I
+CODE:20F5	host_20F3	func	host register(s) 0x8000..0x8075 + private state. callers 29EE; XRAM 8000,8133; SFR A8	poe-fw-diff	I
+CODE:2108	ptr_s02_8062_2106	func	DPTR = 0x8062 + idx*2. callers 2F8C; SFR 82,83,E0	poe-fw-diff	I
+CODE:2117	ptr_s12_807F_2115	func	DPTR = 0x807F + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x7 in the block). callers 3922,3B3C,5065	poe-fw-diff	I
+CODE:2118	ptr_s12_807F_2116	func	DPTR = 0x807F + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x7 in the block). callers 3C1E; SFR 82,83,F0	poe-fw-diff	I
+CODE:2137	ptr_s06_80C5_2125	func	DPTR = 0x80C5 + idx*6. callers 34D0	poe-fw-diff	I
+CODE:2138	ptr_s06_80C5_2126	func	DPTR = 0x80C5 + idx*6. callers 316B,34D0; SFR 82,83,F0	poe-fw-diff	I
+CODE:2146	ptr_s07_810A_2134	func	DPTR = 0x810A + idx*7. callers 34D0,3922	poe-fw-diff	I
+CODE:2147	ptr_s07_810A_2135	func	DPTR = 0x810A + idx*7. callers 316B,3922; SFR 82,83,F0	poe-fw-diff	I
+CODE:2155	chcfg_2143	func	per-channel config / power SFRs (A1..A7, B1..B4, C9, F1, F2). callers 44ED,4AD7; SFR A8,F2	poe-fw-diff	I
+CODE:2165	leaf_2153	func	register/IRAM leaf helper. callers 4CBA	poe-fw-diff	I
+CODE:2166	chcfg_2154	func	per-channel config / power SFRs (A1..A7, B1..B4, C9, F1, F2). callers 29EE,4D5C; SFR A8,F1	poe-fw-diff	I
+CODE:216D	ptr_s02_8061_215B	func	DPTR = 0x8061 + idx*2. callers 29EE,3FBE; XRAM 8133	poe-fw-diff	I
+CODE:2171	ptr_s02_8061_215F	func	DPTR = 0x8061 + idx*2. callers 448D; SFR 82,83,E0	poe-fw-diff	I
+CODE:2127	ptr_s12_8082_2170	func	DPTR = 0x8082 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xa in the block). callers 3922,5024 [changed 1.00]	poe-fw-diff	I
+CODE:2129	ptr_s12_8082_2171	func	DPTR = 0x8082 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xa in the block). callers 3C1E; SFR 82,83,F0 [changed 0.97]	poe-fw-diff	I
+CODE:2182	xstate_2180	func	private XRAM state (0x8076..0x8140). callers 29EE; XRAM 8134	poe-fw-diff	I
+CODE:2185	leaf_2183	func	register/IRAM leaf helper. callers 29EE	poe-fw-diff	I
+CODE:2186	xstate_2184	func	private XRAM state (0x8076..0x8140). callers 29EE; XRAM 8136; SFR E0	poe-fw-diff	I
+CODE:218F	hostreg_218D	func	host register accessor / event latch. callers 41D9,46AB; XRAM 8014; SFR A8	poe-fw-diff	I
+CODE:2194	xstate_2192	func	private XRAM state (0x8076..0x8140). callers 29EE,2EE0,2F8C; XRAM 8133	poe-fw-diff	I
+CODE:219B	fn_2199	func	glue. callers 3B3C,4601	poe-fw-diff	I
+CODE:21B3	ptr_s02_80F5_21A3	func	DPTR = 0x80F5 + idx*2. callers 29EE,34D0	poe-fw-diff	I
+CODE:21B4	ptr_s02_80F5_21A4	func	DPTR = 0x80F5 + idx*2. callers 34D0; SFR 82,83,E0	poe-fw-diff	I
+CODE:21C2	leaf_21B2	func	register/IRAM leaf helper. callers 3922,3B3C,4601,497E,4DF5,4EEF	poe-fw-diff	I
+CODE:21C9	ptr_s02_80F3_21B9	func	DPTR = 0x80F3 + idx*2. callers 29EE,34D0; SFR 82,83,E0	poe-fw-diff	I
+CODE:21A7	leaf_21C7	func	register/IRAM leaf helper. callers 29EE,2F8C	poe-fw-diff	I
+CODE:21AB	leaf_21CB	func	register/IRAM leaf helper. callers 29EE; SFR 82,83	poe-fw-diff	I
+CODE:21D7	leaf_21D3	func	register/IRAM leaf helper. callers 34D0	poe-fw-diff	I
+CODE:21DA	xstate_21D6	func	private XRAM state (0x8076..0x8140). callers 34D0; XRAM 80F1	poe-fw-diff	I
+CODE:21E1	xstate_21DD	func	private XRAM state (0x8076..0x8140). callers 1A60,2F8C,3B3C,44ED,4658; XRAM 8133	poe-fw-diff	I
+CODE:21E8	hostreg_21E4	func	host register accessor / event latch. callers 4E1A,4E3D; XRAM 8000,8004,8005	poe-fw-diff	I
+CODE:21FB	leaf_21F7	func	register/IRAM leaf helper. callers 41D9,46AB	poe-fw-diff	I
+CODE:2201	leaf_21FD	func	register/IRAM leaf helper. callers 4C62	poe-fw-diff	I
+CODE:2209	xstate_2205	func	private XRAM state (0x8076..0x8140). callers 29EE; XRAM 8134,8136	poe-fw-diff	I
+CODE:2210	leaf_220C	func	register/IRAM leaf helper. callers 29EE; SFR E0	poe-fw-diff	I
+CODE:2221	meas_2213	func	analog front end (indirect regs AB/AC/AD, ADC B5..B7). callers 34D0; SFR AD	poe-fw-diff	I
+CODE:222B	leaf_221D	func	register/IRAM leaf helper. callers 46FC	poe-fw-diff	I
+CODE:2233	leaf_2225	func	register/IRAM leaf helper. callers 4A31,4D5C	poe-fw-diff	I
+CODE:2237	fn_2229	func	glue. callers 4AD7	poe-fw-diff	I
+CODE:223F	leaf_2231	func	register/IRAM leaf helper. callers 3651,4658	poe-fw-diff	I
+CODE:2240	xstate_2232	func	private XRAM state (0x8076..0x8140). callers 48BE; XRAM 8133	poe-fw-diff	I
+CODE:2249	xstate_223B	func	private XRAM state (0x8076..0x8140). callers 1A60; XRAM 80C4	poe-fw-diff	I
+CODE:2258	ptr_s06_80C9_224A	func	DPTR = 0x80C9 + idx*6. callers 34D0; SFR 82,83,F0	poe-fw-diff	I
+CODE:2266	xstate_2263	func	private XRAM state (0x8076..0x8140). callers 29EE,3B3C,4AD7; XRAM 8133	poe-fw-diff	I
+CODE:226F	xstate_226C	func	private XRAM state (0x8076..0x8140). callers 3922; XRAM 8140	poe-fw-diff	I
+CODE:2276	leaf_2273	func	register/IRAM leaf helper. callers 3922	poe-fw-diff	I
+CODE:227F	detcls_227C	func	detection/classification hardware (D1..D7). callers 316B,3922; XRAM 80C0; SFR D5,D6	poe-fw-diff	I
+CODE:228C	leaf_2289	func	register/IRAM leaf helper. callers 3334	poe-fw-diff	I
+CODE:2293	leaf_2290	func	register/IRAM leaf helper. callers 46FC	poe-fw-diff	I
+CODE:229A	ptr_s02_80DE_2297	func	DPTR = 0x80DE + idx*2. callers 29EE,3922; SFR 82,83,E0	poe-fw-diff	I
+CODE:22AE	leaf_22A4	func	register/IRAM leaf helper. callers 29EE,50E0; SFR 82,83	poe-fw-diff	I
+CODE:22BA	leaf_22B0	func	register/IRAM leaf helper. callers 3C1E	poe-fw-diff	I
+CODE:22C6	hostreg_22C8	func	host register accessor / event latch. callers 29EE,2F8C; XRAM 8008,8009	poe-fw-diff	I
+CODE:22CE	leaf_22D0	func	register/IRAM leaf helper. callers 29EE	poe-fw-diff	I
+CODE:22D6	leaf_22D8	func	register/IRAM leaf helper. callers 316B	poe-fw-diff	I
+CODE:22D7	xstate_22D9	func	private XRAM state (0x8076..0x8140). callers 316B; XRAM 8076	poe-fw-diff	I
+CODE:22DE	xstate_22E0	func	private XRAM state (0x8076..0x8140). callers 3C1E; XRAM 80F2	poe-fw-diff	I
+CODE:22E9	hostreg_22EB	func	host register accessor / event latch. callers 2F8C,4C62; XRAM 8000,8003	poe-fw-diff	I
+CODE:22F3	fn_22F5	func	glue. callers 44ED,4F9F	poe-fw-diff	I
+CODE:22FD	leaf_22FF	func	register/IRAM leaf helper. callers 46AB,48BE	poe-fw-diff	I
+CODE:22A7	leaf_2306	func	register/IRAM leaf helper. callers 29EE,4D5C; SFR A8	poe-fw-diff	I
+CODE:2304	poll_common	func	main-loop poll: INT/event/status 0x8000..0x8010, flag bits, 0x80BF..C3	poe-fw-diff	I
+CODE:268B	fn_2694	func	glue. callers 230D	poe-fw-diff	I
+CODE:2696	xstate_269F	func	private XRAM state (0x8076..0x8140). callers 230D; XRAM 80BF	poe-fw-diff	I
+CODE:26A7	xstate_26B0	func	private XRAM state (0x8076..0x8140). callers 230D; XRAM 80C1	poe-fw-diff	I
+CODE:26B8	xstate_26C1	func	private XRAM state (0x8076..0x8140). callers 230D; XRAM 80C2	poe-fw-diff	I
+CODE:26C9	xstate_26D2	func	private XRAM state (0x8076..0x8140). callers 230D; XRAM 80C3	poe-fw-diff	I
+CODE:26DA	fn_26E3	func	glue. callers 230D	poe-fw-diff	I
+CODE:29E5	periodic_dc_mux_scheduler	func	periodic step 4: per-channel DC measurement scheduler: sub-state 0x8134 (1..5, jump chain), tick counter 0x8135, channel 0x8136, writes AF (analog mux/trigger 1,2,3,5), reads CM/VM words (0x813B/0x813D via 4900), writes CM/VM host regs (442B), event latches 0x8000..0x8008 and arms fault/disconnect states [changed 0.61]	poe-fw-diff	I
+CODE:1A60	st_port_shutdown	func	clear event latches 0x8006..09, clear INT bits, re-apply OP_MOD, next st_port_cfg (2 ticks)	poe-fw-diff	I
+CODE:50A8	wh_op_mod	func	write 0x12 OP_MOD: store, SETB 0x23.1..4 (re-run all channel state machines) [changed 0.94]	poe-fw-diff	I
+CODE:2F8C	st_power_good	func	after power-on: update SAT_PWR 0x8010 enable/good bits, INT 0x8002 |= 0x41, power-good timers; next idle [changed 0.78]	poe-fw-diff	I
+CODE:31A4	periodic_detcls_sequencer	func	periodic step 5: per-channel detect/class analog sequencer: stride-7 records at 0x8104+7c (state at +0 via 1FB0/1FB5: 3,4,5,6,0x0A,0x0D dispatched by keil_CCASE at 0x31C2), timers 0x8100.., writes D5/D6 (0x20|c<<6 etc) to step the hardware probe [changed 0.97]	poe-fw-diff	I
+CODE:336D	calc_limit	func	limit value from 0x8047/48/4C/4D/51/52/56/57 (ICUT/ILIM config) for A1..A4 [changed 0.99]	poe-fw-diff	I
+CODE:350A	meas_convert_cm_vm_temp	func	periodic step 3: per channel (0x80F1 idx) read analog regs AB=c|4 / c|8 (AC:AD), scale with math_mul16 (4764: x0x000B, x0x0C81 or x0x1903 by HP bit) and shifts (4777, >>10), results in 0x80E5.. words and CM/VM; then global: TEMP 0x802C = (IRAM 0x5C:5D)>>1, 0x802E:2F = 0x5E:5F * 11 >> 0	poe-fw-diff	I
+CODE:368B	calc_scaled	func	scaling using keil_IMUL and SFR D9..DB	poe-fw-diff	I
+CODE:3802	xstate_37C8	func	private XRAM state (0x8076..0x8140). callers 3651; XRAM 8133	poe-fw-diff	I
+CODE:380C	meas_temp_calib	func	periodic step 2: temperature sensor: AB=0x2C raw (AC:AD) + IRAM 0x4E:4F offset, minus 0x151, times slope IRAM 0x4A:4B (>>2 via 2 RRC), + 0x49*0x80+0x280; writes AB=0x30 feedback; abs value, mul (ED/EE) and EF=0x2E shift, clamp 0..0x3FF -> IRAM 0x5A:5B..0x5E:5F	poe-fw-diff	I
+CODE:395C	init_hw_channels	func	clears all channel blocks/timers, arms every channel to st_port_reset, sets SFR defaults (A1-A4=F0, C9=0F, E5-E8=04, T2CON bits, 0xFF=60)	poe-fw-diff	I
+CODE:3B76	st_detect_result	func	detect code = SFR D1..D4 >> 4; store to SAT_Pn (0x0C+ch) low nibble; code 4 (good) -> st_class_gate (8 ticks), else st_detect_invalid (15 ticks) / st_detect_ok_wait (5 ticks)	poe-fw-diff	I
+CODE:3C58	tick_timers	func	per-tick: decrement per-channel timers (two arrays), on expiry set block flags and 0x23.n service flag	poe-fw-diff	I
+CODE:3D1D	main	func	hook 0: P1[3:0] address pins -> 0x29; P0.0 strap selects register init set; init, then main loop 0x3D1A	poe-fw-diff	I
+CODE:3DCC	reload_after_i2c_error	func	clears 804A, re-initialises (4CBA)	poe-fw-diff	I
+CODE:3DE0	chan_event_latch	func	round-robin 0x8076 latch of 0x80C0/0x80C4 channel events into block flags (+1 bit6), SETB 0x23.n	poe-fw-diff	I
+CODE:3E97	poll_detect_class_regs	func	writes SAT_P1..4 0x800C..0F from IRAM results	poe-fw-diff	I
+CODE:3F34	fn_3EFA	func	glue. callers 3E5D	poe-fw-diff	I
+CODE:3F3F	fn_3F05	func	glue. callers 3E5D	poe-fw-diff	I
+CODE:3F4A	isr_i2c_slave	func	hook 1: I2C slave: SFR DD status, F5 ctrl, F6 tx, F7 rx; auto-increment register pointer 0x35 [changed 0.69]	poe-fw-diff	I
+CODE:4092	st_power_request	func	mode 0 -> st_port_reset; 1 -> idle; 2 -> st_power_on (10 ticks); 3 -> st_poweron_hold	poe-fw-diff	I
+CODE:4124	ptr_s12_807B_4050	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 230D; SFR A8	poe-fw-diff	I
+CODE:4127	ptr_s12_807B_4053	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 230D,3E5D; XRAM 80BF	poe-fw-diff	I
+CODE:412A	ptr_s12_807B_4056	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 230D,3E5D	poe-fw-diff	I
+CODE:412B	ptr_s12_807B_4057	func	DPTR = 0x807B + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x3 in the block). callers 230D,3E5D; SFR 82,83,F0	poe-fw-diff	I
+CODE:413A	leaf_4066	func	register/IRAM leaf helper. callers 230D; SFR 82,83	poe-fw-diff	I
+CODE:4145	init_fw_rev_crc	func	0x8041=0x15 FW_REV, 0x805E:5F=0x00E4, 0x8075=0xAA CRC_STATUS [changed 0.96]	poe-fw-diff	I
+CODE:415D	init_hp_defaults	func	0x804B/50/55 per-channel config init	poe-fw-diff	I
+CODE:416E	hostreg_409A	func	host register accessor / event latch. callers 230D; XRAM 8010; SFR A8	poe-fw-diff	I
+CODE:4176	init_icut_defaults	func	0x804C/51/56	poe-fw-diff	I
+CODE:4184	init_ilim_defaults	func	0x804D/52/57	poe-fw-diff	I
+CODE:4192	leaf_40BE	func	register/IRAM leaf helper. callers 4B40,4C90	poe-fw-diff	I
+CODE:419E	hostreg_40CA	func	host register accessor / event latch. callers 4F57,4F6F,4F87; XRAM 8001	poe-fw-diff	I
+CODE:41A6	hostreg_40D2	func	host register accessor / event latch. callers 4D0E,4D35; XRAM 8000,8001	poe-fw-diff	I
+CODE:2F0B	isr_chan1	func	hook 5: SFR BD events -> block 0x808A flags [changed 0.99]	poe-fw-diff	I
+CODE:41B1	meas_415C	func	analog front end (indirect regs AB/AC/AD, ADC B5..B7). callers 3CE3; SFR B5,B6,B7,B8,C8,D7,E0,F4	poe-fw-diff	I
+CODE:4396	st_class_gate	func	if class not enabled (0x8014) -> st_power_request (10 ticks) else start class (0x8103), timer, next st_class_done [changed 0.98]	poe-fw-diff	I
+CODE:422E	isr_chan0	func	hook 4: SFR BC events -> block 0x8078 flags	poe-fw-diff	I
+CODE:42A6	isr_chan2	func	hook 6: SFR BE events -> block 0x809C flags	poe-fw-diff	I
+CODE:431E	isr_chan3	func	hook 7: SFR BF events -> block 0x80AE flags	poe-fw-diff	I
+CODE:440E	keil_IMUL	func	?C?IMUL 16x16->16, R6:R7 = R6:R7 * R4:R5; bytes identical to RTD keil_IMUL	poe-fw-diff	I
+CODE:4420	keil_LLDXDATA	func	?C?LLDXDATA R4..R7 = 4 bytes at xdata @DPTR (big-endian)	poe-fw-diff	I
+CODE:442C	keil_LSTXDATA	func	?C?LSTXDATA store R4..R7 to xdata @DPTR	poe-fw-diff	I
+CODE:4438	keil_OFFXADD	func	DPTR += A*B (record index scaling; identical to RTD keil_DPTR_add_AxB)	poe-fw-diff	I
+CODE:4444	keil_LDGPTR_CODE	func	R3:R2:R1 = 3 bytes at code @DPTR (generic-pointer constant load, tag 0xFF)	poe-fw-diff	I
+CODE:4450	keil_CCASE	func	?C?CCASE switch helper, 3-byte {hi,lo,value} inline table; identical to RTD keil_CCASE	poe-fw-diff	I
+CODE:4476	keil_ICALL	func	?C?ICALL indirect call via R2:R1: MOV DPH,R2;MOV DPL,R1;CLR A;JMP @A+DPTR; identical to RTD keil_ICALL	poe-fw-diff	I
+CODE:44E8	write_cm_vm_regs	func	store R5,R4,R3,R2 to 0x8030+4*R7 (CM lo/hi, VM lo/hi) host registers	poe-fw-diff	I
+CODE:454A	st_class_eval	func	class = (0x42+ch)>>4 & 7; valid -> st_idle path / st_power_request, invalid -> st_power_request	poe-fw-diff	I
+CODE:447C	st_port_cfg	func	clear flags, apply per-port config (ctrl/ilim/B1..B4/C9 gate), zero CM/VM, next st_mode_select [changed 0.93]	poe-fw-diff	I
+CODE:45AA	st_mode_select	func	by OP_MOD: shutdown -> st_port_reset (1 tick); else st_detect_arm (3 ticks) or st_power_request (10 ticks)	poe-fw-diff	I
+CODE:4607	hp_enabled_default	func	returns 0 if HP config byte == 0x80 else 1 (0x8048/4D/52/57) [changed 0.96]	poe-fw-diff	I
+CODE:465F	st_detect_start	func	wait flag +1.6 (detect request), write SFR D1..D4=1 (start detection), arm st_detect_wait	poe-fw-diff	I
+CODE:46B6	host_4658	func	host register(s) 0x8000..0x8075 + private state. callers 2F8C,47DC,4822; XRAM 8017,8133; SFR E0	poe-fw-diff	I
+CODE:4709	st_detect_arm	func	if DET_CLASS_EN (0x8014) bit set: request detect, next st_detect_start; else idle	poe-fw-diff	I
+CODE:475A	load_math_unit	func	loads E9..EE from 0x8048.. (ILIM/ICUT) config for limit conversion	poe-fw-diff	I
+CODE:47C2	math_mul16	func	E9:EA = R7:R6, ED:EE = R5:R4 (writing ED/EE starts a 16x16->32 unsigned multiply), wait, return E9..EC in R7..R4 (R7 lsb). R5:R4 = factor	poe-fw-diff	I
+CODE:47D5	math_shr32	func	E9..EC = R7..R4, EF = 0x20 | R3 (logical shift right by R3 bits: 0x23>>3, 0x26>>6, 0x2A>>10, 0x2E>>14), wait ~8 NOPs, return E9..EC in R7..R4	poe-fw-diff	I
+CODE:47ED	math_wait_shift	func	7 NOP + RET: result wait for the shifter	poe-fw-diff	I
+CODE:47EE	leaf_4790	func	register/IRAM leaf helper. callers 46FC	poe-fw-diff	I
+CODE:47F4	math_wait	func	1 NOP + RET: result wait for the multiplier	poe-fw-diff	I
+CODE:47F6	ptr_s12_8079_4798	func	DPTR = 0x8079 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x1 in the block). callers 4879; SFR 82,83,F0	poe-fw-diff	I
+CODE:4809	host_reg_dispatch	func	DPTR=table: reg(0x35)*3 -> [FF hi lo] -> ICALL; INC 0x35 (auto-increment)	poe-fw-diff	I
+CODE:481A	leaf_47BC	func	register/IRAM leaf helper. callers 40DD,4255,42CD,4345	poe-fw-diff	I
+CODE:4822	leaf_47C4	func	register/IRAM leaf helper. callers 40DD,4255,42CD,4345	poe-fw-diff	I
+CODE:482A	leaf_47CC	func	register/IRAM leaf helper. callers 40DD,4255,42CD,4345	poe-fw-diff	I
+CODE:4832	leaf_47D4	func	register/IRAM leaf helper. callers 40DD,4255,42CD,4345	poe-fw-diff	I
+CODE:483A	fn_47DC	func	glue. callers 40DD,4255,42CD,4345; SFR E0 [changed 0.92]	poe-fw-diff	I
+CODE:488D	apply_op_mod_shadow	func	OP_MOD 2 bits/channel -> IRAM 0x41 shadow (masks 03/0C/30/C0)	poe-fw-diff	I
+CODE:4921	isr_event_ext	func	hook 2: 0x8017 event flags, 0x80BF..C3, sets 0x23.1..4, SFR 0x93=0x3F	poe-fw-diff	I
+CODE:4966	st_detect_invalid	func	increment invalid-signature counter 0x8060+4*ch; if not open-circuit: st_retry_wait_a (16 ticks) else idle	poe-fw-diff	I
+CODE:49A8	meas_to_byte	func	16-bit measurement R6:R7 to calibrated byte (clamp)	poe-fw-diff	I
+CODE:49E7	chcfg_493F	func	per-channel config / power SFRs (A1..A7, B1..B4, C9, F1, F2). callers 29EE,44ED; SFR B1,B2,B3,B4	poe-fw-diff	I
+CODE:4A26	set_chan_ctrl_bit2	func	SFR B1..B4[R7] bit2 = (R5 ? clear : set)	poe-fw-diff	I
+CODE:4AA1	arm_channel_cur	func	arm_channel with R7=*IBP, R3=9	poe-fw-diff	I
+CODE:4AA7	arm_channel	func	R7=channel, R4:R5=next state ptr (0 = keep), R3=delay ticks (0 = keep); SETB 0x23.(ch+1); ptr -> block+0x0F, delay -> block+0x11	poe-fw-diff	I
+CODE:4AD9	hostreg_4A69	func	host register accessor / event latch. callers 29EE,4BD3; XRAM 8044,8046,804B,8050,8055	poe-fw-diff	I
+CODE:4B11	set_chan_ctrl_field	func	SFR B1..B4[R7] bits 5:4 = R5	poe-fw-diff	I
+CODE:4B47	st_port_reset	func	clear per-channel enables and counters, next st_port_shutdown	poe-fw-diff	I
+CODE:4B7D	apply_op_mod_shadow2	func	second OP_MOD consumer	poe-fw-diff	I
+CODE:4BB0	init_regs_set_a	func	register defaults when P0.0 strap = 1 (table 0x1903)	poe-fw-diff	I
+CODE:4BE1	update_chan_limit	func	SFR A1..A4[R7] = calc_limit(R7) [changed 0.80]	poe-fw-diff	I
+CODE:4C73	fn_4C33	func	glue. callers 2096,29EE,3334,45A7	poe-fw-diff	I
+CODE:4CA2	hostreg_4C62	func	host register accessor / event latch. callers 2F8C,3FBE; XRAM 8001,8002,8010,8017; SFR A8,E0,F8	poe-fw-diff	I
+CODE:4CD0	init_regs_set_b	func	register defaults when P0.0 strap = 0 (table 0x1900)	poe-fw-diff	I
+CODE:4CFA	fn_4CBA	func	glue. callers 3D92; SFR 82,83,A8,E0	poe-fw-diff	I
+CODE:4D24	leaf_4CE4	func	register/IRAM leaf helper. callers 44ED; SFR 95,BC,BD,BE,BF	poe-fw-diff	I
+CODE:4D76	rh_fault_evt_clr	func	host read handler reg 0x07 (FAULT_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-diff	I
+CODE:4D9D	rh_evt8_clr	func	host read handler reg 0x09 (EVT8_CLR): clear-on-read of the sibling event registers	poe-fw-diff	I
+CODE:4DC4	st_fault_shutdown	func	armed by periodic_port_monitor (12 ticks): set fault state bits, long timer 0x20/4B, next st_fault_cooldown	poe-fw-diff	I
+CODE:4DEB	hostreg_4D83	func	host register accessor / event latch. callers 37C8,3B3C; XRAM 8046,804B,8050,8055	poe-fw-diff	I
+CODE:4E1E	hostreg_4DAA	func	host register accessor / event latch. callers 29EE; XRAM 8049,804E,8053,8058 [changed 0.81]	poe-fw-diff	I
+CODE:4D4E	chcfg_4DD0	func	per-channel config / power SFRs (A1..A7, B1..B4, C9, F1, F2). callers 22BC; SFR A8,F2 [changed 0.91]	poe-fw-diff	I
+CODE:4E38	st_chan_enable	func	0x80C0 |= channel mask, next st_class_hw_start [changed 0.68]	poe-fw-diff	I
+CODE:4E5D	int_raise_pwr_good	func	INT 0x8004 |= mask(4C23); if INT_MASK bit3 and 0x8017.7: SETB 0xF8.0 (host INT line)	poe-fw-diff	I
+CODE:4E80	hostreg_4E4B	func	host register accessor / event latch. no direct caller (shared tail / state / table target); XRAM 8001,8017; SFR A8,E0,F8 [changed 0.75]	poe-fw-diff	I
+CODE:4EA3	st_wait_b6	func	wait flag +5.6, clear, next st_port_cfg	poe-fw-diff	I
+CODE:4EE0	st_fault_cooldown	func	wait flag +5.5 (cooldown expired), clear, next st_idle	poe-fw-diff	I
+CODE:4EFD	isr_periodic	func	hook 3, low priority (CLR IP.1 ... SETB IP.1): 1B03,37D2,34D0,29EE,316B	poe-fw-diff	I
+CODE:4F18	set_chan_sfr_a	func	SFR A1..A4[R7] = R5 (per-channel limit/config)	poe-fw-diff	I
+CODE:4F32	st_idle	func	idle: arm timer 0x3C (0x8000), next st_wait_b7	poe-fw-diff	I
+CODE:4F66	st_detect_ok_wait	func	wait flag +5.4, clear, next st_chan_enable	poe-fw-diff	I
+CODE:4F9A	rh_pwr_evt_clr	func	host read handler reg 0x03 (PWR_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-diff	I
+CODE:4FB2	rh_det_evt_clr	func	host read handler reg 0x05 (DET_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-diff	I
+CODE:4FCA	rh_therm_evt_clr	func	host read handler reg 0x0B (THERM_EVT_CLR): clear-on-read of the sibling event registers	poe-fw-diff	I
+CODE:4FE2	st_disconnect_cleanup	func	armed by periodic_port_monitor (14 ticks): clear timer, timer 0x40/1E, next st_wait_b6	poe-fw-diff	I
+CODE:4FFA	st_poweron_hold	func	timer 0x14 ticks, next st_wait_b7	poe-fw-diff	I
+CODE:5010	isr_timer1_tick	func	hook 8: TR1 off, reload TL1=F4 TH1=E5, tick 3C1E, TR1 on	poe-fw-diff	I
+CODE:5025	wh_cfg42	func	write 0x42: store 0x8042; SFR F9 = 0x0B if (v&0x1E)==0x16 else 0x0A	poe-fw-diff	I
+CODE:5039	port_output_gate	func	R7=channel R5=enable: SFR C9 mask clear (R5!=0) / set (R5==0)	poe-fw-diff	I
+CODE:504D	set_sup_event	func	0x800A |= R7 (SUP_EVT), 0x800B = same; raises INT SUP (0x80); called when TEMP raw (0x802C) < 0x40 in the main loop	poe-fw-diff	I
+CODE:5061	leaf_501E	func	register/IRAM leaf helper. callers 29EE,30EF	poe-fw-diff	I
+CODE:5067	set_timer	func	R7=channel, R5=timer index, R3:R2 = value; stores into the channel timer array	poe-fw-diff	I
+CODE:5074	wh_int_mask	func	write 0x01 INT_MASK: store; if no pending INT bit: CLR 0xF8.0	poe-fw-diff	I
+CODE:5086	int_line_update	func	if (INT_MASK & R7) and 0x8017.7: SETB 0xF8.0 (host INT output)	poe-fw-diff	I
+CODE:5098	xstate_5055	func	private XRAM state (0x8076..0x8140). callers 269F,26B0,26C1,26D2,30EF,4A5E; XRAM 8129	poe-fw-diff	I
+CODE:50B7	fn_5065	func	glue. callers 3922	poe-fw-diff	I
+CODE:50C6	leaf_5074	func	register/IRAM leaf helper. callers 29EE,2F8C; SFR F3	poe-fw-diff	I
+CODE:50D5	leaf_5083	func	register/IRAM leaf helper. callers 3CE3; SFR 88,89,8B,8D,A8	poe-fw-diff	I
+CODE:50E3	st_retry_wait_a	func	timer 0x02/C8, next st_wait_b1	poe-fw-diff	I
+CODE:50F0	st_retry_wait_b	func	timer 0x02/C8, next st_wait_b3	poe-fw-diff	I
+CODE:50FD	run_state	func	load state ptr from @DPTR (block+0x0F) and jump to it (called from main loop)	poe-fw-diff	I
+CODE:5109	leaf_50B7	func	register/IRAM leaf helper. callers 3CE3; SFR 93,A0,A8	poe-fw-diff	I
+CODE:5114	wh_pb_detclass	func	host write handler reg 0x18 (PB_DETCLASS): store XRAM 0x8018, SETB dirty bit	poe-fw-diff	I
+CODE:511E	wh_pb_pwr	func	host write handler reg 0x19 (PB_PWR): store XRAM 0x8019, SETB dirty bit	poe-fw-diff	I
+CODE:5128	wh_pb_reset	func	host write handler reg 0x1A (PB_RESET): store XRAM 0x801A, SETB dirty bit	poe-fw-diff	I
+CODE:5132	fn_50E0	func	glue. callers 1F11,1F74,3334,45A7,46FC	poe-fw-diff	I
+CODE:5145	init_i2c_status	func	SFR 0xDD=0xB0 (I2C slave enable), 0x804A=0	poe-fw-diff	I
+CODE:514E	wh_dis_sen_en	func	host write handler reg 0x13 (DIS_SEN_EN): store XRAM 0x8013, SETB dirty bit	poe-fw-diff	I
+CODE:5157	wh_det_class_en	func	host write handler reg 0x14 (DET_CLASS_EN): store XRAM 0x8014, SETB dirty bit	poe-fw-diff	I
+CODE:5160	wh_reg_17	func	host write handler reg 0x17 (REG_17): store XRAM 0x8017, SETB dirty bit	poe-fw-diff	I
+CODE:5169	wh_reg_1e	func	host write handler reg 0x1E (REG_1E): store XRAM 0x801E, SETB dirty bit	poe-fw-diff	I
+CODE:5172	wh_reg_1f	func	host write handler reg 0x1F (REG_1F): store XRAM 0x801F, SETB dirty bit	poe-fw-diff	I
+CODE:517B	wh_hp_en	func	host write handler reg 0x44 (HP_EN): store XRAM 0x8044, SETB dirty bit	poe-fw-diff	I
+CODE:5184	wh_reg_47	func	host write handler reg 0x47 (REG_47): store XRAM 0x8047, SETB dirty bit	poe-fw-diff	I
+CODE:518D	wh_reg_48	func	host write handler reg 0x48 (REG_48): store XRAM 0x8048, SETB dirty bit	poe-fw-diff	I
+CODE:5196	wh_reg_4c	func	host write handler reg 0x4C (REG_4C): store XRAM 0x804C, SETB dirty bit	poe-fw-diff	I
+CODE:519F	wh_reg_4d	func	host write handler reg 0x4D (REG_4D): store XRAM 0x804D, SETB dirty bit	poe-fw-diff	I
+CODE:51A8	wh_reg_51	func	host write handler reg 0x51 (REG_51): store XRAM 0x8051, SETB dirty bit	poe-fw-diff	I
+CODE:51B1	wh_reg_52	func	host write handler reg 0x52 (REG_52): store XRAM 0x8052, SETB dirty bit	poe-fw-diff	I
+CODE:51BA	wh_reg_56	func	host write handler reg 0x56 (REG_56): store XRAM 0x8056, SETB dirty bit	poe-fw-diff	I
+CODE:51C3	wh_reg_57	func	host write handler reg 0x57 (REG_57): store XRAM 0x8057, SETB dirty bit	poe-fw-diff	I
+CODE:51CC	wh_reg_5e	func	host write handler reg 0x5E (REG_5E): store XRAM 0x805E, SETB dirty bit	poe-fw-diff	I
+CODE:51D5	wh_reg_5f	func	host write handler reg 0x5F (REG_5F): store XRAM 0x805F, SETB dirty bit	poe-fw-diff	I
+CODE:51DE	wh_reg_15	func	host write handler reg 0x15 (REG_15): store XRAM 0x8015, SETB dirty bit	poe-fw-diff	I
+CODE:51E5	wh_reg_46	func	host write handler reg 0x46 (REG_46): store XRAM 0x8046, SETB dirty bit	poe-fw-diff	I
+CODE:51EC	wh_reg_4b	func	host write handler reg 0x4B (REG_4B): store XRAM 0x804B, SETB dirty bit	poe-fw-diff	I
+CODE:51F3	wh_reg_50	func	host write handler reg 0x50 (REG_50): store XRAM 0x8050, SETB dirty bit	poe-fw-diff	I
+CODE:51FA	wh_reg_55	func	host write handler reg 0x55 (REG_55): store XRAM 0x8055, SETB dirty bit	poe-fw-diff	I
+CODE:5201	meas_51AF	func	analog front end (indirect regs AB/AC/AD, ADC B5..B7). callers 415C; SFR B6,E0	poe-fw-diff	I
+CODE:5208	rh_cnt_p1_0	func	host read handler reg 0x60 counter: clear after read	poe-fw-diff	I
+CODE:520E	rh_cnt_p1_1	func	host read handler reg 0x61 counter: clear after read	poe-fw-diff	I
+CODE:5214	rh_cnt_p1_2	func	host read handler reg 0x62 counter: clear after read	poe-fw-diff	I
+CODE:1AFB	leaf_5216	func	register/IRAM leaf helper. callers 230D,30EF [changed 0.77]	poe-fw-diff	I
+CODE:1A00	hook_slot0	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A03	hook_slot1	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A06	hook_slot2	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A09	hook_slot3	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A0C	hook_slot4	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A0F	hook_slot5	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A12	hook_slot6	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A15	hook_slot7	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A18	hook_slot8	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A1B	hook_slot9	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A1E	hook_slot10	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A21	hook_slot11	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A24	hook_slot12	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A27	hook_slot13	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1A2A	hook_slot14	label	hook table record [FF hi lo]	poe-fw-diff	C
+CODE:1F58	ptr_s02_80DE_1F58	func	DPTR = 0x80DE + idx*2. callers 2F8C	poe-fw-auto	I
+CODE:2039	ptr_s12_8079_2039	func	DPTR = 0x8079 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0x1 in the block). callers 2F8C,3F4A	poe-fw-auto	I
+CODE:2128	ptr_s12_8082_2128	func	DPTR = 0x8082 + idx*18 (idx in A/R7; channel block 0x8078 stride 0x12 when stride=0x12; +0xa in the block). callers 3C58	poe-fw-auto	I
+CODE:21A5	leaf_21A5	func	register/IRAM leaf helper. callers 2C9A,2F8C	poe-fw-auto	I
+CODE:2217	leaf_2217	func	register/IRAM leaf helper. callers 2F8C,4607	poe-fw-auto	I
+CODE:221A	leaf_221A	func	register/IRAM leaf helper. callers 336D	poe-fw-auto	I
+CODE:2C9A	host_2C9A	func	host register(s) 0x8000..0x8075 + private state. callers 29E5; XRAM 8000,8002,8006,8007,8008,8133,8136; SFR 82,83,A8,E0	poe-fw-auto	I
+CODE:2F08	fn_2F08	func	glue. no direct caller (shared tail / state / table target)	poe-fw-auto	I
+CODE:48D7	chcfg_48D7	func	per-channel config / power SFRs (A1..A7, B1..B4, C9, F1, F2). no direct caller (shared tail / state / table target); XRAM 8044; SFR A8,F1	poe-fw-auto	I
+CODE:4E12	leaf_4E12	func	register/IRAM leaf helper. callers 29E5	poe-fw-auto	I
+CODE:4E4B	xstate_4E4B	func	private XRAM state (0x8076..0x8140). no direct caller (shared tail / state / table target); XRAM 80C0	poe-fw-auto	I
+CODE:521A	hostreg_521A	func	host register accessor / event latch. no direct caller (shared tail / state / table target); XRAM 8063	poe-fw-auto	I
