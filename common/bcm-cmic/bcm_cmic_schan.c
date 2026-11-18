@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* bcm-cmic S-channel: handshake of docs/driver-internals.md section 1, reference us48_cmic.c sbus(). */
+/* bcm-cmic S-channel: handshake of docs/driver-internals.md section 1, reference us48_cmic_core.c sbus(). */
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/errno.h>

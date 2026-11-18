@@ -5,7 +5,7 @@
   clock_trial.py cpu --mhz N     N = 400 control | 800 fid 7 | 1000..2000 relock; sf read, SP805, E0 + gate, bootm
   clock_trial.py linux [--soak S] over ssh: cpuinfo, dd|md5sum benchmark, temps, soak (default 300 s)
   clock_trial.py e3              at the uboot-2 prompt: BSPI clock 50 -> 62.5 MHz, crc32 compare, revert
-Log: tmp/logs/clock_trial.log. Recovery: US48_HOST=lizard python3 scripts/dev.py power-cycle, then boot-flash.
+Log: tmp/logs/clock_trial.log. Recovery: python3 scripts/dev.py power-cycle (needs US48_RELAY), then boot-flash.
 """
 from __future__ import annotations
 

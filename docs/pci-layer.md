@@ -4,7 +4,7 @@ Module `kernel/us48-pci/us48_pci.c` (+ `us48_pci.h`). Owns PCI `0000:01:00.0` (B
 C = confirmed (evidence in repo/issues), I = inferred.
 
 ## What it owns
-- PCI ID `14e4:8346`, function 0 only (01:00.1 shares the ID, rejected). C ([driver-internals.md](driver-internals.md) 14, us48_cmic.c)
+- PCI ID `14e4:8346`, function 0 only (01:00.1 shares the ID, rejected). C ([driver-internals.md](driver-internals.md) 14, us48_cmic_core.c)
 - `pcim_enable_device`, `pci_set_master`, BAR0 (32 KB) + BAR2 (256 KB CMIC) mapped. C (#53 probe 2)
 - DMA: coherent mask 32-bit; chip inbound window is 128 MiB, so client bus addresses must be below `US48_PCI_DMA_LIMIT` (0x08000000). C (stock DCBs at ~0x075fxxxx), I (window size >= 128 MiB, not decoded)
 - Shutdown: IMAP0_7 restored, a2 outbound window off, bus master cleared (stock U-Boot PCIe init hangs on live DMA). Aux drivers shut down first (children before parent).

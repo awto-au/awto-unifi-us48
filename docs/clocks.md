@@ -36,12 +36,27 @@
 | **QSPI MSPI (`sf`, spi-nor in Linux)** | SPBR >= 8 (`SPBR_MIN` "for safety", C `[DL]`); SCK = APB/(2 x SPBR) = 3.125 MHz at SPBR 8 (I, base = APB per `[DL]` iproc_qspi.c:286) | flash 50 MHz | DT `spi-max-frequency = <12500000>`, no `clocks`: driver assumes 27 MHz base (C, #20) so the real SCK is unknown (I) | missing `clocks` in DT | DT `clocks` = 50 MHz APB; lower SPBR_MIN only after a scope | low (read-only partitions) | Linux RAM boot, md5 vs backup (#20) |
 | **PCIe to unit 1 (BCM53346)** | Gen2 5 GT/s x1 (C `LNKCAP 0x5c12`) | same | `LNKSTA 0x9012` = 5 GT/s x1 (C `[UB]`) | none | n/a | n/a | none. MPS: root port DevCap MPS max 128 B, DevCtl `0x2c10` (MPS 128, MRRS 512) (C `[UB]` us48-20261014-083748.log:569), so BDE's 256 B request (`Payload size exceeds device capability (256)`, :639-640) exceeds the RC limit; 128 B is the ceiling, not a setting (#56) |
 | **I2C (CMIC SMBus `0x48000000`)** | iProc IP + PCA9548 400 kHz (C board.md, I NXP spec); LM75 400 kHz (I); SFP EEPROM A0h/A2h 100 kHz (I) | BCM59111 limit unknown | 100 kHz, `MODE_400` bit 31 = 0, TIMING `0x19003200` (C board.md live read); DT `clock-frequency = <100000>`, polled | SFP EEPROMs on the shared mux tree | DT `clock-frequency = <400000>` (driver rewrites TIMING) or CONFIG bit 31 | low-medium: SFP channels 0-3 must stay 100 kHz; PoE/temp channels 4-6 only (I) | E4 |
-| **MIIM MDC (CMIC)** | IEEE 802.3 2.5 MHz; octal PHY (B50282) limit unknown (no datasheet in repo, I) | | `CMIC_RATE_ADJUST` DIVISOR 40, DIVIDEND 1 (unit 1 internal bus: DIVISOR 6 while the TSC loads, driver-internals.md section 9 #108): docs say 5 MHz (C `[OM]`, driver-internals.md), #22 says 2.5 MHz (I). Conflict: read the register + scope | SDK default | `CMIC_RATE_ADJUST` `0x48011000`, `_INT_MDIO` `0x48011004` ([31:16] DIVIDEND, [15:0] DIVISOR) | low | read-only first |
+| **MIIM MDC (CMIC)** | IEEE 802.3 2.5 MHz; octal PHY (B50282) limit unknown (no datasheet in repo, I) | | unit 0 both buses 1.69 MHz (divisor 40); unit 1 internal 11.25 MHz (divisor 6, #108/#129); unit 1 external 1.69 MHz after our cold init. Derivation: "MIIM MDC" section below | divisor 40 = stock trace value; unit 1 divisor 6 = chip reset value, 2 works (#129, Dan picks) | `CMIC_RATE_ADJUST` `0x48011000`, `_INT_MDIO` `0x48011004` ([31:16] DIVIDEND, [15:0] DIVISOR) | low | unit 0 MIIM op time vs divisor |
 | **MSPI board IO (fans, LEDs, PoE LEDs)** | 74HC595-class, tens of MHz (I) | | SDK SPBR 8, mode 3 (C board.md); our `fan_frame.py` assumes ~1 MHz (I) | no driver, low rate is irrelevant | not worth it | none | none |
 | **UART1** | 3.125 MBd (APB/16) (C 8250 `UART clock rate 50000000`); MAX3321 250 kbps | 460800 works, 921600 fails (C uboot.md §8) | 115200 | U-Boot fixed | n/a | n/a | none |
 | **SerDes / XLPORT / HiGig** | line rates fixed by protocol: 10.3125G SFP+, 1G SFP, 13G HiGig2 between chips (C board.md); TSC ref 156.25 MHz (C driver-internals.md) | | at spec | no gap by design | not tunable | n/a | none |
 | **Switch core** | SDK options: 84.375 native, 135 (any TSC port > 1G), 25 (low power) (C `[OM]`); lower mdiv unvalidated (I) | | not initialised by us (I); stock sets it in switchdrvr | no driver yet | `TOP_MISC_CONTROL_1.CMIC_TO_CORE_PLL_LOAD=1`, `TOP_CORE_PLL_CTRL4.MSTR_CH0_MDIV` (0x2039000), `TOP_CORE_PLL_CTRL2.LOAD_EN_CH0/1` (0x2038800) (C driver-internals.md) | n/a until driver; no forwarding need beyond line rate (I) | none |
 | **DDR** | see [ddr.md](ddr.md) | | 667 MHz | | | | |
+
+## MIIM MDC (computed; board measurement pending)
+
+- MDC = f_core x DIVIDEND / (2 x DIVISOR); f_core = switch core clock 135 MHz (`TOP_CORE_PLL` mdiv 25, VCO derived: I, clock tree above).
+- Old "5 MHz" (OM comment, f/d at 200 MHz) and "2.5 MHz" (#22, f/2d at 200 MHz) both assume 200 MHz. Unit 1 timing (#108) contradicts that: a clause-45 write = 2 frames x 64 bit-times costs about 1.9 us per divisor step, so 2/f = 14.8 ns, f = 135 MHz. Check: divisor 40 = 75.9 us per word computed vs 75.7 us measured (82.7 us less ~7 us PCIe/poll).
+
+| Unit / bus | Register | Divisor | MDC |
+|---|---|---|---|
+| 0 internal + external, running (`0x10028`, hwdb validation 2026-11-16; stock trace and our init write it) | `0x10028` | 40 | 1.69 MHz |
+| 1 internal, run value `tsc_mdc_div` (#108) = chip reset | `0x10006` | 6 | 11.25 MHz |
+| 1 internal, probed (#129) | `0x10002` | 2 | 33.75 MHz |
+| 1 external, chip reset / after our cold init | `0x10018` / `0x10028` | 24 / 40 | 2.81 / 1.69 MHz |
+
+- Unit 1 internal at divisor 6 and 2 exceeds 802.3's 2.5 MHz; the TSC answers there, divisor 1 (67.5 MHz) does not.
+- Needs the board: f_core (read `TOP_CORE_PLL`, or time unit 0 MIIM ops at two divisors over AXI, no PCIe in the path). Internal MDIO has no pins to scope; no external PHY is known.
 
 ## Register map (ARM PLL / CCU, base `0x19000000`)
 
@@ -195,7 +210,7 @@ mw.l 19000000 0
 | 4 | #20 quad read + DT `clocks` | 4-5x flash read | medium (QE, wiring) |
 | 5 | E4 I2C 400 kHz (channels 4-6) | poll rate | low-medium |
 | 6 | E2 CPU 1000 MHz relock | 2.5x CPU | medium |
-| 7 | MDC rate check | PHY access speed | low |
+| 7 | MDC f_core check (unit 0 MIIM time vs divisor) | PHY access speed | low |
 | 8 | E5 AXI/APB | memory/IO bandwidth | high |
 
 ## Open
@@ -203,7 +218,7 @@ mw.l 19000000 0
 - Real CCU values (E0).
 - BCM53344 rated CPU clock: no datasheet in the repo.
 - Core voltage and heat headroom: unknown; measure temperature during E1.
-- MDC 5 vs 2.5 MHz conflict (see table).
+- MDC: f_core (135 MHz) still derived, not read (section "MIIM MDC").
 - Whether the BSPI clock select resets with SP805 reset (decides E3 recovery path).
 
 ## Online sources (2026-11-14)

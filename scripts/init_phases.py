@@ -496,7 +496,7 @@ def min_u1(ops, names, phases):
         f"| 15 | SYSTEM_CONFIG_TABLE, VLAN/STG defaults, CPU_COS_MAP, COS arbitration | B2-B5 | {sum(cnt[x] for x in ('B1','B2','B3','B4','B5'))} of {sum(tot[x] for x in ('B1','B2','B3','B4','B5'))} (B1-B5 together; 4096 of them are the SYSTEM_CONFIG_TABLE fill, index layout not decoded so not reduced) | VLAN 1 + STG forwarding; CPU COS map |",
         "| 16 | our code: EPC_LINK_BMAP bits 26/27 on link, private VLAN, PORT_TAB vid, static L2X to CPU | n/a (bcm_hr2_xe1_bringup) | n/a | stock does this in phase C (EPC_LINK_BMAP final 0x30060001 on u1) |",
         "",
-        "- Not in either trace: TSC/PHY init over MIIM (PLL lock check, SerDes ucode, lane config), CMC0 DMA page, u1 CMIC MMIO. Cold xe1 needs the TSC part; `tsc enable` only works warm (docs/uboot-second-stage.md).",
+        "- Not in either trace: TSC/PHY init over MIIM (PLL lock check, SerDes ucode, lane config), CMC0 DMA page, u1 CMIC MMIO. Cold xe1 needs the TSC part; `tsc enable` only works warm.",
         "- Dropped on purpose (harmless unless forwarding features are used): A6 parity/ECC/SER, EEE, TS/BS PLL, IPMC zeroing, MIB/debug counter clears, pass C (FP/VLAN/L2/DOS/DSCP churn).",
         "- Do not carry over: CPU-port MAXBUCKETCONFIG[0] (phase C, 0x4808d), see Questionable writes.",
         ""]

@@ -119,7 +119,7 @@ Stock = `soc_reset` -> `soc_reset_bcm56150_a0` @0x100827c, then `soc_misc_init` 
 2. Port maps: `ING_PHYS_TO_LOGIC_MAP[phys]` (invalid = 0x1f), `EGR_LOGIC_TO_PHYS_MAP[logical]` (invalid = 0x3f), `MMU_LOGIC_TO_PHYS_MAP[logical]` (invalid = 0x3f). C (OM)
 3. Core PLL: `TOP_MISC_CONTROL_1.CMIC_TO_CORE_PLL_LOAD=1`, `TOP_CORE_PLL_CTRL4.MSTR_CH0_MDIV=0x19`, `TOP_CORE_PLL_CTRL2.LOAD_EN_CH0/1=1` (OM comment: 135 MHz when any TSC port > 1G). SW does the same with MDIV 0x19 or 0x87 depending on config. C
 4. TDM: `IARB_TDM_CONTROL` {DISABLE=1, TDM_WRAP_PTR=83}; fill `IARB_TDM_TABLE[i].PORT_NUM` (physical) and `MMU_ARB_TDM_TABLE[i].PORT_NUM` (logical, 63 = empty; last entry WRAP_EN=1) from a per-config table; then `IARB_TDM_CONTROL` {DISABLE=0, WRAP_PTR=size-1}. OM tables: `bcm56150_a0_bmd_init.c:33-189` (embedded, powersave, cascade, ...). Stock for `bcm5615x_config=10` = `hu2_tdm_cascade` (section 10). C
-5. `MISCCONFIG.METERING_CLK_EN=1`. `CMIC_RATE_ADJUST` and `CMIC_RATE_ADJUST_INT_MDIO` DIVISOR=40, DIVIDEND=1 (5 MHz MDC from 200 MHz). C (OM)
+5. `MISCCONFIG.METERING_CLK_EN=1`. `CMIC_RATE_ADJUST` and `CMIC_RATE_ADJUST_INT_MDIO` DIVISOR=40, DIVIDEND=1 (MDC computation: clocks.md "MIIM MDC"). C (OM)
 6. `RDBGC0_SELECT.BITMAP=0x0400ad11`. C (OM)
 7. MMU: `CFAPCONFIG.CFAPPOOLSIZE=max`; `IP_TO_CMICM_CREDIT_TRANSFER` {TRANSFER_ENABLE, NUM_OF_CREDITS=32}; `HOLCOSPKTSETLIMIT[mport][cos 0..7] = (XQ0 entries)/8`; `PKTAGINGTIMER=0`, `PKTAGINGLIMIT=0`; `MMUPORTENABLE` = bitmap of MMU ports (CPU + GPORT + XLPORT). C (OM)
 8. Default VLAN/tables: `VLAN_PROFILE_TAB[max]` (L2_PFM=1, L3 flags), `ING_VLAN_TAG_ACTION_PROFILE[0]`, `EGR_VLAN_TAG_ACTION_PROFILE[1]` (HiGig). C (OM)

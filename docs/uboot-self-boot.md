@@ -39,7 +39,7 @@ Question: can a warm reset land in uboot-2 instead of uboot-1, as a step to reti
 | `0x1811a500` ROM_S0_IDM_IO_STATUS | `0` | BOOT_DEV 0 → flash path |
 | `0x1803f028` STRAPS_CAPTURED | `0x102c` | BOOT_DEV 0, PCIE_MODE 1 (RC) |
 | `0x1803f02c` STRAPS_SW_OVERRIDE | `0x402` | override off |
-| `0x1803f018` IPROC_RESET_REASON | `0x2` | IPROC_SOFT_RESET: last reset = DMU soft reset (uboot-2 / Linux `reboot`). Answers "last-reset reason" (gaps.md #9) |
+| `0x1803f018` IPROC_RESET_REASON | `0x2` | IPROC_SOFT_RESET: last reset = DMU soft reset (uboot-2 / Linux `reboot`). Answers "last-reset reason" (#60) |
 | `0x1803f014` CRU_RESET_REASON | `0` | |
 | `0x1803f020` WATCHDOG_RESET_MODE | `0` | 2-bit scope selector for watchdog reset; encodings unknown |
 | `0x1803f200` DMU_CRU_RESET | `3` | SW_RESET_N b0, IPROC_RESET_N b1 |

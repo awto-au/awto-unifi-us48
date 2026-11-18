@@ -197,7 +197,7 @@ static void cmic_sbus_setup(struct bcm_cmic_unit *u)
 	for (k = 0; k < 4; k++)
 		wr(u, CMIC_SBUS_RING_MAP(k), sbus_ring[k]);
 	wr(u, CMIC_SBUS_TIMEOUT, 0x7d0);
-	wr(u, CMIC_RATE_ADJUST, 1 << 16 | 40);		/* MIIM MDC 5 MHz from 200 MHz (driver-internals 2 init 5) */
+	wr(u, CMIC_RATE_ADJUST, 1 << 16 | 40);		/* MIIM MDC = 135 MHz / (2 x 40), docs/clocks.md "MIIM MDC" */
 	wr(u, CMIC_RATE_ADJUST_INT, 1 << 16 | 40);
 }
 

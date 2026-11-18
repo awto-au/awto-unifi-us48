@@ -1,6 +1,6 @@
 # uboot-port: second-stage mainline U-Boot (issue #46, milestones M1, M2, M3 net, read-only exam commands)
 
-Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt (verified on hardware). M3 = Ethernet on xe1 (build only). M2 + exam commands: build only, not yet run on the board. M1 verified on the board 2026-11-12: `awto-uboot>` prompt, `bdinfo` (2 banks, reloc 0x6ffbe000), `sleep 25` no reset, `reset` via DMU returns to stock U-Boot.
+Live design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial prompt (verified on hardware). M3 = Ethernet on xe1 (build only). M2 + exam commands: build only, not yet run on the board. M1 verified on the board 2026-11-12: `awto-uboot>` prompt, `bdinfo` (2 banks, reloc 0x6ffbe000), `sleep 25` no reset, `reset` via DMU returns to stock U-Boot.
 
 ## Layout
 - `arch/arm/dts/us48-uboot.dts`: standalone DT (ns16550a UART1, A9 global timer, SP805, DMU syscon-reboot, 2 RAM banks).
@@ -52,7 +52,7 @@ Design: [docs/uboot-second-stage.md](../docs/uboot-second-stage.md). M1 = serial
 5. Loading a kernel: `loady 0x01000000`, `bootm 0x01000000` (legacy uImage, load/entry `0x18000`).
 
 ## M3 as built: Ethernet on unit 1 xe1 (front 50, logical port 27) (build only, not yet run on the board)
-- Unit 1, not the unit-0 front-1 plan above: the Linux driver (`kernel/us48-cmic/us48_cmic.c`) already pings on this port.
+- Unit 1, not the unit-0 front-1 plan above: the Linux driver (`kernel/us48-cmic/us48_cmic_core.c`) already pings on this port.
 - Chip programming = shared core `common/bcm-cmic/bcm_cmic_hr2.c` (xe1 TSC/XLMAC enable, `EGR_ENABLE`, `EPC_LINK_BMAP`, private VLAN 48, `PORT_VID`, `CML_FLAGS` 0, static L2X entry, DMA init/abort, RX ring, 2-DCB TX). Linux refactor onto it is later.
 - S-channel now waits for DONE only (error bits checked after); backstop 10 ms.
 - Driver `uboot-port/drivers/net/us48_cmic_eth.c` (UCLASS_ETH, polled), DT node `ethernet@8040000` (`ubnt,us48-cmic-eth`), wired by `patches/0005`.
