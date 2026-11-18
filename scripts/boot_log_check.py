@@ -8,7 +8,7 @@ Usage: boot_log_check.py [--log FILE] [--allow FILE] [--boot N] [--all] [--show-
 - A line matching DENY (warning, error, fail, timeout, taint, ...) must match an allowlist row, else ERROR.
 - Allowlist rows (scripts/boot_log_allowlist.txt): `regex  # #NN reason`, regex fullmatch on the line without timestamp; every row names an issue.
 - Allowlist rows that matched nothing are listed as UNUSED (info only).
-- Exit 0 = clean, 2 = unlisted warning/error. Log: tmp/logs/boot_log_check.log
+- Exit 0 = clean, 2 = unlisted warning/error, 125 = no log and --skip-missing (gate). Log: tmp/logs/boot_log_check.log
 """
 import argparse
 import re
@@ -100,10 +100,17 @@ def main() -> int:
     ap.add_argument("--boot", type=int, default=-1)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--show-ok", action="store_true")
+    ap.add_argument("--skip-missing", action="store_true", help="no saved boot log: exit 125 (dev.py SKIP) instead of 1")
     a = ap.parse_args()
 
     rows = load_allow(a.allow)
-    path = a.log or newest_log()
+    try:
+        path = a.log or newest_log()
+    except SystemExit as e:
+        if not a.skip_missing:
+            raise
+        log(f"SKIP: {e}")
+        return 125
     boots = split_boots(path.read_text(errors="replace").splitlines())
     if not boots:
         log(f"{path}: no `Linux version` boot line found")

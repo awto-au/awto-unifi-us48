@@ -6,6 +6,7 @@
 ## Start here
 
 - [mainline.md](mainline.md): mainline Linux port: base, patch series, config, build, rootfs (#15)
+- [DECISIONS.md](DECISIONS.md): standing decisions, one line each, with issue links
 - [gaps.md](gaps.md): what is missing for a full native Linux port
 - [hardware.md](hardware.md): board hardware, console, U-Boot, flash map
 - [port-map.md](port-map.md): front panel -> chip -> software port names

@@ -6,6 +6,5 @@ bcm-iproc-i2c 48000000\.i2c: error -6: IRQ index 0 not found  # #15 CMIC SMBus I
 bcm-iproc-i2c 48000000\.i2c: NAK addr:0x51  # #15 SFP DDM probed with the cage empty
 bcm-iproc-i2c 48000000\.i2c: xfer failed  # #15 follows the 0x51 NAK
 us48_cmic: loading out-of-tree module taints kernel\.  # #41 module is out of tree until the upstream series
-mount: mounting debugfs on /sys/kernel/debug failed: No such file or directory  # #140 rc.sh mounts debugfs on a kernel without it
 us48_cmic_xe\.xe us48_pci\.cmic\.0: tsc uC mailbox ram [0-9a-f]{4} <- [0-9a-f]{4} lane \d: TIMEOUT after \d+ us \(mailbox [0-9a-f]{4}\)  # #105 xe50 lane 2 RX restart, DAC does not link
 us48_cmic_xe\.xe us48_pci\.cmic\.0: xe50: rx restart failed: -110  # #105 same

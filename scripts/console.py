@@ -22,6 +22,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import flash_guard
+
 ROOT = Path(__file__).resolve().parent.parent
 SOCK = ROOT / "tmp/tio.us48.sock"
 TIO_LOG = ROOT / "tmp/logs/tio-us48.log"
@@ -282,6 +284,7 @@ class Session:
         return struct.unpack("i", fcntl.ioctl(self.s.fileno(), termios.TIOCOUTQ, b"\0\0\0\0"))[0]
 
     def send_line(self, text: str) -> None:
+        flash_guard.check_cmd(text)  # #139: raises FlashGuardError before anything is typed
         log(f">> {text!r}")
         self.write(text.encode() + b"\r")
 

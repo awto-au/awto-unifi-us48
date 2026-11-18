@@ -72,9 +72,12 @@ STEPS: dict[str, tuple[str, list[str], bool]] = {
     "lint":      ("static analysis", [], True),
     "fmt-check": ("formatting check (no writes)", [], False),
     "fmt":       ("reformat in place", [], False),
+    "doc-check": ("docs links/anchors/index", [sys.executable, str(REPO / "scripts/doc_link_check.py")], False),
+    "check-log": ("saved boot log vs allowlist", [sys.executable, str(REPO / "scripts/boot_log_check.py"), "--skip-missing"], False),
+    "guard-selftest": ("guard self-tests (storm, flash, board)", [sys.executable, str(REPO / "scripts/guards_selftest.py")], False),
 }
-GATE = ["fmt-check", "lint", "test", "build"]
-CI = ["fmt-check", "lint", "test", "build"]
+GATE = ["fmt-check", "lint", "test", "doc-check", "check-log", "guard-selftest", "build"]
+CI = ["fmt-check", "lint", "test", "doc-check", "check-log", "guard-selftest", "build"]
 
 # --------------------------------------------------------------------------
 # Logging — local time, stderr + ./tmp/logs/dev.log, colour on TTY only.
@@ -1529,6 +1532,21 @@ def cmd_check_log(extra: list[str]) -> int:
     return subprocess.call([sys.executable, str(REPO / "scripts/boot_log_check.py"), *extra], cwd=REPO)
 
 
+@command("run the guard self-tests: storm_watch, flash_guard, board_guard (no board, no NIC, no relay)", kind="meta")
+def cmd_guard_selftest(_extra: list[str]) -> int:
+    return run_step("guard-selftest")
+
+
+@command("storm guard (singleton, started automatically for hardware commands)", args="[--stop] [--status] [--selftest]", kind="meta")
+def cmd_storm_watch(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/storm_watch.py"), *(extra or ["--status"])], cwd=REPO)
+
+
+@command("check console lines against the protected flash regions (hwdb/board/flash.toml)", args='[--selftest | "line" ...]', kind="meta")
+def cmd_flash_guard(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/flash_guard.py"), *(extra or ["--selftest"])], cwd=REPO)
+
+
 @command("fail-fast pre-commit gate: " + " + ".join(GATE), kind="aggregate")
 def cmd_gate(_extra: list[str]) -> int:
     for name in GATE:
@@ -1657,6 +1675,13 @@ def check_args(meta: dict, extra: list[str]) -> str | None:
     return None
 
 
+def _storm_guard() -> None:
+    """One detached storm_watch --guard (singleton by pidfile lock); a second start exits at once."""
+    LOGS.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([sys.executable, str(REPO / "scripts/storm_watch.py"), "--guard"], cwd=REPO,
+                     stdout=subprocess.DEVNULL, stderr=(LOGS / "storm_watch.log").open("a"), start_new_session=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help", "help"):
@@ -1672,6 +1697,12 @@ def main(argv: list[str] | None = None) -> int:
     err = check_args(meta, extra)
     if err:
         return command_usage(name, meta, err)
+    if meta["kind"] == "action":  # hardware command: board_guard refuses protected targets, storm guard watches the NIC
+        rc = subprocess.call([sys.executable, str(REPO / "scripts/board_guard.py"), name, *extra], cwd=REPO)
+        if rc:
+            log(f"{name}: refused by scripts/board_guard.py (hwdb/lab/protected.toml, #139)", "FATAL")
+            return rc
+        _storm_guard()
     rc = meta["fn"](extra)
     return 0 if rc == SKIPPED else rc
 

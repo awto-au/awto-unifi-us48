@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import console  # noqa: E402
+import flash_guard  # noqa: E402
 from _cli import help_guard  # noqa: E402
 
 CAPTURE_DIR = console.ROOT / "tmp/logs/console"
@@ -29,6 +30,7 @@ def capture(proc: subprocess.Popen, path: Path) -> None:
     # Socket gone while ssh lives = forward lost (seen after a baud respawn): respawn ssh. LAN login binds in
     # < 1 s; 3 s bound, then logged + respawned.
     missing_since = None
+    pending = b""
     with path.open("ab") as f:
         while proc.poll() is None:
             if not console.SOCK.exists():
@@ -54,6 +56,11 @@ def capture(proc: subprocess.Popen, path: Path) -> None:
                     break
                 f.write(chunk)
                 f.flush()
+                *lines, pending = (pending + chunk).split(b"\n")  # #139: alert-only, typed by hand
+                for ln in lines:
+                    hit = flash_guard.scan_line(ln.decode("latin-1"))
+                    if hit:
+                        flash_guard.log(f"ALERT console line: {hit}")
             s.close()
             time.sleep(console.POLL_S)
 

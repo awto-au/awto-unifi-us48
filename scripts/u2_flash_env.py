@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 from dev import console, log  # noqa: E402
 from _cli import help_guard  # noqa: E402
+import flash_guard  # noqa: E402
 
 ENV_OFF, ENV_LEN = 0xC0000, 0x10000
 LIVE_RAM, BACK_RAM = 0x02000000, 0x02100000
@@ -76,4 +77,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     help_guard(__doc__, strict=True, known=('--image', '--expect-live'))
+    flash_guard.allow("u-boot-env")  # the one approved env write (docs/autochain.md)
     sys.exit(main())
