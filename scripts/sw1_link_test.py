@@ -13,6 +13,7 @@ Usage: scripts/sw1_link_test.py --sw1 lan7 --xe xe49 [--wait-s 40] [--fdb] [--no
 - Exit: 0 = carrier (and with --fdb: FDB PASS); 1 = no carrier; 2 = FDB FAIL (MAC on another port or not learned).
 - Log: tmp/logs/sw1_link_test.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import re
 import subprocess
@@ -26,8 +27,8 @@ import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_link_test.log"
-SW1 = "root@192.168.25.48"
-BOARD = "root@192.168.25.207"
+SW1 = f"root@{_ipreg.ip('st1008f-1-mgmt')}"
+BOARD = f"root@{_ipreg.ip('us48-boot')}"
 POLL_S = 0.5
 RESTORE = hwdb.lite().sw1_ports()
 _DB = hwdb.lite()

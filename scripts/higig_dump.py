@@ -13,6 +13,7 @@ Usage:
 - Output lines "<unit> <kind> <key> <value>". Log: tmp/logs/higig_dump.log. Each ssh call is bounded (60 s; one
   call reads ~6000 MIIM regs at ~30 us each = ~0.4 s plus shell start).
 """
+import _ipreg  # noqa: E402
 import os
 import subprocess
 import sys
@@ -165,7 +166,7 @@ def main() -> int:
     a = sys.argv[1:]
     opt = lambda n, d: a[a.index(n) + 1] if n in a else d  # noqa: E731
     if a[:1] in (["ours"], ["stock"]):
-        dump(a[0], ROOT / opt("--out", f"tmp/higig/{a[0]}.txt"), opt("--host", os.environ.get("US48_SWITCH_IP", "192.168.25.206")))
+        dump(a[0], ROOT / opt("--out", f"tmp/higig/{a[0]}.txt"), opt("--host", os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt"))))
     elif a[:1] == ["diff"] and len(a) == 3:
         diff(Path(a[1]), Path(a[2]))
     else:

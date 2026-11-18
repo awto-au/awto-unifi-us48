@@ -7,6 +7,7 @@
 
 Usage: us48_ssh.py [--host H] "cmd"     |     us48_ssh.py --close
 """
+import _ipreg  # noqa: E402
 import argparse
 import os
 import subprocess
@@ -30,7 +31,7 @@ def base(host: str) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--host", default="192.168.25.206")
+    ap.add_argument("--host", default=_ipreg.ip("us48-mgmt"))
     ap.add_argument("--close", action="store_true")
     ap.add_argument("cmd", nargs="?")
     a = ap.parse_args()

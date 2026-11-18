@@ -6,6 +6,7 @@ Steps: pidof switchdrvr -> push tmp/bde_trace -> start tracer (-n switchdrvr -x 
        -> `pm app-restart switchdrvr` -> wait for tracer exit -> pull /tmp/bde.log. Never writes flash.
 Log: tmp/logs/bde_trace_run.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import os
 import pathlib
@@ -19,7 +20,7 @@ READY = "/var/run/fastpath/switchdrvr_ready,/var/run/fastpath/.poe_ready"
 # switchdrvr_ready measured 213 s after reset (dev.py STOCK_READY_S); tracing slows SDK init, 3x = 640 s backstop.
 RUN_LIMIT_S = 1500  # bde_trace: ready in 640 s worst case; mmio_trace with the CMC0 page write-trapped is slower
 UDP_PORT = 9777            # mmio_trace log stream (host side listener)
-HOST_IP = "192.168.25.30"  # this host as seen from the switch
+HOST_IP = _ipreg.ip("selwyn-enp7s0")  # this host as seen from the switch
 
 
 def log(msg):
@@ -41,7 +42,7 @@ def ssh(host, cmd, stdin=None, out=None, timeout=30):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", "192.168.25.206"))
+    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt")))
     ap.add_argument("--out", default=None)
     ap.add_argument("--tool", default="bde_trace", choices=["bde_trace", "mmio_trace"], help="mmio_trace = direct CMIC MMIO tracer (#46 option B)")
     ap.add_argument("--extra", default="", help="extra tracer args, e.g. '-k 0x31000,0x32000'")

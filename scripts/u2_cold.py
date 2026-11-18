@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 from dev import console, log  # noqa: E402
 from _cli import help_guard  # noqa: E402
+import _ipreg  # noqa: E402
 
 DUMPS = [
     "cmic r 0x31140 4", "cmic r 0x31150 1",
@@ -95,7 +96,7 @@ def dump_ping(s: console.Session, a: list[str]) -> int:
         for c in DUMPS:
             log(f"{c} -> {' | '.join(run(s, c).split()[2:])}", "ALERT")
     if "--ping" in a:
-        out = run(s, f"setenv ipaddr {dev.U2_IP}; setenv serverip 192.168.25.30; ping 192.168.25.30", 20.0)
+        out = run(s, f"setenv ipaddr {dev.U2_IP}; setenv serverip {_ipreg.ip('selwyn-enp7s0')}; ping {_ipreg.ip('selwyn-enp7s0')}", 20.0)
         log(f"ping -> {' | '.join(out.split())[:400]}", "ALERT")
     return 0
 

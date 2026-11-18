@@ -5,6 +5,7 @@ Usage: lx.py "cmd"            run on the board, stream output, rc = remote rc
        lx.py --put LOCAL REMOTE   scp -O
 Host key is ignored: dropbear regenerates it on every boot (initramfs rootfs). Log: tmp/logs/lx.log.
 """
+import _ipreg  # noqa: E402
 import subprocess
 import sys
 import time
@@ -13,7 +14,7 @@ from _cli import help_guard  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/lx.log"
-HOST = "192.168.25.207"	# ip-registry us48-boot
+HOST = _ipreg.ip("us48-boot")	# ip-registry us48-boot
 # connect 8 s: dropbear banner took >3 s once on the debug kernel; expiry = ssh rc 255
 OPTS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
         "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8"]

@@ -1,6 +1,6 @@
 # U-Boot `usw-v1.1.6.122-gd2310f3e` (US-48-500W)
 
-Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot flow now: `scripts/dev.py boot-ram` / `flash-kernel0` / `boot-flash` ([openwrt-port.md](openwrt-port.md)).
+Static RE for the first RAM boot (issue #1); §7-§8 are live observations. Boot flow now: `scripts/dev.py boot-ram` / `flash-kernel0` / `boot-flash` ([mainline.md](mainline.md)).
 
 - **C** = confirmed in disassembly (function@address / string / constant cited). **I** = inferred.
 - Image: PART `u-boot` of 7.5.15, 447118 B. Flash backup `mtd0` (taken after the 7.5.15 upgrade) is byte-identical over those 447118 B (C) — this is the U-Boot on the device.

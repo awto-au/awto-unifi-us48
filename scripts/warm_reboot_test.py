@@ -8,6 +8,7 @@ Each rep: power cycle (dev.py power-cycle, autochain boots kernel0), wait ssh, c
 Verdicts: ok (banner + ssh back), no-banner (hang, no U-Boot banner), banner-no-linux. A hang is left as is: the next rep power cycles.
 Log: tmp/logs/warm_reboot_test.log (+ console tail of every failing rep).
 """
+import _ipreg  # noqa: E402
 import argparse
 import subprocess
 import sys
@@ -92,7 +93,7 @@ def rep(case: str, n: int, cycle: bool) -> str:
     lx("sync")
     t_reboot = time.monotonic()
     subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-                    "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8", "root@192.168.25.207", "reboot"],
+                    "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8", f"root@{_ipreg.ip('us48-boot')}", "reboot"],
                    capture_output=True, text=True)
     banner = None
     while time.monotonic() - t_reboot < BANNER_S:

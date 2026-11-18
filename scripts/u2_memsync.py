@@ -10,6 +10,7 @@ Usage:
 - Image length: tmp/memimg.len (written by `warm`). Raw image copy is not kept off the board (RAM -> flash only).
 - Stall guard on every console command: no new output for 30 s = hung -> stop. Log: tmp/logs/u2_memsync.log
 """
+import _ipreg  # noqa: E402
 import re
 import sys
 import time
@@ -28,7 +29,7 @@ FLASH_MAX = 0x400000
 LEN_FILE = dev.REPO / "tmp/memimg.len"
 STALL_S = 30.0                # a table prints within ~1 s at S-channel speed (<100 us/op x <=16k entries); 30 s = hung
 OVERALL_S = 900.0
-HOST = "192.168.25.30"
+HOST = _ipreg.ip("selwyn-enp7s0")
 
 
 def run(s, cmd: str, stall: float = STALL_S, overall: float = OVERALL_S) -> str:

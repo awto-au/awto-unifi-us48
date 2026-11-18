@@ -5,10 +5,11 @@
   (unit 1: the one us48_pvtmon shares), writes are read, written and read back in the kernel (#125). No devmem.
 - temps(): LM75 + die temperatures (hwmon) in degrees C.
 """
+import _ipreg  # noqa: E402
 import os
 import subprocess
 
-HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
+HOST = os.environ.get("US48_SSH", f"root@{_ipreg.ip('us48-boot')}")
 # LAN round trip < 1 s; connect 2 s = board rebooting/unreachable, not slow (as mod_reload.py).
 CONNECT_S = 2
 # One call is a stall guard: an S-channel batch (one sysfs write + read) or a temps read runs well under 1 s.

@@ -4,6 +4,7 @@
 Usage: python3 scripts/stock_cli.py [--host IP] [--idle S] 'line' ['line' ...]
 Logs to tmp/logs/stock_cli.log. Telnet options are all refused (IAC DONT/WONT).
 """
+import _ipreg  # noqa: E402
 import argparse
 import logging
 import os
@@ -43,7 +44,7 @@ def read_until_idle(sock, idle):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("lines", nargs="+")
-    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", "192.168.25.206"))
+    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt")))
     ap.add_argument("--idle", type=float, default=3.0, help="silence that ends a reply (CLI answers in <1 s)")
     a = ap.parse_args()
     LOG.parent.mkdir(parents=True, exist_ok=True)

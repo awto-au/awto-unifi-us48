@@ -6,6 +6,7 @@ Per sample: sw1 carrier + TGR_STD_1[0]/[1] + RX_IDLE for lan3/lan6; stock xe49 +
 Bounce: down 3 s (user spec), up, sample every 10 s for post-s (40 s > one ~30 s sw1 calibration cycle). lan5 never touched.
 Restore in finally: lan3 down, lan6 up (user's required end state). Log: tmp/logs/stock_clean_control.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import sys
 import time
@@ -16,7 +17,7 @@ import sw1_link_test as t  # noqa: E402
 import stock_sw1_probe as p  # noqa: E402
 
 LOG = t.ROOT / "tmp/logs/stock_clean_control.log"
-H = "192.168.25.206"
+H = _ipreg.ip("us48-mgmt")
 
 
 def log(m: str) -> None:

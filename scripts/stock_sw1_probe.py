@@ -6,6 +6,7 @@ Each sample: stock lane regs 0xc154 (RX PCS live: b0 SYNC b1 LINK b7 RF b8 LF), 
 read-only) + sw1 carrier and TGR_STD_1 reg0/reg1. sw1 admin: lan3/lan6 recorded first, only --sw1 bounced (down, up), restored in finally. lan5 refused.
 Bounds: ssh 10 s per call; 8 x 5 s = 40 s = one sw1 calibration verdict (~30 s, #78) + margin. Log: tmp/logs/stock_sw1_probe.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import os
 import re
@@ -46,7 +47,7 @@ def main() -> int:
     ap.add_argument("--xe", type=int, required=True)
     ap.add_argument("--samples", type=int, default=8)
     ap.add_argument("--period-s", type=float, default=5.0)
-    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", "192.168.25.206"))
+    ap.add_argument("--host", default=os.environ.get("US48_SWITCH_IP", _ipreg.ip("us48-mgmt")))
     a = ap.parse_args()
     if not re.fullmatch(r"lan[1-8]", a.sw1) or a.sw1 == "lan5":
         sys.exit("refusing sw1 port")

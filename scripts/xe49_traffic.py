@@ -22,12 +22,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hwdb  # noqa: E402
+import _ipreg  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/xe49_traffic.log"
-SW1 = "root@192.168.25.48"
-BOARD = "root@192.168.25.207"
-SW1_IP = "192.168.25.48"
+SW1 = f"root@{_ipreg.ip('st1008f-1-mgmt')}"
+BOARD = f"root@{_ipreg.ip('us48-boot')}"
+SW1_IP = _ipreg.ip("st1008f-1-mgmt")
 PORT = 5201
 STALL_S = 15.0
 _DB = hwdb.lite()
@@ -159,8 +160,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--xe", default="xe49")
     ap.add_argument("--lan", default=SW1_PEER["xe49"])
-    ap.add_argument("--ip", default="192.168.25.209")
-    ap.add_argument("--peer", default="192.168.25.30", help="this host's address on the house LAN")
+    ap.add_argument("--ip", default=_ipreg.ip("us48-xe49"))
+    ap.add_argument("--peer", default=_ipreg.ip("selwyn-enp7s0"), help="this host's address on the house LAN")
     ap.add_argument("--mib", default="10,100")
     a = ap.parse_args()
     if a.lan in ("lan5", "lan8"):

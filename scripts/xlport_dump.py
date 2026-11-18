@@ -5,6 +5,7 @@ Usage: xlport_dump.py ours|stock [--out FILE] | diff A B
 Uses tools/tsc_read.c S lines (S-channel register reads); addresses: XLPORT core 0x2020000|idx<<8 (1 word), XLPORT per port 0x20000|idx<<8|lane,
 XLMAC per port 0x60000|idx<<8|lane (2 words), idx 0..0x3f. Unimplemented registers answer NAK = `-`. Log: tmp/logs/xlport_dump.log
 """
+import _ipreg  # noqa: E402
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +30,7 @@ def run(kind: str, out: Path) -> None:
     req = requests()
     txt = "".join(f"S {w} {a:x}\n" for w, a in req).encode()
     if kind == "stock":
-        r = d.ssh("192.168.25.206", f"/tmp/tsc_read {hwdb.cmic_base(1):#010x}", stdin=txt, timeout=60)
+        r = d.ssh(_ipreg.ip("us48-mgmt"), f"/tmp/tsc_read {hwdb.cmic_base(1):#010x}", stdin=txt, timeout=60)
         got = r.stdout.decode().splitlines()
     else:
         scratch = ROOT / "tmp/xlport_req.txt"

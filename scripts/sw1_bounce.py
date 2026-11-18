@@ -12,6 +12,7 @@ Usage: scripts/sw1_bounce.py --pair 49|50 [--exp a,b,c,d,e] [--wait-s 40]
 - Per experiment: sw1 carrier, board carrier, PCS_LIVE, sw1 dmesg lines, sw1 SerDes TGR_STD_0/1 of the port.
 - Log: tmp/logs/sw1_bounce.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import re
 import subprocess
@@ -24,8 +25,8 @@ import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/sw1_bounce.log"
-SW1 = "root@192.168.25.48"
-BOARD = "root@192.168.25.207"
+SW1 = f"root@{_ipreg.ip('st1008f-1-mgmt')}"
+BOARD = f"root@{_ipreg.ip('us48-boot')}"
 _DB = hwdb.lite()
 PAIRS = {str(p["front"]): (p["linux"], p["sw1_peer"], _DB.lane(p["front"])) for p in _DB.ports if "sw1_peer" in p and "linux" in p}
 RESTORE = _DB.sw1_ports()

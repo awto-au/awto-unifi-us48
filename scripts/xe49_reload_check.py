@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import xe49_traffic as t  # noqa: E402
+import _ipreg  # noqa: E402
 
 ROOT = t.ROOT
 LOG = ROOT / "tmp/logs/xe49_reload_check.log"
@@ -44,7 +45,7 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=2)
     ap.add_argument("--xe", default="xe49")
     ap.add_argument("--lan", default=t.SW1_PEER["xe49"])
-    ap.add_argument("--ip", default="192.168.25.209")
+    ap.add_argument("--ip", default=_ipreg.ip("us48-xe49"))
     a = ap.parse_args()
     if a.lan in ("lan5", "lan8"):
         sys.exit("refusing lan5/lan8")

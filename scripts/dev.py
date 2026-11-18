@@ -11,6 +11,7 @@ command here talks through its socket, so whatever dev.py does you see there.
 
 from __future__ import annotations
 
+import _ipreg  # noqa: E402
 import contextlib
 import json
 import os
@@ -144,7 +145,7 @@ ABORT_BUDGET_S = 2.0
 # Banner → "Hit any key": DDR shmoo restore + memtest + PCIe, measured ~1 s (2026-10-13). 10 s = stall detector;
 # seen once: hang at "Restoring Shmoo parameters" after a soft reboot → power-cycle.
 BANNER_TO_COUNTDOWN_S = 10
-SWITCH_IP = "192.168.25.206"
+SWITCH_IP = _ipreg.ip("us48-mgmt")
 # LAN ssh login + `reboot` returns in ~2 s; 15 s backstop. Expiry = ask for power-cycle, keep waiting for U-Boot.
 SSH_REBOOT_S = 15
 PROMPT = b"u-boot> "
@@ -438,7 +439,7 @@ def _serial_reboot(s: console.Session) -> bool:
 RELAY_GAP_S = 5.0
 RELAY_HTTP_S = 5
 RELAY_PY = "/mnt/2tb/git/awto-terminal/.venv/bin/python3"  # has aioesphomeapi
-RELAY_DEFAULT = "192.168.25.208"  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
+RELAY_DEFAULT = _ipreg.ip("so-th-1-relay")  # so-th-1 Sonoff TH, US-48 mains; reserved in awto-dan ip-registry (mDNS unreliable)
 
 
 RELAY_TRIES = 3	# #111: one relay_native call timed out once (TimeoutError) and left the board off
@@ -745,7 +746,7 @@ U2_PROMPT = b"awto-uboot> "
 U2_PROMPTS = [b"awto-uboot> ", b"uboot-2> "]
 # ge1 first start after power-up: cold init ~7 s + GPHY AN ~3.2 s + ARP = ~11.5 s measured 2026-11-15; 15 s = 1.3x, expiry = warn and try anyway.
 U2_PING_S = 15.0
-U2_IP = "192.168.25.207"
+U2_IP = _ipreg.ip("us48-boot")
 TFTP_SERVE = REPO / "scripts/tftp_serve.py"
 TFTP_DIR = REPO / "tmp/tftp"
 # tftp_serve.py start (python + bind) ~0.2 s; polled every 0.1 s, 3 s = 15x. Expiry = RuntimeError, server killed.
@@ -1317,7 +1318,7 @@ def cmd_schan(extra: list[str]) -> int:
          args="[module.ko] [--ip A.B.C.D] [--ping A.B.C.D] [-- insmod args...]", kind="action")
 def cmd_cmic_load(extra: list[str]) -> int:
     ko = REPO / "kernel/us48-cmic/us48_cmic.ko"
-    ip, ping, mod_args = os.environ.get("US48_IP", "192.168.25.207"), "192.168.25.11", ""
+    ip, ping, mod_args = os.environ.get("US48_IP", _ipreg.ip("us48-boot")), _ipreg.ip("lizard-eno1"), ""
     rest = list(extra)
     if "--" in rest:
         i = rest.index("--")
@@ -1514,6 +1515,18 @@ def cmd_doctor(_extra: list[str]) -> int:
         return 1
     log("doctor ok", "ALERT")
     return 0
+
+
+@command("check doc links, anchors and that docs/README.md lists every doc once (offline)",
+         args="[extra .md files]", kind="meta")
+def cmd_doc_check(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/doc_link_check.py"), *extra], cwd=REPO)
+
+
+@command("fail on a warning/error line not in scripts/boot_log_allowlist.txt in a saved boot log (offline)",
+         args="[--log FILE] [--boot N] [--all]", kind="meta")
+def cmd_check_log(extra: list[str]) -> int:
+    return subprocess.call([sys.executable, str(REPO / "scripts/boot_log_check.py"), *extra], cwd=REPO)
 
 
 @command("fail-fast pre-commit gate: " + " + ".join(GATE), kind="aggregate")

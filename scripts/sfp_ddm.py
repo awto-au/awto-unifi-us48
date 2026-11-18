@@ -5,6 +5,7 @@ Usage: sfp_ddm.py [BUS ...]    Linux i2c bus numbers of the mux channels, defaul
 Host: $US48_SSH (default root@192.168.25.207). Reads A0h vendor/PN/SN (bytes 20-35, 40-55, 68-83) and A2h 96-105 (SFF-8472, external calibration).
 Log: tmp/logs/sfp_ddm.log. One ssh round trip per cage, ~30 i2cget calls; ssh BatchMode, 20 s connect+run cap (stall guard, not a measurement).
 """
+import _ipreg  # noqa: E402
 import math
 import os
 import pathlib
@@ -14,7 +15,7 @@ import time
 from _cli import help_guard  # noqa: E402
 
 LOG = pathlib.Path(__file__).resolve().parent.parent / "tmp/logs/sfp_ddm.log"
-HOST = os.environ.get("US48_SSH", "root@192.168.25.207")
+HOST = os.environ.get("US48_SSH", f"root@{_ipreg.ip('us48-boot')}")
 
 
 def log(msg):

@@ -8,6 +8,7 @@ Usage: a2_bus_arid.py [--values 3 2 1 0] [--axi 200 400] [--reps 3] [--mhz 1000]
 - Metrics are pcie_harness.a2_metrics of one pass; each rep waits for a new `pass` value. Median of --reps per value.
 Log: tmp/logs/a2_bus_arid.log; json tmp/logs/a2_bus_arid.json.
 """
+import _ipreg  # noqa: E402
 import argparse
 import json
 import re
@@ -23,7 +24,7 @@ import pcie_harness as ph  # noqa: E402
 
 LOG = ROOT / "tmp/logs/a2_bus_arid.log"
 JSON = ROOT / "tmp/logs/a2_bus_arid.json"
-HOST = "root@192.168.25.207"
+HOST = f"root@{_ipreg.ip('us48-boot')}"
 OPTS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
         "-o", "ConnectTimeout=8"]
 # a2 first pass ~0.5 s (docs/pcie-harness.md), pass period about the same; wait 3 s (6x) for the first, 3 s for each next, expiry = error

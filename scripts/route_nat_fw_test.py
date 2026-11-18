@@ -18,6 +18,7 @@ Usage: route_nat_fw_test.py <setup|route|nat|fw|flowtable|teardown|all> [--apply
   worst case); expiry = the step fails, logged with the command and elapsed time, then restore runs. Waits poll, no sleeps.
 - Exit: 0 all steps passed, 1 a check failed, 2 usage/setup problem. Log: tmp/logs/route_nat_fw_test.log
 """
+import _ipreg  # noqa: E402
 import argparse
 import re
 import subprocess
@@ -32,7 +33,7 @@ import hwdb  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/route_nat_fw_test.log"
-BOARD = "root@192.168.25.207"  # ip-registry us48-boot
+BOARD = f"root@{_ipreg.ip('us48-boot')}"  # ip-registry us48-boot
 SSH = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
        "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8"]
 CALL_S = 15.0      # one board command: busybox/ip/nft take < 1 s each; 15 s covers a slow module load
