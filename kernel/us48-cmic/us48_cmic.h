@@ -72,7 +72,22 @@
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
 #define EGR_ENABLE(phys)	(0x345c0000 + (phys))	/* physical port index (#124) */
-#define L2X			0x1c000000	/* hashed: TABLE_INSERT/DELETE, no index */
+#define L2X			0x1c000000	/* hashed: TABLE_INSERT/DELETE; also readable by index */
+/* switchdev (us48_cmic_sw.c): bcm_cmic_hr2_memtab.h / regtab.h (generated from regdb) */
+#define L2X_ENTRIES		16384
+#define L2_USER_ENTRY(i)	(0x1c100000 + (i))
+#define L2U_ENTRIES		128
+#define L2_AGE_TIMER		0x02000400	/* IPIPE register */
+
+/* One offloaded Linux bridge on one unit = one ASIC VLAN + STG (docs/switchdev.md). */
+#define US48_BR_MAX		8
+struct us48_br {
+	struct net_device *dev;		/* bridge; NULL = free slot */
+	u16 vid;			/* ASIC VLAN, also its FID_ID (L2 key) */
+	u8 stg;
+	u32 members;			/* logical port bitmap */
+	struct list_head hosts;		/* bridge-local MACs (struct us48_host) -> CPU */
+};
 
 /* Logical port numbers are the chip's p2l view of the physical SerDes: board.md "Physical -> logical". */
 struct port_cfg {
@@ -88,6 +103,7 @@ struct port_cfg {
 #define MAXPORTS	26		/* unit 1: 24 copper + 2 xe */
 
 struct us48_cmic;
+struct netlink_callback;
 
 /* One S-channel op under the unit owner's lock (unit 1: us48_pci_schan, shared with us48_pvtmon, #125). NULL = raw (unit 0). */
 typedef int (*us48_schan_fn)(void *ctx, u32 op, u32 blk, u32 addr, u32 *data, int words, u32 *ack);
@@ -104,6 +120,10 @@ struct us48_port {
 	s8 fw_mode;			/* xe: lane FIRMWARE_MODE set (0 optic, 2 passive cable); -1 = TSC not initialised */
 	s8 media;			/* xe: last A0h result (1 passive, 0 other, -1 absent/unreadable), #105 */
 	u8 media_tick;			/* xe: link polls since the last media check while open + link down */
+	struct us48_br *br;		/* offloaded bridge (switchdev), NULL = private VLAN; rtnl */
+	u8 stp;				/* BR_STATE_* of the port in br */
+	bool learning;			/* BR_LEARNING: PORT_TAB CML 8 while in br */
+	u16 rx_vid;			/* VLAN tag stripped on RX: vid, or br->vid while bridged */
 };
 
 struct us48_cmic {
@@ -144,6 +164,9 @@ struct us48_cmic {
 	unsigned int tx_head;		/* next free slot (free-running) */
 	unsigned int tx_run;		/* end of the chain the engine runs; tx_tail..tx_run in flight */
 	unsigned int tx_tail;		/* oldest unreaped slot */
+	struct us48_br br[US48_BR_MAX];	/* switchdev bridges on this unit; rtnl */
+	int l2u_bpdu;			/* L2_USER_ENTRY index of the BPDU trap, -1 = none */
+	bool l2u_ours;			/* we wrote it (removed with the last bridge) */
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */
@@ -187,5 +210,22 @@ struct us48_cmic *us48_unit0(void);
 /* Opt-in HiGig link bring-up of logical 28/29 (XLPORT1 + TSC1, 12.73G HiGig2) on one unit; no table writes (#57). */
 int us48_higig_up(struct us48_cmic *u, const struct firmware *fw);
 void us48_higig_status(struct us48_cmic *u);
+
+bool us48_is_port(const struct net_device *nd);
+/* switchdev L2 offload, stage 1 (us48_cmic_sw.c, docs/switchdev.md); rtnl held unless noted. */
+#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
+int us48_sw_init(void);			/* module init, no rtnl */
+void us48_sw_exit(void);		/* module exit, no rtnl */
+void us48_sw_unit_init(struct us48_cmic *u);	/* probe, before the netdevs register */
+void us48_sw_port_reapply(struct us48_port *p);	/* after copper bring-up rewrote PORT_TAB */
+int us48_sw_parent_id(struct net_device *nd, struct netdev_phys_item_id *ppid);
+int us48_sw_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb, struct net_device *dev,
+		     struct net_device *filter_dev, int *idx);
+#else
+static inline int us48_sw_init(void) { return 0; }
+static inline void us48_sw_exit(void) { }
+static inline void us48_sw_unit_init(struct us48_cmic *u) { }
+static inline void us48_sw_port_reapply(struct us48_port *p) { }
+#endif
 
 #endif

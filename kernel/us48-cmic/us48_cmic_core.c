@@ -4,7 +4,8 @@
  * (unit 1, PCIe; us48_cmic_xe.ko). Port tables: hwdb/gen/us48_ports.h.
  * One CMIC DMA ring pair per unit: RX is demuxed on the source port, TX goes straight to a port through the module
  * header. Each port sits in its own private VLAN with the CPU only, so the chip never forwards between ports or into
- * the HiGig links. Copper bring-up at the first ndo_open. Polled. docs/driver-internals.md 1, 4, 5, 12, 13.5, 14.
+ * the HiGig links, unless it joins a Linux bridge (switchdev offload, us48_cmic_sw.c, docs/switchdev.md).
+ * Copper bring-up at the first ndo_open. Polled. docs/driver-internals.md 1, 4, 5, 12, 13.5, 14.
  */
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -1039,13 +1040,19 @@ static void rx_one(struct us48_cmic *u, int i)
 		nd->stats.rx_dropped++;
 		return;
 	}
-	if (get_unaligned_be16(d + 12) == ETH_P_8021Q && (get_unaligned_be16(d + 14) & VLAN_VID_MASK) == p->vid) {
+	if (get_unaligned_be16(d + 12) == ETH_P_8021Q &&
+	    (get_unaligned_be16(d + 14) & VLAN_VID_MASK) == READ_ONCE(p->rx_vid)) {
 		skb_put_data(skb, d, 12);
 		skb_put_data(skb, d + 16, len - 16);
 	} else {
 		skb_put_data(skb, d, len);
 	}
 	skb->protocol = eth_type_trans(skb, nd);
+#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
+	/* Offloaded bridge port: the ASIC already flooded/forwarded it to the unit's other members (docs/switchdev.md). */
+	if (READ_ONCE(p->br))
+		skb->offload_fwd_mark = 1;
+#endif
 	nd->stats.rx_packets++;
 	nd->stats.rx_bytes += skb->len;
 	napi_gro_receive(&u->napi, skb);
@@ -1264,6 +1271,7 @@ static int us48_open(struct net_device *nd)
 		mutex_unlock(&u->link_lock);
 		if (ret)
 			return ret;
+		us48_sw_port_reapply(p);	/* joined a bridge before the first open */
 	}
 	if (l2_op_cpu(p, 0x24))
 		netdev_warn(nd, "L2 insert for %pM failed: unicast to us will not arrive\n", nd->dev_addr);
@@ -1345,7 +1353,16 @@ static const struct net_device_ops us48_netdev_ops = {
 	.ndo_tx_timeout		= us48_tx_timeout,
 	.ndo_set_mac_address	= us48_set_mac,
 	.ndo_validate_addr	= eth_validate_addr,
+#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
+	.ndo_get_port_parent_id	= us48_sw_parent_id,
+	.ndo_fdb_dump		= us48_sw_fdb_dump,
+#endif
 };
+
+bool us48_is_port(const struct net_device *nd)
+{
+	return nd->netdev_ops == &us48_netdev_ops;
+}
 
 static void us48_free_napi_dev(void *data)
 {
@@ -1546,6 +1563,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	if (ret)
 		return ret;
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	us48_sw_unit_init(u);
 
 	for (i = 0; i < u->nports; i++) {
 		struct net_device *nd = devm_alloc_etherdev(dev, sizeof(struct us48_port));
@@ -1558,6 +1576,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		p->ndev = nd;
 		p->cfg = &u->cfgs[i];
 		p->vid = u->cfgs[i].vid;
+		p->rx_vid = p->vid;
+		p->learning = true;		/* bridge default BR_LEARNING */
 		p->fw_mode = -1;
 		p->media = -1;
 		u->port[i] = p;
@@ -1703,18 +1723,22 @@ static struct platform_driver us48_cmic_plat_driver = {
 
 static int __init us48_cmic_init(void)
 {
-	int ret;
+	int ret = us48_sw_init();	/* unit 1 (us48_cmic_xe.ko) ports use it too */
 
-	if (!unit0)
-		return 0;
+	if (ret || !unit0)
+		return ret;
 	ret = platform_driver_register(&us48_cmic_plat_driver);
 	if (ret)
-		return ret;
+		goto err_sw;
 	unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
 	if (IS_ERR(unit0_pdev)) {
 		ret = PTR_ERR(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
+		goto err_sw;
 	}
+	return 0;
+err_sw:
+	us48_sw_exit();
 	return ret;
 }
 
@@ -1724,6 +1748,7 @@ static void __exit us48_cmic_exit(void)
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
+	us48_sw_exit();
 }
 
 module_init(us48_cmic_init);

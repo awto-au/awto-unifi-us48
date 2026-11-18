@@ -7,6 +7,7 @@ Usage: stp_loop_test.py <u0|u1|all> [--apply]
   join. Pass = one port forwarding (3) and the other blocking (4) in /sys/class/net/brstp/brif/*/state, no storm, ge1
   never a bridge port; then teardown (bridge deleted, ports' admin state/addresses/master = pre-test).
 - Each port stays in its private ASIC VLAN: a loop can only run through the CPU (rx on one end -> bridge -> tx other end).
+  us48_cmic `switchdev` is set to N for the run (restored after); the offloaded variant is `switchdev_test.py stp`.
 - Timers (kernel minimum with STP on, net/bridge/br_private.h BR_MIN_*; sysfs unit = 1/100 s): forward_delay 2 s,
   hello_time 1 s, max_age 6 s. Forwarding after listening + learning = 2 x forward_delay = 4 s.
 - Settle limit: 2 x forward_delay + 1 hello = 5 s, x1.25 = 6.25 s; expiry = FAIL + teardown.
@@ -51,6 +52,7 @@ SAMPLE_STALL_S = 2.5  # no sample line for 5 periods = sampler/ssh dead
 PING_S = 4.0    # 3 echo requests at 1 s interval = 2 s + the ssh start; then the ping is killed
 
 STATE = "/tmp/stp"
+SWD = "/sys/module/us48_cmic/parameters/switchdev"   # absent on images before the switchdev offload
 STATES = {0: "disabled", 1: "listening", 2: "learning", 3: "forwarding", 4: "blocking"}
 
 
@@ -197,7 +199,10 @@ def run_pair(b: Board, name: str) -> None:
     before = snapshot(b, ports) if b.apply else []
     thermal(b, f"before {name}")
     b.sh(f"mkdir -p {STATE}")
+    swd = b.sh(f"cat {SWD} 2>/dev/null; true", quiet=True)
     try:
+        if swd:
+            b.sh(f"echo N > {SWD}")
         b.sh(f"brctl addbr {BR}; echo 1 > /sys/class/net/{BR}/bridge/stp_state; "
              f"echo {FD_CS} > /sys/class/net/{BR}/bridge/forward_delay; echo {HELLO_CS} > /sys/class/net/{BR}/bridge/hello_time; "
              f"echo {MAXAGE_CS} > /sys/class/net/{BR}/bridge/max_age; ip link set {BR} up")
@@ -269,6 +274,8 @@ def run_pair(b: Board, name: str) -> None:
         if b.apply and "sm" in locals():
             sm.stop()
         teardown(b, ports)
+        if swd:
+            b.sh(f"echo {swd} > {SWD}", check=False)
         if b.apply:
             after = snapshot(b, ports)
             gone = b.sh(f"test -d /sys/class/net/{BR} && echo present || echo gone", quiet=True)
