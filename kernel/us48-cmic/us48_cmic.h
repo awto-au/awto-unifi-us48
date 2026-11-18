@@ -146,6 +146,7 @@ struct us48_cmic {
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
 	u8 tsc_phy;			/* MIIM address of us48_tsc_rd/wr: 0 = TSC0_PHY; set only while holding mdio */
 	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */
+	struct mii_bus *mdio_bus[2];	/* phylib: [1] internal MIIM bus 0 (GPHYs), [0] external bus 0 (octal) */
 	u8 blk_ready;			/* bit = GPORT block whose block-wide init (+ octal top reset) ran */
 	u8 octal_off;			/* bit g = GPORT g octal powered down by pwrsave (us48_cmic_pwr.c); link_lock */
 	spinlock_t tx_lock;
@@ -224,7 +225,22 @@ int us48_higig_up(struct us48_cmic *u, const struct firmware *fw);
 void us48_higig_status(struct us48_cmic *u);
 
 bool us48_is_port(const struct net_device *nd);
-/* Copper PHY MII_CTRL power (#133). */
+/* phylib glue (us48_cmic_mdio.c, us48_cmic_phy.c, docs/phy.md): MDIO buses, PHY drivers, netdev attach. */
+struct us48_mdio {
+	struct us48_cmic *u;
+	bool internal;
+};
+int us48_mdio_register(struct us48_cmic *u);
+struct phy_device *us48_port_phy(const struct us48_port *p);
+int us48_phy_init(void);
+void us48_phy_exit(void);
+int us48_phy_connect(struct us48_port *p);	/* ndo_open, no driver lock held */
+void us48_phy_start(struct us48_port *p);
+void us48_phy_stop(struct us48_port *p);
+void us48_phy_disconnect(struct us48_port *p);
+void us48_phy_netdev_init(struct net_device *nd);
+struct bcm_hr2_ge us48_ge_of(const struct us48_port *p);
+/* BMCR power of a never-attached copper port (#133); attached ports follow phy_start/phy_stop. */
 int us48_copper_power(struct us48_port *p, bool on);
 /* Power save of unused blocks (us48_cmic_pwr.c, #25): restore before the port setup, save after it, octal up on first open. */
 void us48_pwr_restore(struct us48_cmic *u);

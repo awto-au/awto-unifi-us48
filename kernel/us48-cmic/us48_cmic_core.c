@@ -18,6 +18,7 @@
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
+#include <linux/phy.h>
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
 #include <linux/unaligned.h>
@@ -139,9 +140,6 @@ int us48_tsc_rd(struct us48_cmic *u, u32 reg, u16 *val)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(us48_tsc_rd);
-
-static uint phy_dbg;
-module_param(phy_dbg, uint, 0644);
 
 /* Log the read-only TSC / XLMAC status of every xe port at probe (cheap: ~30 MIIM + 8 SBUS reads per port). */
 static uint tsc_log = 1;
@@ -620,10 +618,11 @@ static const struct kernel_param_ops phy_scan_ops = { .set = phy_scan_set };
 module_param_cb(phy_scan, &phy_scan_ops, NULL, 0200);
 MODULE_PARM_DESC(phy_scan, "1 = read copper status and octal-PHY vendor state on both MIIM bus-0s");
 
-static struct bcm_hr2_ge ge_of(const struct us48_port *p)
+struct bcm_hr2_ge us48_ge_of(const struct us48_port *p)
 {
 	return (struct bcm_hr2_ge){ .blk = p->cfg->blk, .lane = p->cfg->lane, .phy = p->cfg->phy, .lport = p->cfg->lport,
-				    .phys = p->cfg->phys, .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy };
+				    .phys = p->cfg->phys, .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy,
+				    .phy_managed = true };
 }
 
 /* Shared core (common/bcm-cmic): copper MAC init, PHY AN, private VLAN, PORT_TAB, link bitmap. First ndo_open, link_lock held. */
@@ -631,7 +630,7 @@ static int copper_enable(struct us48_port *p)
 {
 	struct us48_cmic *u = p->u;
 	struct bcm_cmic_unit cu = u->cu;
-	struct bcm_hr2_ge ge = ge_of(p);
+	struct bcm_hr2_ge ge = us48_ge_of(p);
 	int ret;
 
 	ge.blk_ready = u->blk_ready & BIT(p->cfg->blk);
@@ -653,65 +652,7 @@ static int copper_enable(struct us48_port *p)
 	return ret;
 }
 
-/* Copper PHY power follows the netdev (#133): down = POWER_DOWN, the peer loses carrier; up = AN restart. */
-int us48_copper_power(struct us48_port *p, bool on)
-{
-	struct bcm_cmic_unit cu = p->u->cu;
-	struct bcm_hr2_ge ge = ge_of(p);
-	int ret;
-
-	mutex_lock(&p->u->mdio);
-	ret = bcm_hr2_ge_phy_power(&cu, &ge, on);
-	mutex_unlock(&p->u->mdio);
-	if (ret)
-		netdev_warn(p->ndev, "PHY power %s failed: %d\n", on ? "up" : "down", ret);
-	return ret;
-}
-
-/* BMSR link (latched low: read twice) and negotiated speed from the 1000BASE-T / LPA registers. */
-static bool copper_link(struct us48_port *p, int *speed)
-{
-	struct us48_cmic *u = p->u;
-	struct bcm_cmic_unit cu = u->cu;
-	struct bcm_hr2_ge ge = ge_of(p);
-	bool up;
-
-	mutex_lock(&u->mdio);
-	up = bcm_hr2_ge_link(&cu, &ge, speed);
-	if (phy_dbg) {
-		u16 bmcr = 0, aux = 0;
-
-		bcm_cmic_miim_read(&cu, !p->cfg->external_phy, 0, p->cfg->phy, 0, &bmcr);
-		bcm_cmic_miim_read(&cu, !p->cfg->external_phy, 0, p->cfg->phy, 0x19, &aux);
-		netdev_info(p->ndev, "phy %d: BMCR %04x AUX19 %04x speed %d\n", p->cfg->phy, bmcr, aux, *speed);
-	}
-	mutex_unlock(&u->mdio);
-	return up;
-}
-
-/* One copper port, link_lock held: PHY link -> MAC up (speed from the PHY) / MAC down, carrier. */
-static void copper_poll(struct us48_port *p)
-{
-	struct bcm_cmic_unit cu = p->u->cu;
-	struct bcm_hr2_ge ge = ge_of(p);
-	int speed = 0;
-	bool up = copper_link(p, &speed);
-
-	if (up == netif_carrier_ok(p->ndev))
-		return;
-	if (up) {
-		bcm_hr2_ge_mac_up(&cu, &ge, speed);
-		WRITE_ONCE(p->speed, speed);
-		netif_carrier_on(p->ndev);
-	} else {
-		bcm_hr2_ge_mac_down(&cu, &ge);
-		netif_carrier_off(p->ndev);
-	}
-	netdev_info(p->ndev, "link %s%s\n", up ? "up" : "down",
-		    up ? (speed == 1000 ? " 1000M" : speed == 100 ? " 100M" : " 10M") : "");
-}
-
-/* Copper: only open ports (never-opened ones have no GPORT/VLAN init). xe: PCS live status 0xc154 b1 link. */
+/* xe: PCS live status 0xc154 b1 link. Copper link is phylib's (us48_cmic_phy.c: adjust_link). */
 static void link_work_fn(struct work_struct *w)
 {
 	struct us48_cmic *u = container_of(to_delayed_work(w), struct us48_cmic, link_work);
@@ -722,13 +663,8 @@ static void link_work_fn(struct work_struct *w)
 		u16 v = 0;
 		bool up;
 
-		if (p->cfg->copper) {
-			mutex_lock(&u->link_lock);
-			if (p->open && p->copper_ready)
-				copper_poll(p);
-			mutex_unlock(&u->link_lock);
+		if (p->cfg->copper)
 			continue;
-		}
 		mutex_lock(&u->mdio);
 		up = !us48_tsc_wr(u, 0xffde, p->cfg->lane) && !us48_tsc_rd(u, 0xc154, &v) && (v & BIT(1));
 		mutex_unlock(&u->mdio);
@@ -892,7 +828,7 @@ static int l2_op_cpu(struct us48_port *p, u32 op)
 
 	if (p->cfg->copper) {
 		struct bcm_cmic_unit cu = p->u->cu;
-		struct bcm_hr2_ge ge = ge_of(p);
+		struct bcm_hr2_ge ge = us48_ge_of(p);
 
 		return bcm_hr2_ge_l2_cpu(&cu, &ge, p->ndev->dev_addr, op == 0x24);
 	}
@@ -1288,8 +1224,9 @@ static int us48_open(struct net_device *nd)
 		if (ret)
 			return ret;
 		us48_sw_port_reapply(p);	/* joined a bridge before the first open */
-	} else if (p->cfg->copper) {
-		int ret = us48_copper_power(p, true);
+	}
+	if (p->cfg->copper) {
+		int ret = us48_phy_connect(p);	/* attach: octal lane init + PDN clear */
 
 		if (ret)
 			return ret;
@@ -1308,6 +1245,7 @@ static int us48_open(struct net_device *nd)
 		hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
 	}
 	netif_start_queue(nd);
+	us48_phy_start(p);
 	return 0;
 }
 
@@ -1317,18 +1255,16 @@ static int us48_stop(struct net_device *nd)
 	struct us48_cmic *u = p->u;
 
 	netif_stop_queue(nd);
+	us48_phy_stop(p);		/* link down (adjust_link: MAC off) + BMCR PDN; before link_lock (phydev -> link_lock) */
 	mutex_lock(&u->link_lock);
 	p->open = false;
-	/* Copper: MAC off and PHY powered down with the netdev; the poll skips the port until the next open. */
 	if (p->cfg->copper && netif_carrier_ok(nd)) {
 		struct bcm_cmic_unit cu = u->cu;
-		struct bcm_hr2_ge ge = ge_of(p);
+		struct bcm_hr2_ge ge = us48_ge_of(p);
 
 		bcm_hr2_ge_mac_down(&cu, &ge);
 		netif_carrier_off(nd);
 	}
-	if (p->cfg->copper && p->copper_ready)
-		us48_copper_power(p, false);
 	mutex_unlock(&u->link_lock);
 	l2_op_cpu(p, 0x26);
 	if (--u->nopen == 0) {
@@ -1383,6 +1319,7 @@ static const struct attribute_group us48_copper_group = { .attrs = us48_copper_a
 static const struct net_device_ops us48_netdev_ops = {
 	.ndo_open		= us48_open,
 	.ndo_stop		= us48_stop,
+	.ndo_eth_ioctl		= phy_do_ioctl_running,
 	.ndo_start_xmit		= us48_xmit,
 	.ndo_tx_timeout		= us48_tx_timeout,
 	.ndo_set_mac_address	= us48_set_mac,
@@ -1447,6 +1384,8 @@ void us48_remove_common(struct us48_cmic *u)
 			unregister_netdev(u->port[i]->ndev);
 			u->port[i]->registered = false;
 		}
+		if (u->port[i])
+			us48_phy_disconnect(u->port[i]);
 	}
 	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
@@ -1599,6 +1538,9 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		return ret;
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	us48_sw_unit_init(u);
+	ret = us48_mdio_register(u);	/* copper PHYs probe here and power down (BMCR PDN) until their netdev opens */
+	if (ret)
+		return ret;
 
 	for (i = 0; i < u->nports; i++) {
 		struct net_device *nd = devm_alloc_etherdev(dev, sizeof(struct us48_port));
@@ -1624,8 +1566,10 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		/* Fixed locally administered MACs: one L2 entry per port, no growth across loads. */
 		eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ 0x02, 0x75, 0x73, 0x34, 0x38, p->cfg->front });
 		strscpy(nd->name, p->cfg->name, IFNAMSIZ);
-		if (p->cfg->copper)
+		if (p->cfg->copper) {
 			nd->sysfs_groups[0] = &us48_copper_group;
+			us48_phy_netdev_init(nd);
+		}
 		netif_carrier_off(nd);
 	}
 
@@ -1639,11 +1583,9 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
-		/* Down until opened, as SDK _bcm_port_probe ("leave port disabled"); copper_enable() does VLAN + PORT_TAB. */
-		if (p->cfg->copper) {
-			us48_copper_power(p, false);
+		/* Copper is down until opened (PHY probe: SDK _bcm_port_probe "leave port disabled"); copper_enable() does VLAN + PORT_TAB. */
+		if (p->cfg->copper)
 			continue;
-		}
 		port_vlan_init(p);
 		port_tab_set(u, p->cfg->lport, p->vid, true);
 		bcm_hr2_umc_cpu_unblock(&u->cu, p->cfg->lport);	/* #127 */
@@ -1765,18 +1707,25 @@ static int __init us48_cmic_init(void)
 {
 	int ret = us48_sw_init();	/* unit 1 (us48_cmic_xe.ko) ports use it too */
 
-	if (ret || !unit0)
+	if (ret)
 		return ret;
-	ret = platform_driver_register(&us48_cmic_plat_driver);
+	ret = us48_phy_init();		/* before any MDIO bus: the PHYs bind at bus registration */
 	if (ret)
 		goto err_sw;
+	if (!unit0)
+		return 0;
+	ret = platform_driver_register(&us48_cmic_plat_driver);
+	if (ret)
+		goto err_phy;
 	unit0_pdev = platform_device_register_simple("us48_cmic_u0", -1, NULL, 0);
 	if (IS_ERR(unit0_pdev)) {
 		ret = PTR_ERR(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
-		goto err_sw;
+		goto err_phy;
 	}
 	return 0;
+err_phy:
+	us48_phy_exit();
 err_sw:
 	us48_sw_exit();
 	return ret;
@@ -1788,6 +1737,7 @@ static void __exit us48_cmic_exit(void)
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
+	us48_phy_exit();
 	us48_sw_exit();
 }
 

@@ -145,9 +145,10 @@ struct bcm_hr2_ge {
 	u16 vid;
 	bool external_phy;		/* BCM54282 octal on external MIIM bus 0, lane 0 at phy - lane */
 	bool blk_ready;
+	bool phy_managed;		/* a phylib driver (Linux) owns the PHY: bring-up does the octal top reset only */
 };
 
-/* GPORT MAC init, PHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
+/* GPORT MAC init, PHY AN start (unless phy_managed), private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
 /* Unknown multicast from lport may reach the CPU (UNKNOWN_MCAST_BLOCK_MASK_64 CPU bit 0, #127). */
 int bcm_hr2_umc_cpu_unblock(struct bcm_cmic_unit *u, int lport);
@@ -184,8 +185,6 @@ size_t bcm_hr2_u1_replay_entries(void);
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
 int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);
-/* Copper PHY power: false = MII_CTRL POWER_DOWN (peer loses link), true = PDN clear + AN restart (#133). */
-int bcm_hr2_ge_phy_power(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, bool on);
 /* GPHY link (BMSR latched, read twice); *speed = 10/100/1000 from the partner abilities. */
 bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed);
 /* MAC speed + RX/TX on (link up). */

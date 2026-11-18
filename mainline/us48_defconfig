@@ -93,6 +93,10 @@ CONFIG_VLAN_8021Q=y
 CONFIG_NET_CORE=y
 CONFIG_NETDEVICES=y
 CONFIG_ETHERNET=y
+# Copper PHYs (docs/phy.md): phylib + bcm-phy-lib (BROADCOM_PHY) for us48_cmic's own BCM54282/GPHY drivers; netlink = ethtool --cable-test
+CONFIG_PHYLIB=y
+CONFIG_BROADCOM_PHY=y
+CONFIG_ETHTOOL_NETLINK=y
 CONFIG_TUN=y
 # Route/NAT/firewall tests (docs/route-nat-fw.md): netns + nftables (nf_tables, conntrack, NAT, SW flowtable) as modules, loaded by modprobe
 CONFIG_NAMESPACES=y
