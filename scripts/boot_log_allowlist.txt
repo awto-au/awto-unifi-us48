@@ -8,3 +8,5 @@ bcm-iproc-i2c 48000000\.i2c: xfer failed  # #15 follows the 0x51 NAK
 us48_cmic: loading out-of-tree module taints kernel\.  # #41 module is out of tree until the upstream series
 us48_cmic_xe\.xe us48_pci\.cmic\.0: tsc uC mailbox ram [0-9a-f]{4} <- [0-9a-f]{4} lane \d: TIMEOUT after \d+ us \(mailbox [0-9a-f]{4}\)  # #105 xe50 lane 2 RX restart, DAC does not link
 us48_cmic_xe\.xe us48_pci\.cmic\.0: xe50: rx restart failed: -110  # #105 same
+us48_cmic_(u0 us48_cmic_u0|xe\.xe us48_pci\.cmic\.0): switchdev: L2 resync \(FIFO full\): \d+ added, \d+ removed, 0 reads failed, \d+ ms  # #57 overflow resync forced by switchdev_test burst/rate; "0 reads failed" is a count
+us48_cmic_xe\.xe us48_pci\.cmic\.0: xe49: rx restart failed: -110  # #78 post-link RX restart mailbox TIMEOUT on the optic lane, link stays up

@@ -19,7 +19,8 @@ res() {  # status name detail
 }
 rd() { cat "$1" 2>/dev/null; }
 
-# cpu: one Cortex-A9 (MIDR 0x414fc091, docs/hardware.md); clock = BogoMIPS / 2 (stock 795 BogoMIPS at 400 MHz), +-5 %
+# cpu: one Cortex-A9 (MIDR 0x414fc091, docs/hardware.md); clock = BogoMIPS, +-5 %
+# mainline: timer-based delay, BogoMIPS = 2 x global timer (PERIPHCLK = ARM / 2) = ARM MHz (docs/selftest.md)
 n=$(grep -c '^processor' "$R/proc/cpuinfo")
 imp=$(sed -n 's/^CPU implementer[^:]*: *//p' "$R/proc/cpuinfo" | head -n 1)
 part=$(sed -n 's/^CPU part[^:]*: *//p' "$R/proc/cpuinfo" | head -n 1)
@@ -29,7 +30,7 @@ else
 	res FAIL cpu "cores=$n implementer=$imp part=$part, want 1 / 0x41 / 0xc09"
 fi
 bm=$(sed -n 's/^BogoMIPS[^:]*: *\([0-9]*\).*/\1/p' "$R/proc/cpuinfo" | head -n 1)
-mhz=$((${bm:-0} / 2))
+mhz=${bm:-0}
 if [ "$mhz" -ge $((EXPECT_CPU_MHZ * 95 / 100)) ] && [ "$mhz" -le $((EXPECT_CPU_MHZ * 105 / 100)) ]; then
 	res PASS clock "~${mhz} MHz (BogoMIPS ${bm}), awto-uboot sets ${EXPECT_CPU_MHZ}"
 else

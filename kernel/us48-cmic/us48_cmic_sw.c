@@ -725,10 +725,10 @@ static void l2mod_fn(struct work_struct *w)
 	if (cnt >= L2MOD_HALF) {
 		u->l2fast++;
 		usleep_range(L2MOD_FAST_US, L2MOD_FAST_US);
-		queue_delayed_work(system_wq, &u->l2mod, 0);
+		queue_delayed_work(system_percpu_wq, &u->l2mod, 0);
 		return;
 	}
-	queue_delayed_work(system_wq, &u->l2mod, msecs_to_jiffies(L2MOD_POLL_MS));
+	queue_delayed_work(system_percpu_wq, &u->l2mod, msecs_to_jiffies(L2MOD_POLL_MS));
 }
 
 /* Pop and drop what is left (FIFO off or not yet on); count of entries dropped. */
@@ -783,7 +783,7 @@ static void l2mod_start(struct us48_cmic *u)
 	u->l2resync_at = jiffies;	/* not 0: jiffies starts 5 min before the wrap (INITIAL_JIFFIES) */
 	u->l2check_at = jiffies + secs_to_jiffies(l2_check_s);
 	u->l2mod_on = true;
-	queue_delayed_work(system_wq, &u->l2mod, 0);
+	queue_delayed_work(system_percpu_wq, &u->l2mod, 0);
 	dev_info(u->dev, "switchdev: L2 change FIFO on (AUX_ARB_CONTROL %08x -> %08x), drained every %d ms, %d us from %d%s\n",
 		 old, v, L2MOD_POLL_MS, L2MOD_FAST_US, L2MOD_HALF, left ? ", stale entries dropped" : "");
 }

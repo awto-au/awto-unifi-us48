@@ -17,22 +17,31 @@ ROOT = Path(__file__).resolve().parent.parent
 RELAY = ["/mnt/2tb/git/awto-terminal/.venv/bin/python3", str(ROOT / "scripts/relay_native.py"), _ipreg.ip("so-th-1-relay")]
 # banner -> prompt measured ~1.0 s (docs/autochain.md); 15 s = cold start incl. uboot-1 + DDR; expiry = report tail
 WINDOW_S = 15.0
+# Linux `reboot` shutdown before the reset: ~1-2 s (scripts/warm_reboot_test.py BANNER_S); 2.5 s = 1.25x 2 s, added to WINDOW_S
+REBOOT_SHUTDOWN_S = 2.5
 # one command: reply ends at the prompt; 20 s cap (8 MiB crc32 uncached ~ few s), expiry = return what came
 CMD_CAP_S = 20.0
 LOG = ROOT / "tmp/logs/u2_run.log"
 
 
-def catch_window(s: console.Session, cycle: bool = True) -> bool:
-    """Power-cycle (cycle=True), then space every 20 ms from the awto-uboot banner until its prompt. False on WINDOW_S expiry."""
-    if not cycle:  # already at the prompt
+def catch_window(s: console.Session, cycle: bool = True, reboot: bool = False) -> bool:
+    """Power-cycle (cycle=True) or type `reboot` into the Linux shell on the console (reboot=True, no power cycle),
+    then space every 20 ms from the awto-uboot banner until its prompt. False on window expiry."""
+    if reboot:
+        s.buf = b""
+        s.write(b"\rreboot\r")
+        window = WINDOW_S + REBOOT_SHUTDOWN_S
+    elif not cycle:  # already at the prompt
         s.write(b"\r")
         s.buf = s.read_idle(0.3, 2.0)
         return True
-    subprocess.run(RELAY + ["off"], check=True, capture_output=True)
-    s.buf = b""
-    subprocess.run(RELAY + ["on"], check=True, capture_output=True)
+    else:
+        subprocess.run(RELAY + ["off"], check=True, capture_output=True)
+        s.buf = b""
+        subprocess.run(RELAY + ["on"], check=True, capture_output=True)
+        window = WINDOW_S
     t0 = time.monotonic()
-    while time.monotonic() - t0 < WINDOW_S:
+    while time.monotonic() - t0 < window:
         s._pump(0.02)
         tail = s.buf[-3000:]
         i = tail.rfind(b"awto-uboot 20")

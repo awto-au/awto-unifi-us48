@@ -2,7 +2,7 @@
 """selftest_fixture — run the rootfs overlay scripts us48-health and us48-selftest against a fake /proc + /sys tree, host only (#35).
 
 Usage: selftest_fixture.py [--busybox PATH]
-- Runs the built static busybox (tmp/mainline/rootfs/bin/busybox from build_rootfs.py) under binfmt/qemu-arm: the real ash + applets.
+- Runs the built static busybox (tmp/mainline/rootfs-normal/bin/busybox from build_rootfs.py) under binfmt/qemu-arm: the real ash + applets.
 - Scenarios: healthy tree (selftest 0 FAIL, health fields, uImage CRCs vs zlib), degraded tree (hot LM75, fan error, no PCIe,
   wrong JEDEC), and three consecutive boots through a fake pstore (counter, prev=unclean, prev=clean).
 - No board, no flash. Exit 0 = all expectations met. Log: tmp/logs/selftest_fixture.log.
@@ -58,12 +58,12 @@ def uimage(name: str, data: bytes) -> bytes:
 def build_tree(bad: bool, bb: Path) -> dict:
     shutil.rmtree(FIX, ignore_errors=True)
     FIX.mkdir(parents=True)
-    conf = ROOT / "tmp/mainline/rootfs/etc/us48.conf"
+    conf = ROOT / "tmp/mainline/rootfs-normal/etc/us48.conf"
     if not conf.exists():
         sys.exit("run scripts/build_rootfs.py first (etc/us48.conf)")
     (FIX / "etc").mkdir()
     shutil.copy2(conf, FIX / "etc/us48.conf")
-    put("proc/cpuinfo", "processor\t: 0\nBogoMIPS\t: 2000.00\nCPU implementer\t: 0x41\nCPU part\t: 0xc09\n")
+    put("proc/cpuinfo", "processor\t: 0\nBogoMIPS\t: 1000.00\nCPU implementer\t: 0x41\nCPU part\t: 0xc09\n")
     put("proc/meminfo", "MemTotal:         190000 kB\n")
     put("proc/uptime", "12.34 56.78\n")
     put("proc/modules", "us48_cmic 100000 1 - Live 0x0\n")
@@ -154,7 +154,7 @@ def field(line: str, key: str) -> str:
 def main() -> int:
     help_guard(__doc__, strict=True, known=("--busybox",))
     ap = argparse.ArgumentParser()
-    ap.add_argument("--busybox", type=Path, default=ROOT / "tmp/mainline/rootfs/bin/busybox")
+    ap.add_argument("--busybox", type=Path, default=ROOT / "tmp/mainline/rootfs-normal/bin/busybox")
     a = ap.parse_args()
     if not a.busybox.exists():
         sys.exit(f"{a.busybox} missing: run scripts/build_rootfs.py first")

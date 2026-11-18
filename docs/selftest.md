@@ -41,13 +41,13 @@ Not in the line: PoE invalid-temperature counter (the hwmon driver has none), 53
 
 ## Self-test (`us48-selftest`)
 
-- One line per check: `PASS|WARN|FAIL name detail`; exit code = FAIL count (summary line excluded). Output: stdout, `/tmp/us48-selftest.log`, `logger -t us48-selftest`. Read-only; host run ~0.6 s under qemu, target < 2 s (board time not measured).
+- One line per check: `PASS|WARN|FAIL name detail`; exit code = FAIL count (summary line excluded). Output: stdout, `/tmp/us48-selftest.log`, `logger -t us48-selftest`. Read-only; target < 2 s; board run 0.37 s (normal profile, 2026-11-19, #35).
 - Boot: `S90us48-selftest` in the background. By hand: `us48-selftest; echo $?`.
 
 | Name | Check | Verdict |
 |---|---|---|
 | `cpu` | 1 processor, implementer `0x41`, part `0xc09` (MIDR `0x414fc091`, [hardware.md](hardware.md)) | FAIL otherwise |
-| `clock` | BogoMIPS / 2 within +-5 % of `EXPECT_CPU_MHZ` (stock: 795 BogoMIPS at 400 MHz, [stock-bootlog-facts.md](stock-bootlog-facts.md)) | FAIL otherwise |
+| `clock` | BogoMIPS within +-5 % of `EXPECT_CPU_MHZ` (mainline: timer-based delay on the global timer, BogoMIPS = 2 x PERIPHCLK = ARM MHz) | FAIL otherwise |
 | `mem` | `MemTotal` | PASS >= 150000 kB (256 MiB minus the 64 MiB a2 carveout, minus 1 MiB ramoops); WARN >= 100000 kB; else FAIL |
 | `thermal` | LM75 x4 and die0/die1 through the thermal zones | FAIL if a zone is unreadable or outside -20..150 C, fewer than 4 + 2 zones, LM75 >= 80 C or die >= 110 C; WARN LM75 >= 70 C or die >= 100 C |
 | `fan` | `us48_fan` `wire_level` >= 0 and `frame_errors` 0 ([fan.md](fan.md)) | FAIL not bound / no frame acked; WARN failed frames since probe |
@@ -67,5 +67,5 @@ Not in the line: PoE invalid-temperature counter (the hwmon driver has none), 53
 
 - 80 C = LM75 emergency trip of the quiet rule (fans to 100 %), 110 C = die trip, 70 C / 100 C = their hysteresis points ([fan.md](fan.md)).
 - No `i2cdetect` on `i2c-0`/`i2c-1`: hangs, pads unrouted ([board.md](board.md#i2c-topology)). The PoE FW_REV read is `i2cget` of one register on a bound device, and only with the driver present.
-- `clock` assumes `BogoMIPS = 2 x MHz` (calibrated delay loop, stock 795.44 at ~398 MHz); a timer-based delay would break it: board test 1.
+- `clock`: mainline prints `Switching to timer-based delay loop` + `1000.00 BogoMIPS (lpj=500000)` at ARM 1000 MHz (2026-11-19, #35), so BogoMIPS tracks PERIPHCLK = ARM / 2, not a calibrated loop (stock: calibrated, 795 at ~398 MHz). A PERIPHCLK ratio change breaks the check.
 - Not covered: EEPROM, DDR patterns, JSON output, per-step time bounds.
