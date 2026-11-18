@@ -267,9 +267,13 @@ def build_nft(jobs: int, stage: Path) -> None:
         src = unpack(NFTABLES, WORK / "src")
         run(["./configure", *common, "--without-cli", "--without-json", "--disable-python", "--disable-man-doc",
              "--disable-debug", "--with-mini-gmp", "LDFLAGS=-static"], cwd=src, env=env)
-        run(["make", f"-j{jobs}"], cwd=src, env=env)
+        # libtool drops a plain -static at the program link; -all-static links libc statically too (no ld-musl on the board)
+        run(["make", f"-j{jobs}", "LDFLAGS=-all-static"], cwd=src, env=env)
         run([f"{CROSS}strip", str(src / "src/nft")])
         shutil.copy2(src / "src/nft", TOOLS_BIN / "nft")
+    hdr = subprocess.run([f"{CROSS}readelf", "-l", str(TOOLS_BIN / "nft")], capture_output=True, text=True).stdout
+    if "INTERP" in hdr:
+        raise SystemExit(f"{TOOLS_BIN / 'nft'} is dynamically linked (PT_INTERP): the rootfs has no musl loader; delete it to rebuild")
     dst = stage / "usr/sbin"
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copy2(TOOLS_BIN / "nft", dst / "nft")
