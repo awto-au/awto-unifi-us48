@@ -13,7 +13,7 @@ Design and bench plan for the all-copper target: [#4](https://github.com/awto-au
 - PHYs: integrated GPHYs (`ge1`-`ge16`, `ge25`-`ge40`) on internal MIIM bus 0; BCM54282 octal (`ge17`-`ge24`, `ge41`-`ge48`) on external bus 0 `0x14`-`0x1b`; addressing [driver-internals.md](driver-internals.md) s4, octal init s7, s12.4.
 - Copper bring-up (GPORT MAC, PHY AN, private VLAN, PORT_TAB, link bitmap) runs at the first `ip link set up`; block-wide GPORT init and the octal top reset once per GPORT block. Link poll (1 s) only for open ports.
 - Every port is in a private VLAN with the CPU only (copper vid 100 + front, xe vid = front): no ASIC forwarding between ports yet.
-- HiGig: logical 28/29 (physical 30/32) on each chip, 12.73G dual-lane HiGig2. Links up with the opt-in `higig=1` knob (driver-internals 15); stack/module-id/trunk tables for unit 1 not written yet (15.4).
+- HiGig: logical 28/29 (physical 30/32) on each chip, 12.73G dual-lane HiGig2. Links up with the opt-in `higig=1` knob (driver-internals 15). Cross-chip ASIC forwarding proven with test-time stacking/VLAN writes (`scripts/asic_fwd_test.py`, driver-internals 15.4); the driver itself still writes no stacking tables.
 - Read-only PHY inventory: `echo 1 > /sys/module/us48_cmic/parameters/phy_scan` (unit 0) or `.../us48_cmic_xe/parameters/phy_scan` (unit 1), then `dmesg`. No configuration writes; the shadow/RDB reads write selectors and the RDB mode enter/exit.
 
 ## Representative-test rule (Dan, 2026-11-17)

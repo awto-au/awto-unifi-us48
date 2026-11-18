@@ -777,14 +777,22 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
 ### 15.3 Native bring-up (`us48_higig_up`, `us48_tsc_fw.c`; opt-in `echo 1 > /sys/module/us48_cmic_xe/parameters/higig`, 2 = status)
 1. XLPORT1 power-up in stock trace order, waits SDK `_soc_xgxs_reset_single_tsc` sleep_usec 1100 - 10 % (`soc/common/drv.c`), 9 ms after the PLL step (as the cold-init replay); MAC_CONTROL pulse 9 us (`hurricane2.c` `soc_hurricane2_tsc_reset` 10 us - 10 %); CONFIG 0x400, SOFT_RESET 5, MODE 0x1b, SOFT_RESET 0, ENABLE 5. C
 2. TSC1 (`u->tsc_phy` = 5 under `u->mdio`): mode 2 x 2-lane, stage 0 with div42, microcode, PLL; `0x9003` 0x1b1b, `0x9220` 0x0323; stage 2 per lane 0-3 with the 15.2 field values patched in, `0xc135` before the analog reset release. C
-3. XLMAC per port, stock B1/C1 order: ENABLE/TXFIFO pulse, CTRL 0x1800, RX_CTRL, TX_CTRL, RX_MAX_SIZE, MODE 0x42, RX_LSS_CTRL 0x70, XLPORT_CONFIG 0xe00, CTRL 0x1803, LSS clear. C
+3. XLMAC per port, stock B1/C1 order: ENABLE lane off, `EGR_PORT_CREDIT_RESET[phys 30/32]` 1, TXFIFO_CTRL 7, credit reset 0, TXFIFO_CTRL 4, ENABLE on (stock unit 0 ords 11919-11922; SDK `xlmac.c` "Reset EP credit before de-assert SOFT_RESET"), CTRL 0x1800, RX_CTRL, TX_CTRL, RX_MAX_SIZE, MODE 0x42, RX_LSS_CTRL 0x70, XLPORT_CONFIG 0xe00, CTRL 0x1803, LSS clear. C
 4. Lane enable per lane (RX_SIGDET 0x9, credits 0 then 0x4021, ANATX 0x0990, ANATX_CONTROL6 0), then per port with dual-lane AER broadcast (4 = lanes 0-1, 5 = lanes 2-3; SDK `tscmod_phyreg.c:509-516`): TX lane reset pulse `0xc113` 0x41c8 -> 0x41cb, `0xc137` 1. C
 - Not written: PFC/MACSEC/timestamp/E2EFC, any PORT_TAB/EGR_PORT/MODPORT_MAP/trunk/VLAN entry.
 - Per-lane enable (TX lane reset one lane at a time) left the far end unable to deskew one port in most runs (PCS 0x0001 = sync only); per-port broadcast fixed it. C
 - Result (RAM, 2026-11-18, 3 module reloads + bring-ups): both chips PLL 0xee03, CRC a081, `PMD_LIVE` 0x010f x4, `PCS_LIVE` 000b/0009/000b/0009 = stock, `XLMAC_RX_LSS_STATUS` 0 after one clear; a lane may need ~5 s to adapt after bring-up. ge1 and xe49 unchanged; XLMAC RPKT/TPKT unchanged while no table points at the ports. `asic_fwd_test.py survey`: ready on both chips. C
 
-### 15.4 Next for a cross-chip forwarding test (`scripts/asic_fwd_test.py`)
-- Unit 1 `PORT_TAB[28/29]` and `EGR_PORT[28/29]` = stock values (PORT_TYPE 1, HIGIG2 1, HIGIG_TRUNK 1/ID 1, MY_MODID 1) and `EGR_ENABLE` phys 30/32 = 1; unit 1 front ports' `PORT_TAB/EGR_PORT.MY_MODID` = 1 (stock 0x02000100 word 1).
-- `MODPORT_MAP_SW/IM/EM[1]` on unit 0 and `[0]` on unit 1 = 0x88; unit 1 `HG_TRUNK_BITMAP[1]` 0xc, `HG_TRUNK_GROUP[1]` 0x779de3, `E2EFC_TX/RX_RMODID` 0x80.
-- XLMAC E2EFC/PFC/timestamp regs as stock (not needed for link; needed if E2E flow control is on).
-- Then the planned VLAN 200 test (switch-model.md stage 3) with both HiGig ports in the trunk instead of one port per chip; count XLMAC RPKT/TPKT on 28/29 and GPORT counters on ge17/ge41.
+### 15.4 Cross-chip forwarding test (`scripts/asic_fwd_test.py setup|send|count|restore`)
+- Writes (`setup`, 29, each read back, restore list `tmp/fwd_test/restore.json`): unit 1 `PORT_TAB[28/29]` = stock words (`01c00001 02980110 04200010 106e4000 05f58d11 c0000000|00000000 008001ce|008001df 0`), `EGR_PORT[28/29]` 0x9c00030d/0x9d00030d, `EGR_ENABLE` phys 30/32; `MY_MODID` 1 in `PORT_TAB/EGR_PORT` of ge32/ge41; `HG_TRUNK_BITMAP[1]` 0xc, `HG_TRUNK_GROUP[1]` 0x779de3, `E2EFC_TX/RX_RMODID` 0x80; `MODPORT_MAP_SW/IM/EM` [1] on unit 0, [0] on unit 1 = 0x88; both units `EPC_LINK_BMAP_64` |= 28/29, VLAN 200 (VLAN 1 clone, members 18/28/29, UT 18 only), `PORT_TAB[18].PORT_VID` 200; unit 1 `EGR_ENABLE[phys 2]` (ge32). STG 1 already forwards 18/28/29. C
+- `EGR_ENABLE` is indexed by **physical** port (stock 26-33 = 1,0,1,0,1,0,1,0); the driver writes `EGR_ENABLE[logical]`, so unit 1 phys 2 (ge32) stays 0: ge32 TX fills MMU port 9, then the unit 1 TX DMA stalls (NETDEV WATCHDOG). C
+- Without the 15.3 credit reset, unit 0 frames reach the port 28 queue (`DYNPKTCNTPORT[28]` 60, `XQEMPTY` b0 0) and XLMAC TPKT stays 0. C
+- Result (RAM, image #107 + credit-reset module, 2026-11-18), 100 frames at 100/s each way, EtherType 0x88b5:
+  | dir | CPU TX | ingress | HG TX 28/29 | far HG RX 28/29 | egress | far ingress | far netdev |
+  |---|---|---|---|---|---|---|---|
+  | ge8 -> ge32 | ge8 100 | ge17 100 | 100/0 | 100/0 | ge41 100 | ge32 100 | 100 |
+  | ge32 -> ge8 | ge32 100 | ge41 100 | 100/0 | 100/0 | ge17 100 | ge8 100 | 100 |
+  - No copy on the source-side netdevs (ge8/ge17/ge41 in fwd); ge1 counters normal. The trunk hash picked port 28 for this flow.
+- Learning (`--learn`: CML 8/8 on ge17/ge41; with CML 0 nothing is learned on either chip): unit 0 (SVL, key FID 0) A at mod 0 port 18, B at mod 1 port 18; unit 1 (key VLAN 200) A at mod 0 port 18, B at mod 1 port 18. The reverse run then went as known unicast through `MODPORT_MAP`. C
+- `restore` writes the values back (read back), deletes the test-learned L2 entries (TABLE_DELETE 0x26), survey = pre-test state.
+- devmem S-channel races (ack of another op in MSG0, garbage reads) hit unit 1 several times per run: the tool reads twice before recording, verifies every write, and validates lookup acks.
