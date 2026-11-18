@@ -56,7 +56,6 @@ struct fld {
 #define EV_STG			FLD(60, 8)
 #define EV_PARITY		76
 #define STG_PARITY		60
-#define PT_EN_IFILTER		FLD(5, 1)
 #define PT_PORT_VID		FLD(24, 12)
 #define PT_CML_NEW		FLD(121, 4)
 #define PT_CML_MOVE		FLD(125, 4)
@@ -313,42 +312,6 @@ static int port_tab(struct us48_cmic *u, int lport, u16 vid, u8 cml)
 	ent_put(e, PT_CML_NEW, cml);
 	ent_put(e, PT_CML_MOVE, cml);
 	return mwr(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
-}
-
-static int port_ifilter(struct us48_cmic *u, int lport, bool on, bool *old)
-{
-	u32 e[8];
-	int ret = mrd(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
-
-	if (ret)
-		return ret;
-	if (old)
-		*old = ent_get(e, PT_EN_IFILTER);
-	ent_put(e, PT_EN_IFILTER, on);
-	return mwr(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
-}
-
-/*
- * PORT_TAB.EN_IFILTER = 1 on every port of the unit while it has a bridge: a non-member's tagged frame never enters a bridge
- * VLAN (a loop-cable end would loop it back). Stock value (trace PORT_TAB[2] 0x01430039 b5); SDK fb port.c pc_en_ifilter.
- */
-static void ifilter_all(struct us48_cmic *u, bool on)
-{
-	int i, bad = 0;
-
-	for (i = 0; i < u->nports; i++) {
-		int lp = u->cfgs[i].lport;
-		bool old = false;
-
-		if (on) {
-			bad += !!port_ifilter(u, lp, true, &old);
-			u->ifilt_old = old ? u->ifilt_old | BIT(lp) : u->ifilt_old & ~BIT(lp);
-		} else {
-			bad += !!port_ifilter(u, lp, u->ifilt_old & BIT(lp), NULL);
-		}
-	}
-	dev_info(u->dev, "switchdev: PORT_TAB.EN_IFILTER %s on %d ports (before: %#x)%s\n", on ? "set" : "restored", u->nports,
-		 u->ifilt_old, bad ? ": WRITE FAILED" : "");
 }
 
 /*
@@ -1140,7 +1103,6 @@ static void br_release(struct us48_cmic *u, struct us48_br *b)
 	if (!br_any(u)) {
 		l2u_bpdu_put(u);
 		l2mod_stop(u);
-		ifilter_all(u, false);
 	}
 }
 
@@ -1159,7 +1121,6 @@ static struct us48_br *br_aware_other(struct us48_cmic *u, const struct net_devi
 static struct us48_br *br_get(struct us48_cmic *u, struct net_device *br)
 {
 	struct us48_br *b = br_find(u, br);
-	bool first = !br_any(u);
 	int ret;
 
 	if (b)
@@ -1183,8 +1144,6 @@ static struct us48_br *br_get(struct us48_cmic *u, struct net_device *br)
 			l2u_bpdu_put(u);
 		return NULL;
 	}
-	if (first)
-		ifilter_all(u, true);
 	age_set(u, br_get_ageing_time(br));
 	l2mod_start(u);
 	return b;

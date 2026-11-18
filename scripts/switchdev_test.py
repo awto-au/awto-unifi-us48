@@ -6,10 +6,11 @@ Usage: switchdev_test.py <preflight|bpdu|fdb|linkdown|burst|rate|vlan|stp|mgmt|a
 - Dry-run by default (prints every board command). all = preflight, bpdu, fdb, linkdown, burst, rate, vlan, stp. mgmt runs only
   when named.
 - preflight (read only): module params, ports, slot ASIC VLANs (hwdb VID_SLOT_BASE + 0-7) free, L2_USER_ENTRY, L2_AGE_TIMER
-  (both units = stock 0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE; logs PORT_TAB.EN_IFILTER, EGR_PORT.EN_EFILTER.
+  (both units = stock 0x0010012c, #131), ING_CONFIG_64.SVL_ENABLE, PORT_TAB.EN_IFILTER 1 (set at probe, #144);
+  logs EGR_PORT.EN_EFILTER.
 - vlan (unit 0): brv{ge8, ge9} with vlan_filtering 1 before the joins, STP off; host A = ge17 in a netns (ge17 stays private).
   ge8: VID 1 PVID untagged + 10 tagged; ge9: 10 + 20 tagged (no PVID); brv self VID 10 + brv.10. First, with no tagged frame
-  out yet: ge17's EN_IFILTER 1 read back, and tagged frames out ge8 (ge8.10, DA = brv MAC) must not reach ge17's CPU while
+  out yet: EN_IFILTER 1 on ge8/ge9/ge17 (probe, #144) read back, and tagged frames out ge8 (ge8.10, DA = brv MAC) must not reach ge17's CPU while
   untagged ones do: a leak there would loop the cable. Then: ASIC VLAN/EGR_VLAN/PORT_TAB/STG read back, untagged + tagged
   pings, A learned per VID (L2X + bridge), host entries per VID, static per VID, VID 20 from A dropped by ge8's ingress
   filter (rx delta vs a VID 10 control), PVID 1 -> 10 moves untagged learning, reserved VID and a second VLAN-aware bridge
@@ -474,8 +475,8 @@ def preflight(b: Board) -> None:
     for p, lp in LP.items():
         e, pf = b.rmem("PORT_TAB", lp)
         v, gf = b.rreg("EGR_PORT", idx=lp, blk=EPIPE)
-        log(f"  {p}: PORT_TAB.EN_IFILTER {field(e, *pf['EN_IFILTER'])}, EGR_PORT.EN_EFILTER {(v >> gf['EN_EFILTER'][0]) & 1}"
-            f" (EGR_PORT {v & 0xffffffff:#010x})")
+        b.check(f"PORT_TAB[{lp}] {p} EN_IFILTER 1 (#144)", field(e, *pf["EN_IFILTER"]) == 1,
+                f"EGR_PORT.EN_EFILTER {(v >> gf['EN_EFILTER'][0]) & 1} (EGR_PORT {v & 0xffffffff:#010x})")
     trap = []
     es, f = b.rmems("L2_USER_ENTRY", range(128))
     for i, e in enumerate(es):
@@ -1141,6 +1142,9 @@ def step_vlan(b: Board) -> None:
     pre = {p: (field(b.rmem("PORT_TAB", lp)[0], *ptf["EN_IFILTER"]), stg_state(b, stg_p, p)) for p, lp in LP.items()}
     log(f"  snapshot: VLAN_TAB[1] {words(v1[0])}, EGR_VLAN[1] {words(v1[1])}; private STG {stg_p}; "
         f"(EN_IFILTER, SP_TREE) {pre}")
+    if b.apply and not b.check("vlan EN_IFILTER 1 on ge8/ge9/ge17 before the step (driver probe, #144)",
+                               all(v[0] == 1 for v in pre.values()), str(pre)):
+        raise Fail("ingress filter off on a test port: ge17 is the loop end, no tagged traffic")
     try:
         tool_push(b)
         guard_start(b, ports, VLAN_DEADMAN_S)
@@ -1156,7 +1160,7 @@ def step_vlan(b: Board) -> None:
         stg = aware_stg(b, "brv")
         if b.apply:
             e, f = b.rmem("PORT_TAB", LP["ge17"])
-            if not b.check("vlan ge17 EN_IFILTER 1 (set by the driver with the first bridge)", field(e, *f["EN_IFILTER"]) == 1,
+            if not b.check("vlan ge17 EN_IFILTER still 1 with the bridge", field(e, *f["EN_IFILTER"]) == 1,
                            f"PORT_TAB[{LP['ge17']}] {words(e)}"):
                 raise Fail("ge17 (loop end) has no ingress filter: no tagged frame towards the cable")
         b.sh(f"bridge vlan add dev ge8 vid {VID_T}; bridge vlan del dev ge9 vid 1; bridge vlan add dev ge9 vid {VID_T}; "
@@ -1295,8 +1299,8 @@ def step_vlan(b: Board) -> None:
             v1n = (b.rmem("VLAN_TAB", 1)[0], b.rmem("EGR_VLAN", 1)[0])
             post = {p: (field(b.rmem("PORT_TAB", lp)[0], *ptf["EN_IFILTER"]), stg_state(b, stg_p, p)) for p, lp in LP.items()}
             ge10 = b.sh("test -e /sys/class/net/ge10/master && echo ENSLAVED; true", quiet=True)
-            b.check("vlan teardown VLAN 1, EN_IFILTER, private-STG states = snapshot, ge10 free", v1n == v1 and post == pre
-                    and "ENSLAVED" not in ge10, f"VLAN_TAB[1] {words(v1n[0])} EGR {words(v1n[1])}; {post} (before {pre}) {ge10}")
+            b.check("vlan teardown VLAN 1, EN_IFILTER 1, private-STG states = snapshot, ge10 free", v1n == v1 and post == pre
+                    and all(v[0] == 1 for v in post.values()) and "ENSLAVED" not in ge10, f"VLAN_TAB[1] {words(v1n[0])} EGR {words(v1n[1])}; {post} (before {pre}) {ge10}")
         thermal(b, "after vlan")
 
 

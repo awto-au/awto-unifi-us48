@@ -184,7 +184,6 @@ struct us48_cmic {
 	bool l2mod_on;			/* rtnl */
 	u32 v1_vt[4], v1_ev[3];		/* VLAN_TAB/EGR_VLAN[1] before a VLAN-aware bridge took VID 1; rtnl */
 	bool v1_held;
-	u32 ifilt_old;			/* PORT_TAB.EN_IFILTER per lport before the first bridge; rtnl */
 	u32 vflush;			/* lports with a removed bridge VID: dynamic L2X entries to flush; rtnl */
 	struct work_struct vflush_work;
 };
