@@ -65,7 +65,7 @@ static struct us48_eth_priv *us48_privs[2];
 static unsigned int us48_flush_n, us48_flush_us;	/* last flush: frames taken, time */
 
 /* Unit 0 (host SoC, AXI CMIC): front 1 = logical 2, GPORT0 (block 2) lane 7, GPHY 9; VLAN 101 as the Linux driver. */
-static const struct bcm_hr2_ge ge1 = { .blk = 2, .lane = 7, .phy = 9, .lport = 2, .modid = 0, .vid = 101 };
+static const struct bcm_hr2_ge ge1 = { .blk = 2, .lane = 7, .phy = 9, .lport = 2, .phys = 9, .modid = 0, .vid = 101 };
 
 static int us48_ge_wait_link(struct us48_eth_priv *p)
 {

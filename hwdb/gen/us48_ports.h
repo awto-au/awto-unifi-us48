@@ -6,60 +6,61 @@
  * Driver port tables (struct port_cfg initialisers, kernel/us48-cmic/us48_cmic.h), one macro per unit.
  * - Rows: copper fronts (phy gphy|octal) and ports with a `linux` name; xe rows first (probe order: TSC before copper).
  * - vid: copper 100 + front (VLAN 1 = stock's); xe = front. blk: QSGMII<n> -> GPORT S-channel block 2 + n.
+ * - lport indexes PORT_TAB, VLAN/STG bitmaps, EPC_LINK_BMAP, L2X, the module header; phys indexes EGR_ENABLE (#124).
  */
 
 #define US48_PORTS_UNIT0 \
-	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 0x09 }, \
-	{ .name = "ge2", .vid = 102, .front = 2, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 0x08 }, \
-	{ .name = "ge3", .vid = 103, .front = 3, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 0x07 }, \
-	{ .name = "ge4", .vid = 104, .front = 4, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 0x06 }, \
-	{ .name = "ge5", .vid = 105, .front = 5, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 0x04 }, \
-	{ .name = "ge6", .vid = 106, .front = 6, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 0x03 }, \
-	{ .name = "ge7", .vid = 107, .front = 7, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 0x02 }, \
-	{ .name = "ge8", .vid = 108, .front = 8, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 0x01 }, \
-	{ .name = "ge9", .vid = 109, .front = 9, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 0x0b }, \
-	{ .name = "ge10", .vid = 110, .front = 10, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 0x0c }, \
-	{ .name = "ge11", .vid = 111, .front = 11, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 0x0d }, \
-	{ .name = "ge12", .vid = 112, .front = 12, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 0x0e }, \
-	{ .name = "ge13", .vid = 113, .front = 13, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 0x10 }, \
-	{ .name = "ge14", .vid = 114, .front = 14, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 0x11 }, \
-	{ .name = "ge15", .vid = 115, .front = 15, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 0x12 }, \
-	{ .name = "ge16", .vid = 116, .front = 16, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 0x13 }, \
-	{ .name = "ge17", .vid = 117, .front = 17, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true }, \
-	{ .name = "ge18", .vid = 118, .front = 18, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true }, \
-	{ .name = "ge19", .vid = 119, .front = 19, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true }, \
-	{ .name = "ge20", .vid = 120, .front = 20, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true }, \
-	{ .name = "ge21", .vid = 121, .front = 21, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true }, \
-	{ .name = "ge22", .vid = 122, .front = 22, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true }, \
-	{ .name = "ge23", .vid = 123, .front = 23, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true }, \
-	{ .name = "ge24", .vid = 124, .front = 24, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true }
+	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .phys = 9, .lane = 7, .copper = true, .blk = 2, .phy = 0x09 }, \
+	{ .name = "ge2", .vid = 102, .front = 2, .lport = 3, .phys = 8, .lane = 6, .copper = true, .blk = 2, .phy = 0x08 }, \
+	{ .name = "ge3", .vid = 103, .front = 3, .lport = 4, .phys = 7, .lane = 5, .copper = true, .blk = 2, .phy = 0x07 }, \
+	{ .name = "ge4", .vid = 104, .front = 4, .lport = 5, .phys = 6, .lane = 4, .copper = true, .blk = 2, .phy = 0x06 }, \
+	{ .name = "ge5", .vid = 105, .front = 5, .lport = 6, .phys = 5, .lane = 3, .copper = true, .blk = 2, .phy = 0x04 }, \
+	{ .name = "ge6", .vid = 106, .front = 6, .lport = 7, .phys = 4, .lane = 2, .copper = true, .blk = 2, .phy = 0x03 }, \
+	{ .name = "ge7", .vid = 107, .front = 7, .lport = 8, .phys = 3, .lane = 1, .copper = true, .blk = 2, .phy = 0x02 }, \
+	{ .name = "ge8", .vid = 108, .front = 8, .lport = 9, .phys = 2, .lane = 0, .copper = true, .blk = 2, .phy = 0x01 }, \
+	{ .name = "ge9", .vid = 109, .front = 9, .lport = 10, .phys = 10, .lane = 0, .copper = true, .blk = 3, .phy = 0x0b }, \
+	{ .name = "ge10", .vid = 110, .front = 10, .lport = 11, .phys = 11, .lane = 1, .copper = true, .blk = 3, .phy = 0x0c }, \
+	{ .name = "ge11", .vid = 111, .front = 11, .lport = 12, .phys = 12, .lane = 2, .copper = true, .blk = 3, .phy = 0x0d }, \
+	{ .name = "ge12", .vid = 112, .front = 12, .lport = 13, .phys = 13, .lane = 3, .copper = true, .blk = 3, .phy = 0x0e }, \
+	{ .name = "ge13", .vid = 113, .front = 13, .lport = 14, .phys = 14, .lane = 4, .copper = true, .blk = 3, .phy = 0x10 }, \
+	{ .name = "ge14", .vid = 114, .front = 14, .lport = 15, .phys = 15, .lane = 5, .copper = true, .blk = 3, .phy = 0x11 }, \
+	{ .name = "ge15", .vid = 115, .front = 15, .lport = 16, .phys = 16, .lane = 6, .copper = true, .blk = 3, .phy = 0x12 }, \
+	{ .name = "ge16", .vid = 116, .front = 16, .lport = 17, .phys = 17, .lane = 7, .copper = true, .blk = 3, .phy = 0x13 }, \
+	{ .name = "ge17", .vid = 117, .front = 17, .lport = 18, .phys = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true }, \
+	{ .name = "ge18", .vid = 118, .front = 18, .lport = 19, .phys = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true }, \
+	{ .name = "ge19", .vid = 119, .front = 19, .lport = 20, .phys = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true }, \
+	{ .name = "ge20", .vid = 120, .front = 20, .lport = 21, .phys = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true }, \
+	{ .name = "ge21", .vid = 121, .front = 21, .lport = 22, .phys = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true }, \
+	{ .name = "ge22", .vid = 122, .front = 22, .lport = 23, .phys = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true }, \
+	{ .name = "ge23", .vid = 123, .front = 23, .lport = 24, .phys = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true }, \
+	{ .name = "ge24", .vid = 124, .front = 24, .lport = 25, .phys = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true }
 
 #define US48_PORTS_UNIT1 \
-	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .lane = 0 }, \
-	{ .name = "xe50", .vid = 50, .front = 50, .lport = 27, .lane = 2 }, \
-	{ .name = "ge25", .vid = 125, .front = 25, .lport = 2, .lane = 7, .copper = true, .blk = 2, .phy = 0x09 }, \
-	{ .name = "ge26", .vid = 126, .front = 26, .lport = 3, .lane = 6, .copper = true, .blk = 2, .phy = 0x08 }, \
-	{ .name = "ge27", .vid = 127, .front = 27, .lport = 4, .lane = 5, .copper = true, .blk = 2, .phy = 0x07 }, \
-	{ .name = "ge28", .vid = 128, .front = 28, .lport = 5, .lane = 4, .copper = true, .blk = 2, .phy = 0x06 }, \
-	{ .name = "ge29", .vid = 129, .front = 29, .lport = 6, .lane = 3, .copper = true, .blk = 2, .phy = 0x04 }, \
-	{ .name = "ge30", .vid = 130, .front = 30, .lport = 7, .lane = 2, .copper = true, .blk = 2, .phy = 0x03 }, \
-	{ .name = "ge31", .vid = 131, .front = 31, .lport = 8, .lane = 1, .copper = true, .blk = 2, .phy = 0x02 }, \
-	{ .name = "ge32", .vid = 132, .front = 32, .lport = 9, .lane = 0, .copper = true, .blk = 2, .phy = 0x01 }, \
-	{ .name = "ge33", .vid = 133, .front = 33, .lport = 10, .lane = 0, .copper = true, .blk = 3, .phy = 0x0b }, \
-	{ .name = "ge34", .vid = 134, .front = 34, .lport = 11, .lane = 1, .copper = true, .blk = 3, .phy = 0x0c }, \
-	{ .name = "ge35", .vid = 135, .front = 35, .lport = 12, .lane = 2, .copper = true, .blk = 3, .phy = 0x0d }, \
-	{ .name = "ge36", .vid = 136, .front = 36, .lport = 13, .lane = 3, .copper = true, .blk = 3, .phy = 0x0e }, \
-	{ .name = "ge37", .vid = 137, .front = 37, .lport = 14, .lane = 4, .copper = true, .blk = 3, .phy = 0x10 }, \
-	{ .name = "ge38", .vid = 138, .front = 38, .lport = 15, .lane = 5, .copper = true, .blk = 3, .phy = 0x11 }, \
-	{ .name = "ge39", .vid = 139, .front = 39, .lport = 16, .lane = 6, .copper = true, .blk = 3, .phy = 0x12 }, \
-	{ .name = "ge40", .vid = 140, .front = 40, .lport = 17, .lane = 7, .copper = true, .blk = 3, .phy = 0x13 }, \
-	{ .name = "ge41", .vid = 141, .front = 41, .lport = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true }, \
-	{ .name = "ge42", .vid = 142, .front = 42, .lport = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true }, \
-	{ .name = "ge43", .vid = 143, .front = 43, .lport = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true }, \
-	{ .name = "ge44", .vid = 144, .front = 44, .lport = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true }, \
-	{ .name = "ge45", .vid = 145, .front = 45, .lport = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true }, \
-	{ .name = "ge46", .vid = 146, .front = 46, .lport = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true }, \
-	{ .name = "ge47", .vid = 147, .front = 47, .lport = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true }, \
-	{ .name = "ge48", .vid = 148, .front = 48, .lport = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true }
+	{ .name = "xe49", .vid = 49, .front = 49, .lport = 26, .phys = 26, .lane = 0 }, \
+	{ .name = "xe50", .vid = 50, .front = 50, .lport = 27, .phys = 28, .lane = 2 }, \
+	{ .name = "ge25", .vid = 125, .front = 25, .lport = 2, .phys = 9, .lane = 7, .copper = true, .blk = 2, .phy = 0x09 }, \
+	{ .name = "ge26", .vid = 126, .front = 26, .lport = 3, .phys = 8, .lane = 6, .copper = true, .blk = 2, .phy = 0x08 }, \
+	{ .name = "ge27", .vid = 127, .front = 27, .lport = 4, .phys = 7, .lane = 5, .copper = true, .blk = 2, .phy = 0x07 }, \
+	{ .name = "ge28", .vid = 128, .front = 28, .lport = 5, .phys = 6, .lane = 4, .copper = true, .blk = 2, .phy = 0x06 }, \
+	{ .name = "ge29", .vid = 129, .front = 29, .lport = 6, .phys = 5, .lane = 3, .copper = true, .blk = 2, .phy = 0x04 }, \
+	{ .name = "ge30", .vid = 130, .front = 30, .lport = 7, .phys = 4, .lane = 2, .copper = true, .blk = 2, .phy = 0x03 }, \
+	{ .name = "ge31", .vid = 131, .front = 31, .lport = 8, .phys = 3, .lane = 1, .copper = true, .blk = 2, .phy = 0x02 }, \
+	{ .name = "ge32", .vid = 132, .front = 32, .lport = 9, .phys = 2, .lane = 0, .copper = true, .blk = 2, .phy = 0x01 }, \
+	{ .name = "ge33", .vid = 133, .front = 33, .lport = 10, .phys = 10, .lane = 0, .copper = true, .blk = 3, .phy = 0x0b }, \
+	{ .name = "ge34", .vid = 134, .front = 34, .lport = 11, .phys = 11, .lane = 1, .copper = true, .blk = 3, .phy = 0x0c }, \
+	{ .name = "ge35", .vid = 135, .front = 35, .lport = 12, .phys = 12, .lane = 2, .copper = true, .blk = 3, .phy = 0x0d }, \
+	{ .name = "ge36", .vid = 136, .front = 36, .lport = 13, .phys = 13, .lane = 3, .copper = true, .blk = 3, .phy = 0x0e }, \
+	{ .name = "ge37", .vid = 137, .front = 37, .lport = 14, .phys = 14, .lane = 4, .copper = true, .blk = 3, .phy = 0x10 }, \
+	{ .name = "ge38", .vid = 138, .front = 38, .lport = 15, .phys = 15, .lane = 5, .copper = true, .blk = 3, .phy = 0x11 }, \
+	{ .name = "ge39", .vid = 139, .front = 39, .lport = 16, .phys = 16, .lane = 6, .copper = true, .blk = 3, .phy = 0x12 }, \
+	{ .name = "ge40", .vid = 140, .front = 40, .lport = 17, .phys = 17, .lane = 7, .copper = true, .blk = 3, .phy = 0x13 }, \
+	{ .name = "ge41", .vid = 141, .front = 41, .lport = 18, .phys = 18, .lane = 0, .copper = true, .blk = 4, .phy = 0x14, .external_phy = true }, \
+	{ .name = "ge42", .vid = 142, .front = 42, .lport = 19, .phys = 19, .lane = 1, .copper = true, .blk = 4, .phy = 0x15, .external_phy = true }, \
+	{ .name = "ge43", .vid = 143, .front = 43, .lport = 20, .phys = 20, .lane = 2, .copper = true, .blk = 4, .phy = 0x16, .external_phy = true }, \
+	{ .name = "ge44", .vid = 144, .front = 44, .lport = 21, .phys = 21, .lane = 3, .copper = true, .blk = 4, .phy = 0x17, .external_phy = true }, \
+	{ .name = "ge45", .vid = 145, .front = 45, .lport = 22, .phys = 22, .lane = 4, .copper = true, .blk = 4, .phy = 0x18, .external_phy = true }, \
+	{ .name = "ge46", .vid = 146, .front = 46, .lport = 23, .phys = 23, .lane = 5, .copper = true, .blk = 4, .phy = 0x19, .external_phy = true }, \
+	{ .name = "ge47", .vid = 147, .front = 47, .lport = 24, .phys = 24, .lane = 6, .copper = true, .blk = 4, .phy = 0x1a, .external_phy = true }, \
+	{ .name = "ge48", .vid = 148, .front = 48, .lport = 25, .phys = 25, .lane = 7, .copper = true, .blk = 4, .phy = 0x1b, .external_phy = true }
 
 #endif /* US48_PORTS_H */

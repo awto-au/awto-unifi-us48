@@ -456,7 +456,7 @@ MODULE_PARM_DESC(phy_scan, "1 = read copper status and octal-PHY vendor state on
 static struct bcm_hr2_ge ge_of(const struct us48_port *p)
 {
 	return (struct bcm_hr2_ge){ .blk = p->cfg->blk, .lane = p->cfg->lane, .phy = p->cfg->phy, .lport = p->cfg->lport,
-				    .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy };
+				    .phys = p->cfg->phys, .modid = p->u->modid, .vid = p->vid, .external_phy = p->cfg->external_phy };
 }
 
 /* Shared core (common/bcm-cmic): copper MAC init, PHY AN, private VLAN, PORT_TAB, link bitmap. First ndo_open, link_lock held. */
@@ -662,8 +662,8 @@ static void port_vlan_init(struct us48_port *p)
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(stg), 2, 60, stg_bits, 2);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, cpu_stg, 2);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, stg_bits, 2);
-	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to the port dies before the MAC. */
-	sbus(u, 0x09, BLK_EPIPE, EGR_ENABLE(lp), &one, 1);
+	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to the port dies before the MAC. Index = physical (#124). */
+	sbus(u, 0x09, BLK_EPIPE, EGR_ENABLE(p->cfg->phys), &one, 1);
 }
 
 /*
@@ -1428,7 +1428,7 @@ MODULE_PARM_DESC(sfp10g, "1 = SFP 1 (front 51, unit 0 logical 26, TSC0 lane 0) a
 
 static int us48_cmic_plat_probe(struct platform_device *pdev)
 {
-	static const struct port_cfg xe51 = { .name = "xe51", .vid = 51, .front = 51, .lport = 26, .lane = 0 };
+	static const struct port_cfg xe51 = { .name = "xe51", .vid = 51, .front = 51, .lport = 26, .phys = 26, .lane = 0 };
 	const struct port_cfg *cfgs = unit0_cfgs;
 	const struct firmware *fw = NULL;
 	struct port_cfg *c;

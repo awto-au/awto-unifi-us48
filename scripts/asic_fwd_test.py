@@ -255,9 +255,6 @@ def build_plan(learn: bool) -> Plan:
         tp = TEST[u]
         pl.rmw(u, "reg", IPIPE, epc_off, 1, lambda w: w.__setitem__(0, w[0] | 1 << 28 | 1 << 29),
                "EPC_LINK_BMAP_64 |= 28, 29", "SDK soc/common/link.c soc_link_fwd_set (bit per linked port); stock 28/29 set")
-        for p in (tp, PEER[u]):	# the driver writes EGR_ENABLE[logical]: phys 2 (ge8/ge32) stays 0 on unit 1 (#57)
-            pl.rmw(u, "mem", EPIPE, ee_base + p["phys"], 1, const([1]), f"EGR_ENABLE[phys {p['phys']}] {p['name']}",
-                   "common/bcm-cmic ge_vlan_init (EGR_ENABLE 0 drops all egress); index = phys (stock 26-33 pattern)")
         v1, e1, v200 = rd([(u, "mem", IPIPE, vt_base + 1, 4), (u, "mem", EPIPE, ev_base + 1, 3),
                            (u, "mem", IPIPE, vt_base + TEST_VID, 4)])
         if field(v200, *vtf["VALID"]):

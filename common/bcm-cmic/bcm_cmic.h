@@ -77,6 +77,7 @@ int bcm_cmic_miim_rdb_write(struct bcm_cmic_unit *u, bool internal, u32 bus, u32
  */
 /* uboot-2 port on unit 0 (this CMIC): logical 26 lane 0 = front 51, logical 27 lane 2 = front 52 (docs/port-map.md). */
 #define BCM_HR2_XE1_PORT	26
+#define BCM_HR2_XE1_PHYS	26	/* physical port of logical 26 (hwdb/board/ports.toml front 51): EGR_ENABLE index */
 #define BCM_HR2_XE1_LANE	0
 #define BCM_HR2_PRIVATE_VID	48
 #define BCM_HR2_RX_RING		32
@@ -132,6 +133,7 @@ bool bcm_hr2_tx_reap(struct bcm_cmic_unit *u, struct bcm_hr2_dma *d);
  */
 struct bcm_hr2_ge {
 	u8 blk, lane, phy, lport, modid;
+	u8 phys;			/* physical port: EGR_ENABLE is indexed by it (SDK hurricane2.c port_l2p_mapping, #124) */
 	u16 vid;
 	bool external_phy;		/* BCM54282 octal on external MIIM bus 0, lane 0 at phy - lane */
 	bool blk_ready;

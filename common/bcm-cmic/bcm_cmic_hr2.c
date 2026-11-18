@@ -42,7 +42,7 @@
 #define STG_TAB(i)		(0x14040000 + (i))
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
-#define EGR_ENABLE(p)		(0x345c0000 + (p))
+#define EGR_ENABLE(phys)	(0x345c0000 + (phys))	/* physical port index (#124) */
 #define L2X			0x1c000000	/* hashed: TABLE_INSERT, no index */
 #define UNIT1_MODID		1
 #define XE1_PORT		BCM_HR2_XE1_PORT
@@ -129,8 +129,8 @@ static void private_vlan_init(struct bcm_cmic_unit *u)
 	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_VLAN(OUR_VID), g, 3);
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(1), 2, 60, stg, 4);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(1), 2, 60, stg, 4);
-	/* Stock's port disable leaves EGR_ENABLE[27] = 0: every frame to xe1 dies before the MAC. */
-	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_ENABLE(XE1_PORT), &one, 1);
+	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to xe1 dies before the MAC. Index = physical (#124). */
+	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_ENABLE(BCM_HR2_XE1_PHYS), &one, 1);
 }
 
 /*
@@ -456,8 +456,8 @@ static void ge_vlan_init(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	smem_set_bits(u, BLK_IPIPE, STG_TAB(stg), 2, 60, stg_bits, 2);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, cpu_stg, 2);
 	smem_set_bits(u, BLK_EPIPE, EGR_VLAN_STG(stg), 2, 60, stg_bits, 2);
-	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to the port dies before the MAC. */
-	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_ENABLE(lp), &one, 1);
+	/* Stock's port disable leaves EGR_ENABLE = 0: every frame to the port dies before the MAC. Index = physical (#124). */
+	bcm_cmic_mem_write(u, BLK_EPIPE, EGR_ENABLE(ge->phys), &one, 1);
 }
 
 /* CML_FLAGS_NEW/MOVE (121:4, 125:4) 0: stock's 8 ('do HW learn') drops every unicast frame here (docs 14.4). */

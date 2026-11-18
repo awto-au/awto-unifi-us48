@@ -71,13 +71,14 @@
 #define STG_TAB(i)		(0x14040000 + (i))
 #define EGR_VLAN(i)		(0x100c0000 + (i))
 #define EGR_VLAN_STG(i)		(0x10100000 + (i))
-#define EGR_ENABLE(p)		(0x345c0000 + (p))
+#define EGR_ENABLE(phys)	(0x345c0000 + (phys))	/* physical port index (#124) */
 #define L2X			0x1c000000	/* hashed: TABLE_INSERT/DELETE, no index */
 
 /* Logical port numbers are the chip's p2l view of the physical SerDes: board.md "Physical -> logical". */
 struct port_cfg {
 	const char *name;
 	u8 front, lport, lane;
+	u8 phys;			/* physical port: EGR_ENABLE index (#124); lport for everything else */
 	bool copper;
 	u16 vid;			/* private VLAN id */
 	u8 blk, phy;			/* copper: GPORT block and MIIM PHY address */

@@ -314,6 +314,7 @@ PORTS_H_DOC = """/*
  * Driver port tables (struct port_cfg initialisers, kernel/us48-cmic/us48_cmic.h), one macro per unit.
  * - Rows: copper fronts (phy gphy|octal) and ports with a `linux` name; xe rows first (probe order: TSC before copper).
  * - vid: copper 100 + front (VLAN 1 = stock's); xe = front. blk: QSGMII<n> -> GPORT S-channel block 2 + n.
+ * - lport indexes PORT_TAB, VLAN/STG bitmaps, EPC_LINK_BMAP, L2X, the module header; phys indexes EGR_ENABLE (#124).
  */"""
 
 
@@ -323,11 +324,11 @@ def port_cfg(p):
         raise SystemExit("ports.toml front %d: lane %r not parsable" % (p["front"], p["lane"]))
     lane = int(m.group(3))
     if p["phy"] in ("gphy", "octal"):
-        return ('{ .name = "ge%d", .vid = %d, .front = %d, .lport = %d, .lane = %d, .copper = true, .blk = %d, '
-                '.phy = 0x%02x%s }' % (p["front"], 100 + p["front"], p["front"], p["logical"], lane, 2 + int(m.group(2)),
-                                       p["phy_addr"], ", .external_phy = true" if p["phy"] == "octal" else ""))
-    return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .lane = %d }' % (
-        p["linux"], p["front"], p["front"], p["logical"], lane)
+        return ('{ .name = "ge%d", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d, .copper = true, .blk = %d, '
+                '.phy = 0x%02x%s }' % (p["front"], 100 + p["front"], p["front"], p["logical"], p["phys"], lane,
+                                       2 + int(m.group(2)), p["phy_addr"], ", .external_phy = true" if p["phy"] == "octal" else ""))
+    return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d }' % (
+        p["linux"], p["front"], p["front"], p["logical"], p["phys"], lane)
 
 
 def gen_ports_c(db):
