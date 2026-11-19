@@ -1518,6 +1518,7 @@ int us48_chip_cold_init(struct device *dev, void __iomem *cmic, us48_schan_fn sc
 				 ioread32(cmic + DMA_DESC(ch)), ioread32(cmic + DMA_STAT));
 		bcm_hr2_dma_abort(&cu, ch);
 	}
+	us48_led_pre_reset(cmic, unit);
 	/* Every load: full cold init (chip reset via the TOP resets of the list), whatever state the chip is in. */
 	if (unit)
 		bcm_hr2_u1_cold_init(&cu, BCM_HR2_INIT_ALL | BCM_HR2_INIT_FORCE | BCM_HR2_INIT_CPS, &ops, &errs);

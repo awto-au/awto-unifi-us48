@@ -423,16 +423,22 @@ static void ledup_hw_init(struct us48_cmic *u)
 }
 
 /* Our program already running = module reload after boot (awto-uboot does not load LEDUP, docs/leds.md) */
-static bool ledup_ours_running(struct us48_cmic *u)
+static bool ledup_was_ours[2];
+
+/* Called by us48_chip_cold_init before its CMIC reset (CPS_RESET clears LEDUP) */
+void us48_led_pre_reset(void __iomem *cmic, int unit)
 {
 	int i;
 
-	if (!(ioread32(u->cmic + LED_CTRL) & HW_CMIC0_LEDUP_CTRL_EN_MASK))
-		return false;
+	if (unit < 0 || unit > 1)
+		return;
+	ledup_was_ours[unit] = false;
+	if (!(ioread32(cmic + LED_CTRL) & HW_CMIC0_LEDUP_CTRL_EN_MASK))
+		return;
 	for (i = 0; i < sizeof(us48_ledup_prog); i++)
-		if ((ioread32(u->cmic + LED_PRAM(i)) & 0xff) != us48_ledup_prog[i])
-			return false;
-	return true;
+		if ((ioread32(cmic + LED_PRAM(i)) & 0xff) != us48_ledup_prog[i])
+			return;
+	ledup_was_ours[unit] = true;
 }
 
 /* Probe: stop, hw init, program, clear data RAM, chain bytes + current pattern, start (stock 0x120ed64 order) */
@@ -451,7 +457,7 @@ void us48_led_unit_init(struct us48_cmic *u)
 		return;
 	lu->u = u;
 	lu->unit = unit;
-	reload = ledup_ours_running(u);
+	reload = ledup_was_ours[unit];
 	ledup_hw_init(u);
 	for (i = 0; i < LED_RAM_WORDS; i++)
 		iowrite32(i < sizeof(us48_ledup_prog) ? us48_ledup_prog[i] : 0, u->cmic + LED_PRAM(i));
