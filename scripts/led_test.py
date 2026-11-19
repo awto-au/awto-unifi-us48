@@ -5,14 +5,19 @@ Usage: led_test.py [STEP ...] [--apply] [--interactive] [--ports 1,8,17] [--host
 - Dry-run by default: prints every board command and what Dan should see, runs nothing. --apply = ssh (scripts/_board.py).
 - --interactive: after each visual step wait for Enter (answer y/n/text, logged). Without it no step waits: visual
   steps set the state, read it back from sysfs, print the expected look and move on.
-- Steps (default all, in this order): preflight button sysled ledup prog patterns ports chain links latch final
+- Steps (default all, in this order): preflight button sysled ledup prog regs patterns ports cages chain links reload
+  latch final
   - preflight: kernel objects exist (us48-leds, gpio-a, input device, LED class devices); LEDUP running per unit.
   - button: reset-button line reads high = not pressed (debugfs gpio); --interactive: press it once, 2 input events read.
-  - sysled: white on, blue on, both off, white blink; restores trigger timer/none as found.
-  - ledup: TICK advances; refresh rate from two `chain` reads (expect ~33 Hz at the reset CLK_PARAMS, I).
+  - sysled: white on, blue on (+ CCA DIN/DOUT/OUTEN readback, bit 7 = pad level), both off, white blink.
+  - ledup: TICK advances; refresh rate from two `chain` reads (22.4 Hz measured 2026-11-19).
   - prog: LEDUP0 program RAM of both units read back (devmem, read only) = kernel/us48-cmic/us48_ledup_prog.h.
+  - regs: read only: LEDUP CTRL delays 6/5 and PORT_ORDER_REMAP 0-7 = SDK/stock values (docs/leds.md).
   - patterns: on, off, booting, error, fallback, panic (sysfs pattern only, never a real panic), hw.
   - ports: each column (default every port, or --ports) forced on alone, bit 0 then bit 1; readback via `ports`.
+  - cages: SFP+ 1/2, SFP 1/2: symbols 10, 01, 11 one cage at a time (cage colour map, docs/leds.md).
+  - reload: rmmod/insmod us48_cmic: state must come back `hw`, not `booting (manual)`. Drops every port link
+    briefly; only with --interactive (ge1 = management: the ssh session reconnects).
   - chain: only with --interactive: first the stock-derived format (2 bits, front order, 28 slots, LSB first); if Dan says no, tries nbits 1/2/4 x order front/rfront/phys/rphys x pol 0/full with all cells on,
     Dan says which combination lights the panel correctly; writes nothing permanent (module reload resets).
   - links: loop cables 8<->17 (unit 0) and 32<->41 (unit 1): admin up, carrier within 5 s, `ports` link_mbps and CTL
@@ -24,6 +29,7 @@ Usage: led_test.py [STEP ...] [--apply] [--interactive] [--ports 1,8,17] [--host
 - Exit: 0 all checks passed, 1 a check failed, 2 usage/board problem. Log: tmp/logs/led_test.log
 """
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -40,7 +46,8 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tmp/logs/led_test.log"
 L = "/sys/devices/platform/us48-leds"
 WHITE, BLUE = "/sys/class/leds/white:status", "/sys/class/leds/blue:status"
-STEPS = ["preflight", "button", "sysled", "ledup", "prog", "patterns", "ports", "chain", "links", "latch", "final"]
+STEPS = ["preflight", "button", "sysled", "ledup", "prog", "regs", "patterns", "ports", "cages", "chain", "links",
+         "reload", "latch", "final"]
 _DB = hwdb.lite()
 LOOPS = [(_DB.netdev(g), _DB.netdev(o)) for _, g, o in _DB.loop_pairs()]  # loop cables, hwdb/board/ports.toml
 LINK_S = 5.0
@@ -115,7 +122,13 @@ def sysled(r: Run) -> None:
     r.sh(f"echo none > {WHITE}/trigger; echo 1 > {WHITE}/brightness; echo 0 > {BLUE}/brightness")
     r.see("system LED steady WHITE (GPIO 6 high)")
     r.sh(f"echo 0 > {WHITE}/brightness; echo 1 > {BLUE}/brightness")
-    r.see("system LED steady BLUE (GPIO 7 high)")
+    out = r.sh("devmem 0x18000060 32; devmem 0x18000064 32; devmem 0x18000068 32")  # CCA DIN, DOUT, OUTEN (read only)
+    w = [int(x, 16) for x in out.split()] if r.apply else []
+    if len(w) == 3:
+        r.log(f"CCA bit 7: DIN {w[0] >> 7 & 1} DOUT {w[1] >> 7 & 1} OUTEN {w[2] >> 7 & 1}; bit 6: DIN {w[0] >> 6 & 1}")
+        r.check(w[1] >> 7 & 1 and w[2] >> 7 & 1, "CCA 7 driven high (DOUT + OUTEN), = stock 'ready' led_pattern 1")
+        r.check(w[0] >> 7 & 1, "CCA 7 pad reads high (DIN): pin not held low / not muxed away")
+    r.see("system LED steady BLUE (CCA 7 high, CCA 6 low = stock 'ready' = syswrapper 'Solid blue')")
     r.sh(f"echo 0 > {BLUE}/brightness")
     r.see("system LED OFF (both pins low)")
     r.sh(f"echo timer > {WHITE}/trigger")
@@ -156,13 +169,39 @@ def prog(r: Run) -> None:
                 + (f", first at {bad[0]:#x}" if bad else "") + ")")
 
 
+LEDUP_CTRL, LEDUP_REMAP = 0x20000, 0x20010  # hwdb cmic0.LEDUP_CTRL / LEDUP_PORT_ORDER_REMAP
+
+
+def remap_want(i: int) -> int:
+    """SDK _hurricane2_ledup_init: ports 4i+2..4i+5, blocks starting 26/30 reversed (= stock u0 trace)."""
+    p0 = 4 * i + 2
+    ps = [p0 + 3 - k for k in range(4)] if p0 in (26, 30) else [p0 + k for k in range(4)]
+    return sum(p << (6 * k) for k, p in enumerate(ps))
+
+
+def regs(r: Run) -> None:
+    """Read only: scan delays + port remap the driver writes at probe (activity root cause, #14)."""
+    for unit in (0, 1):
+        base = hwdb.cmic_base(unit)
+        out = r.sh(" ; ".join(f"devmem 0x{base + a:x} 32" for a in [LEDUP_CTRL] + [LEDUP_REMAP + 4 * i for i in range(8)]))
+        if not r.apply:
+            continue
+        w = [int(x, 16) for x in out.split()]
+        if len(w) != 9:
+            r.check(False, f"unit{unit} LEDUP regs read ({len(w)} of 9 words)")
+            continue
+        r.check((w[0] >> 1 & 7, w[0] >> 4 & 0x3f) == (5, 6), f"unit{unit} CTRL {w[0]:#x}: intra delay 5, start delay 6")
+        bad = [i for i in range(8) if w[1 + i] != remap_want(i)]
+        r.check(not bad, f"unit{unit} PORT_ORDER_REMAP = SDK" + (f" (differ: {bad})" if bad else ""))
+
+
 def patterns(r: Run) -> None:
-    looks = {"on": "every port LED on, both colours (both bits)", "off": "every port LED off",
-             "booting": "bit-0 colour of every port blinks slowly (~0.7 Hz), rest off",
-             "error": "every port LED blinks fast (~2.8 Hz)",
-             "fallback": "bit-0 colour on, bit-1 colour blinks (~1.4 Hz)",
-             "panic": "checkerboard: per port one colour on, the other fast blink, alternating between ports",
-             "hw": "ports with link lit, others off"}
+    looks = {"on": "every port LED green (one colour: '11' is dark on copper)", "off": "every port LED off",
+             "booting": "every port green, slow blink (~0.7 Hz)",
+             "error": "every copper port and SFP+ amber (bit 1), SFP 1/2 green, fast blink (~2.8 Hz)",
+             "fallback": "same colours as error, mid blink (~1.4 Hz)",
+             "panic": "fast blink, alternating green / amber between neighbouring ports (SFP 1/2 green)",
+             "hw": "ports with link lit (green 1G copper / 10G SFP+, amber 10/100), others off; idle = steady"}
     for p, look in looks.items():
         r.sh(f"echo {p} > {L}/pattern; cat {L}/state")
         r.see(f"pattern {p}: {look}")
@@ -194,7 +233,26 @@ def ports(r: Run) -> None:
     r.sh(f"echo hw > {L}/pattern")
 
 
-STOCK = "nbits=2 pol=0 order=front extra=0 slots=28"  # stock program format (docs/ledup-stock.md)
+CAGES = {49: "SFP+ 1", 50: "SFP+ 2", 51: "SFP 1", 52: "SFP 2"}  # panel labels (docs/port-map.md)
+
+
+def cages(r: Run) -> None:
+    """Cage colour map: each cage alone with bit 0, bit 1, both. Expected per docs/leds.md (I where marked)."""
+    cols = {front: col for col, front, _ in columns(r)}
+    n = len(columns(r)) if r.apply else 52
+    expect = {49: ("green", "second colour (I)", "purple (seen in panic)"), 50: ("green", "second colour (I)", "purple"),
+              51: ("dark", "green", "green"), 52: ("dark", "green", "green")}
+    for front, label in CAGES.items():
+        col = cols.get(front, front - 1)
+        for sym, (b0, b1) in (("10", (1, 0)), ("01", (0, 1)), ("11", (1, 1))):
+            cells = ["0"] * (2 * n)
+            cells[col], cells[n + col] = "7" if b0 else "0", "7" if b1 else "0"
+            r.sh(f"echo {''.join(cells)} > {L}/pattern")
+            r.see(f"only {label} (front {front}) lit, symbol bit0={b0} bit1={b1}: expect {expect[front][('10', '01', '11').index(sym)]}; say the colour")
+    r.sh(f"echo hw > {L}/pattern")
+
+
+STOCK ="nbits=2 pol=0 order=front extra=0 slots=28"  # stock program format (docs/ledup-stock.md)
 
 
 def chain(r: Run) -> None:
@@ -238,18 +296,33 @@ def links(r: Run) -> None:
                    f"cat /sys/class/leds/{a}:green:lan/offloaded")
         r.check("1000" in out, f"{a}/{b} link_mbps 1000 in ports")
         r.check(out.strip().endswith("1"), f"{a} green LED offloaded to LEDUP (netdev trigger)")
-        r.see(f"{a} and {b}: bit-0 (green?) LED on = 1G link")
+        r.see(f"{a} and {b}: green STEADY (1G link, idle: no flicker)")
         r.sh(f"ping -6 -c 100 -i 0.02 -I {a} ff02::1 > /dev/null 2>&1; echo done")
-        r.see(f"{a} and {b} flickered during the 2 s multicast ping (activity from the scan chain)")
+        r.see(f"{a} and {b} blinked (~4.5 Hz, off 2 of 5 refreshes) only during the 2 s multicast ping, steady after")
         for ln in snap.splitlines():
             f = ln.split()
             if len(f) == 3 and f[2] == "0":
                 r.sh(f"ip link set {f[0]} down")
 
 
+def reload(r: Run) -> None:
+    if not r.interactive:
+        r.log("reload: skipped (needs --interactive: drops every port link incl. ge1 management)")
+        return
+    cmd = [sys.executable, str(ROOT / "scripts/mod_reload.py"), "us48_cmic"]  # handles ge1/ssh loss; own limits
+    r.log("$ " + " ".join(cmd))
+    if r.apply:
+        rc = subprocess.run(cmd).returncode
+        r.check(rc == 0, f"mod_reload.py us48_cmic rc {rc}")
+    out = r.sh(f"cat {L}/state; dmesg | grep 'ledup0:' | tail -2")
+    r.check(out.strip().startswith("hw") or "\nhw" in out, "state hw after module reload (not booting)")
+    r.check("reload: was running" in out, "driver saw its program running (reload detection)")
+    r.see("port LEDs show link state (hw), no slow booting blink")
+
+
 def latch(r: Run) -> None:
     r.sh(f"echo led-test > {L}/error; cat {L}/state {L}/error")
-    r.see("every port LED blinks fast (error latched)")
+    r.see("copper + SFP+ amber, SFP 1/2 green, all fast blink (error latched)")
     out = r.sh(f"echo on > {L}/pattern 2>&1; echo rc=$?")
     r.check("rc=1" in out or "busy" in out.lower(), "pattern refused while latched")
     r.sh(f"echo 1 > {L}/clear; cat {L}/state {L}/error")

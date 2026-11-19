@@ -24,9 +24,17 @@
 #define LED_CLK			HW_CMIC0_LEDUP_CLK_PARAMS
 #define LED_DRAM(i)		(HW_CMIC0_LEDUP_DATA_RAM + 4 * (i))
 #define LED_PRAM(i)		(HW_CMIC0_LEDUP_PROGRAM_RAM + 4 * (i))
-#define LED_RAM_WORDS		256
-#define LED_STATE_FIRST		0x80	/* ledproc_load (OpenBCM ledproc.c) and stock 0x120ed64 clear 0x80-0xff */
+#define LED_REMAP(i)		(HW_CMIC0_LEDUP_PORT_ORDER_REMAP + 4 * (i))
+#define LED_REMAP_REGS		8	/* ports 0-31: SDK _hurricane2_ledup_init writes REMAP_0_3 .. REMAP_28_31 */
+#define LED_RAM_WORDS		256	/* SDK _hurricane2_ledup_init zeroes all 256 data words */
 #define NSLOT_MAX		32	/* CTL 0xa0-0xbf, SPORT 0xc0-0xdf */
+#define XLPORT_LED_CHAIN_CONFIG	0x02022b00	/* regdb, INTRA_DELAY 3:0; SDK + stock trace: 6 on blocks 5 and 6 */
+#define XLPORT_LED_INTRA_DELAY	6
+#define BLK_XLPORT1		6
+
+static int booting = -1;
+module_param(booting, int, 0444);
+MODULE_PARM_DESC(booting, "port LEDs at load: -1 (default) booting pattern unless LEDUP already runs our program (module reload: hw), 1 booting, 0 hw");
 
 /* CTL byte, us48_ledup.asm */
 #define CTL_VAL(v)		((v) & 3)
@@ -47,11 +55,13 @@ enum { PAT_AUTO, PAT_HW, PAT_OFF, PAT_ON, PAT_BOOTING, PAT_ERROR, PAT_PANIC, PAT
 
 struct us48_ledu;
 
-struct us48_led {			/* one LED class device = one output bit of a port's slot */
+enum { COL_GREEN, COL_AMBER };
+
+struct us48_led {			/* one LED class device = one colour = one output bit of a port's slot */
 	struct led_classdev cdev;
 	struct us48_ledu *lu;
 	struct us48_port *p;
-	u8 bit;
+	s8 bit;				/* chain bit of this colour, -1 = no such LED (col_bit) */
 	bool hw;			/* netdev trigger offload: value from link, blanking from the scan chain */
 	unsigned long flags;		/* TRIGGER_NETDEV_* while hw */
 	bool on;
@@ -66,7 +76,7 @@ struct us48_ledu {
 	int nslot;
 	struct us48_port *slot_port[NSLOT_MAX];	/* NULL = padding slot */
 	int port_slot[MAXPORTS];
-	struct us48_led led[MAXPORTS][2];
+	struct us48_led led[MAXPORTS][2];	/* [port][COL_*] */
 	u8 cur[NSLOT_MAX];			/* CTL as last written */
 	u8 tick0;
 	unsigned long t0;
@@ -117,10 +127,26 @@ static bool flags_lit(unsigned long fl, int speed)
 	       (speed == 10000 && (fl & BIT(TRIGGER_NETDEV_LINK_10000)));
 }
 
-/* Default offload per bit: bit 0 = first bit on the wire = stock 1G/10G colour (docs/ledup-stock.md) */
-static unsigned long default_flags(int bit)
+/*
+ * Chain bit per colour (board 2026-11-19, docs/leds.md cage map): copper and unit 1 SFP+ green = bit 0, amber = bit 1
+ * ("11" is dark on copper); unit 0 SFP 1/2 green = bit 1, bit 0 lights nothing.
+ */
+static int col_bit(int unit, struct us48_port *p, int col)
 {
-	return (bit ? HW_FLAGS_SLOW : HW_FLAGS_FAST) | HW_FLAGS_ACT;
+	if (p->cfg->copper || unit)
+		return col;
+	return col == COL_GREEN ? 1 : -1;
+}
+
+/* Default offload = stock symbols (docs/ledup-stock.md): copper green 1G, SFP+ green 10G, rest the other colour */
+static unsigned long default_flags(int unit, struct us48_port *p, int col)
+{
+	if (p->cfg->copper)
+		return (col == COL_GREEN ? HW_FLAGS_FAST : HW_FLAGS_SLOW) | HW_FLAGS_ACT;
+	if (!unit)
+		return BIT(TRIGGER_NETDEV_LINK) | HW_FLAGS_ACT;
+	return (col == COL_GREEN ? BIT(TRIGGER_NETDEV_LINK_10000) : HW_FLAGS_SLOW | BIT(TRIGGER_NETDEV_LINK_1000)) |
+	       HW_FLAGS_ACT;
 }
 
 static u8 slot_policy(struct us48_ledu *lu, int s, bool all_hw)
@@ -128,25 +154,28 @@ static u8 slot_policy(struct us48_ledu *lu, int s, bool all_hw)
 	struct us48_port *p = lu->slot_port[s];
 	u8 val = 0, mask = 0, speed = 0;
 	bool act = false;
-	int i, b, sp;
+	int i, c, sp;
 
 	if (!p)
 		return 0;
 	for (i = 0; i < lu->u->nports && lu->u->port[i] != p; i++)
 		;
 	sp = port_speed(p);
-	for (b = 0; b < 2; b++) {
-		struct us48_led *l = &lu->led[i][b];
-		bool hw = all_hw || l->hw;
-		unsigned long fl = all_hw ? default_flags(b) : l->flags;
+	for (c = 0; c < 2; c++) {
+		struct us48_led *l = &lu->led[i][c];
+		unsigned long fl = all_hw ? default_flags(lu->unit, p, c) : l->flags;
+		bool lit;
 
-		if (hw) {
-			val |= flags_lit(fl, sp) << b;
-			act |= sp && (fl & HW_FLAGS_ACT);
+		if (l->bit < 0)
+			continue;
+		if (all_hw || l->hw) {
+			lit = flags_lit(fl, sp);
+			val |= lit << l->bit;
+			act |= lit && (fl & HW_FLAGS_ACT);
 		} else {
-			val |= l->on << b;
+			val |= l->on << l->bit;
 			if (l->on && l->speed) {
-				mask |= BIT(b);
+				mask |= BIT(l->bit);
 				speed = l->speed;
 			}
 		}
@@ -154,21 +183,31 @@ static u8 slot_policy(struct us48_ledu *lu, int s, bool all_hw)
 	return CTL_VAL(val) | CTL_MASK(mask) | CTL_SPEED(speed) | (act && chain.act ? CTL_ACT : 0);
 }
 
-/* Fixed patterns, cells (slot, bit) as st1008f 300-16 rows (LED0 row = bit 0) */
-static u8 slot_pattern(int pat, int s)
+static u8 blink_bit(int b, u8 sp)
 {
+	return CTL_VAL(BIT(b)) | CTL_MASK(BIT(b)) | CTL_SPEED(sp);
+}
+
+/* Fixed patterns: one colour per port at a time ("11" is dark on copper); st1008f 300-16 names */
+static u8 slot_pattern(struct us48_ledu *lu, int pat, int s)
+{
+	struct us48_port *p = lu->slot_port[s];
+	int g = col_bit(lu->unit, p, COL_GREEN), a = col_bit(lu->unit, p, COL_AMBER);
+
+	if (a < 0)
+		a = g;
 	switch (pat) {
 	case PAT_ON:
-		return CTL_VAL(3);
+		return CTL_VAL(BIT(g));
 	case PAT_BOOTING:
-		return CTL_VAL(1) | CTL_MASK(1) | CTL_SPEED(SP_SLOW);
+		return blink_bit(g, SP_SLOW);
 	case PAT_ERROR:
-		return CTL_VAL(3) | CTL_MASK(3) | CTL_SPEED(SP_FAST);
+		return blink_bit(a, SP_FAST);
 	case PAT_PANIC:
 	case PAT_PANIC2:
-		return CTL_VAL(3) | CTL_MASK(1 << ((s + (pat == PAT_PANIC2)) & 1)) | CTL_SPEED(SP_FAST);
+		return blink_bit((s + (pat == PAT_PANIC2)) & 1 ? a : g, SP_FAST);
 	case PAT_FALLBACK:
-		return CTL_VAL(3) | CTL_MASK(2) | CTL_SPEED(SP_MID);
+		return blink_bit(a, SP_MID);
 	default:
 		return 0;
 	}
@@ -186,7 +225,7 @@ static u8 slot_ctl(struct us48_ledu *lu, int s)
 	case PAT_CUSTOM:
 		return custom[lu->unit][s];
 	default:
-		return slot_pattern(mode, s);
+		return slot_pattern(lu, mode, s);
 	}
 }
 
@@ -353,12 +392,56 @@ static long us48_panic_blink(int state)
 	return 0;
 }
 
-/* Probe: stop, program, clear state RAM, chain bytes + current pattern, start (stock 0x120ed64 order, board.md) */
+/* XLPORT (cage) status into the scan chain: SDK _hurricane2_ledup_init. Probe before pwrsave; after an XLPORT0 power-up */
+void us48_led_chain_cfg(struct us48_cmic *u)
+{
+	u32 blk, v = XLPORT_LED_INTRA_DELAY;
+
+	for (blk = BLK_XLPORT; blk <= BLK_XLPORT1; blk++)
+		if (us48_sbus(u, BCM_SCHAN_WRITE_REG, blk, XLPORT_LED_CHAIN_CONFIG, &v, 1))
+			dev_warn(u->dev, "ledup: XLPORT_LED_CHAIN_CONFIG block %u write failed\n", blk);
+}
+
+/* SDK _hurricane2_ledup_init (= stock u0 trace, docs/leds.md): scan delays, port remap; EN stays clear */
+static void ledup_hw_init(struct us48_cmic *u)
+{
+	u32 v = ioread32(u->cmic + LED_CTRL);
+	int i, k;
+
+	v &= ~(HW_CMIC0_LEDUP_CTRL_EN_MASK | HW_CMIC0_LEDUP_CTRL_SCAN_INTRA_PORT_DELAY_MASK |
+	       HW_CMIC0_LEDUP_CTRL_SCAN_START_DELAY_MASK);
+	v |= 5 << HW_CMIC0_LEDUP_CTRL_SCAN_INTRA_PORT_DELAY_SHIFT | 6 << HW_CMIC0_LEDUP_CTRL_SCAN_START_DELAY_SHIFT;
+	iowrite32(v, u->cmic + LED_CTRL);
+	for (i = 0; i < LED_REMAP_REGS; i++) {
+		int p0 = 4 * i + 2;
+		bool rev = p0 == 26 || p0 == 30;	/* SDK: "Transpose MXQ Block ports" */
+
+		for (v = 0, k = 0; k < 4; k++)
+			v |= (rev ? p0 + 3 - k : p0 + k) << (HW_CMIC0_LEDUP_PORT_ORDER_REMAP_PORT1_SHIFT * k);
+		iowrite32(v, u->cmic + LED_REMAP(i));
+	}
+}
+
+/* Our program already running = module reload after boot (awto-uboot does not load LEDUP, docs/leds.md) */
+static bool ledup_ours_running(struct us48_cmic *u)
+{
+	int i;
+
+	if (!(ioread32(u->cmic + LED_CTRL) & HW_CMIC0_LEDUP_CTRL_EN_MASK))
+		return false;
+	for (i = 0; i < sizeof(us48_ledup_prog); i++)
+		if ((ioread32(u->cmic + LED_PRAM(i)) & 0xff) != us48_ledup_prog[i])
+			return false;
+	return true;
+}
+
+/* Probe: stop, hw init, program, clear data RAM, chain bytes + current pattern, start (stock 0x120ed64 order) */
 void us48_led_unit_init(struct us48_cmic *u)
 {
 	struct us48_ledu *lu;
 	unsigned long fl;
-	int i, b, unit = u->modid;
+	int i, c, unit = u->modid;
+	bool reload;
 	u32 st;
 
 	if (unit > 1)
@@ -368,51 +451,59 @@ void us48_led_unit_init(struct us48_cmic *u)
 		return;
 	lu->u = u;
 	lu->unit = unit;
-	iowrite32(ioread32(u->cmic + LED_CTRL) & ~HW_CMIC0_LEDUP_CTRL_EN_MASK, u->cmic + LED_CTRL);
+	reload = ledup_ours_running(u);
+	ledup_hw_init(u);
 	for (i = 0; i < LED_RAM_WORDS; i++)
 		iowrite32(i < sizeof(us48_ledup_prog) ? us48_ledup_prog[i] : 0, u->cmic + LED_PRAM(i));
-	for (i = LED_STATE_FIRST; i < LED_RAM_WORDS; i++)
+	for (i = 0; i < LED_RAM_WORDS; i++)
 		dram_wr(lu, i, 0);
 	for (i = 0; i < u->nports; i++) {
-		for (b = 0; b < 2; b++) {
-			struct us48_led *l = &lu->led[i][b];
+		for (c = 0; c < 2; c++) {
+			struct us48_led *l = &lu->led[i][c];
 
 			l->lu = lu;
 			l->p = u->port[i];
-			l->bit = b;
+			l->bit = col_bit(unit, l->p, c);
 			l->hw = true;
-			l->flags = default_flags(b);
+			l->flags = default_flags(unit, l->p, c);
 		}
 	}
 	spin_lock_irqsave(&led_lock, fl);
+	if (mode == PAT_BOOTING && manual && (booting == 0 || (booting < 0 && reload))) {
+		mode = PAT_AUTO;
+		manual = false;
+	}
 	unit_layout(lu);
 	spin_unlock_irqrestore(&led_lock, fl);
 	iowrite32(ioread32(u->cmic + LED_CTRL) | HW_CMIC0_LEDUP_CTRL_EN_MASK, u->cmic + LED_CTRL);
 	st = ioread32(u->cmic + LED_STATUS);
 	lu->tick0 = dram_rd(lu, US48_LEDUP_TICK);
 	lu->t0 = jiffies;
-	dev_info(u->dev, "ledup0: %zu B program, %d slots x %u bits, CTRL %08x STATUS %08x (%s), CLK_PARAMS %08x\n",
+	dev_info(u->dev, "ledup0: %zu B program, %d slots x %u bits, CTRL %08x STATUS %08x (%s), CLK_PARAMS %08x%s\n",
 		 sizeof(us48_ledup_prog), lu->nslot, chain.nbits, ioread32(u->cmic + LED_CTRL), st,
-		 st & HW_CMIC0_LEDUP_STATUS_RUNNING_MASK ? "running" : "not running", ioread32(u->cmic + LED_CLK));
+		 st & HW_CMIC0_LEDUP_STATUS_RUNNING_MASK ? "running" : "not running", ioread32(u->cmic + LED_CLK),
+		 reload ? ", reload: was running" : "");
 
 	for (i = 0; i < u->nports; i++) {
-		for (b = 0; b < 2; b++) {
-			struct us48_led *l = &lu->led[i][b];
-			struct led_classdev *c = &l->cdev;
+		for (c = 0; c < 2; c++) {
+			struct us48_led *l = &lu->led[i][c];
+			struct led_classdev *cd = &l->cdev;
 
-			snprintf(l->name, sizeof(l->name), "%s:%s:lan", u->port[i]->ndev->name, b ? "amber" : "green");
-			c->name = l->name;
-			c->max_brightness = 1;
-			c->brightness_set = ul_brightness_set;
-			c->blink_set = ul_blink_set;
-			c->hw_control_trigger = "netdev";
-			c->hw_control_is_supported = ul_hw_supported;
-			c->hw_control_set = ul_hw_set;
-			c->hw_control_get = ul_hw_get;
-			c->hw_control_get_device = ul_hw_dev;
-			c->default_trigger = "netdev";
-			c->flags = LED_RETAIN_AT_SHUTDOWN;
-			if (led_classdev_register(u->dev, c))
+			if (l->bit < 0)
+				continue;
+			snprintf(l->name, sizeof(l->name), "%s:%s:lan", u->port[i]->ndev->name, c ? "amber" : "green");
+			cd->name = l->name;
+			cd->max_brightness = 1;
+			cd->brightness_set = ul_brightness_set;
+			cd->blink_set = ul_blink_set;
+			cd->hw_control_trigger = "netdev";
+			cd->hw_control_is_supported = ul_hw_supported;
+			cd->hw_control_set = ul_hw_set;
+			cd->hw_control_get = ul_hw_get;
+			cd->hw_control_get_device = ul_hw_dev;
+			cd->default_trigger = "netdev";
+			cd->flags = LED_RETAIN_AT_SHUTDOWN;
+			if (led_classdev_register(u->dev, cd))
 				dev_warn(u->dev, "%s: LED class register failed\n", l->name);
 			else
 				l->registered = true;
@@ -707,7 +798,7 @@ static ssize_t chain_show(struct device *dev, struct device_attribute *a, char *
 			continue;
 		tick = dram_rd(lu, US48_LEDUP_TICK);
 		ms = jiffies_to_msecs(jiffies - lu->t0);
-		/* TICK wraps every 256 refreshes (~7.7 s at 30 ms): the rate is valid for reads < 7 s apart */
+		/* TICK wraps every 256 refreshes: the rate is valid only for reads closer than that (docs/leds.md) */
 		len += sysfs_emit_at(buf, len,
 				     "unit%d STATUS %08x CTRL %08x CLK_PARAMS %08x slots %d tick %u (%u in %lu ms)\n",
 				     i, ioread32(lu->u->cmic + LED_STATUS), ioread32(lu->u->cmic + LED_CTRL),

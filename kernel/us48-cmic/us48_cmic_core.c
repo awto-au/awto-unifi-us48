@@ -1642,6 +1642,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		port_tab_set(u, p->cfg->lport, p->vid, true);
 		bcm_hr2_umc_cpu_unblock(&u->cu, p->cfg->lport);	/* #127 */
 	}
+	us48_led_chain_cfg(u);	/* SDK order: _hurricane2_ledup_init before _soc_hu2_power_Optimize */
 	us48_pwr_save(u);
 	if (!sbus(u, 0x0b, BLK_IPIPE, EPC_LINK_BMAP_64, link, 2)) {
 		for (i = 0; i < u->nports; i++)
