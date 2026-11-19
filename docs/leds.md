@@ -127,9 +127,9 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 - Nothing here touches a BCM59111 register or enables a port.
 
 ### Linux interface
-- LED class `ge<N>::poe`, N = front 1-48, parent `/sys/devices/platform/us48-board-io`. Brightness 1 = field 1 (stock "802.3 power-good"). No colour in the name until BT. No upstream PoE function name (`include/dt-bindings/leds/common.h`, v7.4-rc1).
+- LED class `ge<N>::poe`, N = front 1-48, parent platform device `us48-board-io` (child of the fan spi device: `/sys/devices/platform/48001500.spi/spi_master/spi1/spi1.0/us48-board-io`; stable path `/sys/bus/platform/devices/us48-board-io`). Brightness 1 = field 1 (stock "802.3 power-good"). No colour in the name until BT. No upstream PoE function name (`include/dt-bindings/leds/common.h`, v7.4-rc1).
 - `default_trigger` = `ge<N>-poe-good`. TODO (#26): `bcm59111` registers one simple trigger per PI and fires 1 on power-good, 0 on disconnect; needs its IRQ path (`0x03` bits 7:4 / `0x07`, docs/poe-pse.md). Not registered today: LEDs keep their value. PI -> front map is I (`4(NN-1)+p+1`, poe-pse.md).
-- `/sys/devices/platform/us48-board-io/poe_pattern` (rw): 48 digits 0-2 in front order, or `off`. `poe_frame_errors` (ro): failed PoE LED frames since probe.
+- `/sys/bus/platform/devices/us48-board-io/poe_pattern` (rw): 48 digits 0-2 in front order, or `off`. `poe_frame_errors` (ro): failed PoE LED frames since probe.
 - Field 2 (passive colour) only through `poe_pattern` (tests); the passive power path itself is not implemented (poe-pse.md section 3).
 - `scripts/led_cycle.py`: chase lights the PoE LED of the chased port (field 1 green pass, 2 yellow pass); solid phase all PoE 0/1/2/1; skipped with a note when `poe_pattern` is absent.
 

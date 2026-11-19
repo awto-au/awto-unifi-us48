@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * PoE LEDs front 1-48: 2-bit field per port on chains (0,0) / (0,1), MSB first (docs/board.md "Frame layout").
- * LED class `ge<N>::poe` (brightness 1 = field 1, stock 802.3 power-good) + /sys/devices/platform/us48-board-io/
+ * LED class `ge<N>::poe` (brightness 1 = field 1, stock 802.3 power-good) + /sys/bus/platform/devices/us48-board-io/
  * poe_pattern (fields 0-2 for tests). Field 3 is never written. Design + board check: docs/leds.md "PoE LEDs".
  */
 #include <linux/ctype.h>
