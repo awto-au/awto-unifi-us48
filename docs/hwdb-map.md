@@ -918,7 +918,7 @@ Same registers as `sp804_0`.
 | `0x10` | `I2CM_S_FIFO_CTRL` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) slave FIFO; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
 | `0x38` | `I2CM_IE` | 32 | rw |  |  | C | iProc SMBus master (bcm-iproc-i2c, DT i2c@48000000) interrupt enable; kernel-owned, CMIC_CPS_RESET clears it so the CPS hook restores it | tmp/linux-mainline drivers/i2c/busses/i2c-bcm-iproc.c |
 | `0x2000` | `GP_DATA_IN` | 32 | ro |  |  | C | CMIC GP pins; GP0/GP1 select the MSPI board-IO chain (fans/LEDs) | scripts/fan_gpio_probe.py GP0; scripts/fan_frame.py; docs/board.md MSPI |
-| `0x2004` | `GP_DATA_OUT` | 32 | rw |  |  | C | fan select pins; written by kernel/us48-fan frames via us48-cmic-gpio | scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004) |
+| `0x2004` | `GP_DATA_OUT` | 32 | rw |  |  | C | MSPI chain select pins; written by kernel/us48-boardio (fan + PoE LED frames) via us48-cmic-gpio | scripts/fan_gpio_probe.py; scripts/fan_frame.py (A = unit 0 GP0 0x48002004) |
 | `0x2008` | `GP_OUT_EN` | 32 | rw |  |  | C |  | scripts/fan_gpio_probe.py (GP0 + 8); docs/edgeswitch.md (soc_reg 0x1860) |
 | `0x10094` | `SBUS_TIMEOUT` | 32 | rw |  |  | C |  | common/bcm-cmic/bcm_cmic_hr2_init.c CMIC_SBUS_TIMEOUT |
 | `0x100a0` | `SBUS_RING_MAP_16_23` | 32 | rw |  |  | C | low nibble 4 routes TOP (stock/OpenMDK 0x00005004); precondition for TOP S-channel access | docs/clock-audit.md s3 |

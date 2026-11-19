@@ -104,7 +104,8 @@ Policy is in the DT thermal zones, no daemon. Modules are loaded by `us48-therma
 | Die temperature | `kernel/us48-pvtmon` | unit 0: DT platform device, CMC1 S-channel window (CMC0 is `us48_cmic`); unit 1: aux `us48_pci.pvtmon` through the locked `us48_pci_schan`. Formula + regs: hwdb `top_pvtmon`, `PVTMON_CALC_*`. Any S-channel error, code 0 or a result outside -40..150 C = -EIO |
 | MSPI | `kernel/us48-cmic-mspi` | write-only SPI controller, polled |
 | GP pins | `kernel/us48-cmic-gpio` | 4-pin gpio-chip per unit (unit 0 platform MMIO, unit 1 aux over BAR2, link-checked) |
-| Fan | `kernel/us48-fan` | SPI client: hwmon `pwm1` (127/179/230/255 = 50/70/90/100 %) + `pwm1_enable` (1 manual, 2 thermal), cooling device `us48-fan` states 0-3 |
+| Board IO | `kernel/us48-boardio` | owns the MSPI chains: lock, select pins (read back before each frame), `us48_mspi_frame()`; PoE LEDs ([leds.md](leds.md#poe-leds-kernelus48-boardio-26)). Loaded before `us48_fan` (symbol dependency) |
+| Fan | `kernel/us48-fan` | SPI client (DT node with the select-gpios; attaches the board IO): hwmon `pwm1` (127/179/230/255 = 50/70/90/100 %) + `pwm1_enable` (1 manual, 2 thermal), cooling device `us48-fan` states 0-3. Frames byte-identical to 9480d5c: `scripts/mspi_frame_check.py` |
 | DT | `mainline/0013` | `thermal-zones`: LM75 trip 80 C active, hysteresis 10 C; die trip 110 C, hysteresis 10 C (quiet rule); maps `<&fan 3 3>`; step_wise |
 
 Every temperature source in Linux (#21; `scripts/sensors_test.py` lists them):

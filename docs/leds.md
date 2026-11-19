@@ -11,7 +11,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 | Reset button | ChipcommonA GPIO 11 (stock GPIO 15, IRQ 267), low = pressed (C: gpiodev `IRQF_TRIGGER_LOW`) | DT `gpio-keys-polled`, `KEY_RESTART` | C (board 2026-11-19) |
 | Copper link/activity 1-48 | CMIC LEDUP0 of the owning unit (C: stock loads an LEDUP program into unit 0 and unit 1, board.md) | `us48_cmic` LEDUP program + LED class devices | chain format = stock, C (board 2026-11-19) |
 | SFP+ 1/2, SFP 1/2 (49-52) | LEDUP0 chain slots 24/25: unit 1 = SFP+ 1/2, unit 0 = SFP 1/2 (C, board 2026-11-19) | own bit map: [cage LEDs](#copper-and-cage-leds-board-2026-11-19-image-8c0391a-dan) | SFP+ second colour BT |
-| PoE 1-48 | MSPI board-IO frames (0,0)/(0,1), 2 bits/port (C: board.md, poe.md section 6) | not implemented (PoE driver #26; colours unknown) | out of scope |
+| PoE 1-48 | MSPI board-IO frames (0,0)/(0,1), 2 bits/port (C: board.md, poe.md section 6) | `us48_boardio`: LED class `ge<N>::poe` + `poe_pattern` ([PoE LEDs](#poe-leds-kernelus48-boardio-26)) | colours BT; PSE trigger TODO (#26) |
 
 ## Reset button and system LED (DT mainline 0027, kernel/us48-cca-gpio)
 
@@ -105,6 +105,45 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
   - `state` is the driver's mode, not a register readback (the program has no readable per-cell mode).
   - `hw` = offload with default flags; `auto` = per-LED triggers (st1008f `auto` = its per-cage policy).
 - Boot: `S95us48-leds` writes `clear` only while `state` = booting (st1008f stage-0 rule).
+
+## PoE LEDs (kernel/us48-boardio, #26)
+
+### Hardware
+- Chains (A,B) = (0,0) front 1-24, (0,1) front 25-48; 6 B each, 2-bit field per port, MSB first: port `i` of the card -> byte `i>>2`, bits `7-2(i&3) : 6-2(i&3)` ([board.md](board.md#mspi-board-io-relation-to-fanmd), C).
+- What sits at the chain ends: not identified (I: write-only shift registers; no readback).
+- Field values, stock writers `0x5f6a40` / `0x60615c` (C code): `0` off, `1` 802.3 port with power-good, `2` port in passive mode (any state). `3` is never written. Colours: unknown (BT).
+
+### Ownership and chain safety
+- `us48_boardio` owns the MSPI chains: one mutex, both select pins (A = unit 0 GP0, B = unit 1 GP0), `us48_mspi_frame(chain, buf, len)`. Clients: `us48_fan` (`US48_MSPI_FAN0/1`) and the PoE LEDs (`US48_MSPI_POE_LED0/1`).
+  - The select-gpios sit on the fan DT node (mainline 0013), so `us48_fan` probe calls `us48_boardio_attach()` and, after its first fan frame (stock order), `us48_poe_leds_attach()`. A PoE LED failure does not fail the fan probe.
+  - Fan frames are byte-identical to the pre-boardio driver (9480d5c): `scripts/mspi_frame_check.py` compiles both against host stubs and compares every transfer (pins, length, bytes) and return code over probe, states 0-3, manual pwm, quiet / loud fail level, sensor loss, floor, write errors, unbind.
+- A PoE LED write cannot reach a (1,x) PoE mode-select frame:
+  - Chain = enum with a fixed (A, B, length) table; the length must match (6/6/7/7), so a 6-byte frame is refused for a 7-byte chain.
+  - Before every frame, under the lock: A, then B, each read back (us48_cmic_gpio returns the DATA_OUT bit of an output); a mismatch = `-EIO`, nothing sent. Stock also sets both pins before every transfer, never restores them.
+  - The PoE LED code names only `US48_MSPI_POE_LED0/1`; it never builds a 7-byte frame.
+  - Field values 0-2 only: LED class `max_brightness` 1 = field 1; `poe_pattern` digits 0-2, `3` = `-EINVAL`.
+- GP pin output enable: unchanged from `us48_fan` since 0013: `devm_gpiod_get_index(... GPIOD_OUT_HIGH/LOW)` -> us48_cmic_gpio `direction_output` writes DATA_OUT, then OUT_EN (regdb `CMIC_GP_DATA_OUT` / `CMIC_GP_OUT_EN`).
+- Writes: per card, only when the frame differs from the last acked one. Probe sends zeros on both cards (poe.md section 11 step 1). Unload: LEDs off (field 0).
+- Nothing here touches a BCM59111 register or enables a port.
+
+### Linux interface
+- LED class `ge<N>::poe`, N = front 1-48, parent `/sys/devices/platform/us48-board-io`. Brightness 1 = field 1 (stock "802.3 power-good"). No colour in the name until BT. No upstream PoE function name (`include/dt-bindings/leds/common.h`, v7.4-rc1).
+- `default_trigger` = `ge<N>-poe-good`. TODO (#26): `bcm59111` registers one simple trigger per PI and fires 1 on power-good, 0 on disconnect; needs its IRQ path (`0x03` bits 7:4 / `0x07`, docs/poe-pse.md). Not registered today: LEDs keep their value. PI -> front map is I (`4(NN-1)+p+1`, poe-pse.md).
+- `/sys/devices/platform/us48-board-io/poe_pattern` (rw): 48 digits 0-2 in front order, or `off`. `poe_frame_errors` (ro): failed PoE LED frames since probe.
+- Field 2 (passive colour) only through `poe_pattern` (tests); the passive power path itself is not implemented (poe-pse.md section 3).
+- `scripts/led_cycle.py`: chase lights the PoE LED of the chased port (field 1 green pass, 2 yellow pass); solid phase all PoE 0/1/2/1; skipped with a note when `poe_pattern` is absent.
+
+### Board check (Dan at the panel; read-only for PoE)
+Preconditions: image with `us48_boardio` + `us48_fan` from this branch. PoE stays off: no `portN_enable` / `poe_test.py enable`, `bcm59111` (main = hwmon only) not changed. Cables: only what the session needs (ge1 management).
+1. Baseline, read only: `wire_level`, `frame_errors` (fan spi device), `pwm1`, `pwm1_enable`; `poe_pattern` = 48 zeros, `poe_frame_errors` = 0; dmesg has no `select pins not set` / `PoE LED`. Per bound BCM59111: `i2cget -y -f BUS ADDR 0x12` and `0x10` (read only): `0x12` = `0x00`, `0x10` = `0x00`.
+2. After boot all 48 PoE LEDs dark. Note anything lit before Linux (power-on content unknown).
+3. `echo 1 > /sys/class/leds/ge1::poe/brightness`, then ge24, ge25, ge48 (one at a time, back to 0): the LED that lights, its colour. Confirms card split and bit order.
+4. `poe_pattern` with front 1 = `2`: colour of field 2. Then all `1`, all `2`: every LED follows.
+5. `scripts/led_cycle.py --only chase --dwell 0.05 --rounds 1`: each PoE LED walks with its port LED.
+6. Fans unaffected: fan sound unchanged through steps 3-5; `wire_level`, `frame_errors` = baseline. Then `pwm1_enable` 1, `pwm1` 255, back to 2: fans follow, PoE LEDs keep their state (chains independent).
+7. Repeat the step 1 reads: `0x12` / `0x10` unchanged, `poe_frame_errors` 0, no PD powered.
+8. `echo off > poe_pattern`; `rmmod us48_fan us48_boardio`, insmod both: LEDs off, one fan frame, no errors.
+- Record colours per field and any mismatch in #26 / #14; then name the LEDs with colours.
 
 ## Board test plan
 

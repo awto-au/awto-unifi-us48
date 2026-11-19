@@ -91,9 +91,10 @@ def t_reload() -> None:
 
 
 def t_modules() -> None:
-    out = lx("M=/lib/modules/$(uname -r); for m in us48_fan us48_pvtmon us48_cmic_mspi us48_cmic_gpio; do rmmod $m; echo rmmod $m rc=$?; done; "
-             "for m in us48_cmic_gpio us48_cmic_mspi us48_pvtmon us48_fan; do insmod $M/$m.ko; echo insmod $m rc=$?; done")
-    log("fan/pvtmon/mspi/gpio unload+reload:\n" + out.strip())
+    out = lx("M=/lib/modules/$(uname -r); for m in us48_fan us48_boardio us48_pvtmon us48_cmic_mspi us48_cmic_gpio; do rmmod $m; "
+             "echo rmmod $m rc=$?; done; for m in us48_cmic_gpio us48_cmic_mspi us48_pvtmon us48_boardio us48_fan; do "
+             "insmod $M/$m.ko; echo insmod $m rc=$?; done")
+    log("fan/boardio/pvtmon/mspi/gpio unload+reload:\n" + out.strip())
     scan("modules")
 
 
