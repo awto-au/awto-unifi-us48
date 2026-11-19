@@ -15,7 +15,7 @@ Inventory 2026-11-18 (stock 7.5.15+17146, kernel 3.6.5, uClibc 1.0.41, ARM soft-
 | linux-kernel-bde.ko | `lib/modules/3.6.5/` | CMIC map (u0 AXI 0x48000000, u1 PCIe BAR2), IRQ 194/218, DMA pool | stock-debug-cli.md (params), stock-bootlog-facts.md (MPS) | strings + OpenBCM compare; no Ghidra |
 | linux-user-bde.ko | same | LUBDE ioctls for switchdrvr; Ubiquiti-only 0x4c1d-0x4c1f (anti-clone devID / QSPI JEDEC / SFDP) | `tmp/issue66_feas.md` (6 ioctls `_IOR` vs upstream `_IO`) | partial (ABI); no Ghidra |
 | ubnthal.ko | same | EEPROM parse, board table (28 entries), /proc/ubnthal | board.md | deep |
-| gpiodev.ko | same | reset button GPIO 15, sys LED GPIO 10/11 | kernel-pse.md, board.md | deep |
+| gpiodev.ko | same | reset button GPIO 15, sys LED GPIO 10/11 (stock Linux numbers = CCA 11, 6/7) | kernel-pse.md, board.md | deep |
 | ubnt_common.ko | same | vendor helpers | kernel-pse.md | light |
 | kernel 3.6.5 (PSE `pse_plt`) | `tmp/ghidra/in/vmlinux-us48-7.5.15.elf` | PoE glue, board code | kernel-pse.md | partial/deep (PSE, GPIO) |
 | libubnt.so (+ librpcclt, libopenclt, libproc_libs) | `lib/` | RPC client to switchdrvr (usmDb*), PoE, fan | fan.md, poe.md, hardware.md | deep for fan/PoE |

@@ -176,6 +176,7 @@ int us48_pwr_xe_up(struct us48_cmic *u)
 	for (i = 0; i < u->nports; i++)
 		if (!u->port[i]->cfg->copper)
 			us48_xe_port_enable(u->port[i]);
+	us48_led_chain_cfg(u);		/* I: the power-down may lose XLPORT_LED_CHAIN_CONFIG */
 	u->xe_off = false;
 	dev_info(u->dev, "pwrsave: XLPORT0/TSC0 powered up\n");
 	return 0;

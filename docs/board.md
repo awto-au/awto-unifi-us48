@@ -221,7 +221,7 @@ Stock kernel `GPIOA` chip: base 4, 12 lines, IRQ base 256 (`0xc0f06380`). Linux 
 | 4 | 0 | PSE alarm IRQ | kernel pdata |
 | 5 | 1 | PSE card 1 IRQ | kernel pdata |
 | 6, 7 | 2, 3 | SFP presence (active low), unit 0: GPIO 6 = front 51, GPIO 7 = front 52 (see [SFP](#sfp-ports-49-52)) | `0x5f5d14` → `0x5e56cc` |
-| 10, 11 | 6, 7 | system LED: `led` bit 1 → CCA 6, bit 0 → CCA 7 | `gpiodev` `gpio_set_led`; I: colour per bit |
+| 10, 11 | 6, 7 | system LED: `led` bit 1 → CCA 6 (white), bit 0 → CCA 7 (blue) | `gpiodev` `gpio_set_led`; colours: syswrapper `set_ready_led` = pattern 1 "Solid blue", white seen on CCA 6 (board); blue not seen on this unit ([leds.md](leds.md#blue-system-led)) |
 | 12 | 8 | PSE card 0 IRQ | kernel pdata |
 | 13 | 9 | BCM59111 reset (pulse low) | ioctl op 1 `0x1087594` |
 | 15 | 11 | reset button, IRQ 267, level-low | `gpiodev` `gpio_reset_irq_setup` (`0xeb62` → 267) |

@@ -73,4 +73,5 @@ Names (OpenBCM `tools/led/example/*` convention): scan-chain status bits `RX 0`,
 
 - Kept ours (`kernel/us48-cmic/us48_ledup.asm`): the CPU owns policy (blink, per-bit offload), stock has fixed policy. Stock is not strictly better.
 - Matched to stock: bit order on the wire (LSB first, so our bit 0 = stock first bit = 1G/10G colour), 2 bits, no polarity inversion, slot order (ascending front, cages last), 28 slots (56 bits) per chain, same program on both units.
-- Differences: stock activity blank is 2 of 5 refreshes, ours alternates each refresh (when ACT is set); stock colours cages by 10G vs not, ours by the offload flags (`link_10000` for cages, no cage-speed read); stock never blinks for other conditions.
+- Activity: same as stock since #14 fix (RX|TX -> blank while PH < 2 of 5). Needs the SDK scan setup (PORT_ORDER_REMAP etc., [leds.md](leds.md)), which stock gets from `soc_hurricane2_misc_init`, not from this program.
+- Differences: stock colours cages by its speed scan bits, ours by the offload flags (defaults = stock symbols); stock never blinks for other conditions.

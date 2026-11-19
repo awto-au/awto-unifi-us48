@@ -156,8 +156,15 @@ src = "common/bcm-cmic/bcm_cmic_hr2.c CMIC_RXBUF_EP_RLS_CRED"
 offset = 0x20000
 sdk = "CMIC_LEDUP0_CTRL"
 fields = ["EN 0", "SCAN_INTRA_PORT_DELAY 3:1", "SCAN_START_DELAY 9:4"]
-desc = "CMICd LED processor 0: EN starts the program; the delays stay as found (docs/leds.md)"
-src = "regdb/hr2_regs.tsv CMIC_LEDUP0_CTRL; docs/board.md LEDUP (0x120ed64 sequence)"
+desc = "CMICd LED processor 0: EN starts the program; delays start 6 / intra 5 = SDK _hurricane2_ledup_init (stock u0 CTRL 0x6a)"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_CTRL; docs/board.md LEDUP (0x120ed64 sequence); private/reference/openbcm-hurricane2.c _hurricane2_ledup_init"
+
+[block.cmic0.reg.LEDUP_PORT_ORDER_REMAP]
+offset = 0x20010
+sdk = "CMIC_LEDUP0_PORT_ORDER_REMAP_0_3"
+fields = ["PORT0 5:0", "PORT1 11:6", "PORT2 17:12", "PORT3 23:18"]
+desc = "8 words (ports 0-31, stride 4): scan-chain slot -> port status in data RAM; reset 0 = no status. SDK: 4i+2..4i+5, 26-29 and 30-33 reversed (docs/leds.md)"
+src = "regdb/hr2_regs.tsv CMIC_LEDUP0_PORT_ORDER_REMAP_*; openbcm-hurricane2.c _hurricane2_ledup_init; tmp/mmio_stock_init.log u0 0x20010-0x2002c"
 
 [block.cmic0.reg.LEDUP_STATUS]
 offset = 0x20004

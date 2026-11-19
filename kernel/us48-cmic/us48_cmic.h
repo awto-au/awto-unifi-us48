@@ -249,6 +249,7 @@ int us48_led_init(void);
 void us48_led_exit(void);
 void us48_led_unit_init(struct us48_cmic *u);
 void us48_led_unit_exit(struct us48_cmic *u);
+void us48_led_chain_cfg(struct us48_cmic *u);	/* XLPORT LED chain delay, after an XLPORT power-up */
 /* switchdev L2 offload, stage 1 (us48_cmic_sw.c, docs/switchdev.md); rtnl held unless noted. */
 #if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 int us48_sw_init(void);			/* module init, no rtnl */
