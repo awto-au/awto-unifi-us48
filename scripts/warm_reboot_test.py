@@ -81,7 +81,7 @@ def rep(case: str, n: int, cycle: bool) -> str:
         if r.stdout.strip() != "offline":
             raise SystemExit("a2 not offline after stop")
     if case == "w":
-        lx("rmmod us48_fan us48_pvtmon us48_cmic_xe us48_cmic_gpio us48_cmic_mspi")	# their CMIC reads would stall a1 on the wedge
+        lx("rmmod us48_fan us48_boardio us48_pvtmon us48_cmic_xe us48_cmic_gpio us48_cmic_mspi")	# their CMIC reads would stall a1 on the wedge
         # adhoc run ends by hang detection (HANG_S 1 s); a2 stays 'running'
         subprocess.run([sys.executable, str(ROOT / "scripts/hwdb_gaps.py"), "adhoc", "0x48023000", "0x48023004"],
                        capture_output=True, text=True, timeout=60, cwd=ROOT)

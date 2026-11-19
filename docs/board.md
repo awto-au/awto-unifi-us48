@@ -257,7 +257,9 @@ Front 49/50 = unit 1 (BCM53346) SDK ports 26/27 (`xe0`/`xe1`), front 51/52 = uni
 
 ## MSPI board IO (relation to [fan.md](fan.md))
 
-Write-only 8-bit frames to four chains selected by two CMIC GPIO pins. Fans, PoE LEDs and port LEDs share it. C unless marked.
+Write-only 8-bit frames to four chains selected by two CMIC GPIO pins. Fans, PoE LEDs and PoE mode select share it (the "port LED" bytes are PoE mode select, [poe.md](poe.md) section 6). It is the switch chip's CMIC MSPI, not part of the BCM59111 (its 8051 firmware is an I2C-only register slave: `docs/poe-fw.md` on `wip/poe-fw-dw8051-26`). C unless marked.
+- What sits at the end of each chain is not identified (I: shift registers, see the last bullet of this section).
+- Linux: `kernel/us48-boardio` owns the chains (one lock, both select pins, chain table, pin readback); clients `us48_fan` and the PoE LEDs ([leds.md](leds.md#poe-leds-kernelus48-boardio-26)).
 
 **Controller**
 - SDK `soc_mspi_*` (`mspi.c`) on CMICm register space: SPCR0_LSB `0x1500`, STATUS `0x1520`, TXRAM `0x1540` (stride 8), RXRAM `0x15c0`, CDRAM `0x1640`. Same layout as the iProc QSPI MSPI block (`0x18027200`: TXRAM `+0x40`).

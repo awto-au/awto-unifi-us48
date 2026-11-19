@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * us48_fan: US-48-500W fans as SPI client of us48_cmic_mspi: hwmon pwm1 (4 discrete levels) + thermal cooling device.
- * Frame, select lines and levels: docs/fan.md, docs/board.md MSPI. Policy lives in the DT thermal zones (#19).
- * Default 100 % (param level = 3, Dan 2026-11-15); quiet=1 = quiet rule: level 0 on probe/failure, DT emergency trips only.
+ * us48_fan: US-48-500W fans, a client of the board-IO chains (us48_boardio): hwmon pwm1 (4 discrete levels) + thermal
+ * cooling device. Frame and levels: docs/fan.md, docs/board.md MSPI. Policy lives in the DT thermal zones (#19).
+ * Its DT node carries the select pins, so its probe attaches the board IO and starts the PoE LED client (docs/leds.md).
  */
-#include <linux/gpio/consumer.h>
 #include <linux/hwmon.h>
 #include <linux/math.h>
 #include <linux/jiffies.h>
@@ -14,12 +13,13 @@
 #include <linux/spi/spi.h>
 #include <linux/thermal.h>
 #include <linux/workqueue.h>
+#include "us48_boardio.h"
 
 #define NLEVEL		4
 #define LEVEL_FULL	(NLEVEL - 1)
 #define FRAME_LEN	7	/* byte 0 = level << 4; bytes 1..6 are PoE mode bits and must stay 0 */
 #define LEVEL_SHIFT	4
-#define NGROUP		2	/* chain (A=1,B=0) = unit 0 fans, (A=1,B=1) = unit 1 fans */
+#define NGROUP		2	/* chain US48_MSPI_FAN0 (A=1,B=0) = unit 0 fans, FAN1 (A=1,B=1) = unit 1 fans */
 /* Sensor check period (WATCH_MS): LM75 and die temperatures move by degrees per minute. */
 #define WATCH_MS	2000
 
@@ -39,7 +39,6 @@ static const u8 duty_pct[NLEVEL] = { 50, 70, 90, 100 };	/* firmware labels, docs
 
 struct fan {
 	struct spi_device *spi;
-	struct gpio_desc *sel_a, *sel_b;
 	struct mutex lock;
 	unsigned int req;		/* level asked by the thermal core */
 	unsigned int manual;		/* level asked through pwm1 */
@@ -98,11 +97,8 @@ static int fan_frame(struct fan *f, unsigned int level)
 	u8 buf[FRAME_LEN] = { level << LEVEL_SHIFT };
 	int g, ret = 0;
 
-	gpiod_set_value_cansleep(f->sel_a, 1);
-	for (g = 0; g < NGROUP && !ret; g++) {
-		gpiod_set_value_cansleep(f->sel_b, g);
-		ret = spi_write(f->spi, buf, sizeof(buf));
-	}
+	for (g = 0; g < NGROUP && !ret; g++)
+		ret = us48_mspi_frame(US48_MSPI_FAN0 + g, buf, sizeof(buf));
 	return ret;
 }
 
@@ -304,18 +300,9 @@ static int fan_probe(struct spi_device *spi)
 	ret = of_property_read_string_array(dev->of_node, "us48,watch-zones", f->zones, f->nzones);
 	if (ret < 0)
 		return ret;
-	/* A = 1 selects the fan/LED chains of both chips, B picks the chip; stock default levels 1/0 are not assumed */
-	f->sel_a = devm_gpiod_get_index(dev, "select", 0, GPIOD_OUT_HIGH);
-	if (IS_ERR(f->sel_a))
-		return dev_err_probe(dev, PTR_ERR(f->sel_a), "select A\n");
-	f->sel_b = devm_gpiod_get_index(dev, "select", 1, GPIOD_OUT_LOW);
-	if (IS_ERR(f->sel_b))
-		return dev_err_probe(dev, PTR_ERR(f->sel_b), "select B\n");
-	spi->mode = SPI_MODE_3;	/* stock soc_mspi_config: CPOL 1, CPHA 1, 8 bit */
-	spi->bits_per_word = 8;
-	ret = spi_setup(spi);
+	ret = us48_boardio_attach(spi);
 	if (ret)
-		return dev_err_probe(dev, ret, "spi_setup\n");
+		return ret;
 
 	/* Fail level (0 quiet) until the sensors read; the first watch pass moves to the requested level */
 	mutex_lock(&f->lock);
@@ -323,6 +310,10 @@ static int fan_probe(struct spi_device *spi)
 	mutex_unlock(&f->lock);
 	if (ret)
 		return dev_err_probe(dev, ret, "first frame\n");
+	/* PoE LED frames after the first fan frame (stock order, docs/board.md); a PoE LED failure keeps the fans */
+	ret = us48_poe_leds_attach(dev);
+	if (ret)
+		dev_warn(dev, "PoE LEDs not attached: %d\n", ret);
 	cdev = devm_thermal_of_cooling_device_register(dev, 0, "us48-fan", f, &fan_cdev_ops);
 	if (IS_ERR(cdev))
 		return dev_err_probe(dev, PTR_ERR(cdev), "cooling device\n");

@@ -32,7 +32,7 @@
   - `S04us48-net`: insmod `us48_cmic unit0=1`, `us48_pci`, `us48_cmic_xe`; ge1/xe49/xe50 up, ge1 `192.168.25.207/24` (ip-registry `us48-boot`).
   - `S05us48-sfp`: insmod `us48_cmic_gpio`, `us48_cca_gpio` (gpio-chips the built-in sfp sockets wait for), `bcm59111` (PoE chip temperatures, read-only hwmon); #21, [board.md](board.md#sfp-ports-49-52).
   - `S10us48-dma`: insmod `us48_idm_reset` (reset controller, DT `dmac_idm`), then `pl330` (DT `resets`; #84). Explicit insmod like the other scripts: no udev/depmod in the image, so DT/modalias autoload does not exist. Board 2026-11-16: `Num_Chans-8` probed on a cold boot.
-  - `S14us48-thermal`: insmod `us48_cmic_gpio` (if S05 did not), `us48_cmic_mspi`, `us48_pvtmon`, `us48_fan` (fans: `docs/fan.md`).
+  - `S14us48-thermal`: insmod `us48_cmic_gpio` (if S05 did not), `us48_cmic_mspi`, `us48_pvtmon`, `us48_boardio`, `us48_fan` (fans: `docs/fan.md`; board IO + PoE LEDs: `docs/leds.md`).
   - `S20dropbear`: `dropbear -R -s -g -p 22`; `/root/.ssh/authorized_keys` = `mainline/rootfs/authorized_keys` (public keys).
   - `S90us48-selftest`: `us48-selftest` in the background (`docs/selftest.md`).
 - `/usr/sbin/us48-poe`, `us48-poe-off`: present, not run at boot (bench image keeps the PoE state stock left; run `us48-poe-off` by hand). `i2cget/i2cset -f`: `bcm59111` is bound to the chips.

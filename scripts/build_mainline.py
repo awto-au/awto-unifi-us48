@@ -354,7 +354,8 @@ MODULES = [("kernel/us48-pci", ["us48_pci.ko"]), ("kernel/us48-a2", ["us48_a2.ko
            ("kernel/us48-cmic", ["us48_cmic.ko", "us48_cmic_xe.ko"]),
            ("kernel/us48-cmic-gpio", ["us48_cmic_gpio.ko"]), ("kernel/us48-cca-gpio", ["us48_cca_gpio.ko"]),
            ("kernel/us48-cmic-mspi", ["us48_cmic_mspi.ko"]), ("kernel/bcm59111", ["bcm59111.ko"]),
-           ("kernel/us48-pvtmon", ["us48_pvtmon.ko"]), ("kernel/us48-fan", ["us48_fan.ko"]),
+           ("kernel/us48-pvtmon", ["us48_pvtmon.ko"]), ("kernel/us48-boardio", ["us48_boardio.ko"]),
+           ("kernel/us48-fan", ["us48_fan.ko"]),
            ("kernel/us48-idm-reset", ["us48_idm_reset.ko"])]
 
 
