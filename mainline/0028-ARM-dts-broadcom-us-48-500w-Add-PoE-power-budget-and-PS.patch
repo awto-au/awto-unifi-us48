@@ -1,0 +1,490 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@selwyn>
+Date: Thu, 19 Nov 2026 03:00:00 +1100
+Subject: [PATCH 28/28] ARM: dts: broadcom: us-48-500w: Add PoE power budget and PSE
+ PIs
+
+Add the 436 W PoE budget as fixed regulators (total, one per PoE card) and
+the four pse-pi nodes of each BCM59111, with the front port range of every
+chip in a comment. The PIs have no pairsets or ports: the ge ports have no
+phy_device a pses phandle could be attached to.
+
+Signed-off-by: TODO
+---
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -246,6 +246,36 @@
+ 	};
+ 
+ 	/*
++	 * PoE power budget: 500 W PSU - 64 W reserved = 436 W (ubnthal, docs/poe.md 7), one supply per PoE card below it.
++	 * The 54 V is nominal. The per-card limit equals the total: the real split between the cards is unknown.
++	 */
++	poe_total: regulator-poe-total {
++		compatible = "regulator-fixed";
++		regulator-name = "poe-total";
++		regulator-min-microvolt = <54000000>;
++		regulator-max-microvolt = <54000000>;
++		regulator-power-budget-milliwatt = <436000>;
++	};
++
++	poe_card0: regulator-poe-card0 {
++		compatible = "regulator-fixed";
++		regulator-name = "poe-card0";
++		regulator-min-microvolt = <54000000>;
++		regulator-max-microvolt = <54000000>;
++		regulator-power-budget-milliwatt = <436000>;
++		vin-supply = <&poe_total>;
++	};
++
++	poe_card1: regulator-poe-card1 {
++		compatible = "regulator-fixed";
++		regulator-name = "poe-card1";
++		regulator-min-microvolt = <54000000>;
++		regulator-max-microvolt = <54000000>;
++		regulator-power-budget-milliwatt = <436000>;
++		vin-supply = <&poe_total>;
++	};
++
++	/*
+ 	 * SFP cages: presence = ChipcommonA GPIO 2/3 of the owning chip (low = present), TX disable = its CMIC GP pin 2/3
+ 	 * (high while empty in stock). LOS and TX fault are not wired to a readable pin: module status bits only.
+ 	 */
+@@ -343,36 +373,216 @@
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x28>;
+ 					label = "PoE-01";
++
++					/* PIs 0..3 = channels 1..4 = front ports 1..4 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@29 {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x29>;
+ 					label = "PoE-02";
++
++					/* PIs 0..3 = channels 1..4 = front ports 5..8 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2a {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2a>;
+ 					label = "PoE-03";
++
++					/* PIs 0..3 = channels 1..4 = front ports 9..12 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2b {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2b>;
+ 					label = "PoE-04";
++
++					/* PIs 0..3 = channels 1..4 = front ports 13..16 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2c {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2c>;
+ 					label = "PoE-05";
++
++					/* PIs 0..3 = channels 1..4 = front ports 17..20 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2d {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2d>;
+ 					label = "PoE-06";
++
++					/* PIs 0..3 = channels 1..4 = front ports 21..24 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card0>;
++						};
++					};
+ 				};
+ 			};
+ 
+@@ -386,36 +596,216 @@
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x28>;
+ 					label = "PoE-07";
++
++					/* PIs 0..3 = channels 1..4 = front ports 25..28 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@29 {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x29>;
+ 					label = "PoE-08";
++
++					/* PIs 0..3 = channels 1..4 = front ports 29..32 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2a {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2a>;
+ 					label = "PoE-09";
++
++					/* PIs 0..3 = channels 1..4 = front ports 33..36 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2b {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2b>;
+ 					label = "PoE-10";
++
++					/* PIs 0..3 = channels 1..4 = front ports 37..40 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2c {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2c>;
+ 					label = "PoE-11";
++
++					/* PIs 0..3 = channels 1..4 = front ports 41..44 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 
+ 				ethernet-pse@2d {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x2d>;
+ 					label = "PoE-12";
++
++					/* PIs 0..3 = channels 1..4 = front ports 45..48 (stock port map, board test) */
++					pse-pis {
++						#address-cells = <1>;
++						#size-cells = <0>;
++
++						pse-pi@0 {
++							reg = <0>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@1 {
++							reg = <1>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@2 {
++							reg = <2>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++
++						pse-pi@3 {
++							reg = <3>;
++							#pse-cells = <0>;
++							vpwr-supply = <&poe_card1>;
++						};
++					};
+ 				};
+ 			};
+ 
+-- 
+2.52.0
+

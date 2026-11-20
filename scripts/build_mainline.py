@@ -300,6 +300,8 @@ def stage_rootfs() -> str:
             shutil.copy2(fw, stage / "lib/firmware" / fw.name)
     # TSC SerDes microcode (OpenMDK ucode, scripts/gen_tsc.py): always staged; us48_cmic_xe request_firmware()s it
     shutil.copy2(ROOT / "hwdb/firmware/us48-tsc.bin", stage / "lib/firmware/us48-tsc.bin")
+    # BCM59111 PoE firmware v21 (hwdb/firmware/README.md): request_firmware() of kernel/bcm59111 with fw_load=1
+    shutil.copy2(ROOT / "hwdb/firmware/bcm59111-v21.bin", stage / "lib/firmware/bcm59111-v21.bin")
     return str(write_initramfs_list(stage))
 
 
