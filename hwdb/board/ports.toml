@@ -1,6 +1,7 @@
 # Front-panel port map: one [[port]] per front port 1-52 plus internal HiGig 28/29 on both chips (front = 0).
 # Fields: front, loop_peer (front on the other end of a loop cable), role (management|unit1_probe), id, label, unit, logical, phys, phy (gphy|octal|none|higig), phy_bus, phy_addr, lane, sdk, linux, src, conf.
 # xe fronts 49-52 only: tx_polarity / rx_polarity (bool, default false) = invert that TSC lane's TX / RX (generated as .tx_pol/.rx_pol in us48_ports.h).
+# xe fronts only: speed_cap (Mb/s, optional) = cage rated speed, below the 10G default; 1000 = 1000BASE-X (generated as .max_speed, #78).
 # Top level: mac_prefix (driver MAC = prefix:<front hex>, generated into us48_ports.h).
 # Sources: docs/board.md Port map, docs/driver-internals.md s13, OpenBCM p2l_mapping_24_2_2; switchdrvr FastPath table VA 0x1d8ecb4 checked by scripts/us48_portmap.py.
 
@@ -775,6 +776,7 @@ phy = "none"
 lane = "TSC lane 0"
 sdk = "ge24"
 linux = "xe51"
+speed_cap = 1000  # "SFP" cage: SDK SKU cap 1G (hurricane2.c:2503), stock runs 1G only; 10G TX unreliable (#78 2026-11-20)
 tx_polarity = true  # verified: link to sw1 lan6 at 10G with 0xc011 TXPOL_FLIP on lane 0, nothing else helped (#78, board test 2026-11-20)
 rx_polarity = false
 src = "docs/port-map.md; docs/board.md Port map; kernel/us48-cmic (xe49/xe50); uboot-port BCM_HR2_XE1_PORT"
@@ -791,6 +793,7 @@ phy = "none"
 lane = "TSC lane 2"
 sdk = "ge25"
 linux = "xe52"
+speed_cap = 1000  # as front 51
 tx_polarity = false
 rx_polarity = false
 note = "tx/rx polarity unverified: no peer on this cage (#78)"

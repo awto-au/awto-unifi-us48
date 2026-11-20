@@ -149,6 +149,7 @@ static void xe_power_down(struct us48_cmic *u)
 	for (i = 0; i < u->nports; i++)
 		if (!u->port[i]->cfg->copper) {
 			u->port[i]->fw_mode = -1;	/* TSC state lost; us48_tsc_init sets 0 again */
+			u->port[i]->an_1g = -1;
 			u->port[i]->rx_tuned = false;
 		}
 	u->xe_off = true;

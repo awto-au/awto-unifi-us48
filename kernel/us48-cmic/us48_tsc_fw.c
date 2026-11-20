@@ -4,6 +4,7 @@
  * download, stage 1 check, stage 2. Steps = OpenMDK bcmi_tsc_xgxs_drv.c via us48_tsc_init.h (scripts/gen_tsc.py).
  * Microcode = request_firmware("us48-tsc.bin"). docs/driver-internals.md 9.
  */
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/module.h>
@@ -178,17 +179,53 @@ static int tsc_download(struct us48_cmic *u, const struct firmware *fw)
 	return ret;
 }
 
-static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lane, u8 lane_mask,
-		   const struct firmware *fw)
+/*
+ * 1000BASE-X (8b/10b, CL37) values for the stage 2 rows of the same reg + mask; PLL stays div66 (10.3125 G), the lane
+ * runs OS 8.25 (0xc137 OS_MODE 7). Sources: OM bcmi_tsc_xgxs_drv.c _tsc_credit/encode/decode_set FV_adr_1000M (plldiv 66);
+ * stock-warm unit 0 TSC0 lanes 0/2 (tmp/higig/stock.txt, a1/l0 = a1/l2): c100 40a5, c103 0029, c111 000c, c113 01cb,
+ * c114 0004, c130 2cb0, c134 0073, c136 0001, c137 003a, c254 0220, c181 0016, c184 0000. docs/driver-internals.md 9.4.
+ */
+static const struct { u16 reg, mask, val; } tsc_1g_patch[] = {
+	{ 0xc100, 0xffff, 0x40a5 },	/* TX_X4_CREDIT0: CLOCKCNT0 0xa5, CREDITENABLE, SGMII_SPD_SWITCH 0 */
+	{ 0xc101, 0xffff, 0x8200 },	/* TX_X4_CREDIT1: OM rsv 0x82 (10G 0x84); reads back 0 on stock */
+	{ 0xc103, 0x1fff, 0x0029 },	/* TX_X4_MAC_CREDITGENCNT */
+	{ 0xc111, 0x1e1c, 0x000c },	/* TX_X4_ENCODE_0 ENCODEMODE 3 = CL36 8b/10b */
+	{ 0xc113, 0xc000, 0x0000 },	/* TX_X4_MISC SCR_MODE 0 = no scrambler */
+	{ 0xc114, 0x0004, 0x0004 },	/* TX_X4_CL36_TX_0 DISABLE_PACKET_MISALIGN */
+	{ 0xc130, 0xfff8, 0x2cb0 },	/* RX_X4_PCS_CONTROL_0: decode 5, deskew 4, desc2 5, byte delete 2 (CL36) */
+	{ 0xc134, 0xbe07, 0x0003 },	/* RX_X4_DECODE_CONTROL_0 BLOCK_SYNC_MODE 3 (10b8b), no CL48 sync acquire */
+	{ 0xc136, 0x0007, 0x0001 },	/* RX_X4_CL36_RX_0 CL36_EN */
+	{ 0xc137, 0x007a, 0x003a },	/* RX_X4_PMA_CONTROL_0 OS_MODE 7 (8.25), RX_GBOX_AFRST_EN */
+	{ 0xc181, 0x02c3, 0x0002 },	/* CL37_BASE_ABIL: SGMII_SPEED 2 (1G), no pause advertised (MAC pause not programmed) */
+	{ 0xc184, 0xffff, 0x0000 },	/* OVER1G_ABIL_0: no BAM 2.5G */
+	{ 0xc254, 0x3f00, 0x0200 },	/* CL72_MISC2_CONTROL SW_ACTUAL_SPEED 0x02 = 1000M (FV_adr_1000M) */
+};
+
+/* Stage 3 (speed_set 10G) rows that do not apply at 1G: SW_ACTUAL_SPEED, ANATX drive, TX FIR (OM txdrv 6GOS2 = stage 2 values). */
+static bool tsc_1g_skip(const struct tsc_step *s)
 {
-	int i, ret = 0;
+	return s->op == TSC_RMW && !s->devad && (s->reg == 0xc254 || s->reg == 0xc017 || s->reg == 0xc252);
+}
+
+static int tsc_run(struct us48_cmic *u, const struct tsc_step *st, int n, u8 lane, u8 lane_mask,
+		   const struct firmware *fw, bool g1)
+{
+	int i, j, ret = 0;
 	u16 v = 0, m;
 
 	for (i = 0; !ret && i < n; i++) {
 		switch (st[i].op) {
-		case TSC_RMW:
-			ret = tsc_rmw(u, &st[i], lane);
+		case TSC_RMW: {
+			struct tsc_step s = st[i];
+
+			if (g1 && tsc_1g_skip(&s))
+				break;
+			for (j = 0; g1 && j < ARRAY_SIZE(tsc_1g_patch); j++)
+				if (s.reg == tsc_1g_patch[j].reg && s.mask == tsc_1g_patch[j].mask && s.scope == TSC_LANE)
+					s.val = tsc_1g_patch[j].val;
+			ret = tsc_rmw(u, &s, lane);
 			break;
+		}
 		case TSC_DELAY:
 			tsc_delay(st[i].val);
 			break;
@@ -286,23 +323,30 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 		iowrite32(1 << 16 | max(tsc_mdc_div, 2u), u->cmic + HW_CMIC0_RATE_ADJUST_INT_MDIO);
 	mutex_lock(&u->mdio);
 	/* PhyConfig_Mode: 4 x 1-lane ports (PORT_MODE_SEL 0, SINGLE_PORT_MODE 0). */
-	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, tsc_stage0, ARRAY_SIZE(tsc_stage0), 0, STAGE0_LANE_MASK, fw);
+	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, tsc_stage0, ARRAY_SIZE(tsc_stage0), 0, STAGE0_LANE_MASK, fw, false);
 	for (i = 0; !ret && i < u->nports; i++) {
-		if (u->cfgs[i].copper)
+		const struct port_cfg *c = &u->cfgs[i];
+		bool g1;
+
+		if (c->copper)
 			continue;
-		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
-		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
+		g1 = us48_cfg_1g(c);
+		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), c->lane, BIT(c->lane), fw, g1);
+		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), c->lane, BIT(c->lane), fw, g1);
 		/* Board lane polarity (hwdb, #78): ANATX_ACONTROL0 TXPOL_FLIP b5, ANARX_ACONTROL0 RXPOL_FLIP b15; analog, live */
-		if (!ret && u->cfgs[i].tx_pol)
-			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc011, .mask = BIT(5), .val = BIT(5) }, u->cfgs[i].lane);
-		if (!ret && u->cfgs[i].rx_pol)
-			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc021, .mask = BIT(15), .val = BIT(15) }, u->cfgs[i].lane);
+		if (!ret && c->tx_pol)
+			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc011, .mask = BIT(5), .val = BIT(5) }, c->lane);
+		if (!ret && c->rx_pol)
+			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc021, .mask = BIT(15), .val = BIT(15) }, c->lane);
 		/* FIRMWARE_MODE 0 (OM SFI, stage 0 value) until pcs_config sees a DAC in the cage */
 		if (!ret) {
-			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);
-			if (xe_port(u, i))
+			dev_info(u->dev, "tsc %s: stage 2 + speed set (%s) done\n", c->name, g1 ? "1000BASE-X" : "10G SFI");
+			if (xe_port(u, i)) {
 				xe_port(u, i)->fw_mode = 0;
+				xe_port(u, i)->an_1g = -1;
+			}
 		}
+		ret = ret ?: (g1 ? us48_xe_mac_1g(u, c) : 0);
 	}
 	mutex_unlock(&u->mdio);
 	return ret;
@@ -407,12 +451,12 @@ static int hg_tsc(struct us48_cmic *u, const struct firmware *fw)
 	}
 	mutex_lock(&u->mdio);
 	u->tsc_phy = TSC1_PHY;
-	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, s0, n0, 0, 0xf, fw);
+	ret = tsc_rmw_one(u, &mode, 0) ?: tsc_run(u, s0, n0, 0, 0xf, fw, false);
 	/* lane map 0x9003 = 0x1b1b and RX_X1 DECODE_CONTROL_0 0x9220 = 0x0323 (stock-warm; cfg_seq:3217 for 12773) */
 	ret = ret ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0x9003, .mask = 0xffff, .val = 0x1b1b }, 0);
 	ret = ret ?: tsc_rmw_one(u, &(struct tsc_step){ .reg = 0x9220, .mask = 0xffff, .val = 0x0323 }, 0);
 	for (l = 0; !ret && l < HG_NLANES; l++)
-		ret = tsc_run(u, s2, n2, l, BIT(l), fw);
+		ret = tsc_run(u, s2, n2, l, BIT(l), fw, false);
 	u->tsc_phy = 0;
 	mutex_unlock(&u->mdio);
 	kfree(s0);
@@ -469,6 +513,98 @@ static int hg_mac(struct us48_cmic *u, u8 l)
 	       hg_wr(u, XLPORT_CONFIG(l), 0xe00, 0, 1) ?:		/* HIGIG_MODE + HIGIG2_MODE + HONOR_PAUSE_FOR_E2E */
 	       hg_wr(u, XLMAC_CTRL(l), 0x1803, 0, 2) ?:		/* TX_EN RX_EN, SOFT_RESET 0, SW_LINK_STATUS */
 	       hg_wr(u, XLMAC_CLR_RX_LSS(l), 3, 0, 2) ?: hg_wr(u, XLMAC_CLR_RX_LSS(l), 0, 0, 2);
+}
+
+/*
+ * ---- 1000BASE-X on unit 0 xe51/xe52 (#78). Sources: OM bcmi_tsc_xgxs_drv.c (_tsc_autoneg_control_set, _tsc_xgxs_autoneg_set,
+ * speed_set 1000M), stock unit 0 trace docs/init-phases-u0.md B1, SDK xlmac.c mac_xl_speed_set. docs/driver-internals.md 9.4.
+ */
+#define XLMAC_SPEED_MODE_MASK	GENMASK(6, 4)	/* XLMAC_MODE SPEED_MODE; init-phases-u0 XLMAC_MODE 0x20 = 2, 0x40 = 4 */
+#define XLMAC_SPEED_1000	2		/* SDK xlmac.c:55 SOC_XLMAC_SPEED_1000 */
+#define XLMAC_RX_LSS_1G		0x73		/* stock unit 0 ord 57787: 0x70 + LOCAL/REMOTE_FAULT_DISABLE (SDK xlmac.c:1243-1248) */
+
+/* XLMAC of the lane to 1G, MAC parked (probe / power-up, before port_enable): SPEED_MODE 2, LSS as stock. */
+int us48_xe_mac_1g(struct us48_cmic *u, const struct port_cfg *c)
+{
+	u32 v[2] = {};
+	int ret = us48_sbus(u, 0x0b, BLK_XLPORT, XLMAC_MODE(c->lane), v, 2);
+
+	v[0] = (v[0] & ~XLMAC_SPEED_MODE_MASK) | FIELD_PREP(XLMAC_SPEED_MODE_MASK, XLMAC_SPEED_1000);
+	ret = ret ?: us48_sbus(u, 0x0d, BLK_XLPORT, XLMAC_MODE(c->lane), v, 2);
+	v[0] = XLMAC_RX_LSS_1G;
+	v[1] = 0;
+	ret = ret ?: us48_sbus(u, 0x0d, BLK_XLPORT, XLMAC_RX_LSS_CTRL(c->lane), v, 2);
+	if (ret)
+		dev_err(u->dev, "%s: XLMAC 1G mode failed: %d\n", c->name, ret);
+	return ret;
+}
+
+#define ENABLES_REG		0xc180
+#define  EN_AN_SETUP		BIT(14)
+#define  EN_AN_TYPES		GENMASK(11, 6)	/* CL37 BAM, CL73 BAM/HPAM/CL73, CL37 SGMII, CL37 (OM: all but CL37 cleared) */
+#define  EN_CL37		BIT(6)
+#define  EN_CL37_RESTART	BIT(1)
+#define CL37_BASE_ABIL_REG	0xc181
+#define CONTROLS_REG		0xc188
+#define  CTRL_PD_KX_EN		BIT(1)
+#define PMA_CONTROL_REG		0xc137
+#define  PMA_OVERRIDE_OS_MODE	BIT(7)
+
+static int tsc_one(struct us48_cmic *u, u8 lane, u16 reg, u16 mask, u16 val)
+{
+	return tsc_rmw_one(u, &(struct tsc_step){ .reg = reg, .mask = mask, .val = val }, lane);
+}
+
+/*
+ * CL37 AN on/off for one 1G lane (OM autoneg_control_set CL37_10G = 1000BASE-X at PLL div66: OS mode overridden to 8.25 so
+ * the base page is received at 1.25 Gbaud; CL37 base ability FD only; PD_KX_EN so a forced-1G partner still links).
+ */
+int us48_tsc_1g_an(struct us48_port *p, bool an)
+{
+	struct us48_cmic *u = p->u;
+	u8 l = p->cfg->lane;
+	int ret;
+
+	mutex_lock(&u->mdio);
+	if (an)
+		ret = tsc_one(u, l, PMA_CONTROL_REG, PMA_OVERRIDE_OS_MODE, PMA_OVERRIDE_OS_MODE) ?:
+		      tsc_one(u, l, ENABLES_REG, EN_AN_SETUP | EN_AN_TYPES | GENMASK(13, 12) | EN_CL37_RESTART, EN_AN_SETUP) ?:
+		      tsc_one(u, l, CL37_BASE_ABIL_REG, BIT(8) | BIT(4) | BIT(2), BIT(4)) ?:
+		      tsc_one(u, l, CONTROLS_REG, CTRL_PD_KX_EN, CTRL_PD_KX_EN) ?:
+		      tsc_one(u, l, ENABLES_REG, EN_AN_TYPES | EN_CL37_RESTART, EN_CL37 | EN_CL37_RESTART) ?:
+		      tsc_one(u, l, ENABLES_REG, EN_CL37_RESTART, 0);
+	else
+		ret = tsc_one(u, l, PMA_CONTROL_REG, PMA_OVERRIDE_OS_MODE, 0) ?:
+		      tsc_one(u, l, ENABLES_REG, EN_AN_TYPES | EN_CL37_RESTART, 0) ?:
+		      tsc_one(u, l, CONTROLS_REG, CTRL_PD_KX_EN, 0);
+	mutex_unlock(&u->mdio);
+	netdev_info(p->ndev, "1000BASE-X: CL37 AN %s: %d\n", an ? "on" : "off (forced 1G FD)", ret);
+	if (!ret)
+		p->an_1g = an;
+	return ret;
+}
+
+void us48_tsc_1g_an_restart(struct us48_port *p)
+{
+	struct us48_cmic *u = p->u;
+
+	mutex_lock(&u->mdio);
+	tsc_one(u, p->cfg->lane, ENABLES_REG, EN_CL37_RESTART, EN_CL37_RESTART);
+	tsc_one(u, p->cfg->lane, ENABLES_REG, EN_CL37_RESTART, 0);
+	mutex_unlock(&u->mdio);
+}
+
+/* c154 PCS_LIVE (b1 link), c1ac AN_MISC_STATUS (b15 AN_COMPLETE), c198 LP_BASE_PAGE1 (raw CL37 base page word). */
+int us48_tsc_1g_status(struct us48_port *p, u16 *live, u16 *an_misc, u16 *lp)
+{
+	struct us48_cmic *u = p->u;
+	int ret;
+
+	mutex_lock(&u->mdio);
+	ret = us48_tsc_wr(u, TSC_AER, p->cfg->lane) ?: us48_tsc_rd(u, 0xc154, live) ?: us48_tsc_rd(u, 0xc1ac, an_misc) ?:
+	      us48_tsc_rd(u, 0xc198, lp);
+	mutex_unlock(&u->mdio);
+	return ret;
 }
 
 int us48_higig_up(struct us48_cmic *u, const struct firmware *fw)

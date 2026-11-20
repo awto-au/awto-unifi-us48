@@ -112,7 +112,9 @@ static int port_speed(struct us48_port *p)
 {
 	if (!netif_carrier_ok(p->ndev))
 		return 0;
-	return p->cfg->copper ? READ_ONCE(p->speed) : 10000;
+	if (p->cfg->copper)
+		return READ_ONCE(p->speed);
+	return us48_cfg_1g(p->cfg) ? 1000 : 10000;
 }
 
 static bool flags_lit(unsigned long fl, int speed)

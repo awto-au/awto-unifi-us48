@@ -734,12 +734,12 @@ static void link_work_fn(struct work_struct *w)
  * TX credits (TX_X4_CREDIT0.CREDITENABLE) take effect only when re-armed once the MAC is up: the TX PCS then
  * encodes (ENCODE_STATUS_0 != 0) and the far end stops sending RF on the optic lane (#78, driver-internals 13.7).
  */
-static void tx_credit_cycle(struct us48_cmic *u, u32 lane)
+static void tx_credit_cycle(struct us48_cmic *u, u32 lane, u16 credit)
 {
 	int ret;
 
 	mutex_lock(&u->mdio);
-	ret = us48_tsc_wr(u, 0xffde, lane) ?: us48_tsc_wr(u, 0xc100, 0x0000) ?: us48_tsc_wr(u, 0xc100, 0x4021);
+	ret = us48_tsc_wr(u, 0xffde, lane) ?: us48_tsc_wr(u, 0xc100, 0x0000) ?: us48_tsc_wr(u, 0xc100, credit);
 	mutex_unlock(&u->mdio);
 	if (ret)
 		dev_warn(u->dev, "tsc lane %u: TX credit cycle failed (%d)\n", lane, ret);
@@ -748,6 +748,15 @@ static void tx_credit_cycle(struct us48_cmic *u, u32 lane)
 /* Undo stock's port disable on one xe lane: verified order, driver-internals 13.5. */
 static void port_enable(struct us48_port *p)
 {
+	/* 1000BASE-X lane (#78): 1G credit values, ANATX drive as stage 2 (OM 6GOS2, stock 0x0990), RX release keeps OS_MODE 7 */
+	static const u16 seq_1g[][2] = {
+		{ 0xc138, 0x0009 },
+		{ 0xc101, 0x0082 }, { 0xc100, 0x40a5 },
+		{ 0xc017, 0x0990 },
+		{ 0xc01a, 0x0000 },
+		{ 0xc113, 0x01c8 }, { 0xc113, 0x01cb },
+		{ 0xc137, 0x003b },
+	};
 	static const u16 seq[][2] = {
 		{ 0xc138, 0x0009 },			/* RX_SIGDET: drop the forced signal-detect bits */
 		{ 0xc101, 0x0084 }, { 0xc100, 0x4021 },	/* TX credits, CREDITENABLE */
@@ -757,21 +766,24 @@ static void port_enable(struct us48_port *p)
 		{ 0xc137, 0x0001 },			/* RX lane reset release */
 	};
 	struct us48_cmic *u = p->u;
+	bool g1 = !p->cfg->copper && us48_cfg_1g(p->cfg);
+	const u16 (*sq)[2] = g1 ? seq_1g : seq;
+	u16 credit = g1 ? 0x40a5 : 0x4021;
 	u32 a = p->cfg->lane, v[2];
-	int i, ret = 0;
+	int i, n = g1 ? ARRAY_SIZE(seq_1g) : ARRAY_SIZE(seq), ret = 0;
 
 	if (p->cfg->copper)		/* deferred to the first ndo_open */
 		return;
 	/* Only from stock's parked state: re-crediting a running port is not known safe. */
 	if (!sbus(u, 0x0b, BLK_XLPORT, 0x60000 | a, v, 2) && (v[0] & 0x43) == 0x03) {
 		dev_info(u->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip enable\n", p->cfg->name, v[0]);
-		tx_credit_cycle(u, a);
+		tx_credit_cycle(u, a, credit);
 		return;
 	}
 	mutex_lock(&u->mdio);
 	ret = us48_tsc_wr(u, 0xffde, a);			/* AER: lane select */
-	for (i = 0; !ret && i < ARRAY_SIZE(seq); i++)
-		ret = us48_tsc_wr(u, seq[i][0], seq[i][1]);
+	for (i = 0; !ret && i < n; i++)
+		ret = us48_tsc_wr(u, sq[i][0], sq[i][1]);
 	mutex_unlock(&u->mdio);
 	if (ret)
 		return;
@@ -785,7 +797,7 @@ static void port_enable(struct us48_port *p)
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | a, v, 2);
 	v[0] = 0;
 	sbus(u, 0x0d, BLK_XLPORT, 0x60c00 | a, v, 2);
-	tx_credit_cycle(u, a);
+	tx_credit_cycle(u, a, credit);
 	dev_info(u->dev, "%s: enable sequence done\n", p->cfg->name);
 }
 
@@ -1610,6 +1622,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		p->rx_vid = p->vid;
 		p->learning = true;		/* bridge default BR_LEARNING */
 		p->fw_mode = -1;
+		p->an_1g = -1;
 		u->port[i] = p;
 		SET_NETDEV_DEV(nd, dev);
 		nd->netdev_ops = &us48_netdev_ops;
@@ -1708,6 +1721,15 @@ struct us48_cmic *us48_unit0(void)
 	return READ_ONCE(unit0_u);
 }
 EXPORT_SYMBOL_GPL(us48_unit0);
+
+static bool sfp_unit0_10g;
+module_param(sfp_unit0_10g, bool, 0444);
+MODULE_PARM_DESC(sfp_unit0_10g, "run unit 0 xe51/xe52 (SFP, 1G cages) at 10G instead of 1000BASE-X: TX drops after sync on this board (#78)");
+
+bool us48_cfg_1g(const struct port_cfg *c)
+{
+	return c->max_speed == 1000 && !sfp_unit0_10g;
+}
 
 static bool sfp10g;
 module_param(sfp10g, bool, 0444);

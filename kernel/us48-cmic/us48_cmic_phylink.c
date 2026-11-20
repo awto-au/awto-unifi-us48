@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * xe ports (TSC lane, 10GBASE-R) on phylink + the kernel sfp module (#21): DT port node under "ethernet-ports"
+ * xe ports (TSC lane, 10GBASE-R; unit 0 SFP 1/2 = 1000BASE-X, #78) on phylink + the kernel sfp module (#21): DT port node under "ethernet-ports"
  * (reg = front port) with sfp = <&cage>. The TSC is the PCS; its init stays in us48_tsc_init. Module ID, DDM hwmon,
  * ethtool -m, hot-plug and TX disable are the sfp module's; FIRMWARE_MODE follows the module caps (pcs_config).
  */
@@ -27,6 +27,22 @@ static struct us48_port *cfg_port(struct phylink_config *c)
 	return container_of(c, struct us48_port, plc);
 }
 
+/* 1000BASE-X: PCS_LIVE link + CL37 AN word through the c22 decoder (LPA bits = 802.3 CL37 base page, as SDK tscmod_autoneg_get). */
+static void xe_pcs_get_state_1g(struct us48_port *p, unsigned int neg_mode, struct phylink_link_state *st)
+{
+	u16 live = 0, an = 0, lp = 0, bmsr = 0;
+
+	if (us48_tsc_1g_status(p, &live, &an, &lp)) {
+		st->link = false;
+		return;
+	}
+	if (live & BIT(1))
+		bmsr |= BMSR_LSTATUS;
+	if (an & BIT(15))
+		bmsr |= BMSR_ANEGCOMPLETE;
+	phylink_mii_c22_pcs_decode_state(st, neg_mode, bmsr, lp);
+}
+
 /* phylink polls this once a second (pcs.poll). First link up: one RX restart, reported as down this poll (#87). */
 static void xe_pcs_get_state(struct phylink_pcs *pcs, unsigned int neg_mode, struct phylink_link_state *st)
 {
@@ -34,6 +50,11 @@ static void xe_pcs_get_state(struct phylink_pcs *pcs, unsigned int neg_mode, str
 	struct us48_cmic *u = p->u;
 	u16 v = 0;
 	bool up;
+
+	if (us48_cfg_1g(p->cfg)) {
+		xe_pcs_get_state_1g(p, neg_mode, st);
+		return;
+	}
 
 	mutex_lock(&u->mdio);
 	up = !us48_tsc_wr(u, TSC_AER, p->cfg->lane) && !us48_tsc_rd(u, PCS_LIVE, &v) && (v & BIT(1));
@@ -56,14 +77,35 @@ static int xe_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode, phy_int
 	struct sfp_bus *bus = p->ndev->sfp_bus;
 	u16 mode = bus && sfp_get_module_caps(bus)->port == PORT_DA ? 2 : 0;
 
+	if (us48_cfg_1g(p->cfg)) {	/* inband = CL37 AN; anything else = forced 1000BASE-X FD */
+		bool an = neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED;
+
+		return p->an_1g == an ? 0 : us48_tsc_1g_an(p, an);
+	}
 	if (p->fw_mode < 0 || mode == p->fw_mode)
 		return 0;
 	return us48_tsc_fw_mode(p, mode);
 }
 
+static void xe_pcs_an_restart(struct phylink_pcs *pcs)
+{
+	struct us48_port *p = pcs_port(pcs);
+
+	if (us48_cfg_1g(p->cfg))
+		us48_tsc_1g_an_restart(p);
+}
+
+/* 10GBASE-R: no inband (0 = as without the op); 1000BASE-X: CL37 on or off. */
+static unsigned int xe_pcs_inband_caps(struct phylink_pcs *pcs, phy_interface_t iface)
+{
+	return iface == PHY_INTERFACE_MODE_1000BASEX ? LINK_INBAND_DISABLE | LINK_INBAND_ENABLE : 0;
+}
+
 static const struct phylink_pcs_ops xe_pcs_ops = {
+	.pcs_inband_caps = xe_pcs_inband_caps,
 	.pcs_get_state = xe_pcs_get_state,
 	.pcs_config = xe_pcs_config,
+	.pcs_an_restart = xe_pcs_an_restart,
 };
 
 static struct phylink_pcs *xe_select_pcs(struct phylink_config *c, phy_interface_t iface)
@@ -71,7 +113,7 @@ static struct phylink_pcs *xe_select_pcs(struct phylink_config *c, phy_interface
 	return &cfg_port(c)->pcs;
 }
 
-/* MAC was enabled once at probe (port_enable); link changes need no MAC writes. */
+/* MAC was enabled once at probe (port_enable, 1G: XLMAC_MODE set by us48_tsc_init); link changes need no MAC writes. */
 static void xe_mac_config(struct phylink_config *c, unsigned int mode, const struct phylink_link_state *st)
 {
 }
@@ -179,6 +221,7 @@ int us48_xe_cage_present(struct us48_port *p)
 int us48_xe_phylink_create(struct us48_port *p)
 {
 	struct fwnode_handle *fw = xe_port_node(p->u, p->cfg->front);
+	phy_interface_t iface = PHY_INTERFACE_MODE_10GBASER;
 	struct phylink *pl;
 
 	if (!fw) {
@@ -188,12 +231,17 @@ int us48_xe_phylink_create(struct us48_port *p)
 	xe_moddef0_find(p, fw);
 	p->plc.dev = &p->ndev->dev;
 	p->plc.type = PHYLINK_NETDEV;
-	p->plc.mac_capabilities = MAC_10000FD;
-	__set_bit(PHY_INTERFACE_MODE_10GBASER, p->plc.supported_interfaces);
+	if (us48_cfg_1g(p->cfg)) {	/* no MAC pause programming yet: not advertised */
+		iface = PHY_INTERFACE_MODE_1000BASEX;
+		p->plc.mac_capabilities = MAC_1000FD;
+	} else {
+		p->plc.mac_capabilities = MAC_10000FD;
+	}
+	__set_bit(iface, p->plc.supported_interfaces);
 	p->pcs.ops = &xe_pcs_ops;
 	p->pcs.poll = true;
-	__set_bit(PHY_INTERFACE_MODE_10GBASER, p->pcs.supported_interfaces);
-	pl = phylink_create(&p->plc, fw, PHY_INTERFACE_MODE_10GBASER, &xe_mac_ops);
+	__set_bit(iface, p->pcs.supported_interfaces);
+	pl = phylink_create(&p->plc, fw, iface, &xe_mac_ops);
 	fwnode_handle_put(fw);
 	if (IS_ERR(pl)) {
 		netdev_err(p->ndev, "phylink_create: %pe, link stays down\n", pl);

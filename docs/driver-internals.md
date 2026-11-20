@@ -406,6 +406,37 @@ Registers (block:reg): `SETUP` 0x1090:00, `RESET` 0x1090:01, `POWER` 0x1090:02, 
   - Not done: `bmd_phy_fw_base_set(0x0f00)`, board lane map (Rx 0x0123 / Tx 0x3210, `board_bcm56150_10g.c`), `PhyEvent_ChangeToFiber`, ram_base 0x0fb8 credit programming.
   - `port_enable` (13.5 sequence, from the stock parked state) still runs after stage 2; its overlap with stage 2 (credits, ELEC_IDLE, lane reset) is untested.
 
+### 9.4 Unit 0 xe51/xe52 as 1000BASE-X (#78; written 2026-11-20, not run on the board)
+- Why: "SFP" cages (not SFP+). SDK SKU cap 1G (`hurricane2.c:2503`), stock runs them at 1G, 10G TX syncs then drops (#78 loop test). hwdb `speed_cap = 1000` (fronts 51/52) -> `.max_speed`; `us48_cfg_1g()` = cap 1000 and not module param `sfp_unit0_10g` (opt-in 10G, default off). Unit 1 untouched.
+- **PLL**: not reconfigured. PLL mode 0xa = div66 (OM `FV_div66`, `bcmi_tsc_xgxs_drv.c:96`) = 10.3125 G for both speeds; stock unit 0 TSC0 has `0x9000` mode 0xa + `0x9010` 0xee0a with lanes 0 and 2 both at 1G (`tmp/higig/stock.txt` a1/l0, a1/l2: identical); OM `speed_set` 1000: `plldiv = cur_plldiv` if 40 or 66 (`:3296-3303`), PLL reset only when it differs (`:3363`). Per lane the speed is OS_MODE `0xc137[6:3]` = 7 (OS 8.25 -> 1.25 Gbaud, OM `_tsc_decode_set` FV_adr_1000M `:938-950`), so lanes 0 and 2 run 1G together on the shared PLL, and 10G lanes (OS 0) could share it too. C
+- Init = stage 0 + stage 2 as for 10G, with these stage 2 rows replaced (`tsc_1g_patch` in `us48_tsc_fw.c`, matched by reg + mask) and the stage 3 rows `0xc254`/`0xc017`/`0xc252` skipped (stage 2 values stay = OM `txdrv_set` 6GOS2, stock):
+
+  | Reg | 10G | 1G | Source |
+  |---|---|---|---|
+  | `0xc100` CREDIT0 | 0x4021 | 0x40a5 | OM `_tsc_credit_set` 1000M div66 clockcnt0 0xa5 (`:477-481`); stock a1 `0x40a5` |
+  | `0xc101` CREDIT1 | 0x8400 | 0x8200 | OM rsv 0x82 (`:478`); stock reads 0 (also at 10G on unit 1) |
+  | `0xc103` | 0x4 | 0x29 | OM mac_credit 0x29; stock 0x0029 |
+  | `0xc111` ENCODE | 0x14 (CL49) | 0x0c (CL36 8b/10b) | OM `_tsc_encode_set` 1000M encode 3 (`:688-691`); stock 0x000c |
+  | `0xc113` SCR_MODE | 3 | 0 | SDK `tscmod_encode_set` (cfg_seq.c:2383-2394); stock 0x01cb |
+  | `0xc114` | 0 | 0x4 (DISABLE_PACKET_MISALIGN) | OM `:691`; stock 0x0004 |
+  | `0xc130` | 0x0820 | 0x2cb0 (decode 5, deskew 4, desc2 5, byte delete 2) | OM decode 1000M (`:938-947`); stock 0x2cb0 |
+  | `0xc134` mask 0xbe07 | 0x2001 | 0x0003 (BLOCK_SYNC_MODE 3, no CL48 syncacq) | OM; stock 0x0073 (0x70 = CL49 RX LI/LF/RF from stage 2) |
+  | `0xc136` | 0 | 0x1 (CL36_EN) | OM; stock 0x0001 |
+  | `0xc137` | 0 | 0x3a (OS_MODE 7, RX_GBOX_AFRST_EN) | OM; stock 0x003a |
+  | `0xc181` mask 0x2c3 | 0x42 | 0x02 (SGMII_SPEED 2, no pause) | stock 0x0016 (pause 0); pause is not programmed in the MAC |
+  | `0xc184` | 1 | 0 | stock 0 |
+  | `0xc254` SW_ACTUAL_SPEED | 0x1b00 then 0x1f00 | 0x0200 (0x02 = FV_adr_1000M, OM `:35`) | stock 0x0220 |
+  | `0xc017` / `0xc252` | stage 3: 0x2020 / 0x5a54 | stage 2: IDRIVER 9, IPREDRIVER 9, POST2 0 / 0x83f0 | OM `txdrv_set` 6GOS2 (`:1684-1689`); stock 0x0990 / 0x83f0 |
+  Unchanged from 10G and equal to stock: `0xc102` 0x40, `0xc104/5` 0, `0xc260` 0, `0xa001/a024/a003/a023`, `0xc183` 0x2000.
+- `port_enable` (unit 0 1G lanes): same order as 10G with `0xc101` 0x0082 (analogy to 0x0084, open), `0xc100` 0x40a5 (also in `tx_credit_cycle`), `0xc017` 0x0990 (stock; clears ELEC_IDLE), `0xc137` 0x003b (RSTB_LANE with OS_MODE 7; the 10G value 0x0001 would clear OS_MODE). `0xc113` pulse 0x01c8/0x01cb = stock `0xc113` 0x01cb with SCR_MODE 0.
+- XLMAC (`us48_xe_mac_1g`, at the end of `us48_tsc_init` per 1G lane, MAC still parked): `XLMAC_MODE` SPEED_MODE [6:4] = 2 (stock unit 0 `init-phases-u0.md` B1 XLMAC_MODE 0x20; SDK `xlmac.c:55` SOC_XLMAC_SPEED_1000, `mac_xl_speed_set` `:1241`); `XLMAC_RX_LSS_CTRL` 0x73 (stock unit 0 ord 57787; SDK `:1243-1248` LOCAL/REMOTE_FAULT_DISABLE for < 5G). XLPORT0 quad mode and ENABLE 5 from `xlport_up` as before; `XLMAC_CTRL` 0x1003, TX_CTRL 0xc802 (stock, = 10G value). `mac_link_up` writes nothing (as 10G). Pause not programmed: `XLMAC_PAUSE_CTRL` bit positions not in hwdb; stock disables both (0xfff7c000 -> 0xfff1c000, ord 47543). Open.
+- AN (phylink `managed = "in-band-status"`, `1000BASEX`; `pcs_config` neg_mode INBAND_ENABLED = on, else forced 1G FD; `us48_tsc_1g_an`), OM `_tsc_autoneg_control_set` CL37_10G (fiber at div66; stock sets `phy_an_c37 = 3` = `FV_an_CL37_10G`): `0xc137` b7 OVERRIDE_OS_MODE 1 (OS 7, OM `:1547`); `0xc180` ENABLES: AN_SETUP b14, types cleared; `0xc181` FD b4, SGMII_FD b2 0, NP b8 0; `0xc188` PD_KX_EN b1 (OM `:4052`, off `:3425`; forced-1G partner still links); `0xc180` CL37_ENABLE b6 + CL37_AN_RESTART b1, then b1 0. Off: `0xc137` b7 0, `0xc180` types + restart 0, `0xc188` b1 0. `pcs_an_restart` pulses `0xc180` b1. Field layout `bcmi_tsc_xgxs_defs.h`.
+- State (`pcs_get_state` 1G): `0xc154` b1 LINK_STATUS (OM `link_get`), `0xc1ac` b15 AN_COMPLETE (defs; OM reads `0xc1ab` & 0x8000, which the defs list as reserved: open), `0xc198` LP_BASE_PAGE1 = raw CL37 base page (FD b5, pause b8:7; SDK `tscmod_cfg_seq.c:796`) -> `phylink_mii_c22_pcs_decode_state`. No RX restart at 1G (the 10G one, #87, is a 10G CDR matter: open). Polls 1 s (phylink).
+- Modules: supported interface only 1000BASEX, MAC cap 1000FD: a 10GBASE-SR module has no common mode, phylink logs `unsupported SFP module: no common interface modes`. `sfp_unit0_10g=1` restores the 10G path. SGMII copper modules (GLC-T): out of scope (needs SGMII CL37 `0xc180` b7 and in-band SGMII word; TSC supports it, untested).
+- Polarity: hwdb `tx_polarity` of front 51 (found at 10G) is still applied at 1G. 8b/10b has no polarity detect in the TSC (no CL37 autoneg-polarity; `0xc138` SIGDET only): re-test, if 1G links only with TX flip off, drop it from hwdb.
+- Timeouts: none added; AN complete and link by phylink's 1 s poll (RX lock 23-175 ms measured at 10G).
+- Open: `0xc101` 0x82 vs stock 0; `0xc253` TAP_DEFAULT_MUXSEL (stock 0x3f80 vs ours 0x3fb0, CL72 only, left); CL37 timers `0x9250/9251/9256` stock 0x0350 vs ours 0x029a (left); `XLMAC_RX_CTRL` strict preamble; pause.
+
 ## 10. TDM table for `bcm5615x_config=10`, IDDQ
 
 - Stock (BCM53344 and BCM53346, config 10, also 1/11/12) selects **`hu2_tdm_cascade`**, 75 entries (OpenBCM `_soc_hu2_tdm_init`, `private/reference/openbcm-hurricane2.c:3200-3475`; OM `tdm_cascade` identical). C (source), I (stock binary built from the same code; not re-traced)

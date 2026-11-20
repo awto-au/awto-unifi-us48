@@ -95,6 +95,7 @@ struct port_cfg {
 	u8 blk, phy;			/* copper: GPORT block and MIIM PHY address */
 	bool external_phy;		/* copper PHY is on external MIIM bus 0 */
 	bool tx_pol, rx_pol;		/* xe: invert the TSC lane TX / RX (hwdb ports.toml, #78) */
+	u16 max_speed;			/* xe: cage rated Mb/s (hwdb speed_cap); 0 = 10G */
 };
 
 #define MAXPORTS	26		/* unit 1: 24 copper + 2 xe */
@@ -115,6 +116,7 @@ struct us48_port {
 	bool rx_tuned;			/* xe: one RX restart after the first link up (#87) */
 	bool copper_ready;		/* copper: MAC/PHY/VLAN bring-up done (first ndo_open) */
 	s8 fw_mode;			/* xe: lane FIRMWARE_MODE set (0 optic, 2 DAC); -1 = TSC not initialised */
+	s8 an_1g;			/* xe 1G: CL37 AN enabled on the lane; -1 = not configured */
 	struct phylink *pl;		/* xe: SFP cage (us48_cmic_phylink.c), NULL = no DT port node */
 	struct phylink_config plc;
 	struct phylink_pcs pcs;		/* the TSC lane */
@@ -217,6 +219,13 @@ void us48_tsc_dump(struct us48_cmic *u);
 int us48_tsc_rx_restart(struct us48_cmic *u, const struct port_cfg *c);
 /* Lane FIRMWARE_MODE (0 optic/SFI, 2 DAC/CR) inside a uC stop/resume + RX restart; from pcs_config (#105, #21). */
 int us48_tsc_fw_mode(struct us48_port *p, u16 mode);
+/* xe lane runs 1000BASE-X (hwdb speed_cap 1000, unless sfp_unit0_10g): 1G TSC mode, CL37 AN, XLMAC 1G (#78). */
+bool us48_cfg_1g(const struct port_cfg *c);
+int us48_tsc_1g_an(struct us48_port *p, bool an);
+void us48_tsc_1g_an_restart(struct us48_port *p);
+int us48_xe_mac_1g(struct us48_cmic *u, const struct port_cfg *c);
+/* 1G link state: PCS_LIVE link, AN complete, LP base page (0 if unread). */
+int us48_tsc_1g_status(struct us48_port *p, u16 *live, u16 *an_misc, u16 *lp);
 /* xe port on phylink + sfp (us48_cmic_phylink.c): create before register_netdev, destroy after unregister, no rtnl. */
 int us48_xe_phylink_create(struct us48_port *p);
 void us48_xe_phylink_destroy(struct us48_port *p);
