@@ -1,0 +1,95 @@
+From 5043161b553f8c88f6ea1be385e8d0f0e9859da8 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Fri, 20 Nov 2026 23:37:38 +1100
+Subject: [PATCH] net: sfp: Add quirk for Cisco-Finisar GLC-SX-MM
+
+Some CISCO-FINISAR GLC-SX-MM modules (rev 6.0) fill the unused binary
+fields of the EEPROM with ASCII spaces (0x20) instead of zeros, and
+report 0x03 as the connector. The checksums are valid over the padded
+bytes.
+
+Padded fields (A0h byte numbers):
+  2       connector 0x03 (vendor error; the module has LC)
+  3-10    transceiver compliance: 20 20 20 01 20 20 20 20, only byte 6
+          (1000BASE-SX) is real
+  11-19   encoding, nominal rate, rate identifier, link lengths
+  36      extended compliance code
+  64-65   options (0x2020)
+
+Without a quirk this is logged as "unknown connector id 0x03", byte 3
+bit 5 reads as 10GBASE-LR so the module is treated as 10GBASE-R, and
+the options word reads as high power level plus rate select.
+
+Fix the EEPROM contents up once the checksums have been verified and
+before sfp->id is used for anything: set the connector to LC and zero
+the padded bytes. The sfp_quirks[] fixup hook is too late for this: it
+runs after the power level, rate select and SFF-8472 parsing.
+
+With this the module is a 1000BASE-X, 1 W module with a fibre port.
+
+Signed-off-by: TODO
+---
+ drivers/net/phy/sfp.c | 40 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 85e57a1..2111942 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -2516,6 +2516,43 @@ static int sfp_module_parse_sff8472(struct sfp *sfp)
+ 	return 0;
+ }
+ 
++/* Cisco-Finisar GLC-SX-MM modules fill the unused binary fields of the
++ * EEPROM with ASCII spaces (0x20) instead of zeros, and have the wrong
++ * connector code. The checksums cover the padded bytes, so this has to run
++ * after they have been verified and before anything is parsed.
++ */
++static void sfp_fixup_space_padded(struct sfp_eeprom_id *id)
++{
++	u8 *base = (u8 *)&id->base;
++	u8 *options = (u8 *)&id->ext.options;
++	int i;
++
++	/* Connector 0x03 (a vendor error) is an LC connector. */
++	id->base.connector = SFF8024_CONNECTOR_LC;
++
++	/* Bytes 3-19: transceiver compliance (only byte 6, 1000BASE-SX, is
++	 * real), encoding, nominal rate, rate identifier, link lengths.
++	 */
++	for (i = SFP_COMPLIANCE; i <= SFP_LINK_LEN_50UM_OM3_10M; i++)
++		if (i != 6 && base[i] == 0x20)
++			base[i] = 0;
++
++	/* Byte 36: extended specification compliance code. */
++	if (id->base.extended_cc == 0x20)
++		id->base.extended_cc = 0;
++
++	/* Options (bytes 64-65) read as high power level and rate select. */
++	for (i = 0; i < sizeof(id->ext.options); i++)
++		if (options[i] == 0x20)
++			options[i] = 0;
++}
++
++static bool sfp_is_cisco_glc_sx_mm(const struct sfp_eeprom_id *id)
++{
++	return !memcmp(id->base.vendor_name, "CISCO-FINISAR   ", 16) &&
++	       !memcmp(id->base.vendor_pn, "GLC-SX-MM       ", 16);
++}
++
+ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ {
+ 	/* SFP module inserted - read I2C data */
+@@ -2633,6 +2670,9 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ 		}
+ 	}
+ 
++	if (sfp_is_cisco_glc_sx_mm(&id))
++		sfp_fixup_space_padded(&id);
++
+ 	sfp->id = id;
+ 
+ 	dev_info(sfp->dev, "module %.*s %.*s rev %.*s sn %.*s dc %.*s\n",
+-- 
+2.56.1
+

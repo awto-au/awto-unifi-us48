@@ -256,6 +256,7 @@ Front 49/50 = unit 1 (BCM53346) SDK ports 26/27 (`xe0`/`xe1`), front 51/52 = uni
   - TX polarity: xe51 lane is inverted on this board (`tx_polarity` in `hwdb/board/ports.toml`, #78; [driver-internals.md](driver-internals.md) section 9); xe52 unverified (no peer).
   - `us48_cca_gpio` is read only: input requests pass only while OUTEN of the line is 0 (OpenWrt after stock: OUTEN `0x2c0`, bits 2/3 = 0, [poe.md](poe.md)); no writes, no IRQ (sfp polls).
   - The sfp socket drives TX disable through `gp0`/`gp1` (DATA_OUT, then OUT_EN): asserted while the netdev is down or the cage empty.
+  - Cisco-Finisar GLC-SX-MM (rev 6.0) pads its EEPROM binary fields with 0x20 (connector 0x03, compliance bytes 3-10 `20 20 20 01 20 20 20 20`, 11-19, 36, 64-65); `mainline/0029` fixes it up after the checksum check so it is 1000baseX / 1 W / LC (#78).
 
 ## MSPI board IO (relation to [fan.md](fan.md))
 
