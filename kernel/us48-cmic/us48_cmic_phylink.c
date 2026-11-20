@@ -95,6 +95,15 @@ static void xe_pcs_an_restart(struct phylink_pcs *pcs)
 		us48_tsc_1g_an_restart(p);
 }
 
+/* 1000BASE-X: stock replays its speed_set once the link is up (#78). */
+static void xe_pcs_link_up(struct phylink_pcs *pcs, unsigned int neg_mode, phy_interface_t iface, int speed, int duplex)
+{
+	struct us48_port *p = pcs_port(pcs);
+
+	if (us48_cfg_1g(p->cfg))
+		us48_tsc_1g_linkup(p);
+}
+
 /* 10GBASE-R: no inband (0 = as without the op); 1000BASE-X: CL37 on or off. */
 static unsigned int xe_pcs_inband_caps(struct phylink_pcs *pcs, phy_interface_t iface)
 {
@@ -106,6 +115,7 @@ static const struct phylink_pcs_ops xe_pcs_ops = {
 	.pcs_get_state = xe_pcs_get_state,
 	.pcs_config = xe_pcs_config,
 	.pcs_an_restart = xe_pcs_an_restart,
+	.pcs_link_up = xe_pcs_link_up,
 };
 
 static struct phylink_pcs *xe_select_pcs(struct phylink_config *c, phy_interface_t iface)
