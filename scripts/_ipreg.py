@@ -3,6 +3,7 @@
 
 Usage: from _ipreg import ip;  ip("us48-boot") -> "192.168.25.207"
        _ipreg.py [NAME ...]    print name -> address (all names when none given)
+Override one name: $US48_IP_<NAME upper, '-' -> '_'>, e.g. US48_IP_US48_BOOT=192.168.25.209.
 Registry path: $AWTO_IP_REGISTRY, else /mnt/2tb/git/awto-dan/docs/network/ip-registry.toml. Missing file or name = error, no fallback.
 """
 import os
@@ -23,6 +24,10 @@ def table() -> dict[str, str]:
 
 
 def ip(name: str) -> str:
+    # Override for a down path (e.g. US48_IP_US48_BOOT=192.168.25.209 when ge1 has no link, #145).
+    over = os.environ.get("US48_IP_" + name.upper().replace("-", "_"))
+    if over:
+        return over
     try:
         return table()[name]
     except KeyError:
