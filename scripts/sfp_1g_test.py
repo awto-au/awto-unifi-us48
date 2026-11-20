@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _ipreg  # noqa: E402
+import _sfp_state  # noqa: E402
 from _cli import help_guard  # noqa: E402
 from lx import OPTS  # noqa: E402
 
@@ -111,7 +112,13 @@ def main():
         sh(f"ip link set xe{f} up")
         t0 = time.monotonic()
         while time.monotonic() - t0 < LINK_WAIT_S and sh(f"cat /sys/class/net/xe{f}/carrier", check=False).strip() != "1":
+            sfp, sinfo = _sfp_state.read(sh, f)
+            if _sfp_state.bad(sfp):  # rejected module: carrier will never come
+                say(fh, "FAIL " + _sfp_state.fmt(f, sfp, sinfo))
+                say(fh, sh(f"dmesg | grep -E 'xe{f}.*SFP|sfp'", check=False))
+                return 1
             time.sleep(0.25)
+        say(fh, _sfp_state.fmt(f, *_sfp_state.read(sh, f)))
         up = sh(f"cat /sys/class/net/xe{f}/carrier", check=False).strip() == "1"
         say(fh, f"carrier {'1 PASS' if up else '0 FAIL'} after {time.monotonic() - t0:.2f} s")
         log = sh(f"dmesg | grep -E 'xe{f}|tsc xe{f}|sfp'")

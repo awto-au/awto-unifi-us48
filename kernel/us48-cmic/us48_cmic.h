@@ -124,6 +124,16 @@ struct us48_port {
 	u32 moddef0_line;
 	bool moddef0_low;		/* GPIO_ACTIVE_LOW: raw 0 = present */
 	u16 speed;			/* copper: Mb/s of the last MAC link up (sysfs link_speed) */
+	/* xe SFP module state (us48_cmic_sfp.c, #147): sysfs sfp_state / sfp_info */
+	spinlock_t sfp_lock;
+	char sfp_state[48];		/* none | ok | unsupported:<reason> | fault:<reason> */
+	char sfp_info[192];		/* insert line or the rejection rule */
+	struct delayed_work sfp_work;
+	bool sfp_seen;			/* module present at the last poll */
+	bool sfp_flogged;		/* fault logged for this insertion */
+	u8 sfp_stage;			/* 0 ID unread, 1 ID read once (settle), 2 judged */
+	unsigned long sfp_t0;		/* jiffies at insertion */
+	u8 sfp_id[96];			/* A0h 0..95 as read */
 	struct us48_br *br;		/* offloaded bridge (switchdev), NULL = private VLAN; rtnl */
 	u8 stp;				/* BR_STATE_* of the port in br */
 	bool learning;			/* BR_LEARNING: PORT_TAB CML 8 while in br */
@@ -230,6 +240,11 @@ int us48_tsc_1g_status(struct us48_port *p, u16 *live, u16 *an_misc, u16 *lp);
 /* xe port on phylink + sfp (us48_cmic_phylink.c): create before register_netdev, destroy after unregister, no rtnl. */
 int us48_xe_phylink_create(struct us48_port *p);
 void us48_xe_phylink_destroy(struct us48_port *p);
+/* SFP module state per xe port (us48_cmic_sfp.c, #147): init at port alloc, start after phylink_create, stop before phylink_destroy. */
+extern const struct attribute_group us48_xe_group;
+void us48_xe_sfp_init(struct us48_port *p);
+void us48_xe_sfp_start(struct us48_port *p);
+void us48_xe_sfp_stop(struct us48_port *p);
 
 void us48_tsc_range(struct us48_cmic *u, const struct port_cfg *c, u32 lo, u32 hi, int aer);
 
