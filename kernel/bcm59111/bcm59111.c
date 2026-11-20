@@ -51,9 +51,38 @@
 #define NA_PER_CM	122070			/* 122.07 uA per count */
 #define RESERVE_DEFAULT_MW 30000		/* 802.3at class 4 PSE output */
 
+/* Tunables: choice and evidence in docs/poe-architecture.md. All 0444 (set at load); every default leaves ports off. */
 static bool fw_load;
 module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load, "download firmware when the chip reports none running (needs the reset line and /lib/firmware); default off");
+
+static unsigned long long enable_ports;
+module_param(enable_ports, ullong, 0444);
+MODULE_PARM_DESC(enable_ports, "front ports (bit 0 = port 1) admin-enabled at probe, chip from the PoE-NN label; default 0 = all off (us48-poe-off)");
+
+static unsigned int budget_mw;
+module_param(budget_mw, uint, 0444);
+MODULE_PARM_DESC(budget_mw, "module-wide cap on reserved mW over all chips, on top of the DT regulators; default 0 = DT only (stock 436000)");
+
+static unsigned int reserve_mw;
+module_param(reserve_mw, uint, 0444);
+MODULE_PARM_DESC(reserve_mw, "mW reserved per enabled port, overrides DT brcm,port-reserve-milliwatt; default 0 = DT, else 30000 (802.3at class 4)");
+
+static int icut_raw = -1;
+module_param(icut_raw, int, 0444);
+MODULE_PARM_DESC(icut_raw, "UNVERIFIED (M2): raw ICUT byte (reg 0x47+5c) written on port enable; default -1 = chip value kept");
+
+static int ilim_raw = -1;
+module_param(ilim_raw, int, 0444);
+MODULE_PARM_DESC(ilim_raw, "UNVERIFIED (M2): raw ILIM byte (reg 0x48+5c) written on port enable; default -1 = chip value kept");
+
+static unsigned int poll_ms;
+module_param(poll_ms, uint, 0444);
+MODULE_PARM_DESC(poll_ms, "log power-good changes every N ms; default 0 = off; 300 suggested (FW disconnect timer 30 ticks x 10 ms, docs/poe-fw.md 11)");
+
+static unsigned long long passive_ports;
+module_param(passive_ports, ullong, 0444);
+MODULE_PARM_DESC(passive_ports, "UNVERIFIED (M1/M6): 24 V passive front ports; NOT IMPLEMENTED (needs MSPI field 1 in us48_boardio), non-zero only warns");
 
 struct bcm59111 {
 	struct i2c_client *client;
@@ -62,7 +91,13 @@ struct bcm59111 {
 	struct pse_controller_dev pcdev;
 	u32 reserve_mw;
 	bool reserved[NPORT];
+	bool taken[NPORT];		/* counted in budget_used */
+	u8 pg;				/* last power-good nibble seen by the poll */
+	struct delayed_work poll;
 };
+
+static DEFINE_MUTEX(budget_lock);
+static unsigned int budget_used;
 
 static struct bcm59111 *to_bcm(struct pse_controller_dev *pcdev)
 {
@@ -98,6 +133,33 @@ static int set_op_mode(struct bcm59111 *b, int id, u8 mode)
 		return v;
 	v = (v & ~(3 << (2 * id))) | (mode << (2 * id));
 	return wr(b, REG_OP_MODE, v);
+}
+
+static int budget_take(struct bcm59111 *b, int id)
+{
+	int ret = 0;
+
+	if (!budget_mw || b->taken[id])
+		return 0;
+	mutex_lock(&budget_lock);
+	if (budget_used + b->reserve_mw > budget_mw)
+		ret = -ERANGE;
+	else {
+		budget_used += b->reserve_mw;
+		b->taken[id] = true;
+	}
+	mutex_unlock(&budget_lock);
+	return ret;
+}
+
+static void budget_give(struct bcm59111 *b, int id)
+{
+	if (!b->taken[id])
+		return;
+	mutex_lock(&budget_lock);
+	budget_used -= b->reserve_mw;
+	b->taken[id] = false;
+	mutex_unlock(&budget_lock);
 }
 
 /* ---- pse-pd ops ---- */
@@ -188,22 +250,34 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 
 	if (!pcdev->pi[id].rdev)
 		return -ENODEV;	/* port without a pse-pi node */
+	ret = budget_take(b, id);
+	if (ret)
+		return ret;
 	supply = pcdev->pi[id].rdev->supply;
 	if (!b->reserved[id] && supply) {
 		ret = regulator_request_power_budget(supply, b->reserve_mw);
-		if (ret)
+		if (ret) {
+			budget_give(b, id);
 			return ret;
+		}
 		b->reserved[id] = true;
 		took = true;
 	}
 	/* detect + class enable for the channel, as the UDM port_mode_set and stock opmode path */
 	v = rd(b, REG_DET_CLASS);
 	ret = v < 0 ? v : wr(b, REG_DET_CLASS, v | BIT(id) | BIT(id + 4));
+	if (!ret && icut_raw >= 0)
+		ret = wr(b, REG_ICUT(id), icut_raw);
+	if (!ret && ilim_raw >= 0)
+		ret = wr(b, REG_ILIM(id), ilim_raw);
 	if (!ret)
 		ret = set_op_mode(b, id, OP_AUTO);
-	if (ret && took) {
-		regulator_free_power_budget(supply, b->reserve_mw);
-		b->reserved[id] = false;
+	if (ret) {
+		budget_give(b, id);
+		if (took) {
+			regulator_free_power_budget(supply, b->reserve_mw);
+			b->reserved[id] = false;
+		}
 	}
 	return ret;
 }
@@ -214,10 +288,13 @@ static int bcm_pi_disable(struct pse_controller_dev *pcdev, int id)
 	struct regulator *supply = pcdev->pi[id].rdev ? pcdev->pi[id].rdev->supply : NULL;
 	int ret = set_op_mode(b, id, OP_SHUTDOWN);
 
-	if (!ret && b->reserved[id]) {
-		if (supply)
-			regulator_free_power_budget(supply, b->reserve_mw);
-		b->reserved[id] = false;
+	if (!ret) {
+		budget_give(b, id);
+		if (b->reserved[id]) {
+			if (supply)
+				regulator_free_power_budget(supply, b->reserve_mw);
+			b->reserved[id] = false;
+		}
 	}
 	return ret;
 }
@@ -351,6 +428,42 @@ static const struct hwmon_channel_info * const bcm_info[] = {
 
 static const struct hwmon_chip_info bcm_chip = { .ops = &bcm_hwmon_ops, .info = bcm_info };
 
+/* ---- optional poll: power-good changes to the log (no event register is read: clear-on-read, poe-fw.md 4) ---- */
+
+static void bcm_poll(struct work_struct *w)
+{
+	struct bcm59111 *b = container_of(to_delayed_work(w), struct bcm59111, poll);
+	int pwr;
+
+	mutex_lock(&b->pcdev.lock);
+	pwr = rd(b, REG_STAT_PWR);
+	mutex_unlock(&b->pcdev.lock);
+	if (pwr >= 0 && (pwr >> 4) != b->pg) {
+		dev_info(&b->client->dev, "power good 0x%x -> 0x%x\n", b->pg, pwr >> 4);
+		b->pg = pwr >> 4;
+	}
+	schedule_delayed_work(&b->poll, msecs_to_jiffies(poll_ms));
+}
+
+static void bcm_poll_stop(void *data)
+{
+	cancel_delayed_work_sync(data);
+}
+
+/* Port bits of enable_ports for this chip: label PoE-NN = chip NN, front ports 4(NN-1)+1..4(NN-1)+4 */
+static unsigned int bcm_chip_mask(struct bcm59111 *b, unsigned long long ports, const char *what)
+{
+	unsigned int n;
+
+	if (!ports)
+		return 0;
+	if (!b->label || strncmp(b->label, "PoE-", 4) || kstrtouint(b->label + 4, 10, &n) || n < 1 || n > 12) {
+		dev_warn(&b->client->dev, "%s ignored: label is not PoE-NN\n", what);
+		return 0;
+	}
+	return (ports >> (4 * (n - 1))) & 0xf;
+}
+
 /* ---- firmware + bring-up ---- */
 
 /* Stock 0x1087ad0 / UDM format: raw write [0x70][0x80][off BE16][32 data] x 512, then 0x70 <- 0x40, then 0x75 == 0xaa. */
@@ -420,7 +533,8 @@ static int bcm_pse_init(struct bcm59111 *b)
 {
 	struct device *dev = &b->client->dev;
 	bool cold = false;
-	int id, crc, rev, ret;
+	unsigned int mask;
+	int id, port, crc, rev, ret;
 
 	id = rd(b, REG_DEV_ID);
 	if (id < 0) {
@@ -463,7 +577,29 @@ static int bcm_pse_init(struct bcm59111 *b)
 	ret = devm_pse_controller_register(dev, &b->pcdev);
 	if (ret)
 		return dev_err_probe(dev, ret, "pse register\n");
-	return devm_device_add_group(dev, &bcm_group);
+	ret = devm_device_add_group(dev, &bcm_group);
+	if (ret)
+		return ret;
+	if (bcm_chip_mask(b, passive_ports, "passive_ports"))
+		dev_warn(dev, "passive_ports: not implemented, no port switched to 24 V\n");
+	mask = bcm_chip_mask(b, enable_ports, "enable_ports");
+	for (port = 0; port < NPORT; port++) {
+		if (!(mask & BIT(port)))
+			continue;
+		mutex_lock(&b->pcdev.lock);
+		ret = bcm_pi_enable(&b->pcdev, port);
+		mutex_unlock(&b->pcdev.lock);
+		if (ret)
+			dev_warn(dev, "enable_ports: port %d not enabled: %d\n", port + 1, ret);
+	}
+	if (poll_ms) {
+		INIT_DELAYED_WORK(&b->poll, bcm_poll);
+		ret = devm_add_action_or_reset(dev, bcm_poll_stop, &b->poll);
+		if (ret)
+			return ret;
+		schedule_delayed_work(&b->poll, msecs_to_jiffies(poll_ms));
+	}
+	return 0;
 }
 
 static int bcm_probe(struct i2c_client *client)
@@ -483,6 +619,8 @@ static int bcm_probe(struct i2c_client *client)
 	device_property_read_string(dev, "label", &b->label);
 	device_property_read_string(dev, "firmware-name", &b->fw_name);
 	device_property_read_u32(dev, "brcm,port-reserve-milliwatt", &b->reserve_mw);
+	if (reserve_mw)
+		b->reserve_mw = reserve_mw;
 	dev_set_drvdata(dev, b);
 	hw = devm_hwmon_device_register_with_info(dev, "bcm59111", b, &bcm_chip, NULL);
 	if (IS_ERR(hw))
