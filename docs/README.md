@@ -48,6 +48,7 @@
 - [cpu-port-policy.md](cpu-port-policy.md): CPU-port meters and CoS map
 - [route-nat-fw.md](route-nat-fw.md): copper routing, NAT, firewall tests (#40)
 - [driver-internals.md](driver-internals.md): stock driver internals for the Linux switch driver (#47)
+- [tsc-1g-diff.md](tsc-1g-diff.md): unit 0 TSC0 1000BASE-X, our post-init state vs stock/OM/SDK, ranked hypotheses (#78)
 
 ## Board peripherals
 
