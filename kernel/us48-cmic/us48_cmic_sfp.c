@@ -327,7 +327,8 @@ void us48_xe_sfp_start(struct us48_port *p)
 
 void us48_xe_sfp_stop(struct us48_port *p)
 {
-	cancel_delayed_work_sync(&p->sfp_work);
+	if (p->sfp_work.work.func)	/* copper ports never run sfp_init */
+		cancel_delayed_work_sync(&p->sfp_work);
 }
 
 static ssize_t sfp_state_show(struct device *d, struct device_attribute *attr, char *buf)
