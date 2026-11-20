@@ -259,6 +259,7 @@ int us48_xe_phylink_create(struct us48_port *p)
 	}
 	p->pl = pl;
 	p->ndev->ethtool_ops = &xe_ethtool_ops;
+	us48_xe_sfp_init(p);
 	us48_xe_sfp_start(p);
 	return 0;
 }
