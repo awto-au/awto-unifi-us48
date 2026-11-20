@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _ipreg  # noqa: E402
+import _sfp_state  # noqa: E402
 from _cli import help_guard  # noqa: E402
 from lx import OPTS  # noqa: E402
 
@@ -65,6 +66,8 @@ def details(names):
                      f"cat /sys/class/net/{n}/statistics/rx_packets /sys/class/net/{n}/statistics/tx_packets; "
                      f"ip -6 neigh show dev {n} 2>&1 | head -3")
         if n.startswith("xe"):
+            parts.append(f"echo SFPSTATE $(cat /sys/class/net/{n}/sfp_state 2>/dev/null || echo n/a); "
+                         f"echo SFPINFO $(cat /sys/class/net/{n}/sfp_info 2>/dev/null)")
             parts.append(f"ethtool -m {n} 2>&1 | grep -E 'Vendor name|Vendor PN|Vendor SN|Identifier|Laser (rx|output) power|Module temp|Length'")
     return sh("; ".join(parts))
 
@@ -117,6 +120,10 @@ def main():
         dup = next((x.split(":", 1)[1].strip() for x in lines if x.startswith("Duplex")), "")
         c = car.get(n, before[n][1]) if n in raise_set else before[n][1]
         note = " ".join(x for x in lines if x.startswith(("Vendor", "Laser", "Module temp", "Identifier", "fe80")))
+        sfp = next((x.split(None, 1)[1] for x in lines if x.startswith("SFPSTATE ")), "")
+        sinfo = next((x.split(None, 1)[1] for x in lines if x.startswith("SFPINFO ") and " " in x), "")
+        if sfp:
+            note = f"SFP {sfp}" + (f" ({sinfo})" if _sfp_state.bad(sfp) and sinfo else "") + " " + note
         if c == "1" or n.startswith("xe"):
             rows.append(f"| {n} | {before[n][0]} | {c} | {speed} {dup} | {note} |")
     out = "\n".join(rows)

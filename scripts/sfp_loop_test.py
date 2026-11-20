@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _ipreg  # noqa: E402
+import _sfp_state  # noqa: E402
 from _cli import help_guard  # noqa: E402
 from lx import OPTS  # noqa: E402
 
@@ -95,6 +96,14 @@ def attempt(a, b, label, log):
     for f in (a, b):
         sh(f"ip link set xe{f} up")
     time.sleep(SETTLE_S)
+    for f in (a, b):  # rejected module / ID fault: no light or carrier will follow, say why
+        st, info = _sfp_state.read(sh, f)
+        log.write(_sfp_state.fmt(f, st, info) + "\n")
+        if _sfp_state.bad(st):
+            line = f"{time.strftime('%H:%M:%S')} {label}: STOP " + _sfp_state.fmt(f, st, info)
+            print(line, flush=True)
+            log.write(line + "\n")
+            return None
     # No light at a receiver = fibre not connected or wired TX->TX (nothing swaps it automatically): stop with a hint.
     dark = [f for f in (a, b) if rxpow(f) < DARK_MW]
     if dark:

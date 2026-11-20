@@ -887,3 +887,16 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
   - Unit 1 XLPORT0 (xe49/xe50) is not gated.
 - Never gated: unit 0 GPORT0 (ge1, management, up from boot). An octal goes back down only by a reload (not when its ports go admin down again).
 - Not done, for Dan (no citation or owned by another branch): #25 comment of 2026-11-19.
+
+## 17. SFP module state (#147)
+
+- Per xe port (xe49..xe52), `kernel/us48-cmic/us48_cmic_sfp.c`; sysfs on the netdev: `/sys/class/net/xeN/sfp_state`, `sfp_info`.
+- `sfp_state` = `none | ok | unsupported:<reason> | fault:<reason>`; `sfp_info` = vendor / PN / SN / compliance / nominal rate / supported modes (ok) or the rule text (rejected).
+- Reasons: `bad-checksum` (CC_BASE/CC_EXT), `unknown-connector`, `no-common-mode` (module interfaces vs the cage's phylink interfaces: 10G-only SR in a 1G cage, 1G-only in a 10G cage), `fault:eeprom-unreadable` (ID unreadable 6 s = sfp.c 10 x 100 ms + one 5 s slow retry).
+- Logs: one `xeN: SFP module: <vendor> <pn> sn <sn>, <compliance>, <rate>, supported modes: <list>` at insert, one `xeN: SFP module rejected: <reason>: <rule>` (error) or `fault`, one `xeN: SFP module removed`. Nothing per poll.
+- Mechanism: 300 ms work per port (same cadence as the XLPORT0 gate, section 16). Presence = mod-def0 GPIO (`us48_xe_cage_present`); ID bytes A0h 0..95 via `sfp_get_module_eeprom` on `ndev->sfp_bus` (the kernel sfp reader); judged after two identical reads (sfp.c calls `module_insert` in the same step as its first good ID read, so its caps are current).
+- phylink owns the sfp upstream ops (`module_insert` is not hookable from a MAC driver): the state is derived from `sfp_get_module_caps`, not from the insert return value.
+- Laser: TX_DISABLE belongs to the sfp module (DT `tx-disable-gpios`); a rejected module stays in sfp.c `SFP_MOD_ERROR`, TX never enabled. The driver has no laser control of its own.
+- Not detected: power class above the cage limit (kernel log only), TX_FAULT / LOS.
+- No cage presence GPIO (`moddef0` unknown): state stays `none`.
+- Tools: `scripts/_sfp_state.py`; `port_scan.py` (note column), `health_check.py` (`sfp:xeN`, WARN on unsupported/fault), `sfp_1g_test.py` and `sfp_loop_test.py` (stop with the reason instead of waiting for carrier).

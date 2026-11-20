@@ -1452,8 +1452,10 @@ void us48_remove_common(struct us48_cmic *u)
 			unregister_netdev(u->port[i]->ndev);
 			u->port[i]->registered = false;
 		}
-		if (u->port[i])
+		if (u->port[i]) {
+			us48_xe_sfp_stop(u->port[i]);
 			us48_xe_phylink_destroy(u->port[i]);
+		}
 	}
 	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
@@ -1634,6 +1636,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		strscpy(nd->name, p->cfg->name, IFNAMSIZ);
 		if (p->cfg->copper)
 			nd->sysfs_groups[0] = &us48_copper_group;
+		else
+			nd->sysfs_groups[0] = &us48_xe_group;
 		netif_carrier_off(nd);
 	}
 

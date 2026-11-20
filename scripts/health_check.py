@@ -115,6 +115,18 @@ def check_one(tag: str, d: dict) -> None:
         res("PASS" if ok else "WARN", f"{tag}:poe", f"{poe} fw={d.get('fw')}")
 
 
+def sfp_check() -> None:
+    """Per xe cage: driver SFP module state (sysfs sfp_state / sfp_info, #147); unsupported/fault = WARN with the reason."""
+    out = lx("for d in /sys/class/net/xe*; do echo \"${d##*/} $(cat $d/sfp_state 2>/dev/null || echo n/a)|$(cat $d/sfp_info 2>/dev/null)\"; done")
+    for ln in out.splitlines():
+        name, _, rest = ln.partition(" ")
+        st, _, info = rest.partition("|")
+        if st == "n/a":
+            log(f"sfp:{name}: no sfp_state attribute (driver without #147)")
+            continue
+        res("WARN" if st.startswith(("unsupported", "fault")) else "PASS", f"sfp:{name}", f"{st}" + (f" - {info}" if info else ""))
+
+
 def compare(old: dict, new: dict) -> None:
     try:
         ob, nb = int(old["boot"]), int(new["boot"])
@@ -172,6 +184,8 @@ def main() -> int:
         compare(parse(prev["fresh"]), f)
     else:
         res("PASS", "baseline", "no previous collection (first run)")
+    if not a.dry_run:
+        sfp_check()
     if a.selftest and not a.dry_run:
         out = lx("/usr/sbin/us48-selftest")
         log("selftest:\n" + out)
