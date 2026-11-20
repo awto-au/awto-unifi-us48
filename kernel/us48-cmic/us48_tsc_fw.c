@@ -556,32 +556,128 @@ static int tsc_one(struct us48_cmic *u, u8 lane, u16 reg, u16 mask, u16 val)
 	return tsc_rmw_one(u, &(struct tsc_step){ .reg = reg, .mask = mask, .val = val }, lane);
 }
 
+/* Bisect switches for the stock bring-up order (#78); both pieces are independent. */
+static bool tsc1g_altcredit = true;
+module_param(tsc1g_altcredit, bool, 0444);
+MODULE_PARM_DESC(tsc1g_altcredit, "1G AN enable: stock order (credits/TX lane off, 0x9248 = 0x0e10, AN, TX lane/credits/RX on)");
+static bool tsc1g_linkup_speedset = true;
+module_param(tsc1g_linkup_speedset, bool, 0444);
+MODULE_PARM_DESC(tsc1g_linkup_speedset, "1G link up: replay stock _phy_tscmod_speed_set(1000) (credit/encode/decode, lane cycle)");
+
+#define TX_CREDIT0_REG		0xc100
+#define TX_PCS_CLOCKCNT0_REG	0xc104
+#define  CREDITENABLE		BIT(14)		/* c100 CREDITENABLE and c104 PCS_CREDITENABLE */
+#define TX_MISC_REG		0xc113
+#define  TX_RSTB_LANE		BIT(1)
+#define  TX_ENABLE_LANE		BIT(0)
+#define RX_RSTB_LANE		BIT(0)		/* c137 */
+#define ANATX_DRIVER_REG	0xc017
+#define  ANATX_ELEC_IDLE	BIT(15)
+#define AN_RAM_BASE_REG		0x9248
+#define AN_RAM_BASE_ALT_CREDIT	0x0e10		/* "alternate credit table" (act_addr), stock value, issue #78 */
+#define XLPORT_FAULT_LINK_STATUS(l)	(0x20600 | (l))
+
+/* SDK tscmod_credit_control(0) / tscmod_credit_set(0): credit enable off, then c100/c104 cleared. cfg_seq.c:4342-4372, :4308-4312 */
+static int tsc_1g_credit_off(struct us48_cmic *u, u8 l)
+{
+	return tsc_one(u, l, TX_CREDIT0_REG, CREDITENABLE, 0) ?: tsc_one(u, l, TX_PCS_CLOCKCNT0_REG, CREDITENABLE, 0) ?:
+	       tsc_one(u, l, TX_PCS_CLOCKCNT0_REG, 0xffff, 0) ?: tsc_one(u, l, TX_CREDIT0_REG, 0xffff, 0);
+}
+
+/* tscmod_tx_lane_control(0), no traffic/reset flag: both bits cleared in one RMW. cfg_seq.c:4482-4492 */
+static int tsc_1g_tx_lane(struct us48_cmic *u, u8 l, bool on)
+{
+	if (!on)
+		return tsc_one(u, l, TX_MISC_REG, TX_RSTB_LANE | TX_ENABLE_LANE, 0);
+	/* tscmod_tx_lane_control(1): RSTB first, then ENABLE. cfg_seq.c:4452-4460 */
+	return tsc_one(u, l, TX_MISC_REG, TX_RSTB_LANE, TX_RSTB_LANE) ?:
+	       tsc_one(u, l, TX_MISC_REG, TX_ENABLE_LANE, TX_ENABLE_LANE);
+}
+
+/* Rows of tsc_1g_patch for one register (credit/encode/decode sets reuse the init values). */
+static int tsc_1g_rows(struct us48_cmic *u, u8 l, u16 reg)
+{
+	int i, ret = 0;
+
+	for (i = 0; !ret && i < ARRAY_SIZE(tsc_1g_patch); i++)
+		if (tsc_1g_patch[i].reg == reg)
+			ret = tsc_one(u, l, reg, tsc_1g_patch[i].mask, tsc_1g_patch[i].val);
+	return ret;
+}
+
 /*
  * CL37 AN on/off for one 1G lane (OM autoneg_control_set CL37_10G = 1000BASE-X at PLL div66: OS mode overridden to 8.25 so
  * the base page is received at 1.25 Gbaud; CL37 base ability FD only; PD_KX_EN so a forced-1G partner still links).
+ * AN on with tsc1g_altcredit: stock order, the AN engine runs with credits/TX lane off and the uC credit table 0x0e10.
  */
 int us48_tsc_1g_an(struct us48_port *p, bool an)
 {
 	struct us48_cmic *u = p->u;
 	u8 l = p->cfg->lane;
-	int ret;
+	bool alt = an && tsc1g_altcredit;
+	int ret = 0;
 
 	mutex_lock(&u->mdio);
-	if (an)
+	if (alt)	/* stock: SET_AN_PORT_MODE clears c104/c100, credit control + TX lane off. tscmod.c:7137 area, decompile FUN_01193850 */
+		ret = tsc_1g_credit_off(u, l) ?: tsc_1g_tx_lane(u, l, false) ?:
+		      tsc_one(u, 0, AN_RAM_BASE_REG, 0xffff, AN_RAM_BASE_ALT_CREDIT);	/* tscmod.c:7142 CORE_RESET RAM_BASE (core-wide, AER 0) */
+	if (!ret && an)
 		ret = tsc_one(u, l, PMA_CONTROL_REG, PMA_OVERRIDE_OS_MODE, PMA_OVERRIDE_OS_MODE) ?:
 		      tsc_one(u, l, ENABLES_REG, EN_AN_SETUP | EN_AN_TYPES | GENMASK(13, 12) | EN_CL37_RESTART, EN_AN_SETUP) ?:
 		      tsc_one(u, l, CL37_BASE_ABIL_REG, BIT(8) | BIT(4) | BIT(2), BIT(4)) ?:
 		      tsc_one(u, l, CONTROLS_REG, CTRL_PD_KX_EN, CTRL_PD_KX_EN) ?:
 		      tsc_one(u, l, ENABLES_REG, EN_AN_TYPES | EN_CL37_RESTART, EN_CL37 | EN_CL37_RESTART) ?:
 		      tsc_one(u, l, ENABLES_REG, EN_CL37_RESTART, 0);
-	else
+	else if (!ret)
 		ret = tsc_one(u, l, PMA_CONTROL_REG, PMA_OVERRIDE_OS_MODE, 0) ?:
 		      tsc_one(u, l, ENABLES_REG, EN_AN_TYPES | EN_CL37_RESTART, 0) ?:
 		      tsc_one(u, l, CONTROLS_REG, CTRL_PD_KX_EN, 0);
+	if (!ret && alt)	/* stock: TX lane on, credit control on (c100 b14 only, uC fills the values), RX lane on */
+		ret = tsc_1g_tx_lane(u, l, true) ?: tsc_one(u, l, TX_CREDIT0_REG, CREDITENABLE, CREDITENABLE) ?:
+		      tsc_one(u, l, PMA_CONTROL_REG, RX_RSTB_LANE, RX_RSTB_LANE);
 	mutex_unlock(&u->mdio);
-	netdev_info(p->ndev, "1000BASE-X: CL37 AN %s: %d\n", an ? "on" : "off (forced 1G FD)", ret);
+	netdev_info(p->ndev, "1000BASE-X: CL37 AN %s%s: %d\n", an ? "on" : "off (forced 1G FD)", alt ? " (stock order)" : "", ret);
 	if (!ret)
 		p->an_1g = an;
+	return ret;
+}
+
+/*
+ * After link up: stock _phy_tscmod_speed_set(1000) replay (decompile FUN_011920cc; SDK tscmod_set_spd_intf
+ * cfg_seq.c:3840-3866). SOFT_RESET AN_MODES is NOT replayed: it would stop AN. TX drive (c017/c252) keeps the stage 2 values.
+ */
+int us48_tsc_1g_linkup(struct us48_port *p)
+{
+	struct us48_cmic *u = p->u;
+	u8 l = p->cfg->lane;
+	int ret;
+
+	if (!tsc1g_linkup_speedset)
+		return 0;
+	mutex_lock(&u->mdio);
+	/* credit control off, c100/c104 = 0, TX lane off */
+	ret = tsc_1g_credit_off(u, l) ?: tsc_1g_tx_lane(u, l, false) ?:
+	/* c254 SW_ACTUAL_SPEED 2, c260 FIRMWARE_MODE 0: cfg_seq.c:3829-3846 */
+	      tsc_1g_rows(u, l, 0xc254) ?: tsc_one(u, l, 0xc260, 0xffff, 0) ?:
+	/* credit_set 1000M div66: c100 0xa5 + SPD_SWITCH 0, c101 rsv 0x82, c102 LOOPCNT0 1, c103 0x29, c104/c105 0. cfg_seq.c:4109-4120, :4206-4262 */
+	      tsc_one(u, l, TX_CREDIT0_REG, 0xbfff, 0x00a5) ?: tsc_1g_rows(u, l, 0xc101) ?:
+	      tsc_one(u, l, 0xc102, 0x3fff, 0x0040) ?: tsc_1g_rows(u, l, 0xc103) ?:
+	      tsc_one(u, l, TX_PCS_CLOCKCNT0_REG, 0xbfff, 0) ?: tsc_one(u, l, 0xc105, 0x1fff, 0) ?:
+	/* encode_set (CL36 8b10b: c111, c113 SCR_MODE, c114): cfg_seq.c:2392-2400 */
+	      tsc_1g_rows(u, l, 0xc111) ?: tsc_1g_rows(u, l, TX_MISC_REG) ?: tsc_1g_rows(u, l, 0xc114) ?:
+	/* decode_set 1000M: c130/c134/c136, c137 OS mode 7 + OVERRIDE_OS_MODE: cfg_seq.c:2731-2745 */
+	      tsc_1g_rows(u, l, 0xc130) ?: tsc_1g_rows(u, l, 0xc134) ?: tsc_1g_rows(u, l, 0xc136) ?:
+	      tsc_1g_rows(u, l, PMA_CONTROL_REG) ?: tsc_one(u, l, PMA_CONTROL_REG, PMA_OVERRIDE_OS_MODE, PMA_OVERRIDE_OS_MODE) ?:
+	/* TX lane on (c113 b1 then b0), credit control on, ELEC_IDLE off, RX lane on: stock tail of speed_set */
+	      tsc_1g_tx_lane(u, l, true) ?: tsc_one(u, l, TX_CREDIT0_REG, CREDITENABLE, CREDITENABLE) ?:
+	      tsc_one(u, l, ANATX_DRIVER_REG, ANATX_ELEC_IDLE, 0) ?: tsc_one(u, l, PMA_CONTROL_REG, RX_RSTB_LANE, RX_RSTB_LANE);
+	mutex_unlock(&u->mdio);
+	if (!ret) {	/* XLPORT_FAULT_LINK_STATUS = 0 at <= 1G: SDK xlmac.c:1252-1262 */
+		u32 v = 0;
+
+		ret = us48_sbus(u, 0x0d, BLK_XLPORT, XLPORT_FAULT_LINK_STATUS(l), &v, 1);
+	}
+	netdev_info(p->ndev, "1000BASE-X: link-up speed_set replay: %d\n", ret);
 	return ret;
 }
 

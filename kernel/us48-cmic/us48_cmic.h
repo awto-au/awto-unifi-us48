@@ -223,6 +223,7 @@ int us48_tsc_fw_mode(struct us48_port *p, u16 mode);
 bool us48_cfg_1g(const struct port_cfg *c);
 int us48_tsc_1g_an(struct us48_port *p, bool an);
 void us48_tsc_1g_an_restart(struct us48_port *p);
+int us48_tsc_1g_linkup(struct us48_port *p);
 int us48_xe_mac_1g(struct us48_cmic *u, const struct port_cfg *c);
 /* 1G link state: PCS_LIVE link, AN complete, LP base page (0 if unread). */
 int us48_tsc_1g_status(struct us48_port *p, u16 *live, u16 *an_misc, u16 *lp);
