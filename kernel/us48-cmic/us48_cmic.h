@@ -134,6 +134,13 @@ struct us48_port {
 	u8 sfp_stage;			/* 0 ID unread, 1 ID read once (settle), 2 judged */
 	unsigned long sfp_t0;		/* jiffies at insertion */
 	u8 sfp_id[96];			/* A0h 0..95 as read */
+	u8 sfp_snap[96];		/* A0h 0..95 at insert / last logged change (sfp_watch) */
+	bool sfp_snap_ok;		/* snapshot taken for this insertion */
+	bool sfp_unread;		/* EEPROM unreadable since the snapshot */
+	bool sfp_a2;			/* A2h present (cheap clones: none) */
+	u8 sfp_st110;			/* A2h byte 110 as last read */
+	u32 sfp_changes;		/* EEPROM change events this insertion */
+	u32 sfp_npoll;			/* polls with the module present this insertion */
 	struct us48_br *br;		/* offloaded bridge (switchdev), NULL = private VLAN; rtnl */
 	u8 stp;				/* BR_STATE_* of the port in br */
 	bool learning;			/* BR_LEARNING: PORT_TAB CML 8 while in br */
