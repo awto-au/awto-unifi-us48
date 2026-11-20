@@ -905,3 +905,13 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
 - Not detected: power class above the cage limit (kernel log only), TX_FAULT / LOS.
 - No cage presence GPIO (`moddef0` unknown): state stays `none`.
 - Tools: `scripts/_sfp_state.py`; `port_scan.py` (note column), `health_check.py` (`sfp:xeN`, WARN on unsupported/fault), `sfp_1g_test.py` and `sfp_loop_test.py` (stop with the reason instead of waiting for carrier).
+
+### 17.1 SFP change watch (#147, module param `sfp_watch`, default 1, 0444)
+
+- All lines carry the prefix `SFP CHANGE xeN:` (pr_warn). `sfp_watch=0` turns off the EEPROM watch and every `SFP CHANGE` line; the insert/remove/reject info lines stay.
+- Snapshot at insert (after the judge): A0h bytes 0..95 plus A2h byte 110 when `sfp_get_module_info` reports eeprom_len > 256 (the cheap clones have no A2h).
+- Each 300 ms poll while judged: read CC_BASE (63) and CC_EXT (95) only (they cover 0..62 and 64..94). Mismatch -> re-read 0..95, one line per differing byte `EEPROM CHANGED byte 0x%02x (%d): old -> new` (cap 16, then `N more differing bytes not listed`), snapshot updated (a flapping byte logs each flip), state `fault:eeprom-changed` (sticky until removal), ` [eeprom changes: N]` appended to `sfp_info`.
+- Cost at 100 kHz: 1-byte read = START + 3 address/offset/address bytes + data byte = ~36 bit times = ~0.4 ms; two reads = ~0.8 ms per 300 ms = 0.27 % of the bus (3 ms/s of I2C time at most with A2h status read). Full 96-byte re-read = ~9 ms, only on change. 300 ms kept.
+- Not detected: a change that keeps CC_BASE and CC_EXT identical (a module rewriting bytes and fixing both sums).
+- A2h present: byte 110 each poll, one line per transition of RX_LOS (bit 1) and TX_FAULT (bit 2).
+- Other loud lines: `module inserted`, `module removed`, `state old -> new` (none/ok/unsupported/fault, from every state change), `presence glitch` (mod-def0 present < 2 polls; a pulse shorter than 300 ms is not seen), `EEPROM unreadable after previously readable` (state `fault:eeprom-unreadable`), `EEPROM readable again` (re-judged or compared with the snapshot).
