@@ -375,6 +375,8 @@ MODULE_FIRMWARE("us48-tsc.bin");
 #define XLMAC_TX_CTRL(l)	(0x60400 | (l))
 #define XLMAC_RX_CTRL(l)	(0x60600 | (l))
 #define XLMAC_RX_MAX_SIZE(l)	(0x60800 | (l))
+#define XLMAC_RX_CTRL(l)	(0x60600 | (l))
+#define  XLMAC_RX_STRIP_CRC	BIT(2)	/* stock unit 0 leaves it set; our RX path strips the FCS itself (#78) */
 #define XLMAC_RX_LSS_CTRL(l)	(0x60a00 | (l))
 #define XLMAC_RX_LSS_STATUS(l)	(0x60b00 | (l))
 #define XLMAC_CLR_RX_LSS(l)	(0x60c00 | (l))
@@ -535,6 +537,10 @@ int us48_xe_mac_1g(struct us48_cmic *u, const struct port_cfg *c)
 	v[0] = XLMAC_RX_LSS_1G;
 	v[1] = 0;
 	ret = ret ?: us48_sbus(u, 0x0d, BLK_XLPORT, XLMAC_RX_LSS_CTRL(c->lane), v, 2);
+	/* STRIP_CRC off like unit 1: the MAC would cut the FCS and the driver cuts 4 bytes again, so frames > 60 B lose 4 B (#78) */
+	ret = ret ?: us48_sbus(u, 0x0b, BLK_XLPORT, XLMAC_RX_CTRL(c->lane), v, 2);
+	v[0] &= ~XLMAC_RX_STRIP_CRC;
+	ret = ret ?: us48_sbus(u, 0x0d, BLK_XLPORT, XLMAC_RX_CTRL(c->lane), v, 2);
 	if (ret)
 		dev_err(u->dev, "%s: XLMAC 1G mode failed: %d\n", c->name, ret);
 	return ret;
@@ -560,7 +566,7 @@ static int tsc_one(struct us48_cmic *u, u8 lane, u16 reg, u16 mask, u16 val)
 static bool tsc1g_altcredit = true;
 module_param(tsc1g_altcredit, bool, 0444);
 MODULE_PARM_DESC(tsc1g_altcredit, "1G AN enable: stock order (credits/TX lane off, 0x9248 = 0x0e10, AN, TX lane/credits/RX on)");
-static bool tsc1g_linkup_speedset = true;
+static bool tsc1g_linkup_speedset;	/* default off: no code base replays speed_set after AN (#78 survey); recovery switch only */
 module_param(tsc1g_linkup_speedset, bool, 0444);
 MODULE_PARM_DESC(tsc1g_linkup_speedset, "1G link up: replay stock _phy_tscmod_speed_set(1000) (credit/encode/decode, lane cycle)");
 
