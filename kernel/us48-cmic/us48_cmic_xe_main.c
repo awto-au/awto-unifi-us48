@@ -168,7 +168,7 @@ static int tscwr_set(const char *val, const struct kernel_param *kp)
 	if (sscanf(val, "%u %x %x %x %x", &front, &aer, &reg, &mask, &v) != 5 || reg > 0x1ffff || mask > 0xffff || v > 0xffff)
 		return -EINVAL;
 	mutex_lock(&dump_lock);
-	u = front == 51 ? us48_unit0() : dump_u;	/* xe51 = unit 0 SFP 1, as xe_port_op */
+	u = front >= 51 ? us48_unit0() : dump_u;	/* xe51/xe52 = unit 0 SFP 1/2, as xe_port_op */
 	if (!u || !dump_u)
 		ret = -ENODEV;
 	for (i = 0; u && dump_u && i < u->nports; i++) {
