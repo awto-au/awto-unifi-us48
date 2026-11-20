@@ -10,7 +10,7 @@
  */
 
 #define US48_PORTS_UNIT0 \
-	{ .name = "xe51", .vid = 51, .front = 51, .lport = 26, .phys = 26, .lane = 0 }, \
+	{ .name = "xe51", .vid = 51, .front = 51, .lport = 26, .phys = 26, .lane = 0, .tx_pol = true }, \
 	{ .name = "xe52", .vid = 52, .front = 52, .lport = 27, .phys = 28, .lane = 2 }, \
 	{ .name = "ge1", .vid = 101, .front = 1, .lport = 2, .phys = 9, .lane = 7, .copper = true, .blk = 2, .phy = 0x09 }, \
 	{ .name = "ge2", .vid = 102, .front = 2, .lport = 3, .phys = 8, .lane = 6, .copper = true, .blk = 2, .phy = 0x08 }, \

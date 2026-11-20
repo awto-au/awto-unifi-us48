@@ -481,6 +481,9 @@ class Db:
             for k in ("front", "label", "unit", "logical", "phys", "phy", "src", "conf"):
                 if k not in p:
                     err.append("port %s: missing %s" % (p.get("front"), k))
+            for k in ("tx_polarity", "rx_polarity"):
+                if k in p and (not isinstance(p[k], bool) or "linux" not in p or p["phy"] != "none"):
+                    err.append("port %s: %s must be a bool on an xe port" % (p["front"], k))
             if "loop_peer" in p and self.port(p["loop_peer"]).get("loop_peer") != p["front"]:
                 err.append("port %s: loop_peer %s is not reciprocal" % (p["front"], p["loop_peer"]))
         return err

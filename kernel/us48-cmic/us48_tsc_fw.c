@@ -292,6 +292,11 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 			continue;
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
 		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), u->cfgs[i].lane, BIT(u->cfgs[i].lane), fw);
+		/* Board lane polarity (hwdb, #78): ANATX_ACONTROL0 TXPOL_FLIP b5, ANARX_ACONTROL0 RXPOL_FLIP b15; analog, live */
+		if (!ret && u->cfgs[i].tx_pol)
+			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc011, .mask = BIT(5), .val = BIT(5) }, u->cfgs[i].lane);
+		if (!ret && u->cfgs[i].rx_pol)
+			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc021, .mask = BIT(15), .val = BIT(15) }, u->cfgs[i].lane);
 		/* FIRMWARE_MODE 0 (OM SFI, stage 0 value) until pcs_config sees a DAC in the cage */
 		if (!ret) {
 			dev_info(u->dev, "tsc %s: stage 2 + speed set (10G SFI) done\n", u->cfgs[i].name);

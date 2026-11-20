@@ -357,8 +357,9 @@ def port_cfg(p):
         return ('{ .name = "ge%d", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d, .copper = true, .blk = %d, '
                 '.phy = 0x%02x%s }' % (p["front"], 100 + p["front"], p["front"], p["logical"], p["phys"], lane,
                                        2 + int(m.group(2)), p["phy_addr"], ", .external_phy = true" if p["phy"] == "octal" else ""))
-    return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d }' % (
-        p["linux"], p["front"], p["front"], p["logical"], p["phys"], lane)
+    pol = "".join(", .%s = true" % f for k, f in (("tx_polarity", "tx_pol"), ("rx_polarity", "rx_pol")) if p.get(k))
+    return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d%s }' % (
+        p["linux"], p["front"], p["front"], p["logical"], p["phys"], lane, pol)
 
 
 def gen_ports_c(db):

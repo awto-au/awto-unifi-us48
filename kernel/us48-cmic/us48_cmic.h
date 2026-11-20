@@ -94,6 +94,7 @@ struct port_cfg {
 	u16 vid;			/* private VLAN id */
 	u8 blk, phy;			/* copper: GPORT block and MIIM PHY address */
 	bool external_phy;		/* copper PHY is on external MIIM bus 0 */
+	bool tx_pol, rx_pol;		/* xe: invert the TSC lane TX / RX (hwdb ports.toml, #78) */
 };
 
 #define MAXPORTS	26		/* unit 1: 24 copper + 2 xe */
