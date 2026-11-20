@@ -49,6 +49,16 @@ def wr(front, reg, mask, val):
     sh(f'echo "{front} {LANE[front]} {reg:x} {mask:x} {val:x}" > {XE}/tscwr')
 
 
+DARK_MW = 0.05  # module rx low-alarm threshold is 0.0646 mW (FS SFP-10GSR-85 DDM); below it nothing usable arrives
+
+
+def rxpow(front):
+    """Receiver optical power in mW from the module DDM (ethtool -m); -1 if unreadable."""
+    out = sh(f"ethtool -m xe{front} 2>&1 | grep -E '^\\s*Receiver signal average optical power\\s*:'")
+    m = re.search(r":\s*([0-9.]+) mW", out)
+    return float(m.group(1)) if m else -1.0
+
+
 def events(front):
     return int(sh(f'dmesg | grep -c "xe{front}: Link is"').strip() or 0)
 
@@ -66,6 +76,14 @@ def attempt(a, b, label, log):
     for f in (a, b):
         sh(f"ip link set xe{f} up")
     time.sleep(8)
+    # No light at a receiver = fibre not connected or wired TX->TX (nothing swaps it automatically): stop with a hint.
+    dark = [f for f in (a, b) if rxpow(f) < DARK_MW]
+    if dark:
+        line = (f"{time.strftime('%H:%M:%S')} {label}: NO LIGHT at xe{dark}: rx < {DARK_MW} mW. "
+                "Fibre missing or TX->TX: swap the LC duplex connector at one end.")
+        print(line, flush=True)
+        log.write(line + "\n")
+        return None
     for f in (a, b):
         sh(f"echo {f} > {XE}/rx_restart")
     time.sleep(6)
@@ -106,7 +124,7 @@ def main():
         log.write(f"# start loop xe{a.a} xe{a.b}; original c011/c021 {orig}\n")
         try:
             ok = attempt(a.a, a.b, "baseline (driver polarity)", log)
-            if not ok and a.sweep:
+            if ok is False and a.sweep:  # None = no light: a sweep cannot help
                 for bits in itertools.product((0, 1), repeat=4):  # txA rxA txB rxB
                     for f, (tx, rx) in zip(fr, (bits[0:2], bits[2:4])):
                         wr(f, 0xc011, 0x20, 0x20 if tx else 0)
