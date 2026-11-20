@@ -72,7 +72,9 @@ def diag(f, fh):
 
 
 def counters(f):
-    out = sh(f"ip -s -o link show xe{f}")
+    # BusyBox ip has no -s: read the sysfs counters.
+    out = sh(f"cd /sys/class/net/xe{f}/statistics && echo rx_packets=$(cat rx_packets) tx_packets=$(cat tx_packets) "
+             f"rx_bytes=$(cat rx_bytes) tx_bytes=$(cat tx_bytes) rx_errors=$(cat rx_errors)")
     return out.strip()
 
 

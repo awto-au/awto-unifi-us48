@@ -776,7 +776,14 @@ static void port_enable(struct us48_port *p)
 		return;
 	/* Only from stock's parked state: re-crediting a running port is not known safe. */
 	if (!sbus(u, 0x0b, BLK_XLPORT, 0x60000 | a, v, 2) && (v[0] & 0x43) == 0x03) {
-		dev_info(u->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip enable\n", p->cfg->name, v[0]);
+		dev_info(u->dev, "%s: MAC already enabled (XLMAC_CTRL %08x): skip MAC enable\n", p->cfg->name, v[0]);
+		if (g1) {	/* 1G lane TX starts parked (ELEC_IDLE, lane off): lane sequence still needed (#78) */
+			mutex_lock(&u->mdio);
+			ret = us48_tsc_wr(u, 0xffde, a);
+			for (i = 0; !ret && i < n; i++)
+				ret = us48_tsc_wr(u, sq[i][0], sq[i][1]);
+			mutex_unlock(&u->mdio);
+		}
 		tx_credit_cycle(u, a, credit);
 		return;
 	}

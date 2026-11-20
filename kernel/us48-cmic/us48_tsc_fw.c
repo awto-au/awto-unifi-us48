@@ -334,9 +334,10 @@ int us48_tsc_init(struct us48_cmic *u, const struct firmware *fw)
 		ret = tsc_run(u, tsc_stage2, ARRAY_SIZE(tsc_stage2), c->lane, BIT(c->lane), fw, g1);
 		ret = ret ?: tsc_run(u, tsc_stage3, ARRAY_SIZE(tsc_stage3), c->lane, BIT(c->lane), fw, g1);
 		/* Board lane polarity (hwdb, #78): ANATX_ACONTROL0 TXPOL_FLIP b5, ANARX_ACONTROL0 RXPOL_FLIP b15; analog, live */
-		if (!ret && c->tx_pol)
+		/* 1000BASE-X links with TX polarity off on xe51 (#78): hwdb polarity is the 10G finding only */
+		if (!ret && c->tx_pol && !g1)
 			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc011, .mask = BIT(5), .val = BIT(5) }, c->lane);
-		if (!ret && c->rx_pol)
+		if (!ret && c->rx_pol && !g1)
 			ret = tsc_rmw_one(u, &(struct tsc_step){ .reg = 0xc021, .mask = BIT(15), .val = BIT(15) }, c->lane);
 		/* FIRMWARE_MODE 0 (OM SFI, stage 0 value) until pcs_config sees a DAC in the cage */
 		if (!ret) {
