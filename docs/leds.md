@@ -131,7 +131,13 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 - `default_trigger` = `ge<N>-poe-good`. TODO (#26): `bcm59111` registers one simple trigger per PI and fires 1 on power-good, 0 on disconnect; needs its IRQ path (`0x03` bits 7:4 / `0x07`, docs/poe-pse.md). Not registered today: LEDs keep their value. PI -> front map is I (`4(NN-1)+p+1`, poe-pse.md).
 - `/sys/bus/platform/devices/us48-board-io/poe_pattern` (rw): 48 digits 0-2 in front order, or `off`. `poe_frame_errors` (ro): failed PoE LED frames since probe.
 - Field 2 (passive colour) only through `poe_pattern` (tests); the passive power path itself is not implemented (poe-pse.md section 3).
-- `scripts/led_cycle.py`: chase lights the PoE LED of the chased port (field 1 green pass, 2 yellow pass); solid phase all PoE 0/1/2/1; skipped with a note when `poe_pattern` is absent.
+- Board check 2026-11-20 (Dan at the panel, PoE off, flashed 5ec20f4 + module reload, C):
+  - Position: the PoE LED is at the top left of each port, in the top row of ports.
+  - Card 1 (front 1-24; chain (0,0)): field 1 = green (front 1, 24), field 2 = yellow (front 1).
+  - Card 2 (front 25-48; chain (0,1)): field 1 = yellow (front 25, 48), field 2 = green (front 25). The two cards have the colours swapped.
+  - Stock's meaning (1 = 802.3 power-good, 2 = passive) therefore shows green/yellow on card 1 and yellow/green on card 2 (colour per field I, from the stock writer).
+  - Fans stayed quiet (`wire_level` 0, `frame_errors` 0) and PoE stayed off through the test.
+- `scripts/led_cycle.py`: chase lights the PoE LED of the chased port in the colour of the port LED (field chosen per card, `poe_field`); solid phase all PoE green; skipped with a note when `poe_pattern` is absent.
 
 ### Board check (Dan at the panel; read-only for PoE)
 Preconditions: image with `us48_boardio` + `us48_fan` from this branch. PoE stays off: no `portN_enable` / `poe_test.py enable`, `bcm59111` (main = hwmon only) not changed. Cables: only what the session needs (ge1 management).

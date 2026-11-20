@@ -48,9 +48,17 @@ def poe_cmd(poe, fields):
     return f"; echo {fields} > {POE}" if poe else ""
 
 
-def one_poe(front, val):
-    """PoE fields with only `front` set to `val` (1 or 2); front 0 = all off."""
-    return "".join(str(val) if f == front else "0" for f in range(1, NPOE + 1))
+def poe_field(front, bit):
+    """PoE field giving the colour of port-LED `bit` (0 green, 1 yellow): the two cards are swapped (#26 board check).
+
+    Card 1 (front 1-24): field 1 green, field 2 yellow. Card 2 (front 25-48): field 1 yellow, field 2 green.
+    """
+    return 1 + (bit if front <= 24 else 1 - bit)
+
+
+def one_poe(front, bit):
+    """PoE fields with only `front` lit in the colour of `bit` (0 green, 1 yellow)."""
+    return "".join(str(poe_field(f, bit)) if f == front else "0" for f in range(1, NPOE + 1))
 
 
 def port_steps(poe):
@@ -72,7 +80,7 @@ def chase_stream(poe):
     """Endless running light: odd 1..47 up, even 48..2 down, in green then yellow, with one cage lit alongside.
 
     Cages advance every second copper step, same colour. SFP 1/2 (front 51/52): one colour, green on bit 1 (#14);
-    dark in the yellow pass. PoE LED of the chased port: field 1 green pass, 2 yellow pass.
+    dark in the yellow pass. PoE LED of the chased port: same colour as the port LED (field per card, poe_field).
     """
     copper = list(range(1, 48, 2)) + list(range(48, 1, -2))
     cages = (50, 49, 51, 52)
@@ -86,15 +94,16 @@ def chase_stream(poe):
                         lit.append((c, 1))
                 else:
                     lit.append((c, bit))
-                yield f"chase {colour} port {f} + cage front {c}" + (f", PoE {bit + 1}" if poe else ""), \
-                    f"echo {leds(lit)} > {L}/pattern" + poe_cmd(poe, one_poe(f, bit + 1))
+                yield f"chase {colour} port {f} + cage front {c}" + (f", PoE {colour}" if poe else ""), \
+                    f"echo {leds(lit)} > {L}/pattern" + poe_cmd(poe, one_poe(f, bit))
 
 
 def solid_step(poe):
     """Every LED on in green: bit 0 on fronts 1-50, bit 1 on SFP 1/2 (front 51/52); PoE all field 1."""
     lit = [(f, 0) for f in range(1, 51)] + [(51, 1), (52, 1)]
-    return "all LEDs solid green" + (", PoE all 1" if poe else ""), \
-        f"echo {leds(lit)} > {L}/pattern" + poe_cmd(poe, "1" * NPOE)
+    green = "".join(str(poe_field(f, 0)) for f in range(1, NPOE + 1))
+    return "all LEDs solid green" + (", PoE all green" if poe else ""), \
+        f"echo {leds(lit)} > {L}/pattern" + poe_cmd(poe, green)
 
 
 def main():
