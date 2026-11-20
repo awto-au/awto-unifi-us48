@@ -111,6 +111,7 @@
 | 24 | PCI: iproc: Keep PERST# released at shutdown on Hurricane 2 | `CLK_CTRL` survives the chip reset; shutdown PERST# made the next boot's first unit 1 access stall until the SP805 bit (#67, #98). Keyed on `brcm,iproc-hr2-pcie`; vendor kernel never asserts it |
 | 22 | lib/stackdepot: Initialise only the hash table entries that were allocated | `init_stack_table()` ran over the requested count, not the allocated one: overwrote the `struct page` array under KASAN (#84) |
 | 28 | ARM: dts: broadcom: us-48-500w: Add a ramoops region | `ramoops@6e000000` 1 MiB (record 64 KiB, console 256 KiB, pmsg 256 KiB): RAM record of the boot health line, no flash ([selftest.md](selftest.md#boot-record)). `CONFIG_PSTORE{,_CONSOLE,_PMSG,_RAM}=y` (#35). Numbered 28: 25-27 are on the unmerged sensors/LED branches |
+| 29 | net: sfp: Add quirk for Cisco-Finisar GLC-SX-MM | EEPROM unused binary fields are 0x20-padded (connector 0x03, 10GBASE-LR bit, options 0x2020): connector set to LC, 0x20 bytes in 3-19/36/64-65 zeroed after the checksum check, before any parsing. Kernel change: needs a new image, not a module reload (#78) |
 
 Differences to the old OpenWrt DTS (`openwrt/0001-*.patch` in tag `openwrt-parked`):
 - APB clock moved into `bcm-hr2.dtsi`; no per-board clock overrides.
