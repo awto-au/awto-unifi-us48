@@ -84,3 +84,9 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - On the next work run the driver sees `expired`, logs `firmware host watchdog expired`, writes the restart, re-arms and re-enables the ports it had enabled (`want[]`; ports blocked by the power watcher stay off). The same path runs after a kernel stall that recovers.
 - Unbind (module unload) = PoE off (Dan 2026-11-21): the driver shuts all ports of the chip (`OP_MOD` = 0, read back), on stock firmware too, then disarms the watchdog. A reload therefore drops PoE until the driver enables the ports again. An unloaded driver = ports off, so the watchdog is not needed then.
 - Limits: the poke shares the I2C bus with everything else (a firmware download of another chip, the 1 s power scan): each transfer is short and the bus lock is per transfer, but a stall of the work queue or the I2C controller for 200 ms drops the ports (intended). Worst-case I2C latency under load is not measured (M).
+
+### Bench: measured-power watcher with real loads (2026-11-21, cameras on front 26 and 40)
+- Both cameras: class 4, 52.3 V, `power_mW` 2192 / 2234 (stock showed 2.47 / 2.39 W), total 4382 mW.
+- `power_limit_mw` set to 3000: next scan (<= 1 s) logged `over budget (4382 mW > 3000 mW): port 4 (PoE-10) shut and blocked, was 2190 mW`; port 40 (the later port of the same scan) went `blocked_over_budget`, port 26 kept delivering, total 2195 mW.
+- Limit back to 436000 and `portN_enable` = 1 on port 40: block cleared, port delivers again.
+- Needs `us48_fan.poe_field` = 2 (default): with field 0 the PSE never detects a PD (docs/poe.md M1).

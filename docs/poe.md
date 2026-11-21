@@ -204,7 +204,7 @@ Rules for Linux (safe default):
 
 ## 10. Open items
 
-- M1: MSPI field `10` required for 802.3 power? Test with BCM auto and field `0` on a dummy-load PD, then field `2`. Needs owner (#24 checklist).
+- M1 ANSWERED (bench 2026-11-21, two real 802.3at cameras on front 26 and 40): with MSPI field `0` every port detects `open` (BCM auto, detect + class enabled); writing field `2` (all `0xaa` in the (1,x) frame bytes 1..6, as stock) makes both cameras detect class 4 and power up (52.3 V, 2.2 W each). Field `2` is required for 802.3. `us48_fan.poe_field` (default 2) writes it. Passive field `1` is never written.
 - M2: Read `0x44`, `0x46..0x48`, `0x01`, `0x13`, `0x14` on a stock-configured chip (read-only) to settle ICUT/ILIM/mask values.
 - M3: Cold-boot chip state; reset polarity and OUTEN source (scope or read CCA `0x18000064/68` right after POR).
 - M4: FW load time on the real bus (sets the timeout; #26).
