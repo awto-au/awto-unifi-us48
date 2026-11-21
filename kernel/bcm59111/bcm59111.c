@@ -9,6 +9,7 @@
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/i2c.h>
+#include <linux/ktime.h>
 #include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -84,6 +85,18 @@ static unsigned int poll_ms;
 module_param(poll_ms, uint, 0444);
 MODULE_PARM_DESC(poll_ms, "log power-good changes every N ms; default 0 = off; 300 suggested (FW disconnect timer 30 ticks x 10 ms, docs/poe-fw.md 11)");
 
+static unsigned int power_limit_mw = 436000;
+module_param(power_limit_mw, uint, 0644);
+MODULE_PARM_DESC(power_limit_mw, "measured total power cap over all chips: above it the most recently powered port is shut and blocked; 436000 = 500 W PSU - 64 W (poe.md 7); 0 = off");
+
+static unsigned int power_poll_ms = 1000;
+module_param(power_poll_ms, uint, 0444);
+MODULE_PARM_DESC(power_poll_ms, "scan period of the measured-power watcher; 0 = off. One scan of 12 chips is ~240 I2C byte reads");
+
+static unsigned int total_mw;
+module_param(total_mw, uint, 0444);
+MODULE_PARM_DESC(total_mw, "read-only: total measured port power at the last scan");
+
 static unsigned long long passive_ports;
 module_param(passive_ports, ullong, 0444);
 MODULE_PARM_DESC(passive_ports, "UNVERIFIED (M1/M6): 24 V passive front ports; NOT IMPLEMENTED (needs MSPI field 1 in us48_boardio), non-zero only warns");
@@ -97,6 +110,9 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	u32 pw_mw[NPORT];		/* last measured power, watcher */
+	u64 pw_since_ms[NPORT];		/* first scan that saw the port powered; 0 = not powered */
+	bool blocked[NPORT];		/* shut by the watcher (over budget); cleared by an explicit enable */
 	struct delayed_work poll;
 };
 
@@ -224,21 +240,26 @@ static int bcm_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 	return vm < 0 ? vm : vm * UV_PER_VM;
 }
 
-static int bcm_pi_get_actual_pw(struct pse_controller_dev *pcdev, int id)
+static int port_mw(struct bcm59111 *b, int id)
 {
-	struct bcm59111 *b = to_bcm(pcdev);
-	int pwr = rd(b, REG_STAT_PWR), vm, cm;
+	int vm, cm;
 
-	if (pwr < 0)
-		return pwr;
-	if (!(pwr & BIT(id + 4)))
-		return 0;
 	vm = rd16(b, REG_VM(id));
 	cm = rd16(b, REG_CM(id));
 	if (vm < 0 || cm < 0)
 		return vm < 0 ? vm : cm;
 	/* mW = (vm * 5.835 mV) * (cm * 122.07 uA) */
 	return div64_u64((u64)vm * UV_PER_VM * cm * NA_PER_CM, 1000000ULL * 1000000ULL);
+}
+
+static int bcm_pi_get_actual_pw(struct pse_controller_dev *pcdev, int id)
+{
+	struct bcm59111 *b = to_bcm(pcdev);
+	int pwr = rd(b, REG_STAT_PWR);
+
+	if (pwr < 0)
+		return pwr;
+	return pwr & BIT(id + 4) ? port_mw(b, id) : 0;
 }
 
 /*
@@ -353,6 +374,8 @@ static ssize_t enable_store(struct device *dev, struct device_attribute *a, cons
 	if (ret)
 		return ret;
 	mutex_lock(&b->pcdev.lock);
+	if (on)
+		b->blocked[id] = false;
 	ret = on ? bcm_pi_enable(&b->pcdev, id) : bcm_pi_disable(&b->pcdev, id);
 	mutex_unlock(&b->pcdev.lock);
 	return ret ? ret : len;
@@ -375,7 +398,7 @@ static ssize_t status_show(struct device *dev, struct device_attribute *a, char 
 	if (mw < 0)
 		return mw;
 	return sysfs_emit(buf, "%s class %d voltage_uV %d power_mW %d reserved_mW %u\n",
-			  st[min_t(u32, ps.c33_pw_status, ARRAY_SIZE(st) - 1)], cls, uv, mw,
+			  b->blocked[id] ? "blocked_over_budget" : st[min_t(u32, ps.c33_pw_status, ARRAY_SIZE(st) - 1)], cls, uv, mw,
 			  b->reserved[id] ? b->reserve_mw : 0);
 }
 
@@ -468,6 +491,116 @@ static void bcm_poll(struct work_struct *w)
 static void bcm_poll_stop(void *data)
 {
 	cancel_delayed_work_sync(data);
+}
+
+/* ---- measured-power watcher: total over all chips > power_limit_mw -> shut + block the most recently powered port ---- */
+
+static struct bcm59111 *chips[12];
+static DEFINE_MUTEX(chips_lock);
+static struct delayed_work watch_work;
+
+static void bcm_watch(struct work_struct *w)
+{
+	unsigned int total = 0;
+	int i, id;
+
+	mutex_lock(&chips_lock);
+	for (i = 0; i < ARRAY_SIZE(chips); i++) {
+		struct bcm59111 *b = chips[i];
+		int pwr;
+
+		if (!b)
+			continue;
+		mutex_lock(&b->pcdev.lock);
+		pwr = rd(b, REG_STAT_PWR);
+		for (id = 0; id < NPORT; id++) {
+			int mw = pwr >= 0 && (pwr & BIT(id + 4)) ? port_mw(b, id) : -1;
+
+			if (mw < 0) {
+				b->pw_mw[id] = 0;
+				b->pw_since_ms[id] = pwr < 0 ? b->pw_since_ms[id] : 0;	/* read failure: keep the age */
+				continue;
+			}
+			if (!b->pw_since_ms[id])
+				b->pw_since_ms[id] = ktime_to_ms(ktime_get());
+			b->pw_mw[id] = mw;
+			total += mw;
+		}
+		mutex_unlock(&b->pcdev.lock);
+	}
+	total_mw = total;
+	while (power_limit_mw && total > power_limit_mw) {
+		struct bcm59111 *nb = NULL;
+		int nid = 0;
+		u64 newest = 0;
+
+		for (i = 0; i < ARRAY_SIZE(chips); i++)
+			for (id = 0; chips[i] && id < NPORT; id++)
+				if (chips[i]->pw_since_ms[id] && chips[i]->pw_since_ms[id] >= newest) {
+					newest = chips[i]->pw_since_ms[id];	/* ties: the last in scan order = highest front port */
+					nb = chips[i];
+					nid = id;
+				}
+		if (!nb)
+			break;
+		mutex_lock(&nb->pcdev.lock);
+		bcm_pi_disable(&nb->pcdev, nid);
+		mutex_unlock(&nb->pcdev.lock);
+		nb->blocked[nid] = true;
+		dev_warn(&nb->client->dev, "over budget (%u mW > %u mW): port %d (%s) shut and blocked, was %u mW; enable it by hand to retry\n",
+			 total, power_limit_mw, nid + 1, nb->label ?: "?", nb->pw_mw[nid]);
+		total -= min(total, nb->pw_mw[nid]);
+		nb->pw_mw[nid] = 0;
+		nb->pw_since_ms[nid] = 0;
+		total_mw = total;
+	}
+	mutex_unlock(&chips_lock);
+	schedule_delayed_work(&watch_work, msecs_to_jiffies(power_poll_ms));
+}
+
+static void bcm_watch_remove(void *data)
+{
+	struct bcm59111 *b = data;
+	bool last = true;
+	int i;
+
+	mutex_lock(&chips_lock);
+	for (i = 0; i < ARRAY_SIZE(chips); i++) {
+		if (chips[i] == b)
+			chips[i] = NULL;
+		last &= !chips[i];
+	}
+	mutex_unlock(&chips_lock);
+	if (last)
+		cancel_delayed_work_sync(&watch_work);
+}
+
+static int bcm_watch_add(struct bcm59111 *b)
+{
+	bool first = true;
+	int i, slot = -1;
+
+	if (!power_poll_ms || !power_limit_mw)
+		return 0;
+	mutex_lock(&chips_lock);
+	for (i = 0; i < ARRAY_SIZE(chips); i++) {
+		if (chips[i])
+			first = false;
+		else if (slot < 0)
+			slot = i;
+	}
+	if (slot >= 0)
+		chips[slot] = b;
+	mutex_unlock(&chips_lock);
+	if (slot < 0) {
+		dev_warn(&b->client->dev, "power watcher: more than 12 chips, this one is not watched\n");
+		return 0;
+	}
+	if (first) {
+		INIT_DELAYED_WORK(&watch_work, bcm_watch);
+		schedule_delayed_work(&watch_work, msecs_to_jiffies(power_poll_ms));
+	}
+	return devm_add_action_or_reset(&b->client->dev, bcm_watch_remove, b);
 }
 
 /* Port bits of enable_ports for this chip: label PoE-NN = chip NN, front ports 4(NN-1)+1..4(NN-1)+4 */
@@ -615,6 +748,9 @@ static int bcm_pse_init(struct bcm59111 *b)
 		if (ret)
 			dev_warn(dev, "enable_ports: port %d not enabled: %d\n", port + 1, ret);
 	}
+	ret = bcm_watch_add(b);
+	if (ret)
+		return ret;
 	if (poll_ms) {
 		INIT_DELAYED_WORK(&b->poll, bcm_poll);
 		ret = devm_add_action_or_reset(dev, bcm_poll_stop, &b->poll);

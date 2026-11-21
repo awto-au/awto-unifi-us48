@@ -55,3 +55,23 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 5. `poe_test.py off --apply` writes 0 to all ports.
 6. Budget accounting is checked as `reserved_mW` while enabled and 0 after. Over-budget refusal needs 15 enabled ports at 30 W (or a DT `brcm,port-reserve-milliwatt` large enough for two ports): not done under the one-port-per-run rule.
 7. Measurements still wanted: M2 (read `0x01,0x13,0x14,0x44,0x46-0x48` of a stock-configured chip), M3 (cold boot chip state, GPIO 9), M4 (firmware load time), M5 (over-budget behaviour of the chip), cold-boot `fw_load=1` path (needs reset).
+
+## Power budget policy: measured total, newest port blocked (Dan 2026-11-21)
+
+- Admission does not use reservations as the limit: every port is enabled at boot (30 W class-4 reservation, DT budget 1440 W = 48 x 30 W, so the regulator accounting never refuses).
+- The limit is the **measured** power. `bcm_watch` (one work item for all 12 chips) scans every `power_poll_ms` (default 1000 ms; one scan = 12 x `STAT_PWR` + `VM`/`CM` of each powered port, ~240 I2C byte reads at most).
+  - Per port: power-good bit (`STAT_PWR` bits 7:4) -> `mW = VM x 5.835 mV x CM x 122.07 uA` (same maths as `power_mW` in the port status).
+  - Sum over all chips -> `total_mw` (read-only parameter).
+  - Sum > `power_limit_mw` (default 436000 = 500 W PSU - 64 W, poe.md section 7; writable at runtime; 0 = off): the port that was **powered most recently** is shut (OP_MOD = 0) and marked `blocked_over_budget`, the sum is reduced by its last reading, repeat until under the limit.
+  - "Most recently" = the first scan that saw the port with power good (resolution = scan period; ties inside one scan: highest front port number).
+  - A blocked port stays shut: no automatic retry. `portN_enable` = 1 clears the block and tries again (it is shut again if the total is still over).
+  - Log: `over budget (X mW > Y mW): port N (PoE-NN) shut and blocked, was Z mW`.
+- Parameters: `power_limit_mw`, `power_poll_ms` (0 = no watcher), `total_mw` (ro). Code: `kernel/bcm59111/bcm59111.c` `bcm_watch`.
+
+### Risk: the limit is enforced only while the kernel runs
+- The chip firmware has no budget logic (poe-fw.md 7): it protects each port (ICUT / ILIM, fault cool-down) but nothing limits the sum.
+- Kernel down (panic, hang, watchdog reset, module unloaded, i2c hang): the watcher stops; ports keep their state (module unload and warm reboot leave the chips powered, #24) and the total can go over 436 W up to what the PSU supplies. Over the PSU rating: sagging rail, PSU protection trip, all PD power lost, or damage.
+- Even with the kernel up: reaction time is at least one scan (1 s) plus the I2C scan time; inrush and class-4 PDs can overshoot briefly. A PD that goes from idle to full load between scans is only seen at the next scan.
+- All 48 ports are enabled at boot, the chips power ports one chip at a time while their firmware loads (~4 s each): the total rises in steps and the watcher runs from the first chip, but there is no soft-start staging inside a chip.
+- Open: the chip host watchdog `WDT_TIME` (reg 0x42) might shut ports when the host stops talking: semantics unknown (M, #151). Until measured it is not a mitigation.
+- Options to reduce the risk (not done): lower `power_limit_mw` to leave headroom for the scan latency; shorter `power_poll_ms` after raising the I2C speed (#158); enable ports in stages at boot; a hardware PSU / current limit outside the chips.
