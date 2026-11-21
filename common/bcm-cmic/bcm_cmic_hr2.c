@@ -575,12 +575,16 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
 	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
 	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
-	if (ge->external_phy) {
-		ret = ge->blk_ready ? 0 : bcm54282_top_reset(u, ge->phy - l);
-		ret = ret ?: bcm54282_link_init(u, ge->phy);
-	} else {
-		/* Integrated GPHY powers up with BMCR PDN set: AN enable + restart + FD + 1000, PDN clear (OM step 4). */
-		ret = bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340);
+	if (ge->external_phy && !ge->blk_ready)
+		ret = bcm54282_top_reset(u, ge->phy - l);
+	else
+		ret = 0;
+	if (!ge->phy_managed) {
+		if (ge->external_phy)
+			ret = ret ?: bcm54282_link_init(u, ge->phy);
+		else
+			/* Integrated GPHY powers up with BMCR PDN set: AN enable + restart + FD + 1000, PDN clear (OM step 4). */
+			ret = ret ?: bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340);
 	}
 	if (ret)
 		return ret;
@@ -613,22 +617,6 @@ int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, cons
 		ones += hweight32(e[i]);
 	set_field(e, 100, 1, ones & 1);			/* EVEN_PARITY */
 	return sbus(u, add ? BCM_SCHAN_TABLE_INSERT : BCM_SCHAN_TABLE_DELETE, BLK_IPIPE, L2X, e, 4);
-}
-
-/*
- * MII_CTRL b11 POWER_DOWN (IEEE 802.3 22.2.4.1.5): RMW set, as SDK phy_bcm542xx_enable_set / phy_54680_enable_set(0).
- * Up = the bring-up's MII_CTRL 0x1340 (PDN 0, AN + restart), so the link renegotiates.
- */
-int bcm_hr2_ge_phy_power(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, bool on)
-{
-	bool internal = !ge->external_phy;
-	u16 v;
-	int ret;
-
-	if (on)
-		return bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, 0x1340);
-	ret = bcm_cmic_miim_read(u, internal, 0, ge->phy, 0, &v);
-	return ret ?: bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, v | BIT(11));
 }
 
 bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed)
