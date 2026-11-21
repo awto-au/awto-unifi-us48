@@ -282,6 +282,22 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 	return ret;
 }
 
+/* The DT regulator budget outlives the driver: hand back this chip's reservations on unbind (a reload otherwise starts with them leaked). */
+static void bcm_budget_release(void *data)
+{
+	struct bcm59111 *b = data;
+	int id;
+
+	for (id = 0; id < NPORT; id++) {
+		struct regulator *supply = b->pcdev.pi[id].rdev ? b->pcdev.pi[id].rdev->supply : NULL;
+
+		if (b->reserved[id] && supply)
+			regulator_free_power_budget(supply, b->reserve_mw);
+		b->reserved[id] = false;
+		budget_give(b, id);
+	}
+}
+
 static int bcm_pi_disable(struct pse_controller_dev *pcdev, int id)
 {
 	struct bcm59111 *b = to_bcm(pcdev);
@@ -577,6 +593,9 @@ static int bcm_pse_init(struct bcm59111 *b)
 	ret = devm_pse_controller_register(dev, &b->pcdev);
 	if (ret)
 		return dev_err_probe(dev, ret, "pse register\n");
+	ret = devm_add_action_or_reset(dev, bcm_budget_release, b);
+	if (ret)
+		return ret;
 	ret = devm_device_add_group(dev, &bcm_group);
 	if (ret)
 		return ret;

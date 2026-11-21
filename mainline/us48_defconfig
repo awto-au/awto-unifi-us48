@@ -35,7 +35,8 @@ CONFIG_CLK_BCM_HR2=y
 # Boot: appended DTB, initramfs, cmdline from the DTB/kernel
 CONFIG_ARM_APPENDED_DTB=y
 # CONFIG_ARM_ATAG_DTB_COMPAT is not set
-CONFIG_CMDLINE="console=ttyS0,115200 earlycon cma=8M@32M-64M"
+# regulator_ignore_unused: PoE ports the driver enables at probe have no consumer; the 30 s unused-regulator sweep would switch them off (#26)
+CONFIG_CMDLINE="console=ttyS0,115200 earlycon cma=8M@32M-64M regulator_ignore_unused"
 CONFIG_BLK_DEV_INITRD=y
 CONFIG_RD_GZIP=y
 CONFIG_KERNEL_GZIP=y

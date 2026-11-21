@@ -31,7 +31,7 @@
 - `/etc/rc.sh`: mounts (the SP805 awto-uboot arms, ~46 s, is fed by the kernel driver: `WATCHDOG_HANDLE_BOOT_ENABLED`, #84), hostname `us48`, `syslogd -O /tmp/messages` (no SysV IPC in the kernel: no `logread`), then `/etc/rc.d/S*` in order:
   - `S04us48-net`: insmod `us48_cmic unit0=1`, `us48_pci`, `us48_cmic_xe`; ge1/xe49/xe50 up, ge1 `192.168.25.207/24` (ip-registry `us48-boot`).
   - `S05us48-sfp`: insmod `us48_cmic_gpio`, `us48_cca_gpio` (gpio-chips the built-in sfp sockets wait for), #21, [board.md](board.md#sfp-ports-4952).
-  - `S06us48-poe`: background `insmod bcm59111 fw_load=1 enable_ports=0xffffffffffff` (PoE on, all 48 ports; cold chips need firmware, ~4 s each; budget = DT regulators 436 W; [poe-pse.md](poe-pse.md), #26).
+  - `S06us48-poe`: background `insmod bcm59111 fw_load=1 enable_ports=0xffffffffffff reserve_mw=9000` (PoE on, all 48 ports, 9 W reserved each = 432 W; cold chips need firmware, ~4 s each; budget = DT regulators 436 W; [poe-pse.md](poe-pse.md), #26).
   - `S10us48-dma`: insmod `us48_idm_reset` (reset controller, DT `dmac_idm`), then `pl330` (DT `resets`; #84). Explicit insmod like the other scripts: no udev/depmod in the image, so DT/modalias autoload does not exist. Board 2026-11-16: `Num_Chans-8` probed on a cold boot.
   - `S14us48-thermal`: insmod `us48_cmic_gpio` (if S05 did not), `us48_cmic_mspi`, `us48_pvtmon`, `us48_boardio`, `us48_fan` (fans: `docs/fan.md`; board IO + PoE LEDs: `docs/leds.md`).
   - `S20dropbear`: `dropbear -R -s -g -p 22`; `/root/.ssh/authorized_keys` = `mainline/rootfs/authorized_keys` (public keys).
