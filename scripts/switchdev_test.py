@@ -1095,8 +1095,9 @@ def ping_ok(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str) -> bool
     b.sh(f"{ns} ping -c 3 -w 3 {ip} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
     tick(sm, PING_S)
     out = b.sh(f"kill $(cat {STATE}/ping.pid) 2>/dev/null; cat {STATE}/ping", check=False, quiet=True)
-    got = re.search(r"(\d+) packets received", out)
-    return b.check(name, bool(got) and int(got.group(1)) >= 1, " | ".join(out.splitlines()[-2:]))
+    # busybox ping prints its summary only when every echo was answered: count the reply lines (>= 1 reply = the path works)
+    n = len(re.findall(r"\d+ bytes from ", out))
+    return b.check(name, n >= 1, f"{n} of 3 replies: " + " | ".join(out.splitlines()[-2:]))
 
 
 def ping_tagged(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str, dev: str) -> bool:
