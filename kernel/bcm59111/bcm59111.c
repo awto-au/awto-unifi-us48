@@ -27,6 +27,11 @@
 #define REG_TEMP	0x2c
 #define REG_CM(c)	(0x30 + 4 * (c))	/* current, 16 bit, LSB first */
 #define REG_VM(c)	(0x32 + 4 * (c))	/* voltage, 16 bit, LSB first */
+#define REG_HWD_TIME	0x20			/* awto image only: host watchdog, 10 ms ticks, write = arm / poke, 0 = off */
+#define REG_HWD_STAT	0x21			/* awto image only: b7 feature present, b1 armed, b0 expired (latched); write b7 = restart */
+#define HWD_FEATURE	BIT(7)
+#define HWD_EXPIRED	BIT(0)
+#define HWD_RESTART	BIT(7)
 #define REG_FW_REV	0x41
 #define REG_DEV_ID	0x43
 #define REG_HP_EN	0x44
@@ -85,6 +90,10 @@ static unsigned int poll_ms;
 module_param(poll_ms, uint, 0444);
 MODULE_PARM_DESC(poll_ms, "log power-good changes every N ms; default 0 = off; 300 suggested (FW disconnect timer 30 ticks x 10 ms, docs/poe-fw.md 11)");
 
+static unsigned int host_wd_ms = 200;
+module_param(host_wd_ms, uint, 0444);
+MODULE_PARM_DESC(host_wd_ms, "awto firmware host watchdog: chip drops all PoE when not poked for this long (10 ms steps, 20..2550); poked every half period; 0 = off; stock firmware has none");
+
 static unsigned int power_limit_mw = 436000;
 module_param(power_limit_mw, uint, 0644);
 MODULE_PARM_DESC(power_limit_mw, "measured total power cap over all chips: above it the most recently powered port is shut and blocked; 436000 = 500 W PSU - 64 W (poe.md 7); 0 = off");
@@ -110,6 +119,9 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	bool want[NPORT];		/* admin-enabled by the driver: restored after a watchdog restart */
+	bool hwd;			/* firmware has the host watchdog and it is armed by us */
+	struct delayed_work hwd_work;
 	u32 pw_mw[NPORT];		/* last measured power, watcher */
 	u64 pw_since_ms[NPORT];		/* first scan that saw the port powered; 0 = not powered */
 	bool blocked[NPORT];		/* shut by the watcher (over budget); cleared by an explicit enable */
@@ -297,6 +309,8 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 		ret = wr(b, REG_ILIM(id), ilim_raw);
 	if (!ret)
 		ret = set_op_mode(b, id, OP_AUTO);
+	if (!ret)
+		b->want[id] = true;
 	if (ret) {
 		budget_give(b, id);
 		if (took) {
@@ -330,6 +344,7 @@ static int bcm_pi_disable(struct pse_controller_dev *pcdev, int id)
 	int ret = set_op_mode(b, id, OP_SHUTDOWN);
 
 	if (!ret) {
+		b->want[id] = false;
 		budget_give(b, id);
 		if (b->reserved[id]) {
 			if (supply)
@@ -491,6 +506,70 @@ static void bcm_poll(struct work_struct *w)
 static void bcm_poll_stop(void *data)
 {
 	cancel_delayed_work_sync(data);
+}
+
+/* ---- host watchdog (awto firmware): poke every half period; on expiry the chip already dropped all PoE -> log, restart, re-enable ---- */
+
+static void bcm_hwd(struct work_struct *w)
+{
+	struct bcm59111 *b = container_of(to_delayed_work(w), struct bcm59111, hwd_work);
+	int st, id, n = 0, ret = 0;
+
+	mutex_lock(&b->pcdev.lock);
+	st = rd(b, REG_HWD_STAT);
+	if (st >= 0 && (st & HWD_EXPIRED)) {
+		for (id = 0; id < NPORT; id++)
+			n += b->want[id];
+		dev_err(&b->client->dev, "firmware host watchdog expired: all PoE was dropped; restarting and re-enabling %d port(s)\n", n);
+		ret = wr(b, REG_HWD_STAT, HWD_RESTART);
+		for (id = 0; !ret && id < NPORT; id++)
+			if (b->want[id]) {
+				b->want[id] = false;
+				ret = bcm_pi_enable(&b->pcdev, id);
+			}
+	}
+	if (!ret)
+		ret = wr(b, REG_HWD_TIME, host_wd_ms / 10);	/* the poke */
+	if (ret < 0 || st < 0)
+		dev_warn(&b->client->dev, "host watchdog poke failed (%d / %d)\n", ret, st);
+	mutex_unlock(&b->pcdev.lock);
+	schedule_delayed_work(&b->hwd_work, msecs_to_jiffies(host_wd_ms / 2));
+}
+
+static void bcm_hwd_stop(void *data)
+{
+	struct bcm59111 *b = data;
+
+	cancel_delayed_work_sync(&b->hwd_work);
+	mutex_lock(&b->pcdev.lock);
+	wr(b, REG_HWD_TIME, 0);		/* unbind is not a crash: disarm so a module reload does not drop PoE */
+	mutex_unlock(&b->pcdev.lock);
+}
+
+static int bcm_hwd_start(struct bcm59111 *b)
+{
+	int st;
+
+	if (!host_wd_ms)
+		return 0;
+	if (host_wd_ms < 20 || host_wd_ms > 2550) {
+		dev_warn(&b->client->dev, "host_wd_ms %u outside 20..2550: watchdog not armed\n", host_wd_ms);
+		return 0;
+	}
+	st = rd(b, REG_HWD_STAT);
+	if (st < 0 || !(st & HWD_FEATURE)) {
+		dev_info(&b->client->dev, "firmware has no host watchdog (reg 0x%02x = %d): PoE stays up if the kernel dies\n", REG_HWD_STAT, st);
+		return 0;
+	}
+	if (wr(b, REG_HWD_STAT, HWD_RESTART) || wr(b, REG_HWD_TIME, host_wd_ms / 10)) {
+		dev_warn(&b->client->dev, "host watchdog: arming failed\n");
+		return 0;
+	}
+	b->hwd = true;
+	INIT_DELAYED_WORK(&b->hwd_work, bcm_hwd);
+	schedule_delayed_work(&b->hwd_work, msecs_to_jiffies(host_wd_ms / 2));
+	dev_info(&b->client->dev, "host watchdog armed: %u ms, poke every %u ms\n", host_wd_ms, host_wd_ms / 2);
+	return devm_add_action_or_reset(&b->client->dev, bcm_hwd_stop, b);
 }
 
 /* ---- measured-power watcher: total over all chips > power_limit_mw -> shut + block the most recently powered port ---- */
@@ -734,6 +813,9 @@ static int bcm_pse_init(struct bcm59111 *b)
 	if (ret)
 		return ret;
 	ret = devm_device_add_group(dev, &bcm_group);
+	if (ret)
+		return ret;
+	ret = bcm_hwd_start(b);
 	if (ret)
 		return ret;
 	if (bcm_chip_mask(b, passive_ports, "passive_ports"))

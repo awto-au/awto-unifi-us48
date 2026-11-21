@@ -75,3 +75,12 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - All 48 ports are enabled at boot, the chips power ports one chip at a time while their firmware loads (~4 s each): the total rises in steps and the watcher runs from the first chip, but there is no soft-start staging inside a chip.
 - Open: the chip host watchdog `WDT_TIME` (reg 0x42) might shut ports when the host stops talking: semantics unknown (M, #151). Until measured it is not a mitigation.
 - Options to reduce the risk (not done): lower `power_limit_mw` to leave headroom for the scan latency; shorter `power_poll_ms` after raising the I2C speed (#158); enable ports in stages at boot; a hardware PSU / current limit outside the chips.
+
+### Host watchdog in the awto firmware (Dan 2026-11-21): the fix for "kernel down"
+- Only the rewrite firmware (`poe-fw/`, docs/poe-fw-rewrite.md) has it; stock v21 has none (driver logs `firmware has no host watchdog`, the risk above stays).
+- Registers (awto image only): `0x20` HOST_WD_TIME (write = arm + poke, 10 ms ticks, 0 = off), `0x21` HOST_WD_STAT (read: b7 feature, b1 armed, b0 expired latched; write b7 = restart). Stock `0x42` WDT_TIME is the 8051's own watchdog period and is not used.
+- Driver (`host_wd_ms`, default 200, 20..2550, 0 = off): arms at probe, before any port is enabled; ppokes every half period (100 ms) from a per-chip work item (12 writes per 100 ms).
+- Not poked for `host_wd_ms`: the firmware drops all PoE on the chip, latches `expired`, asserts INT, disarms, and ignores power requests until restarted.
+- On the next work run the driver sees `expired`, logs `firmware host watchdog expired`, writes the restart, re-arms and re-enables the ports it had enabled (`want[]`; ports blocked by the power watcher stay off). The same path runs after a kernel stall that recovers.
+- Unbind (module unload) disarms so a reload does not drop PoE. Consequence: an unloaded driver = no watchdog.
+- Limits: the poke shares the I2C bus with everything else (a firmware download of another chip, the 1 s power scan): each transfer is short and the bus lock is per transfer, but a stall of the work queue or the I2C controller for 200 ms drops the ports (intended). Worst-case I2C latency under load is not measured (M).
