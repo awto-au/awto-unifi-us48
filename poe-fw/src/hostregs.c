@@ -3,8 +3,6 @@
 
 __data u8 i2c_wdata;
 
-#define INT_UPDATE() do { if (!(HREG(R_INT) & HREG(R_INT_MASK))) INT_OUT = 0; } while (0)
-
 void wh_nop(void) __using(1) { }
 void rh_nop(void) __using(1) { }
 
@@ -232,4 +230,5 @@ void hostregs_init(u8 strap)
 	}
 	/* Not in stock: all ports start shut. Stock leaves OP_MOD as the ROM / reset left it (feature DEFAULT_AF_AUTO_MODE). */
 	HREG(R_OP_MOD) = 0x00;
+	wd_init();
 }

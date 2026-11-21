@@ -3,7 +3,7 @@
 
 Usage: poe_fw_build.py [--no-power-only]
   Compiles poe-fw/src (sdcc mcs51 small model, awto-sdcc) and links to the stock image layout: CPU base 0x1A00, hook table at
-  file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x3000, tag at 0x5300, padded to 16384 B.
+  file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x3400, tag at 0x5300, padded to 16384 B.
   Writes hwdb/firmware/bcm59111-awto.bin and bcm59111-awto-nopower.bin (-DPOE_FW_NO_POWER: no power-up path, bench stage 1).
   Refuses (exit 1, reason printed) if hook table, size, base, entry, tag, IRAM or code-end checks fail, or if the generated
   header / tables no longer match hwdb/firmware/bcm59111-regs.tsv (poe_fw_genhdr.py --check).
@@ -26,7 +26,7 @@ OUT_DIR = ROOT / "hwdb/firmware"
 BASE = 0x1A00
 SIZE = 16384
 LIBDIR = Path("/usr/local/share/sdcc/lib/mcs51-small")
-C_SRCS = ["main", "i2c", "hostregs", "chan", "hal_analog"]
+C_SRCS = ["main", "i2c", "hostregs", "hostwd", "chan", "hal_analog"]
 S_SRCS = ["hosttab", "chan_isr", "startup"]   # hosttab first: CONST area starts with the write table
 IRAM_DATA_MAX = 0x7B        # stock IRAM use ends at 0x7C; the ROM stack is above (docs/poe-fw.md section 8)
 CODE_END_MAX = 0x5220       # RET stubs at 0x5220, tag at 0x5300
@@ -85,7 +85,7 @@ def build(tag, defs):
     rels = [d / f"{s}.rel" for s in ["hosttab"]] + [d / f"{c}.rel" for c in C_SRCS] + \
            [d / f"{s}.rel" for s in S_SRCS if s != "hosttab"]
     lnk = d / "link.lnk"
-    lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x3000", "-aDSEG=0x30",
+    lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x3400", "-aDSEG=0x30",
                               "-aXSEG=0x80C0", f"-k{LIBDIR}", "-lmcs51", *map(str, rels), "-e", ""]))
     run(["sdld", "-f", lnk])
     return d, ihx_to_image(d / "out.ihx")
@@ -147,8 +147,8 @@ def checks(mem, txt, syms, tag):
     if dend - 1 > IRAM_DATA_MAX:
         errs.append(f"IRAM data ends at 0x{dend - 1:02X}, beyond 0x{IRAM_DATA_MAX:02X}")
     cs = [m for m in re.finditer(r"^CSEG\s+([0-9A-F]{8})\s+([0-9A-F]{8})", txt, re.M)][-1]
-    if int(cs.group(1), 16) + int(cs.group(2), 16) > 0x3000:
-        errs.append("CSEG runs into CONST at 0x3000")
+    if int(cs.group(1), 16) + int(cs.group(2), 16) > 0x3400:
+        errs.append("CSEG runs into CONST at 0x3400")
     return errs, bytes(img), cend
 
 
@@ -200,7 +200,7 @@ def local_funcs():
     for rst in sorted((WORK / "main").glob("*.rst")):
         for ln in rst.read_text().splitlines():
             m = re.match(r"^\s+([0-9A-F]{6})\s+\d+ (_\w+):", ln)
-            if m and 0x1B03 <= int(m.group(1), 16) < 0x3000:
+            if m and 0x1B03 <= int(m.group(1), 16) < 0x3400:
                 out[m.group(2)] = int(m.group(1), 16)
     return out
 

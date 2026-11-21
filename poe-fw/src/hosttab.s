@@ -18,6 +18,8 @@
 	.globl _wh_RST_PUSH
 	.globl _wh_TIMER_P1P2
 	.globl _wh_TIMER_P3P4
+	.globl _wh_HOST_WD_TIME
+	.globl _wh_HOST_WD_STAT
 	.globl _wh_WDT_TIME
 	.globl _wh_HP_EN
 	.globl _wh_HP_P1_MOD
@@ -86,8 +88,8 @@ _host_write_table:
 	.db 0xFF, >_wh_nop, _wh_nop	; 1D REG_1D
 	.db 0xFF, >_wh_TIMER_P1P2, _wh_TIMER_P1P2	; 1E TIMER_P1P2
 	.db 0xFF, >_wh_TIMER_P3P4, _wh_TIMER_P3P4	; 1F TIMER_P3P4
-	.db 0xFF, >_wh_nop, _wh_nop	; 20 REG_20
-	.db 0xFF, >_wh_nop, _wh_nop	; 21 REG_21
+	.db 0xFF, >_wh_HOST_WD_TIME, _wh_HOST_WD_TIME	; 20 HOST_WD_TIME
+	.db 0xFF, >_wh_HOST_WD_STAT, _wh_HOST_WD_STAT	; 21 HOST_WD_STAT
 	.db 0xFF, >_wh_nop, _wh_nop	; 22 REG_22
 	.db 0xFF, >_wh_nop, _wh_nop	; 23 REG_23
 	.db 0xFF, >_wh_nop, _wh_nop	; 24 REG_24
@@ -218,8 +220,8 @@ _host_read_table:
 	.db 0xFF, >_rh_nop, _rh_nop	; 1D REG_1D
 	.db 0xFF, >_rh_nop, _rh_nop	; 1E TIMER_P1P2
 	.db 0xFF, >_rh_nop, _rh_nop	; 1F TIMER_P3P4
-	.db 0xFF, >_rh_nop, _rh_nop	; 20 REG_20
-	.db 0xFF, >_rh_nop, _rh_nop	; 21 REG_21
+	.db 0xFF, >_rh_nop, _rh_nop	; 20 HOST_WD_TIME
+	.db 0xFF, >_rh_nop, _rh_nop	; 21 HOST_WD_STAT
 	.db 0xFF, >_rh_nop, _rh_nop	; 22 REG_22
 	.db 0xFF, >_rh_nop, _rh_nop	; 23 REG_23
 	.db 0xFF, >_rh_nop, _rh_nop	; 24 REG_24

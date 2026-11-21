@@ -84,6 +84,8 @@ static void wait_then(u8 ch, u8 idx, u8 ticks, u8 next, u8 dly)
 
 static u8 opmode(u8 ch)
 {
+	if (HREG(R_HOST_WD_STAT) & WDS_EXPIRED)       /* host watchdog expired: nothing powers until a restart request */
+		return 0;
 	return (HREG(R_OP_MOD) >> (2 * ch)) & 3;
 }
 
@@ -125,6 +127,19 @@ void chan_init(void)
 		for (i = 0; i < CH_STRIDE; i++)
 			p[i] = 0;
 		arm(c, ST_PORT_RESET, 1);          /* stock init_hw_channels arms st_port_reset, delay 1 */
+	}
+}
+
+/* Host watchdog trip / restart: OP_MOD := 0 and the PORT_RESET path (power off, SAT_PWR, events) now, for every channel. */
+void chan_shutdown_all(void)
+{
+	u8 c;
+
+	HREG(R_OP_MOD) = 0;
+	for (c = 0; c < NCH; c++) {
+		chans[c].pend = 0;
+		chans[c].state = ST_PORT_RESET;
+		chan_run(c);
 	}
 }
 

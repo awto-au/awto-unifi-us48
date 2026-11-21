@@ -76,17 +76,18 @@ class Sim:
     """One ucsim_51 -t RL6449 process, driven over the TCP console."""
 
     def __init__(self, image):
-        global PORT
-        PORT += 1
+        with socket.socket() as probe:                 # a free port: a stale ucsim from an aborted run must never be reused
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
         self.image = image
         WORK.mkdir(parents=True, exist_ok=True)
         ihx = WORK / (image.stem + ".ihx")
         to_ihx(image, ihx)
-        self.p = subprocess.Popen(["ucsim_51", "-q", "-t", "RL6449", "-Z", str(PORT), str(ihx)], stdin=subprocess.DEVNULL,
+        self.p = subprocess.Popen(["ucsim_51", "-q", "-R", "1", "-t", "RL6449", "-Z", str(port), str(ihx)], stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(50):
             try:
-                self.s = socket.create_connection(("127.0.0.1", PORT), timeout=60)
+                self.s = socket.create_connection(("127.0.0.1", port), timeout=60)
                 self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 break
             except OSError:
@@ -117,17 +118,34 @@ class Sim:
         return buf.decode(errors="replace")
 
     def batch(self, cmds):
-        """Send several commands in one write (each console round trip costs ~0.1 s). Every command is followed by an
-        `echo @@k@@` marker: the console echoes the whole input block and interleaves answers, so only the end of the batch is
-        detectable. Returns the full text; callers look for unique rows (dump addresses) or stop messages in it."""
+        """Send commands with few console round trips (each costs ~0.1 s). Plain commands are grouped into one write with an
+        `echo @@k@@` marker after each (the console echoes the block and interleaves the answers, so only the end of the group
+        is detectable). A `step` is always sent alone: ucsim aborts a running step ("User stopped") when more input is
+        already queued, which made long steps flaky. Returns the full text."""
         self.seq = getattr(self, "seq", 0)
-        lines = []
+        text = ""
+        group = []
+
+        def flush():
+            nonlocal text
+            if not group:
+                return
+            lines = []
+            for c in group:
+                self.seq += 1
+                lines += [c, f"echo @@{self.seq}@@"]
+            self.s.sendall(("\n".join(lines) + "\n").encode())
+            text += self.read_until(str(self.seq).encode())
+            group.clear()
+
         for c in cmds:
-            self.seq += 1
-            lines += [c, f"echo @@{self.seq}@@"]
-        first = self.seq - len(cmds) + 1
-        self.s.sendall(("\n".join(lines) + "\n").encode())
-        text = self.read_until(str(self.seq).encode())
+            if c.startswith("step"):
+                flush()
+                self.s.sendall((c + "\n").encode())
+                text += self.read()
+            else:
+                group.append(c)
+        flush()
         return text
 
     def c(self, text):
@@ -173,15 +191,19 @@ class Sim:
 
 def boot(sim, poll):
     """Common prologue: vectors, ROM strap pointer, zeroed host window, ROM-provided DEV_ID, run to the main loop."""
-    cmds = [f"set mem rom 0x{v:x} 0x32" for v in (0x03, 0x0B, 0x13, 0x1B, 0x23, 0x2B)]      # RETI vectors
+    # RETI in all of ROM 0x03..0xFF: the RL6449 core has more interrupt sources than the 8051 (their vectors would run NOPs
+    # into the image)
+    cmds = [f"set mem rom 0x{a:x} " + " ".join(["0x32"] * 16) for a in range(0x03, 0x100, 16)]
     cmds += ["set mem rom 0x1900 0xff 0x19 0x10 0xff 0x19 0x10", "set mem rom 0x1910 0x22"]  # ROM strap pointer -> RET
     cmds += [f"set mem xram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x8000, 0x8200, 16)]
+    cmds += [f"set mem iram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x10, 0x80, 16)]   # stock rom_init clears IRAM 0x01..0xFF
     cmds += ["set mem xram 0x8043 0xc0"]                                                    # DEV_ID, ROM / hardware
     cmds += [f"set mem sfr 0x81 0x{BOOT_SP:x}", f"break 0x{TRAP:x}", f"break 0x{poll:x}", f"pc 0x{sim.hook[0]:x}"]
     sim.batch(cmds)
     sim.nbp = 2
     out = sim.c(f"step {STEPS * 40}")
     sim.sp_main = sim.dump("sfr", 0x81)[0]
+    sim.c("set mem sfr 0xa8 0")                  # no simulated interrupts: the harness calls the hooks itself
     return int(re.search(r"Stop at 0x([0-9a-f]+)", out).group(1), 16) == poll
 
 
@@ -244,8 +266,8 @@ def host_scenarios(image, stock):
         o["w13"] = sim.dump("xram", 0x8013, 0x8014)
         o["dirty"] = sim.dump("iram", 0x20, 0x22)
         o["rd13"] = rd(sim, poll, 0x13, 2)
-        wr(sim, poll, 0x20, 0x55)                    # register without handler
-        o["w20"] = sim.dump("xram", 0x8020)[0]
+        wr(sim, poll, 0x22, 0x55)                    # register without handler
+        o["w20"] = sim.dump("xram", 0x8022)[0]
         sim.setmem("xram", 0x8000, 0x03, 0x03, 0x11, 0x11)   # clear-on-read 03
         sim.setmem("sfr", 0xF8, 0x01)
         o["rd03"] = rd(sim, poll, 0x03)
@@ -324,13 +346,13 @@ def statemachine(image):
         boot(sim, poll)
         sim.setmem("xram", 0x8014, 0xFF)             # detect + class enabled, all channels (host would write this)
         wr(sim, poll, 0x12, 0x03)                    # channel 1 auto, others shut
-        for t in range(330):
+        for t in range(400):
             # timer 1 hook = one 10 ms tick, then one main-loop pass (stops at the poll breakpoint), then the analog stub:
             # D1 forced to detect result code 4 (good) for channel 1
             sim.batch([f"set mem sfr 0x81 0x{STACK:x}", f"set mem iram 0x{STACK - 1:x} 0x{TRAP & 255:x} 0x{TRAP >> 8:x}",
                        f"pc 0x{sim.hook[8]:x}", f"step {STEPS}", f"set mem sfr 0x81 0x{sim.sp_main:x}", f"pc 0x{poll:x}",
                        f"step {STEPS}", "set mem sfr 0xd1 0x40"])
-            if t in (150, 328):
+            if t in (150, 398):
                 rec = (t, sim.dump("xram", 0x800C, 0x800F), sim.dump("xram", 0x8010)[0], sim.dump("sfr", 0xF1)[0],
                        sim.dump("xram", 0x8000)[0], sim.dump("xram", 0x8004)[0])
                 out.append(rec)
@@ -338,6 +360,103 @@ def statemachine(image):
     finally:
         sim.close()
     return out
+
+
+def tick(sim, poll, n=1):
+    """n timer-1 hook calls (10 ms ticks), each followed by one main-loop pass and the analog stub (D1 = detect code 4)."""
+    one = [f"set mem sfr 0x81 0x{STACK:x}", f"set mem iram 0x{STACK - 1:x} 0x{TRAP & 255:x} 0x{TRAP >> 8:x}",
+           f"pc 0x{sim.hook[8]:x}", f"step {STEPS}", "set mem sfr 0x88 0", "set mem sfr 0xa8 0", f"set mem sfr 0x81 0x{sim.sp_main:x}",
+           f"pc 0x{poll:x}", f"step {STEPS}", "set mem sfr 0xd1 0x40"]
+    sim.batch(one * n)
+
+
+def wd_state(sim):
+    stat = sim.dump("xram", 0x8021)[0]
+    return {"stat": stat, "time": sim.dump("xram", 0x8020)[0], "F1": sim.dump("sfr", 0xF1)[0], "F2": sim.dump("sfr", 0xF2)[0],
+            "sat_pwr": sim.dump("xram", 0x8010)[0], "int": sim.dump("xram", 0x8000)[0], "sup": sim.dump("xram", 0x800A)[0],
+            "opmod": sim.dump("xram", 0x8012)[0], "f8": sim.dump("sfr", 0xF8)[0] & 1}
+
+
+def wd_scenarios(image, power):
+    """Host watchdog (regs 0x20 / 0x21). Analog side stubbed; the power outputs F1 / F2 and SAT_PWR are forced on by hand
+    so the expiry shutdown is visible on the no-power image too."""
+    nm = image.name
+    poll = map_syms(image)["_poll_common"]
+    sim = Sim(image)
+    try:
+        boot(sim, poll)
+        sim.setmem("xram", 0x8001, 0xFF)               # INT_MASK all
+        sim.setmem("xram", 0x8017, 0x80)               # MISC_CONF b7: INT output enabled
+        st = wd_state(sim)
+        check(f"{nm}: boot default: disarmed, feature marker b7, TIME 0", st["stat"] == 0x80 and st["time"] == 0, f"{st}")
+        tick(sim, poll, 100)
+        st = wd_state(sim)
+        check(f"{nm}: disarmed: no expiry after 100 ticks", st["stat"] == 0x80 and st["int"] & 0x80 == 0, f"{st}")
+        wr(sim, poll, 0x20, 20)
+        st = wd_state(sim)
+        check(f"{nm}: write arms (ARMED=1), TIME reads back 20", st["stat"] == 0x82 and st["time"] == 20, f"{st}")
+        sim.setmem("xram", 0x8012, 0x03)               # OP_MOD ch1 auto, as a powered port would have
+        for n_ticks, label in ((10, "10"), (9, "19"), (9, "28")):
+            tick(sim, poll, n_ticks)
+            wr(sim, poll, 0x20, 20)                    # poke
+            st = wd_state(sim)
+            check(f"{nm}: poke at tick {label} prevents expiry", st["stat"] == 0x82, f"{st}")
+        sim.setmem("sfr", 0xF1, 0xFF)
+        sim.setmem("sfr", 0xF2, 0x0F)
+        sim.setmem("xram", 0x8010, 0xFF)
+        first = None
+        for k in range(1, 26):
+            tick(sim, poll, 1)
+            if wd_state(sim)["stat"] & 1:
+                first = k
+                break
+        check(f"{nm}: no poke: EXPIRED exactly at the 20th tick after the last poke", first == 20, f"tick {first}")
+        tick(sim, poll, 2)                             # main loop drops the power
+        st = wd_state(sim)
+        check(f"{nm}: expiry: EXPIRED=1, ARMED=0", st["stat"] == 0x81, f"{st}")
+        check(f"{nm}: expiry: all power outputs and SAT_PWR cleared, OP_MOD 0", st["F1"] == 0 and st["F2"] == 0 and st["sat_pwr"] == 0 and st["opmod"] == 0, f"{st}")
+        check(f"{nm}: expiry: INT bit 7 (SUP) + SUP_EVT 0x40 latched, INT output asserted", st["int"] & 0x80 and st["sup"] & 0x40 and st["f8"] == 1, f"{st}")
+        tick(sim, poll, 60)
+        check(f"{nm}: expired: no re-fire (stays disarmed)", wd_state(sim)["stat"] == 0x81)
+        wr(sim, poll, 0x21, 0x01)                      # no b7: ignored
+        check(f"{nm}: STAT write without b7 does nothing", wd_state(sim)["stat"] == 0x81)
+        sim.setmem("xram", 0x8014, 0xFF)
+        wr(sim, poll, 0x12, 0x03)                      # would power port 1
+        tick(sim, poll, 260)
+        st = wd_state(sim)
+        check(f"{nm}: OP_MOD write while expired: register accepted, nothing powered",
+              st["opmod"] == 0x03 and st["F1"] == 0 and st["sat_pwr"] == 0 and st["stat"] == 0x81, f"{st}")
+        wr(sim, poll, 0x21, 0x80)                      # restart request
+        st = wd_state(sim)
+        check(f"{nm}: restart: EXPIRED cleared, disarmed, INT cause cleared, line off",
+              st["stat"] == 0x80 and not st["int"] & 0x80 and not st["sup"] & 0x40 and st["f8"] == 0, f"{st}")
+        tick(sim, poll, 3)
+        st = wd_state(sim)
+        check(f"{nm}: restart: OP_MOD 0, ports shut", st["opmod"] == 0 and st["F1"] == 0 and st["sat_pwr"] == 0, f"{st}")
+        tick(sim, poll, 60)
+        check(f"{nm}: restart leaves the watchdog disarmed (no expiry after 60 ticks)", wd_state(sim)["stat"] == 0x80)
+        wr(sim, poll, 0x20, 1)                         # clamp 1 -> 2
+        tick(sim, poll, 1)
+        a = wd_state(sim)["stat"]
+        tick(sim, poll, 1)
+        b = wd_state(sim)["stat"]
+        check(f"{nm}: re-arm works, value 1 clamps to 2 ticks (not expired after 1, expired after 2)", a == 0x82 and b == 0x81, f"{a:02X} {b:02X}")
+        wr(sim, poll, 0x21, 0x80)
+        wr(sim, poll, 0x20, 20)
+        tick(sim, poll, 5)
+        wr(sim, poll, 0x20, 0)
+        st = wd_state(sim)
+        check(f"{nm}: writing 0 disarms", st["stat"] == 0x80 and st["time"] == 0, f"{st}")
+        tick(sim, poll, 40)
+        check(f"{nm}: disarmed after 0: no expiry", wd_state(sim)["stat"] == 0x80)
+        if power:
+            wr(sim, poll, 0x12, 0x03)
+            tick(sim, poll, 400)
+            st = wd_state(sim)
+            check(f"{nm}: after restart ports power again on a good detect (F1 set, SAT_PWR enable+good)",
+                  st["F1"] & 1 and st["sat_pwr"] & 0x11 == 0x11, f"{st}")
+    finally:
+        sim.close()
 
 
 def main():
@@ -369,6 +488,9 @@ def main():
         else:
             check(f"{im.name}: no-power build never sets F1 or SAT_PWR", f11 == 0 and f12 == 0 and pw1 == 0 and pw2 == 0,
                   f"F1 {f12:02X} SAT_PWR {pw2:02X}")
+    for im, power in ((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)):
+        log(f"== host watchdog on {im.name}")
+        wd_scenarios(im, power)
     ok = all(results)
     log(f"{sum(results)}/{len(results)} checks passed" + ("" if ok else "  FAILED"))
     return 0 if ok else 1
