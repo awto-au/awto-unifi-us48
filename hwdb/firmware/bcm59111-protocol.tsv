@@ -1,0 +1,53 @@
+# Broadcom PoE control protocol (12-byte SoC <-> MCU frames). REFERENCE ONLY for the BCM59111 v21 image: the image implements the I2C register interface, not this protocol (docs/poe-fw.md section 15).
+# Frame: [cmd][frame id][9 data bytes, pad 0xFF][checksum = sum of the 11 preceding bytes mod 256]; 19200 8n1 on the SoC secondary UART; big-endian multi-byte fields; ports 0-based.
+# source: https://svanheule.net/switches/software/broadcom_poe_control_protocol (fetched 2026-11-19); Broadcom SDK src/soc/i2c/bcm59101.c is the I2C-side packet format reference (cite only, not copied).
+cmd	name	request	reply	comment	source
+00	SET_PORT_ADMIN	port enable	error	enable 0 off, 1 on, 2 forced, 3 forced + disconnect detection	svanheule
+01	SET_PORT_TRIGGER	port bool	port result	trigger flag (BCM59111); set 1, cleared 0 / on some power states	svanheule
+02	SET_PORT_MAP_ENABLE	enable	error	error != 0 if pair mapping already enabled	svanheule
+03	PORT_RESET	port reset	port error	restarts PSE output(s), detection restarts if port enabled	svanheule
+05	CLEAR_COUNTERS	clear	error	1 = clear all port counters	svanheule
+06	SET_GLOBAL_PORT_ENABLE	enable	error		svanheule
+07	SET_GLOBAL_PORT_POWER_LIMIT	high_power	error	0 22.5 W, 1 26.5 W, 2 31.2 W, 3 37.0 W	svanheule
+08	SET_PORT_TRIGGER2	port bool	port result	trigger flag, device clears it	svanheule
+09	SYSTEM_RESET			listed without detail	svanheule
+0a	SET_DEVICE_CONFIG	uvlo ddflag ovlo p3	error	UVLO = 33 V + 64.45 mV*uvlo (default aa), OVLO = 57 V + 64.45 mV*ovlo (default 01)	svanheule
+0b	SET_DEVICE_POWER_MGMT	pre_alloc powerup_mode disconnect_order ff ff ff ff ff gb_hysteresis	error	gb_hysteresis in 100 mW	svanheule
+0e	SET_PSE_OUTPUT_MAP	port b1..b7	empty		svanheule
+10	SET_DETECTION_TYPE	port type	port error	0 none, 1 legacy, 2 4-point af, 3 4-point + legacy, 4 2-point, 5 2-point + legacy; port 7f = all	svanheule
+11	SET_CLASSIFICATION_ENABLE	port enable	port error		svanheule
+12	SET_AUTO_POWERUP	port enable	port error		svanheule
+13	SET_DISCONNECT_TYPE	port type	port error	0 none, 1 AC, 2 DC, 3 DC with delay	svanheule
+15	SET_PORT_POWER_LIMIT_TYPE	port type	port error	0 none, 1 class based, 2 user defined	svanheule
+16	SET_PORT_POWER_BUDGET	port limit	port error	units 0.2 W	svanheule
+17	SET_POWER_MGMT_MODE	mode	error	1 static, 2 dynamic (Netgear), 4 (Ubiquiti)	svanheule
+18	SET_GLOBAL_POWER_BUDGET	pse total(2) guard_band(2)	pse error	units 0.1 W	svanheule
+19	SET_PORT_POWER_PAIR	port pair	port error	0 pair A (1,2/3,6), 1 pair B (4,5/7,8)	svanheule
+1a	SET_PORT_PRIORITY	port priority	port error	0 low, 1 normal, 2 high, 3 critical	svanheule
+1c	SET_PORT_POWERUP_MODE	port mode	port error	0 af, 1 legacy, 2 pre-at, 3 at, 4 pre-bt, 5 bt	svanheule
+1d	SET_PORT_MAPPING	port pse_output	port error	pse_output = 8*pse + n	svanheule
+20	GET_SYSTEM_INFO		mode max_ports port_map device_id(2) version mcu_type system_status version_ext	device_id e011 BCM59011, e111 BCM59111, e121 BCM59121	svanheule
+21	GET_PORT_STATUS	port	port state fault class pd_type mpss power_mode chan_pwr pd_alt	state 0 off 1 searching 2 delivering 3 test 4 fault 5 other 6 requesting	svanheule
+22	GET_PORT_COUNTERS	port reset	port overload short denied mps_absent invalid_signature	1-byte counters	svanheule
+23	GET_POWER_STATS		consumed(2) budget(2) pse high_power ff ff gb_hysteresis	0.1 W	svanheule
+25	GET_PORT_CONFIG	port	port enabled auto detection class disconnect pair		svanheule
+26	GET_EXT_PORT_CONFIG	port	port powerup limit_type budget priority pse1 pse2 limit		svanheule
+27	GET_POWER_MGMT_MODE	pse	mode power0(2) gb0(2) power1(2) gb1(2)		svanheule
+28	GET_ALL_PORT_STATUS	{port 01}	{port short_status}	short_status [7] IEEE PD, [6:4] class or fault, [3:0] state	svanheule
+29	GET_PSE_OUTPUT_POWER	{pse_output 01}	{pse_output power}	0.2 W	svanheule
+2a	GET_PORT_OVERVIEW	first_port	first_port {short_status x8}	deprecated	svanheule
+2b	GET_EXT_DEVICE_CONFIG		uvlo pre_alloc powerup disconnect ddflag ovlo num_pse p3 flags		svanheule
+2c	GET_DIRECT_PSE_FLAG		8 bytes		svanheule
+2d	GET_DIRECT_PSE_STATUS		6 bytes		svanheule
+30	GET_PORT_MEASUREMENTS	port	port voltage(2) current(2) temperature(2) power(2)	V in 64.45 mV, I in mA, T = (220 - raw)*1.25 C, P in 0.1 W	svanheule
+41	SET_PORT_LED_CONFIG	enable interface shift_order led_count off req err on blink	error		svanheule
+42	GET_PORT_LED_CONFIG		same as 41		svanheule
+43	SET_SYSTEM_LED_CONFIG	sys_ok in_gb out_of_gb exceeds_ps off_delays map_enable	error		svanheule
+44	GET_SYSTEM_LED_CONFIG		same as 43		svanheule
+48	SET_PORT_LED_MAP	port_offset led_index x8	error		svanheule
+49	GET_PORT_LED_MAP	port_offset	port_offset led_index x8		svanheule
+af	BOOTLOADER_REQUEST	n/a	MCU still in bootloader, requests FW image	reply only	svanheule
+e0	MCU_MANAGEMENT	varies	varies	MCU firmware management	svanheule
+fd	REQUEST_INCOMPLETE	n/a	reply only		svanheule
+fe	REQUEST_CHECKSUM	n/a	reply only: request checksum wrong		svanheule
+ff	NOT_READY	n/a	reply only: controller not ready		svanheule

@@ -1,0 +1,131 @@
+# BCM59111 host registers (I2C), XRAM 0x8000+reg in the v21 image. Applied by scripts/poe_fw_ghidra.py (ApplyPoeProtocol.java).
+# source: UDM GPL drivers/net/power/bcm59111.h (names), docs/poe.md (stock use), poe-fw-re (image behaviour). conf: C code/doc evidence, I inferred.
+reg	name	access	width	clear_on_read	write_handler	read_handler	meaning	source	conf
+00	INT	R	1				interrupt status: 0 PWR_EN, 1 PWR_GOOD, 2 DIS, 3 DET, 4 CLASS, 5 TCUT, 6 TSTA, 7 SUP; host INT pin = INT & INT_MASK (SFR F8.0)	UDM GPL bcm59111.h	C
+01	INT_MASK	RW	1		CODE:5031		interrupt mask; stock writes 0x66; write re-evaluates the INT line	UDM GPL bcm59111.h	C
+02	PWR_EVT	R	1				power enable / power good change events (latched, cleared via 0x03)	UDM GPL bcm59111.h	I
+03	PWR_EVT_CLR	R	1	clear-on-read		CODE:4F57	reads PWR_EVT and clears 0x02/0x03 (bits 7:4 good change, 3:0 enable change)	UDM GPL bcm59111.h; docs/poe.md	C
+04	DET_CLASS_EVT	R	1				detect / class complete events (latched, cleared via 0x05)	UDM GPL bcm59111.h	I
+05	DET_CLASS_EVT_CLR	R	1	clear-on-read		CODE:4F6F	reads and clears 0x04/0x05	UDM GPL bcm59111.h	C
+06	FAULT_EVT	R	1				fault events (disconnect / overload, latched, cleared via 0x07)	UDM GPL bcm59111.h	I
+07	FAULT_EVT_CLR	R	1	clear-on-read		CODE:4D0E	reads and clears 0x06/0x07 (bits 7:4 disconnect per channel)	UDM GPL bcm59111.h; docs/poe.md	C
+08	TS_EVT	R	1				temperature (TCUT / TSTA) events, cleared via 0x09	UDM GPL bcm59111.h	I
+09	TS_EVT_CLR	R	1	clear-on-read		CODE:4D35	reads and clears 0x08/0x09	UDM GPL bcm59111.h	C
+0A	SUP_EVT	R	1				supply (UVLO/OVLO) events, set by set_sup_event, cleared via 0x0B	UDM GPL bcm59111.h	I
+0B	SUP_EVT_CLR	R	1	clear-on-read		CODE:4F87	reads and clears 0x0A/0x0B	UDM GPL bcm59111.h	C
+0C	SAT_P1	R	1				port 1 status: bits 3:0 detect (4 good), bits 6:4 class (1..4, 6 = class 0)	UDM GPL bcm59111.h; docs/poe.md	C
+0D	SAT_P2	R	1				port 2 detect/class	UDM GPL bcm59111.h	C
+0E	SAT_P3	R	1				port 3 detect/class	UDM GPL bcm59111.h	C
+0F	SAT_P4	R	1				port 4 detect/class	UDM GPL bcm59111.h	C
+10	SAT_PWR	R	1				power status: bits 3:0 power enable, bits 7:4 power good (stock naming; UDM macros swapped)	UDM GPL bcm59111.h; docs/poe.md	C
+11	SAT_PIN	R	1				pin status	UDM GPL bcm59111.h	I
+12	OP_MOD	RW	1		CODE:2F7B		operating mode, 2 bits per channel: 0 shutdown, 1 manual, 2 semi-auto, 3 auto	UDM GPL bcm59111.h; docs/poe.md	C
+13	DIS_SEN_EN	RW	1		CODE:50FC		disconnect sense enable, bit per channel (default 0x0F)	UDM GPL bcm59111.h; docs/poe.md	C
+14	DET_CLASS_EN	RW	1		CODE:5105		detect (low nibble) / class (high nibble) enable (default 0xFF)	UDM GPL bcm59111.h; docs/poe.md	C
+15	MS_BO_EN	RW	1		CODE:518C		maintain-power / back-off enable	UDM GPL bcm59111.h	I
+16	REG_16	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+17	MISC_CONF	RW	1		CODE:510E		misc config; bit7 of XRAM 0x8017 gates the host INT output in the image	UDM GPL bcm59111.h; poe-fw-re (v21 image)	I
+18	DET_CLASS_PUSH	RW	1		CODE:50C2		push-button detect/class (LTC4266 style); OR into XRAM, sets IRAM 0x20.0	UDM GPL bcm59111.h	C
+19	PWR_ONOFF_PUSH	RW	1		CODE:50CC		push-button power on/off; sets IRAM 0x22.4	UDM GPL bcm59111.h	C
+1A	RST_PUSH	RW	1		CODE:50D6		push-button reset; sets IRAM 0x22.7	UDM GPL bcm59111.h	C
+1B	ID	R	1				manufacturer (>>4) / IC id; no table entry, plain XRAM	UDM GPL bcm59111.h	I
+1C	REG_1C	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+1D	REG_1D	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+1E	TIMER_P1P2	RW	1		CODE:5117		timer P1/P2	UDM GPL bcm59111.h	I
+1F	TIMER_P3P4	RW	1		CODE:5120		timer P3/P4	UDM GPL bcm59111.h	I
+20	REG_20	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+21	REG_21	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+22	REG_22	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+23	REG_23	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+24	REG_24	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+25	REG_25	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+26	REG_26	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+27	REG_27	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+28	REG_28	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+29	REG_29	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+2A	REG_2A	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+2B	REG_2B	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+2C	TEMP	R	1				temperature raw; C = 367 - 2*raw (raw > 0x53); written by meas_convert_cm_vm_temp	docs/poe.md	C
+2D	REG_2D	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+2E	REG_2E	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+2F	REG_2F	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+30	P1_CM_LSB	R	2				port 1 current: mA = raw*122.07/1000 (LSB first); written by write_cm_vm_regs	UDM GPL bcm59111.h	C
+31	P1_CM_MSB	R	2				current MSB	UDM GPL bcm59111.h	C
+32	P1_VM_LSB	R	2				port 1 voltage: V = raw*5.835/1000	UDM GPL bcm59111.h	C
+33	P1_VM_MSB	R	2				voltage MSB	UDM GPL bcm59111.h	C
+34	P2_CM_LSB	R	2				port 2 current: mA = raw*122.07/1000 (LSB first); written by write_cm_vm_regs	UDM GPL bcm59111.h	C
+35	P2_CM_MSB	R	2				current MSB	UDM GPL bcm59111.h	C
+36	P2_VM_LSB	R	2				port 2 voltage: V = raw*5.835/1000	UDM GPL bcm59111.h	C
+37	P2_VM_MSB	R	2				voltage MSB	UDM GPL bcm59111.h	C
+38	P3_CM_LSB	R	2				port 3 current: mA = raw*122.07/1000 (LSB first); written by write_cm_vm_regs	UDM GPL bcm59111.h	C
+39	P3_CM_MSB	R	2				current MSB	UDM GPL bcm59111.h	C
+3A	P3_VM_LSB	R	2				port 3 voltage: V = raw*5.835/1000	UDM GPL bcm59111.h	C
+3B	P3_VM_MSB	R	2				voltage MSB	UDM GPL bcm59111.h	C
+3C	P4_CM_LSB	R	2				port 4 current: mA = raw*122.07/1000 (LSB first); written by write_cm_vm_regs	UDM GPL bcm59111.h	C
+3D	P4_CM_MSB	R	2				current MSB	UDM GPL bcm59111.h	C
+3E	P4_VM_LSB	R	2				port 4 voltage: V = raw*5.835/1000	UDM GPL bcm59111.h	C
+3F	P4_VM_MSB	R	2				voltage MSB	UDM GPL bcm59111.h	C
+40	REG_40	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+41	FW_REV	R	1				firmware revision; v21 image writes 0x15 (Meraki 0x12) at init_fw_rev_crc	UDM GPL bcm59111.h; docs/poe.md	C
+42	WDT_TIME	RW	1		CODE:4FE2		watchdog time; write sets SFR F9 = 0x0B if (v & 0x1E) == 0x16 else 0x0A (wh_wdt_time)	UDM GPL bcm59111.h; poe-fw-re (v21 image)	C
+43	DEV_ID	R	1				device id: >>5 id, &0x1F silicon rev; 0xC0 = BCM59111, 0x60 = BCM59121; ROM / hardware, no table entry	UDM GPL bcm59111.h; docs/poe.md	C
+44	HP_EN	RW	1		CODE:5129		high-power enable, bit per channel (default 0x0F)	UDM GPL bcm59111.h; docs/poe.md	C
+45	REG_45	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+46	HP_P1_MOD	RW	1		CODE:5193		port 1 HP mode (default 0x01)	UDM GPL bcm59111.h	C
+47	HP_P1_OV_CUT	RW	1		CODE:5132		port 1 ICUT / over-current cut	UDM GPL bcm59111.h	C
+48	HP_P1_CL_FBC	RW	1		CODE:513B		port 1 current limit (ILIM, default 0xC0)	UDM GPL bcm59111.h	C
+49	HP_P1_SAT	R	1				port 1 HP status	UDM GPL bcm59111.h	I
+4A	REG_4A	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+4B	HP_P2_MOD	RW	1		CODE:519A		port 2 HP mode (default 0x01)	UDM GPL bcm59111.h	C
+4C	HP_P2_OV_CUT	RW	1		CODE:5144		port 2 ICUT / over-current cut	UDM GPL bcm59111.h	C
+4D	HP_P2_CL_FBC	RW	1		CODE:514D		port 2 current limit (ILIM, default 0xC0)	UDM GPL bcm59111.h	C
+4E	HP_P2_SAT	R	1				port 2 HP status	UDM GPL bcm59111.h	I
+4F	REG_4F	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+50	HP_P3_MOD	RW	1		CODE:51A1		port 3 HP mode (default 0x01)	UDM GPL bcm59111.h	C
+51	HP_P3_OV_CUT	RW	1		CODE:5156		port 3 ICUT / over-current cut	UDM GPL bcm59111.h	C
+52	HP_P3_CL_FBC	RW	1		CODE:515F		port 3 current limit (ILIM, default 0xC0)	UDM GPL bcm59111.h	C
+53	HP_P3_SAT	R	1				port 3 HP status	UDM GPL bcm59111.h	I
+54	REG_54	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+55	HP_P4_MOD	RW	1		CODE:51A8		port 4 HP mode (default 0x01)	UDM GPL bcm59111.h	C
+56	HP_P4_OV_CUT	RW	1		CODE:5168		port 4 ICUT / over-current cut	UDM GPL bcm59111.h	C
+57	HP_P4_CL_FBC	RW	1		CODE:5171		port 4 current limit (ILIM, default 0xC0)	UDM GPL bcm59111.h	C
+58	HP_P4_SAT	R	1				port 4 HP status	UDM GPL bcm59111.h	I
+59	REG_59	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+5A	REG_5A	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+5B	REG_5B	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+5C	REG_5C	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+5D	REG_5D	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+5E	REG_5E	RW	1		CODE:517A		no stock use / no handler	poe-fw-re (v21 image)	I
+5F	REG_5F	RW	1		CODE:5183		no stock use / no handler	poe-fw-re (v21 image)	I
+60	CNT_P1_INVALID_SIG	R	1	cleared after read (I)		CODE:51B6	port 1 counter: invalid signature	docs/poe.md	C
+61	CNT_P1_PWR_DENIED	R	1	cleared after read (I)		CODE:51BC	port 1 counter: power denied	docs/poe.md	C
+62	CNT_P1_SHORT_OVL	R	1	cleared after read (I)		CODE:51C2	port 1 counter: short (low nibble) / overload (high nibble)	docs/poe.md	C
+63	CNT_P1_MPS_ABSENT	R	1	cleared after read (I)		CODE:51C8	port 1 counter: MPS absent	docs/poe.md	C
+64	CNT_P2_INVALID_SIG	R	1	cleared after read (I)		CODE:51CE	port 2 counter: invalid signature	docs/poe.md	C
+65	CNT_P2_PWR_DENIED	R	1	cleared after read (I)		CODE:51D4	port 2 counter: power denied	docs/poe.md	C
+66	CNT_P2_SHORT_OVL	R	1	cleared after read (I)		CODE:51DA	port 2 counter: short (low nibble) / overload (high nibble)	docs/poe.md	C
+67	CNT_P2_MPS_ABSENT	R	1	cleared after read (I)		CODE:51E0	port 2 counter: MPS absent	docs/poe.md	C
+68	CNT_P3_INVALID_SIG	R	1	cleared after read (I)		CODE:51E6	port 3 counter: invalid signature	docs/poe.md	C
+69	CNT_P3_PWR_DENIED	R	1	cleared after read (I)		CODE:51EC	port 3 counter: power denied	docs/poe.md	C
+6A	CNT_P3_SHORT_OVL	R	1	cleared after read (I)		CODE:51F2	port 3 counter: short (low nibble) / overload (high nibble)	docs/poe.md	C
+6B	CNT_P3_MPS_ABSENT	R	1	cleared after read (I)		CODE:51F8	port 3 counter: MPS absent	docs/poe.md	C
+6C	CNT_P4_INVALID_SIG	R	1	cleared after read (I)		CODE:51FE	port 4 counter: invalid signature	docs/poe.md	C
+6D	CNT_P4_PWR_DENIED	R	1	cleared after read (I)		CODE:5204	port 4 counter: power denied	docs/poe.md	C
+6E	CNT_P4_SHORT_OVL	R	1	cleared after read (I)		CODE:520A	port 4 counter: short (low nibble) / overload (high nibble)	docs/poe.md	C
+6F	CNT_P4_MPS_ABSENT	R	1	cleared after read (I)		CODE:5210	port 4 counter: MPS absent	docs/poe.md	C
+70	FW_DWN_CTRL	W	1				firmware download: 0x80 + BE16 offset + 32 B; 0x40 = start / force CRC. ROM, no table entry in the image	UDM GPL bcm59111.h; docs/poe.md	C
+71	REG_71	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+72	REG_72	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+73	REG_73	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+74	REG_74	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+75	CRC_STATUS	R	1				0xAA = firmware running; set by init_fw_rev_crc	UDM GPL bcm59111.h; docs/poe.md	C
+76	REG_76	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+77	REG_77	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+78	REG_78	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+79	REG_79	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7A	REG_7A	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7B	REG_7B	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7C	REG_7C	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7D	REG_7D	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7E	REG_7E	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+7F	REG_7F	R	1				no stock use / no handler	poe-fw-re (v21 image)	I

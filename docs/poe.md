@@ -213,6 +213,8 @@ Rules for Linux (safe default):
 - R1: poed port-record mode enum vs stage enum, and how poe / poeplus / poeplusplus set HPMD / ICUT / ILIM (usmdb `FUN_002c…` setters not fully traced).
 - R2: ioctl op 4 `0x1088458`.
 
+- FW internals (CPU 8051, register dispatch, state machine): [poe-fw.md](poe-fw.md).
+
 ## 11. Safe init sequence for Linux
 
 Confidence per step: C = stock does exactly this, I = inferred, M = unverified.
