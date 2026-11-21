@@ -37,6 +37,7 @@ MODULE_PARM_DESC(phy_dbg, "1 = log copper PHY registers + phylib state at connec
 struct us48_phy_priv {
 	u64 *stats;			/* shadow of the clear-on-read counters (bcm-phy-lib) */
 	unsigned int polls;		/* phy_dbg: read_status calls */
+	bool lane_init;			/* octal lane init done: runs once per phydev, not on every re-attach */
 };
 
 /* Read-only: BMSR twice (latched low), no RDB/shadow access. */
@@ -150,8 +151,13 @@ static int us48_phy_get_features(struct phy_device *ph)
  */
 static int octal_config_init(struct phy_device *ph)
 {
+	struct us48_phy_priv *priv = ph->priv;
 	int val, ret;
 
+	/* master/slave stays per attach (former GB_CTRL 0x0600); the lane writes run once (a repeat per open broke links). */
+	ph->master_slave_set = MASTER_SLAVE_CFG_MASTER_PREFERRED;
+	if (priv->lane_init)
+		return 0;
 	ret = phy_write(ph, MII_BCM54XX_AUX_CTL, 0x0c00);		/* MII_AUX_CTRL = ENABLE_DSP_CLOCK | RESERVED */
 	ret = ret ?: rdb_modify(ph, RDB_DSP_TAP10, 0, 0x011b, true);	/* stock + OM */
 	ret = ret ?: rdb_modify(ph, RDB_POWER_MII_CTRL, BIT(5), 0, false);	/* SUPER_ISOLATE = 0 */
@@ -164,7 +170,8 @@ static int octal_config_init(struct phy_device *ph)
 	ret = ret ?: phy_set_bits(ph, MII_BCM54XX_ECR, ECR_LED_TRAFFIC_EN);
 	ret = ret ?: phy_write(ph, MII_BCM54XX_AUX_CTL, 0x4c00);	/* 0x0c00 | EXT_PKT_LEN: OM step 5 */
 	/* Former GB_CTRL 0x0600: SWITCH_DEV (prefer master) is CTRL1000 b10, written by genphy_config_aneg. */
-	ph->master_slave_set = MASTER_SLAVE_CFG_MASTER_PREFERRED;
+	if (!ret)
+		priv->lane_init = true;
 	return ret;
 }
 
