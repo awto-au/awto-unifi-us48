@@ -57,6 +57,10 @@ Tags: C = from source/docs, B = board-proven before this change, U = unproven (b
 - phylib EEE/abilities reads use MMD indirect (regs 13/14) on C22: first read of `supported_eee` on both PHY types.
 - `master_slave_set = PREFERRED` and half-duplex removal change the advertised abilities vs the old bring-up (octal: CTRL1000 0x0600 -> 0x0400 | 1000T-FD; reg 4 unchanged).
 
+## Debug
+- `us48_cmic.phy_dbg=1` (runtime, 0644): BMCR, BMSR x2, ANAR, LPA, CTRL1000, STAT1000, AUX19 + phylib state/link/aneg/speed/suspended/supported/advertising at connect, started, adjust_link, every 5th poll while down.
+- state numbers: 0 DOWN, 1 READY, 2 HALTED, 3 ERROR, 4 UP, 5 RUNNING, 6 NOLINK, 7 CABLETEST.
+
 ## Test
 - `scripts/phy_test.py` (dry run: `--dry-run`); needs `ethtool` on the board (static build in the rootfs of `wip/sensors-sfp-21`) and `CONFIG_ETHTOOL_NETLINK` for the cable test.
 - Order on the board: insmod -> `phy_test.py --only show,bound,stats,aneg,forced,octal,check,admin` -> `--ecd` run -> `--eee` run (insmod `phy_eee=1`).

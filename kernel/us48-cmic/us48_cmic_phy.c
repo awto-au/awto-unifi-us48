@@ -29,9 +29,45 @@ static bool phy_eee;
 module_param(phy_eee, bool, 0444);
 MODULE_PARM_DESC(phy_eee, "1 = report EEE abilities and drive the LPI feature bits; the MAC has no LPI support yet");
 
+static uint phy_dbg;
+module_param(phy_dbg, uint, 0644);
+MODULE_PARM_DESC(phy_dbg, "1 = log copper PHY registers + phylib state at connect, adjust_link and every 5th poll while down");
+
 struct us48_phy_priv {
 	u64 *stats;			/* shadow of the clear-on-read counters (bcm-phy-lib) */
+	unsigned int polls;		/* phy_dbg: read_status calls */
 };
+
+/* Read-only: BMSR twice (latched low), no RDB/shadow access. */
+static void us48_phy_dump(struct phy_device *ph, const char *when)
+{
+	int bmcr, bmsr, bmsr2, anar, lpa, c1000, s1000, aux;
+
+	if (!phy_dbg)
+		return;
+	bmcr = phy_read(ph, MII_BMCR);
+	bmsr = phy_read(ph, MII_BMSR);
+	bmsr2 = phy_read(ph, MII_BMSR);
+	anar = phy_read(ph, MII_ADVERTISE);
+	lpa = phy_read(ph, MII_LPA);
+	c1000 = phy_read(ph, MII_CTRL1000);
+	s1000 = phy_read(ph, MII_STAT1000);
+	aux = phy_read(ph, 0x19);
+	phydev_info(ph, "%s: BMCR %04x BMSR %04x/%04x ANAR %04x LPA %04x CTRL1000 %04x STAT1000 %04x AUX19 %04x | state %d link %d aneg %d speed %d dup %d susp %d sup %08lx adv %08lx\n",
+		    when, bmcr & 0xffff, bmsr & 0xffff, bmsr2 & 0xffff, anar & 0xffff, lpa & 0xffff, c1000 & 0xffff,
+		    s1000 & 0xffff, aux & 0xffff, ph->state, ph->link, ph->autoneg, ph->speed,
+		    ph->duplex, ph->suspended, ph->supported[0], ph->advertising[0]);
+}
+
+static int us48_phy_read_status(struct phy_device *ph)
+{
+	struct us48_phy_priv *priv = ph->priv;
+	int ret = genphy_read_status(ph);
+
+	if (phy_dbg && !ph->link && priv->polls++ % 5 == 0)
+		us48_phy_dump(ph, "poll");
+	return ret;
+}
 
 /* RDB access as stock does it: enter (exp 0x0f7e <- 0), 0x1e/0x1f access, exit (RDB 0x87 <- 0x8000), docs 12.4. */
 static int rdb_modify(struct phy_device *ph, u16 rdb, u16 mask, u16 set, bool force)
@@ -167,7 +203,7 @@ static int us48_phy_cable_status(struct phy_device *ph, bool *finished)
 	.probe			= us48_phy_probe, \
 	.get_features		= us48_phy_get_features, \
 	.config_aneg		= us48_phy_config_aneg, \
-	.read_status		= genphy_read_status, \
+	.read_status		= us48_phy_read_status, \
 	.suspend		= us48_phy_suspend, \
 	.resume			= us48_phy_resume, \
 	.get_sset_count		= bcm_phy_get_sset_count, \
@@ -217,6 +253,7 @@ static void us48_adjust_link(struct net_device *nd)
 		bcm_hr2_ge_mac_down(&cu, &ge);
 	}
 	mutex_unlock(&p->u->link_lock);
+	us48_phy_dump(ph, "adjust_link");
 	netdev_info(nd, "link %s%s\n", ph->link ? "up" : "down",
 		    !ph->link ? "" : ph->speed == SPEED_1000 ? " 1000M" : ph->speed == SPEED_100 ? " 100M" : " 10M");
 }
@@ -237,13 +274,17 @@ int us48_phy_connect(struct us48_port *p)
 				 p->cfg->external_phy ? PHY_INTERFACE_MODE_QSGMII : PHY_INTERFACE_MODE_INTERNAL);
 	if (ret)
 		netdev_err(p->ndev, "phy_connect_direct failed (%d)\n", ret);
+	else
+		us48_phy_dump(ph, "connect");
 	return ret;
 }
 
 void us48_phy_start(struct us48_port *p)
 {
-	if (p->ndev->phydev)
+	if (p->ndev->phydev) {
 		phy_start(p->ndev->phydev);
+		us48_phy_dump(p->ndev->phydev, "started");
+	}
 }
 
 /* Link down + BMCR PDN happen inside phy_stop (state HALTED). */
