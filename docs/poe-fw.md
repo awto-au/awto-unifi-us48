@@ -11,6 +11,7 @@ Tools (also sfr, re, ghidra, timing: §8-13): `scripts/poe_fw_ident.py` (identif
 - Language: native 8051 machine code, no bytecode. Compiler: **Keil C51** (C): `?C?CCASE`, `?C?ICALL`, `?C?IMUL`, `?C?LLDXDATA`, `?C?LSTXDATA`, STARTUP.A51 IDATA clear are byte-identical to awto-ddc's Keil-compiled RTD firmware (§10). No compiler string in either image.
 - Core: 8051/8052-compatible, 256 B IRAM, Timer 2; **no DW8051-specific SFR is used** (§8): DW8051 not provable, not excluded. The image never calls the ROM (0 call sites below 0x1A00); the ROM calls the image through the hook table.
 - Not Cortex-M: word 0/1 are not SP/reset (§2). Not compressed or encrypted: entropy 6.45 bit/B, the string table and opcode statistics decode cleanly.
+- Image CRC (C, bench 2026-11-21): CRC-16 (poly 0x8005, init 0, no reflection) big-endian at file offset 0x38FE (CPU 0x52FE) over file 0x0000..0x38FD; both stock images verify (residue 0 over 0x0000..0x38FF). The ROM rejects an image without it: [poe-fw-rewrite.md](poe-fw-rewrite.md).
 - Heritage hint: image tag `POETEC_IMAGE` (Broadcom acquired the PowerDsine PoE line; "POETEC" is not a Broadcom name, I). Feature string in both images: `ICUT_ILIM_ACCESS_ENABLED+LEGACY_POWERUP+AUTO_FAULT_CLEAR+FIXED_TLIM+REJECT_AC_NOISE`; v21 adds `+DEFAULT_AF_AUTO_MODE`.
 
 ## 2. Evidence

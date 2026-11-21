@@ -47,3 +47,11 @@ One chip only, one port at a time, Dan present. Steps 1..3 are read-only apart f
 4. Detect / classify on a known PD (dummy load with known signature): port still shut -> set OP_MOD for that port to auto (`0x12`), `-nopower` image: expect SAT_Pn detect nibble 4 (good), no power on the pair (meter on the port before connecting anything powered). Compare the detect nibble with stock on the same PD.
 5. Only after step 4 matches stock and the analog values are understood: load the full `bcm59111-awto.bin`, no PD, then the known PD with a meter. Check `F1`-driven power-up, hold time, fault / disconnect handling against 802.3at windows. Not before the measurement chain is ported (current limits and CM / VM are not available).
 6. Stop and file in #26 at the first difference from stock that is not listed in STATUS.md.
+
+## Bench results (2026-11-21, chip PoE-12 = 8-002d, `-nopower` image, all ports shut, no PD)
+- Cold chip load needs a valid image CRC: stock v21 and Meraki carry CRC-16 (poly 0x8005, init 0, no reflection) big-endian at file offset 0x38FE over 0x0000..0x38FD (residue over 0x0000..0x38FF = 0). Without it the ROM never starts the image (reg 0x75 = 0xFF, reg 0x41 = 0xFF, reg 0x43 = 0xC0 ROM id). `poe_fw_build.py` now writes and checks it.
+- Step 1 PASS: driver logs `firmware rev 0xa1, 4 ports shut down, firmware loaded`.
+- Step 2 PASS: regs 0x0C..0x5F vs stock chip 8-002c differ only at 0x41 (0xA1 vs 0x15, expected), 0x11 SAT_PIN (address pins: 0x28..0x2D read 08 18 28 38 0C 1C on stock and test alike), and 0x2C / 0x2E / 0x2F (stock reads measurement values, ours 0: measurement chain is TODO). 0x12, 0x13, 0x14, 0x44, 0x46..0x58, 0x5F identical.
+- Step 3 PARTIAL: write/read round trip on 0x13, 0x1E, 0x1F verified and restored; 0x12 stays 0, 0x75 stays 0xAA. Not run: clear-on-read behaviour, INT pin, 0x14 / 0x44 writes.
+- Steps 4..6 not run (need a PD and a meter; measurement chain, class sequencer and limits are TODO).
+- Bench loading: `tmp/poe-fw-override` (untracked, `PoE-NN=<file>`) is staged into the image by `build_mainline.py`; `S06us48-poe` then passes `fw_override=` to the driver and keeps all ports shut. `scripts/poe_fw_bench.py` does the register compare (it needs ssh to the board; over serial use `i2cdump -f -y -r 0x0c-0x5f 8 0x2d b`).

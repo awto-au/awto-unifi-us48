@@ -99,6 +99,16 @@ def parse_map(d):
     return txt, syms
 
 
+def crc16(d):
+    """CRC-16/BUYPASS (poly 0x8005, init 0, no reflection): the stock v21 and Meraki images carry it big-endian at file offset 0x38FE."""
+    c = 0
+    for x in d:
+        c ^= x << 8
+        for _ in range(8):
+            c = ((c << 1) ^ 0x8005) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
+    return c
+
+
 def checks(mem, txt, syms, tag):
     errs = []
     lo, hi = min(mem), max(mem)
@@ -120,6 +130,12 @@ def checks(mem, txt, syms, tag):
         errs.append(f"0x1B00 is not an LJMP (byte {img[0x100]:02X})")
     if not img[0x3900:0x390D] == b"POETEC_IMAGE+":
         errs.append("tag at file offset 0x3900 (CPU 0x5300) is not POETEC_IMAGE+...")
+    if any(img[0x38FC:0x3900]):
+        errs.append("CRC field 0x38FC..0x38FF (CPU 0x52FC..0x52FF) is not free")
+    else:
+        img[0x38FE:0x3900] = crc16(img[:0x38FE]).to_bytes(2, "big")   # ROM checks it after the download (bench 2026-11-21)
+        if crc16(img[:0x3900]) != 0:
+            errs.append("CRC-16 residue over 0x0000..0x38FF is not 0")
     if img[0x3820:0x3823] != b"\x22\x22\x22":
         errs.append("RET stubs at 0x5220..0x5222 missing")
     cend = max(a for a in mem if a < 0x5220) + 1

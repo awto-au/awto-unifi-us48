@@ -61,6 +61,12 @@ _rom_init:
 ; slot 0: PSW bank 0 is required by the C code (stock Keil code assumes it too)
 _slot0:
 	mov psw,#0x00
+	mov dptr,#0x8041                      ; bench marker, stock 0x4071 does this first: FW_REV, then CRC_STATUS
+	mov a,#0xA1
+	movx @dptr,a
+	mov dptr,#0x8075
+	mov a,#0xAA
+	movx @dptr,a
 	ljmp _fw_main
 
 ; hooks 1, 2, 3, 8: stock prologue PUSH PSW; MOV PSW,#bank ... POP PSW; RET (no RETI, ROM saves ACC/B/DPTR, I)

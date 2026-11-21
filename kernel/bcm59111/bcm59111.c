@@ -52,6 +52,10 @@
 #define RESERVE_DEFAULT_MW 30000		/* 802.3at class 4 PSE output */
 
 /* Tunables: choice and evidence in docs/poe-architecture.md. All 0444 (set at load); every default leaves ports off. */
+static char *fw_override;
+module_param(fw_override, charp, 0444);
+MODULE_PARM_DESC(fw_override, "bench: \"PoE-NN=<file>\" loads <file> from /lib/firmware into that chip instead of the default image (docs/poe-fw-rewrite.md)");
+
 static bool fw_load;
 module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load, "download firmware when the chip reports none running (needs the reset line and /lib/firmware); default off");
@@ -637,6 +641,14 @@ static int bcm_probe(struct i2c_client *client)
 	b->fw_name = "bcm59111-v21.bin";
 	device_property_read_string(dev, "label", &b->label);
 	device_property_read_string(dev, "firmware-name", &b->fw_name);
+	if (fw_override && b->label) {
+		size_t n = strlen(b->label);
+
+		if (!strncmp(fw_override, b->label, n) && fw_override[n] == '=') {
+			b->fw_name = fw_override + n + 1;
+			dev_warn(dev, "fw_override: loading %s instead of the default image\n", b->fw_name);
+		}
+	}
 	device_property_read_u32(dev, "brcm,port-reserve-milliwatt", &b->reserve_mw);
 	if (reserve_mw)
 		b->reserve_mw = reserve_mw;

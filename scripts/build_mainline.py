@@ -302,6 +302,12 @@ def stage_rootfs() -> str:
     shutil.copy2(ROOT / "hwdb/firmware/us48-tsc.bin", stage / "lib/firmware/us48-tsc.bin")
     # BCM59111 PoE firmware v21 (hwdb/firmware/README.md): request_firmware() of kernel/bcm59111 with fw_load=1
     shutil.copy2(ROOT / "hwdb/firmware/bcm59111-v21.bin", stage / "lib/firmware/bcm59111-v21.bin")
+    # Rewrite images (poe-fw/, docs/poe-fw-rewrite.md): staged for bench loads via the driver's fw_override
+    for n in ("bcm59111-awto.bin", "bcm59111-awto-nopower.bin"):
+        shutil.copy2(ROOT / "hwdb/firmware" / n, stage / "lib/firmware" / n)
+    ov = ROOT / "tmp/poe-fw-override"	# bench only (untracked): "PoE-NN=<file>" for S06us48-poe
+    if ov.exists():
+        shutil.copy2(ov, stage / "etc/poe-fw-override")
     return str(write_initramfs_list(stage))
 
 
