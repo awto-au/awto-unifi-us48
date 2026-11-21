@@ -88,7 +88,8 @@ CONFIG_IPV6=y
 CONFIG_IPV6_MULTIPLE_TABLES=y
 CONFIG_BRIDGE=y
 CONFIG_BRIDGE_IGMP_SNOOPING=y
-# us48_cmic switchdev L2 offload (docs/switchdev.md, #57)
+# us48_cmic switchdev L2 offload (docs/switchdev.md, #57); VLAN-aware bridges offloaded per bridge VID
+CONFIG_BRIDGE_VLAN_FILTERING=y
 CONFIG_NET_SWITCHDEV=y
 CONFIG_VLAN_8021Q=y
 CONFIG_NET_CORE=y
