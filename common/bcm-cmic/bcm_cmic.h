@@ -185,6 +185,8 @@ size_t bcm_hr2_u1_replay_entries(void);
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */
 int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, const u8 *mac, bool add);
+/* Copper PHY power: false = MII_CTRL POWER_DOWN (peer loses link), true = PDN clear + AN restart (#133). */
+int bcm_hr2_ge_phy_power(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, bool on);
 /* GPHY link (BMSR latched, read twice); *speed = 10/100/1000 from the partner abilities. */
 bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed);
 /* MAC speed + RX/TX on (link up). */

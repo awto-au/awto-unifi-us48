@@ -159,14 +159,32 @@ static int us48_phy_suspend(struct phy_device *ph)
 	mutex_lock(&ph->lock);
 	bcm_phy_update_stats_shadow(ph, priv->stats);
 	mutex_unlock(&ph->lock);
+	us48_phy_dump(ph, "suspend");
 	return genphy_suspend(ph);
+}
+
+/* BMCR PDN clear, written unconditionally (no RMW skip on a stale read) and read back. */
+static int us48_phy_pdn_clear(struct phy_device *ph)
+{
+	int bmcr = phy_read(ph, MII_BMCR), ret;
+
+	if (bmcr < 0)
+		return bmcr;
+	ret = phy_write(ph, MII_BMCR, bmcr & ~BMCR_PDOWN);
+	bmcr = ret ?: phy_read(ph, MII_BMCR);
+	if (bmcr >= 0 && (bmcr & BMCR_PDOWN)) {
+		phydev_warn(ph, "BMCR %04x: PDN still set after clear\n", bmcr);
+		return -EIO;
+	}
+	return bmcr < 0 ? bmcr : 0;
 }
 
 /* PDN clear + AN restart, as the bring-up value 0x1340 did (#133). */
 static int us48_phy_resume(struct phy_device *ph)
 {
-	int ret = genphy_resume(ph);
+	int ret = us48_phy_pdn_clear(ph);
 
+	us48_phy_dump(ph, "resume");
 	if (!ret && ph->autoneg == AUTONEG_ENABLE)
 		ret = genphy_restart_aneg(ph);
 	return ret < 0 ? ret : 0;

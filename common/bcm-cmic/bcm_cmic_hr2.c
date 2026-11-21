@@ -619,6 +619,22 @@ int bcm_hr2_ge_l2_cpu(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, cons
 	return sbus(u, add ? BCM_SCHAN_TABLE_INSERT : BCM_SCHAN_TABLE_DELETE, BLK_IPIPE, L2X, e, 4);
 }
 
+/*
+ * MII_CTRL b11 POWER_DOWN (IEEE 802.3 22.2.4.1.5): RMW set, as SDK phy_bcm542xx_enable_set / phy_54680_enable_set(0).
+ * Up = the bring-up's MII_CTRL 0x1340 (PDN 0, AN + restart), so the link renegotiates.
+ */
+int bcm_hr2_ge_phy_power(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, bool on)
+{
+	bool internal = !ge->external_phy;
+	u16 v;
+	int ret;
+
+	if (on)
+		return bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, 0x1340);
+	ret = bcm_cmic_miim_read(u, internal, 0, ge->phy, 0, &v);
+	return ret ?: bcm_cmic_miim_write(u, internal, 0, ge->phy, 0, v | BIT(11));
+}
+
 bool bcm_hr2_ge_link(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge, int *speed)
 {
 	u16 bmsr = 0, lpa = 0, st1000 = 0;
