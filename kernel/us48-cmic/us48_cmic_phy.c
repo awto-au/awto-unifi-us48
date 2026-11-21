@@ -6,6 +6,7 @@
  * - Register recipe: docs/driver-internals.md 4, 7, 12.4 (OM bcm56150_phy_init, stock phy_bcm542xx_reset_setup).
  */
 #include <linux/ethtool.h>
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/phy.h>
 
@@ -87,6 +88,33 @@ static int rdb_modify(struct phy_device *ph, u16 rdb, u16 mask, u16 set, bool fo
 	return ret ?: exit_ret;
 }
 
+/*
+ * BMCR PDN set/clear: unconditional write (an RMW skips it when the read is stale), then read back.
+ * Wait: the PHY leaves/enters PDN within one 30 ms phy_start gap on the board; 5 x 10 ms re-reads, warn on expiry.
+ */
+#define PDN_RECHECKS	5
+#define PDN_RECHECK_MS	10
+static int us48_phy_pdn(struct phy_device *ph, bool down)
+{
+	int bmcr = phy_read(ph, MII_BMCR), ret, i;
+
+	if (bmcr < 0)
+		return bmcr;
+	ret = phy_write(ph, MII_BMCR, down ? bmcr | BMCR_PDOWN : bmcr & ~BMCR_PDOWN);
+	if (ret)
+		return ret;
+	for (i = 0; i < PDN_RECHECKS; i++) {
+		bmcr = phy_read(ph, MII_BMCR);
+		if (bmcr < 0)
+			return bmcr;
+		if (!!(bmcr & BMCR_PDOWN) == down)
+			return 0;
+		msleep(PDN_RECHECK_MS);
+	}
+	phydev_warn(ph, "BMCR %04x: PDN not %s after %d ms\n", bmcr, down ? "set" : "clear", PDN_RECHECKS * PDN_RECHECK_MS);
+	return -EIO;
+}
+
 static int us48_phy_probe(struct phy_device *ph)
 {
 	struct us48_phy_priv *priv = devm_kzalloc(&ph->mdio.dev, sizeof(*priv), GFP_KERNEL);
@@ -98,7 +126,7 @@ static int us48_phy_probe(struct phy_device *ph)
 		return -ENOMEM;
 	ph->priv = priv;
 	/* Down until the netdev opens: SDK _bcm_port_probe leaves ports disabled (#133). */
-	return phy_set_bits(ph, MII_BMCR, BMCR_PDOWN);
+	return us48_phy_pdn(ph, true);
 }
 
 /* The MAC runs full duplex only (bcm_hr2_ge_mac_up sets no HD_ENA). */
@@ -129,7 +157,7 @@ static int octal_config_init(struct phy_device *ph)
 	ret = ret ?: rdb_modify(ph, RDB_POWER_MII_CTRL, BIT(5), 0, false);	/* SUPER_ISOLATE = 0 */
 	val = ret ? ret : bcm_phy_read_shadow(ph, BCM54XX_SHD_MODE);	/* MODE_CTRL */
 	ret = val < 0 ? val : bcm_phy_write_shadow(ph, BCM54XX_SHD_MODE, val & ~(BIT(1) | BIT(2)));	/* MODE_SEL 0 */
-	ret = ret ?: phy_clear_bits(ph, MII_BMCR, BMCR_PDOWN);		/* later writes need PDN clear */
+	ret = ret ?: us48_phy_pdn(ph, false);		/* later writes need PDN clear */
 	val = ret ? ret : bcm_phy_read_shadow(ph, SHD_SGMII_SLAVE);
 	ret = val < 0 ? val : bcm_phy_write_shadow(ph, SHD_SGMII_SLAVE, val | BIT(0));	/* AUTO_DETECT */
 	ret = ret ?: bcm_phy_write_shadow(ph, SHD_AUTO_DETECT_MEDIUM, BIT(5));	/* whole reg: OM step 5 */
@@ -160,29 +188,13 @@ static int us48_phy_suspend(struct phy_device *ph)
 	bcm_phy_update_stats_shadow(ph, priv->stats);
 	mutex_unlock(&ph->lock);
 	us48_phy_dump(ph, "suspend");
-	return genphy_suspend(ph);
-}
-
-/* BMCR PDN clear, written unconditionally (no RMW skip on a stale read) and read back. */
-static int us48_phy_pdn_clear(struct phy_device *ph)
-{
-	int bmcr = phy_read(ph, MII_BMCR), ret;
-
-	if (bmcr < 0)
-		return bmcr;
-	ret = phy_write(ph, MII_BMCR, bmcr & ~BMCR_PDOWN);
-	bmcr = ret ?: phy_read(ph, MII_BMCR);
-	if (bmcr >= 0 && (bmcr & BMCR_PDOWN)) {
-		phydev_warn(ph, "BMCR %04x: PDN still set after clear\n", bmcr);
-		return -EIO;
-	}
-	return bmcr < 0 ? bmcr : 0;
+	return us48_phy_pdn(ph, true);
 }
 
 /* PDN clear + AN restart, as the bring-up value 0x1340 did (#133). */
 static int us48_phy_resume(struct phy_device *ph)
 {
-	int ret = us48_phy_pdn_clear(ph);
+	int ret = us48_phy_pdn(ph, false);
 
 	us48_phy_dump(ph, "resume");
 	if (!ret && ph->autoneg == AUTONEG_ENABLE)
@@ -326,7 +338,7 @@ int us48_copper_power(struct us48_port *p, bool on)
 
 	if (!ph)
 		return -ENODEV;
-	ret = on ? phy_clear_bits(ph, MII_BMCR, BMCR_PDOWN) : phy_set_bits(ph, MII_BMCR, BMCR_PDOWN);
+	ret = us48_phy_pdn(ph, !on);
 	if (ret < 0)
 		netdev_warn(p->ndev, "PHY power %s failed: %d\n", on ? "up" : "down", ret);
 	return ret < 0 ? ret : 0;
