@@ -232,3 +232,18 @@ void meas_init(void);
 extern __bit __at(0x05) meas_due;
 
 #endif
+
+/* PROBE v2 (bcm59111-awto-probe2.bin only): detect evidence in host regs, see docs/poe-fw-rewrite.md "Probe v2" */
+#ifdef POE_FW_PROBE2
+void probe_hist(u8 ch, u8 st);
+void probe_start(u8 ch);
+void probe_ev6(u8 ch);
+void probe_end(u8 ch, u8 tmo);
+void probe_poll(void);
+#else
+#define probe_hist(a, b) ((void)0)
+#define probe_start(a)   ((void)0)
+#define probe_ev6(a)     ((void)0)
+#define probe_end(a, b)  ((void)0)
+#define probe_poll()     ((void)0)
+#endif

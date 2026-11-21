@@ -188,3 +188,39 @@ Evidence: C code/oracle run, I inferred, G our guess, U unverified.
 2. OP_MOD auto for the camera port, camera attached: 0x1C = 1 (event), 0x1D = 0x40, SAT_Pn 0x04 then 0x44, SAT_PWR enable bit only (0x02 for port 2), F1 stays 0.
 3. Empty port: SAT_Pn 0x06, 0x1C = 1, 0x1D = 0x60.
 4. Full image `bcm59111-awto.bin`, camera: SAT_Pn 0x44, SAT_PWR 0x02 then 0x22 once F3/BC bit 4 arrive, OV_CUT (0x4C for port 2) 0x11, HP_SAT 0x4E = 1, CM/VM live. If SAT_PWR stays 0x02 the hardware power-good event or F3 meaning differs (U): file the 0x1C/0x1D and counters.
+
+## Board result 1 (nopower fcf699a, chip PoE-07, camera on channel 1) and Probe v2
+
+### Decode of the board registers (code reading, C)
+- 0x1C = 0x11: high nibble = channel 1, low nibble = path 1 (result read). Written only in `ST_DETECT_RESULT`: D(1) = 1 was written, channel event bit 6 arrived (ISR set `ev_lo` b0), the 4-tick delay ran, and the D(1) read happened.
+- 0x1D = 0x00: raw D(1) at that read. Stock does `swap a; anl #0x0F` on D (stock 0x3B73), so the code is the HIGH nibble. High nibble 0 = code 0 = no valid signature: SAT nibble 0, invalid counter 0x64 +1, DET_CLASS_EVT 0x02, no class, no power. The timeout path was not taken (it would read 0x1C = 0x12).
+- 0x71..0x74 = 00 04 00 00 (read later): D(1) low nibble 4, high nibble 0. Stock does not read the low nibble; it is a status field (meaning U).
+- OP_MOD 0x00 transient: only the host watchdog trip/restart path or init writes it (`chan_shutdown_all`; 0x21 stayed 0x82), so it was the driver's enable sequence. A failed detect does not reset the channel.
+- 0x7E = 0x01 is internal state: host regs 0x78..0x7F overlap the channel struct (channel 0 state = shutdown, parked).
+- Stage that stopped: D = 1 written, event bit 6 seen, result read, result = code 0. The hardware answered with an empty result.
+
+### Oracle D encoding
+- Oracle feeds D(c) = code << 4 (high nibble): matches the stock read path (C, 0x3B3C..0x3B7B). Not changed: a low-nibble layout would make stock itself read 0, and stock detects the camera on this board.
+- Strong lead (C from the oracle, not ported): stock rewrites the indirect words AB = 4..11 (AC/AD) on EVERY periodic call (0x1B03: per-channel offset/gain calibration from the AB 0..3 references and ADC B5/B6/B7). Oracle: stock 576 AC/AD writes in 35 ticks, rewrite 0. The class-probe words 0x24..0x2B read 0x0000 on the board for all channels. Detect and class samples are most likely uncalibrated without it. `scripts/poe_fw_oracle_diff.py` prints the count.
+- Fixed from the diff: any result other than 4 re-detects after 61 ticks like stock (was 200); scenario `bad` (D code 0) added, 0 write-log differences.
+- Fixed: XSEG moved 0x80C0 -> 0x80C8; the channel struct (0x8078..0x80C7) overlapped the first XDATA variables (per_cnt, calibration values) through channel 3.
+
+### Probe v2 (`hwdb/firmware/bcm59111-awto-probe2.bin`)
+Nopower base (no F1/F2/C9 at power-up), host watchdog and CRC/layout checks kept. Read-only evidence except 0x40.
+| Reg | Meaning |
+|---|---|
+| 0x2D | free-running tick (hook 8 count low byte, 10.13 ms) |
+| 0x1E | tick at the last D = 1 write |
+| 0x1F | ticks from D = 1 to the first BC bit 6 seen (0xFF = none) |
+| 0x74 | ticks from D = 1 to result read or timeout (0xFF = none) |
+| 0x45 | low nibble: D = 1 written; high nibble: event bit 6 seen (bit per channel) |
+| 0x4F | low nibble: timeout path taken; high nibble: result read (bit per channel) |
+| 0x1C / 0x1D | last path (ch<<4 / 1 result, 2 timeout) / raw D at result read |
+| 0x24..0x2B | state history of channel 1, newest first (state at each change as seen by the state machine) |
+| 0x30..0x3F | raw D(ch) ring, 16 samples at ticks after D = 1: 1 2 3 4 5 6 8 10 15 20 25 30 40 50 60 70; 0xEE = not sampled yet; refilled at each D = 1 |
+| 0x71..0x73 | live raw D1..D3 (D4 not written) |
+| 0x76/77, 0x59/5A, 0x5B/5C, 0x5D/54 | detect words A, B, C, D as read by the classifier (lo, hi) |
+| 0x40 | write 1: clear flags and restart detect on every channel whose OP_MOD is not 0; reads 0 when done |
+- Hook counters: hook 3 0x22/0x23; hook 8 0x2D only (0x40 and the hook-2 regs are probe regs here).
+- State numbers (chan.c enum): 0 reset, 1 shutdown (parked if OP_MOD = 0), 2 cfg, 3 mode select, 4 detect arm, 5 detect start, 6 detect wait, 7 detect result, 8 detect invalid, 9 class gate, 10 class wait, 11 power request, 12 power on, 13 power wait, 14 power trigger, 15 monitor, 16 fault, 17 disconnect, 18 idle, 19 generic wait.
+- Read-out: load, ports shut, wait 2 s; set OP_MOD 0x0c; read in one pass 0x1E..0x1F, 0x24..0x2B, 0x30..0x3F, 0x45, 0x4F, 0x74, 0x2D at about 1 s and 5 s; write 0x40 = 1 and repeat to capture again.

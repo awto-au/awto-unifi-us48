@@ -182,10 +182,31 @@ void chan_i2c_error_reload(void)
 }
 
 /* stock tick_timers 0x3C1E, called from the timer 1 hook. Bank 3, no calls. */
+#ifdef POE_FW_PROBE2
+extern __xdata u8 pr_ch, pr_t, pr_idx;
+static const __code u8 probe_sched[16] = { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 70 };
+#endif
+
 void chan_tick(void) __using(3)
 {
 	static __xdata u8 c, i;
 	static struct chan __xdata * __xdata p;
+
+#ifdef POE_FW_PROBE2
+	if (pr_ch < NCH) {                                   /* raw D(ch) ring, ticks counted from the D = 1 write */
+		pr_t++;
+		if (pr_t == probe_sched[pr_idx]) {
+			switch (pr_ch) {
+			case 0: HREG(0x30 + pr_idx) = CH0_DET; break;
+			case 1: HREG(0x30 + pr_idx) = CH1_DET; break;
+			case 2: HREG(0x30 + pr_idx) = CH2_DET; break;
+			default: HREG(0x30 + pr_idx) = CH3_DET; break;
+			}
+			if (++pr_idx == 16)
+				pr_ch = 0xFF;
+		}
+	}
+#endif
 
 	for (c = 0; c < NCH; c++) {
 		p = &chans[c];
@@ -208,6 +229,9 @@ void chan_run(u8 ch)
 	c = &chans[ch];
 	m = (u8)(1 << ch);
 	mode = opmode(ch);
+	probe_hist(ch, c->state);
+	if (c->ev_lo & 0x01)
+		probe_ev6(ch);
 
 	if ((c->pend & CH_PEND_RESET) && c->state != ST_PORT_RESET) {
 		c->pend &= (u8)~CH_PEND_RESET;
@@ -287,6 +311,7 @@ restart:
 		c->pend &= (u8)~CH_PEND_DETCLASS;
 		EA = 0; c->ev_lo &= (u8)~0x01; EA = 1;
 		hal_detect_start(ch);
+		probe_start(ch);
 		tmr_set(ch, TMR_DET, 50);
 		c->state = ST_DETECT_WAIT;
 		break;
@@ -299,6 +324,7 @@ restart:
 			evt_raise(R_DET_CLASS_EVT, m, 0x08);
 			release_probe(ch);
 			diag_detect(ch, 2, 0);
+			probe_end(ch, 1);
 			arm(ch, ST_IDLE, 2);
 		} else if (c->ev_lo & 0x01) {                /* 0x1AF0: hardware event -> 0x3B3C after 4 ticks */
 			EA = 0; c->ev_lo &= (u8)~0x01; EA = 1;
@@ -316,6 +342,7 @@ restart:
 		code = detect_classify(ch);
 		diag_detect(ch, 1, raw);
 		diag_words(dc_diag);
+		probe_end(ch, 0);
 		c->det = code;
 		if (!(HREG(R_MISC_CONF) & 0x40) || (HREG(R_SAT(ch)) & 0x0F) != code) {
 			sat_set(ch, 0x0F, code);
@@ -337,10 +364,8 @@ restart:
 		/* 0x48BE: count invalid signatures (not open circuit = 6), re-detect after 200 ticks [I] */
 		if (c->det != 6) {
 			cnt_inc(ch, CNT_INVALID);
-			wait_then(ch, TMR_RETRY, 200, ST_IDLE, 2);
-		} else {
-			arm(ch, ST_IDLE, 0);
 		}
+		arm(ch, ST_IDLE, 0);                     /* oracle: re-detect every 61 ticks for any non-4 code (stock 0x48BE), not 200 [C] */
 		break;
 
 	case ST_CLASS_GATE:

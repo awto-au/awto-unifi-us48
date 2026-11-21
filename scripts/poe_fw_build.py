@@ -26,7 +26,7 @@ OUT_DIR = ROOT / "hwdb/firmware"
 BASE = 0x1A00
 SIZE = 16384
 LIBDIR = Path("/usr/local/share/sdcc/lib/mcs51-small")
-C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "class", "chan", "hal_analog"]
+C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "class", "chan", "hal_analog", "probe2"]
 S_SRCS = ["hosttab", "chan_isr", "startup"]   # hosttab first: CONST area starts with the write table
 IRAM_DATA_MAX = 0x7F        # stock IRAM use ends at 0x7C; upper half (0x80..) is left to the ROM stack (docs/poe-fw.md section 8)
 CODE_END_MAX = 0x5220       # RET stubs at 0x5220, tag at 0x5300
@@ -77,7 +77,14 @@ def build(tag, defs):
     d.mkdir(parents=True, exist_ok=True)
     rels = []
     for s in S_SRCS:
-        run(["sdas8051", "-plosgff", "-o", d / f"{s}.rel", SRC / f"{s}.s"])
+        src = SRC / f"{s}.s"
+        if s == "startup" and tag == "probe2":      # probe2 uses regs 0x40 / 0x45 / 0x4F: no hook 8 hi / hook 2 counters
+            txt = src.read_text()
+            for a in ("0x8045", "0x804F", "0x8040"):
+                txt = re.sub(r"\tmov\tdptr,#%s\n\tmovx\ta,@dptr\n\t(?:add\ta,#1|addc\ta,#0)\n\tmovx\t@dptr,a\n" % a, "", txt)
+            src = d / "startup.s"
+            src.write_text(txt)
+        run(["sdas8051", "-plosgff", "-o", d / f"{s}.rel", src])
     for c in C_SRCS:
         run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", *defs, "-c",
              "-o", d / f"{c}.rel", SRC / f"{c}.c"])
@@ -86,7 +93,7 @@ def build(tag, defs):
            [d / f"{s}.rel" for s in S_SRCS if s != "hosttab"]
     lnk = d / "link.lnk"
     lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x4400", "-aDSEG=0x30",
-                              "-aXSEG=0x80C0", f"-k{LIBDIR}", "-lmcs51", *map(str, rels), "-e", ""]))
+                              "-aXSEG=0x80C8", f"-k{LIBDIR}", "-lmcs51", *map(str, rels), "-e", ""]))
     run(["sdld", "-f", lnk])
     return d, ihx_to_image(d / "out.ihx")
 
@@ -242,7 +249,8 @@ def main():
         r = subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_genhdr.py"), "--check"], capture_output=True, text=True)
         if r.returncode:
             raise Fail("generated files stale vs hwdb regs.tsv: run scripts/poe_fw_genhdr.py\n" + r.stdout)
-        for tag, defs, out in (("main", [], "bcm59111-awto.bin"), ("nopower", ["-DPOE_FW_NO_POWER"], "bcm59111-awto-nopower.bin")):
+        for tag, defs, out in (("main", [], "bcm59111-awto.bin"), ("nopower", ["-DPOE_FW_NO_POWER"], "bcm59111-awto-nopower.bin"),
+                              ("probe2", ["-DPOE_FW_NO_POWER", "-DPOE_FW_PROBE2"], "bcm59111-awto-probe2.bin")):
             d, mem = build(tag, defs)
             txt, syms = parse_map(d)
             errs, img, cend = checks(mem, txt, syms, tag)

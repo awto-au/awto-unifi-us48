@@ -18,7 +18,8 @@ import poe_fw_oracle as O  # noqa: E402
 
 ROOT = O.ROOT
 LOGF = ROOT / "tmp/logs/poe_fw_oracle_diff.log"
-IMG = {"stock": "v21", "main": ROOT / "hwdb/firmware/bcm59111-awto.bin", "nopower": ROOT / "hwdb/firmware/bcm59111-awto-nopower.bin"}
+IMG = {"stock": "v21", "main": ROOT / "hwdb/firmware/bcm59111-awto.bin", "nopower": ROOT / "hwdb/firmware/bcm59111-awto-nopower.bin",
+       "probe2": ROOT / "hwdb/firmware/bcm59111-awto-probe2.bin"}
 DIFF_KEYS = {0xA1, 0xA2, 0xA3, 0xA4, 0xB2, 0xC9, 0xD1, 0xD2, 0xD3, 0xD4, 0xD9, 0xF1, 0xF2, 0x95, 0xBD, 0xBC, 0xBE, 0xBF}
 _out = []
 
@@ -30,7 +31,7 @@ def log(msg=""):
 
 def map_sym(which, name):
     import re
-    mp = ROOT / "tmp/poe-fw-build" / ("nopower" if which == "nopower" else "main") / "out.map"
+    mp = ROOT / "tmp/poe-fw-build" / ("main" if which == "main" else which) / "out.map"
     m = re.search(r"^C:\s+([0-9A-F]{8})\s+%s\s" % name, mp.read_text(), re.M)
     return int(m.group(1), 16)
 
@@ -73,7 +74,7 @@ def build(which, args):
     O.CH = args.ch
     O.host_setup(m, 3 << (2 * args.ch))
     s = args.scen
-    O.mkword(m, det={"camera": 4, "nopg": 4, "open": 6, "timeout": 4}[s], cls=0x300, cm=0x30, vm=0x32E)
+    O.mkword(m, det={"camera": 4, "nopg": 4, "open": 6, "timeout": 4, "bad": 0}[s], cls=0x300, cm=0x30, vm=0x32E)
     if s == "timeout":
         m.an.det_latency = 10 ** 6
     if s == "nopg":
@@ -154,6 +155,8 @@ def main():
             a3, max(h3), a8, max(h8), HOOK3_PER_TICK, 100 * (HOOK3_PER_TICK * a3 + a8) / TICK_CYC, TICK_CYC))
         p3, pi = m.cyc.get("pass3", [0])[10:] or [0], m.cyc.get("idle", [0])[10:] or [0]
         log("  main loop: pass after a hook-3 call avg %.0f max %d cycles, idle pass avg %.0f" % (sum(p3) / len(p3), max(p3), sum(pi) / len(pi)))
+        acw = sum(1 for x in m.wlog if x[1] != "boot" and x[0] >= 5 and x[2] in (0xAC, 0xAD))
+        log("  calibration: AC/AD writes (tick >= 5): %d  (stock rewrites the indirect words 4..11 on every periodic call)" % acw)
         log("  CPU: hook3 count reg 0x22/23 = %02X%02X, hook8 0x2D/0x40 = %02X%02X" % (
             m.cpu.xram[0x8023], m.cpu.xram[0x8022], m.cpu.xram[0x8040], m.cpu.xram[0x802D]) if w != "stock" else "")
     if "stock" in res:

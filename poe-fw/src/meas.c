@@ -87,8 +87,10 @@ static void meas_channel(u8 ch, u8 powered, u8 hp)
 		vm = (u16)(hal_ind_word((u8)(ch | 4)) * 11);
 		cm = (u16)(((u32)hal_ind_word((u8)(ch | 8)) * (hp ? 6403u : 3201u)) >> 10);
 	}
-	HREG_PUT_LE16(R_P1_CM_LSB + 4 * ch, cm);
+#ifndef POE_FW_PROBE2
+	HREG_PUT_LE16(R_P1_CM_LSB + 4 * ch, cm);        /* probe2: 0x30..0x3F hold the D ring */
 	HREG_PUT_LE16(R_P1_VM_LSB + 4 * ch, vm);
+#endif
 }
 
 void meas_step(void)
@@ -104,10 +106,18 @@ void meas_step(void)
 	for (c = 0; c < NCH; c++) {
 		static __xdata u16 w;
 
+#ifdef POE_FW_PROBE2
+		if (c == 3)
+			continue;                     /* reg 0x74 = probe end delta */
+#endif
 		HREG(0x71 + c) = hal_detect_raw(c);
+#ifndef POE_FW_PROBE2
 		w = hal_ind_word((u8)(c | 8));
 		HREG(0x24 + c) = (u8)w;
 		HREG(0x28 + c) = (u8)(w >> 8);
+#else
+		w = 0;
+#endif
 	}
 	for (c = 0; c < NCH; c++)
 		meas_channel(c, (HREG(R_SAT_PWR) & (u8)(0x10 << c)) != 0, (chans[c].flags & 2) != 0);
@@ -125,6 +135,7 @@ void periodic_chain(void)
 	if (lag > 8)
 		done = (u8)(per_cnt - 8);
 	done++;
+	probe_poll();
 	if ((++div & 3) == 0)
 		meas_step();
 	class_step();
