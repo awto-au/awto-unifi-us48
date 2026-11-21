@@ -44,7 +44,7 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - Firmware: only with module parameter `fw_load=1`, `request_firmware("bcm59111-v21.bin")`, size must be 16384. Raw I2C blocks of 36 bytes (needs `I2C_FUNC_I2C`; iproc has it). Wait for `0x75 == 0xaa` every 50 ms up to 2.5 s (stock sleeps 2 s then checks once; x1.25); expiry logs reg value + limit and fails. Load time not measured (M4).
 - GPIO 9 reset is not touched (no output driver for CCA GPIO; polarity unconfirmed, M3). A chip without firmware therefore stays unusable until reset elsewhere.
 - Passive 24 V is not implemented. It needs MSPI field `01` (frames owned by `us48_fan`, which writes zeros for bytes 1..6) and has the hazard of 24 V on spare pairs of any device on that port. Plan when wanted: explicit per-port DT opt-in plus a sysfs enable, preconditions per poe.md 6 (chip field `00`, MSPI field `0`, 100 ms, field `1`, 50 ms; refuse when a PD is detected or link is up), shared MSPI shadow API with the fan driver. M1 (is MSPI field `10` needed for 802.3?) and M6 come first.
-- Module unload leaves ports as they are.
+- Module unload (driver unbind) shuts all ports of the chip (Dan 2026-11-21); a warm reboot keeps the chips as they are (#24).
 
 ## 4. Test plan (board; nothing run yet)
 
@@ -70,7 +70,7 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 
 ### Risk: the limit is enforced only while the kernel runs
 - The chip firmware has no budget logic (poe-fw.md 7): it protects each port (ICUT / ILIM, fault cool-down) but nothing limits the sum.
-- Kernel down (panic, hang, watchdog reset, module unloaded, i2c hang): the watcher stops; ports keep their state (module unload and warm reboot leave the chips powered, #24) and the total can go over 436 W up to what the PSU supplies. Over the PSU rating: sagging rail, PSU protection trip, all PD power lost, or damage.
+- Kernel down (panic, hang, watchdog reset, i2c hang): the watcher stops; ports keep their state (a warm reboot leaves the chips powered, #24; a clean module unload shuts them) and the total can go over 436 W up to what the PSU supplies. Over the PSU rating: sagging rail, PSU protection trip, all PD power lost, or damage.
 - Even with the kernel up: reaction time is at least one scan (1 s) plus the I2C scan time; inrush and class-4 PDs can overshoot briefly. A PD that goes from idle to full load between scans is only seen at the next scan.
 - All 48 ports are enabled at boot, the chips power ports one chip at a time while their firmware loads (~4 s each): the total rises in steps and the watcher runs from the first chip, but there is no soft-start staging inside a chip.
 - Open: the chip host watchdog `WDT_TIME` (reg 0x42) might shut ports when the host stops talking: semantics unknown (M, #151). Until measured it is not a mitigation.
@@ -82,5 +82,5 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - Driver (`host_wd_ms`, default 200, 20..2550, 0 = off): arms at probe, before any port is enabled; ppokes every half period (100 ms) from a per-chip work item (12 writes per 100 ms).
 - Not poked for `host_wd_ms`: the firmware drops all PoE on the chip, latches `expired`, asserts INT, disarms, and ignores power requests until restarted.
 - On the next work run the driver sees `expired`, logs `firmware host watchdog expired`, writes the restart, re-arms and re-enables the ports it had enabled (`want[]`; ports blocked by the power watcher stay off). The same path runs after a kernel stall that recovers.
-- Unbind (module unload) disarms so a reload does not drop PoE. Consequence: an unloaded driver = no watchdog.
+- Unbind (module unload) = PoE off (Dan 2026-11-21): the driver shuts all ports of the chip (`OP_MOD` = 0, read back), on stock firmware too, then disarms the watchdog. A reload therefore drops PoE until the driver enables the ports again. An unloaded driver = ports off, so the watchdog is not needed then.
 - Limits: the poke shares the I2C bus with everything else (a firmware download of another chip, the 1 s power scan): each transfer is short and the bus lock is per transfer, but a stall of the work queue or the I2C controller for 200 ms drops the ports (intended). Worst-case I2C latency under load is not measured (M).

@@ -321,6 +321,25 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 	return ret;
 }
 
+/* Driver unbind (rmmod, reboot path, probe failure after this point) = PoE off on this chip, stock firmware included (Dan 2026-11-21). */
+static void bcm_ports_off(void *data)
+{
+	struct bcm59111 *b = data;
+	int id, ret;
+
+	mutex_lock(&b->pcdev.lock);
+	ret = wr(b, REG_OP_MODE, 0);
+	if (!ret)
+		ret = rd(b, REG_OP_MODE);
+	mutex_unlock(&b->pcdev.lock);
+	for (id = 0; id < NPORT; id++)
+		b->want[id] = false;
+	if (ret)
+		dev_err(&b->client->dev, "unbind: ports not shut down (reg 0x12 = %d)\n", ret);
+	else
+		dev_info(&b->client->dev, "unbind: all 4 ports shut down\n");
+}
+
 /* The DT regulator budget outlives the driver: hand back this chip's reservations on unbind (a reload otherwise starts with them leaked). */
 static void bcm_budget_release(void *data)
 {
@@ -542,7 +561,7 @@ static void bcm_hwd_stop(void *data)
 
 	cancel_delayed_work_sync(&b->hwd_work);
 	mutex_lock(&b->pcdev.lock);
-	wr(b, REG_HWD_TIME, 0);		/* unbind is not a crash: disarm so a module reload does not drop PoE */
+	wr(b, REG_HWD_TIME, 0);		/* disarm first: the ports are shut explicitly right after (bcm_ports_off), no expiry latch left behind */
 	mutex_unlock(&b->pcdev.lock);
 }
 
@@ -810,6 +829,9 @@ static int bcm_pse_init(struct bcm59111 *b)
 	if (ret)
 		return dev_err_probe(dev, ret, "pse register\n");
 	ret = devm_add_action_or_reset(dev, bcm_budget_release, b);
+	if (ret)
+		return ret;
+	ret = devm_add_action_or_reset(dev, bcm_ports_off, b);
 	if (ret)
 		return ret;
 	ret = devm_device_add_group(dev, &bcm_group);
