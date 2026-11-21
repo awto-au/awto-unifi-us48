@@ -272,5 +272,42 @@ void hal_af(u8 ch, u8 v)
 void hal_class_select(u8 ch)
 {
 	CLASS_START_B = (u8)(ch << 6) | 0x20;
+/* ---- accessors for seq_class.c (not built by default) ---- */
+
+/* stock 0x2A9E: MOV A,0xAF (readback of the mux register, bit 7 tested). */
+u8 hal_af_read(void)
+{
+	return AF_MUX;
+}
+
+/* stock 0x2A3E / 0x2ACD / 0x2ADF / 0x2AFC / 0x2B49 / 0x2B51: AF = v. */
+void hal_af_write(u8 v)
+{
+	AF_MUX = v;
+}
+
+/* stock leaf_5074 0x5074: SFR F3 & bit(ch). U (meaning of F3). */
+u8 hal_pg_status(u8 ch)
+{
+	return (SFR_F3 & bit_of[ch]) != 0;
+}
+
+/* stock chcfg_493F 0x493F (R5 = 1): B(ch) |= 0x80. */
+void hal_ctrl_set_hi(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x80; break;
+	case 1: CH1_CTRL |= 0x80; break;
+	case 2: CH2_CTRL |= 0x80; break;
+	default: CH3_CTRL |= 0x80; break;
+	}
+}
+
+/* stock 0x2143 tail 0x2154..0x2158 with table 0x4C23: F1 &= ~bit(ch), EA off around it. */
+void hal_f1_clear_lo(u8 ch)
+{
+	EA = 0;
+	PWR_EN_SET &= (u8)~bit_of[ch];
+	EA = 1;
 }
 #endif
