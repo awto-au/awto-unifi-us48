@@ -11,5 +11,5 @@ Specs from the 2026-11-21 cluster decode of the stock image, evidence tags C (co
 | 05-timing.md | interrupt map, timer scale (probe results: tick 10.13 ms, hook 3 2.28 ms, f_cpu ~7.9 MHz) | wip/poe-seq-5 |
 | 06-oracle.md | stock image in a Python MCS-51 core (`scripts/poe_fw_oracle.py`, `scripts/mcs51.py`) with a modelled analog front end | wip/poe-seq-6 |
 
-- The C ports `poe-fw/src/seq_*.c` + `hal_analog_seq3.c` are per-cluster reference code (each compiled on its own branch behind `-DPOE_FW_SEQ`). They are not linked into any image and are not built together: their `hal_analog.c` accessors overlap. The shipped firmware (`poe-fw/src/chan.c`, `class.c`, `meas.c`, ...) was ported from them and passes the oracle diff (`scripts/poe_fw_oracle_diff.py`).
+- The per-cluster C reference ports (`seq_*.c`) were dropped from main (they overlapped in `hal_analog.c` and were not linked into any image); they remain on the `wip/poe-seq-N` branches. The shipped firmware (`poe-fw/src/chan.c`, `class.c`, `meas.c`, ...) was ported from the specs and passes the oracle diff (`scripts/poe_fw_oracle_diff.py`).
 - Board result (2026-11-22, #26): the full image powered a real class-4 camera with the same registers as stock; see docs/poe-fw-rewrite.md.
