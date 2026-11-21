@@ -6,7 +6,7 @@ Tags: C = from source/docs, B = board-proven before this change, U = unproven (b
 - Reconciled with main (phylink/sfp/led for xe, #133 PHY power): xe link = phylink; copper link = phylib only. `link_work`, `copper_poll`/`copper_link`, `phy_dbg` removed. `bcm_hr2_ge_phy_power/link` stay for u-boot only.
 - `kernel/us48-cmic/us48_cmic_mdio.c`: one `mii_bus` per unit and CMIC MIIM bus 0 (`us48-u<unit>-int0` GPHYs, `us48-u<unit>-ext0` octal); clause 22 only. Ops = `bcm_cmic_miim_read/write` under `u->mdio`. `phy_mask` = addresses of the port table (hwdb-generated `us48_ports.h`).
 - `kernel/us48-cmic/us48_cmic_phy.c`: two `phy_driver`s (linked into `us48_cmic.ko`, registered before any bus) + netdev glue (`adjust_link`, ethtool ops).
-- No DT: the CMIC ports are not DT devices (unit 0 = plain platform device, unit 1 = PCI aux). PHY address comes from the generated port table, attach = `phy_connect_direct` at the first `ndo_open`. DT would only add a second copy of hwdb.
+- No DT: the CMIC ports are not DT devices (unit 0 = plain platform device, unit 1 = PCI aux). PHY address comes from the generated port table, attach = `phy_connect_direct` at every `ndo_open`, `phy_stop` + `phy_disconnect` in `ndo_stop` (an attached PHY holds a module reference: rmmod needs all ports down). DT would only add a second copy of hwdb.
 - Bus 1 (TSC, clause 45) stays with `us48_tsc_rd/wr`; not an MDIO bus.
 
 ## PHY IDs

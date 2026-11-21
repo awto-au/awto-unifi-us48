@@ -288,7 +288,7 @@ static void us48_adjust_link(struct net_device *nd)
 		    !ph->link ? "" : ph->speed == SPEED_1000 ? " 1000M" : ph->speed == SPEED_100 ? " 100M" : " 10M");
 }
 
-/* ndo_open, no driver lock held (phydev->lock is taken before link_lock by adjust_link). */
+/* ndo_open (re-attached on every open, detached in ndo_stop), no driver lock held (phydev->lock is taken before link_lock by adjust_link). */
 int us48_phy_connect(struct us48_port *p)
 {
 	struct phy_device *ph = us48_port_phy(p);
@@ -317,17 +317,19 @@ void us48_phy_start(struct us48_port *p)
 	}
 }
 
-/* Link down + BMCR PDN happen inside phy_stop (state HALTED). */
-void us48_phy_stop(struct us48_port *p)
-{
-	if (p->ndev->phydev)
-		phy_stop(p->ndev->phydev);
-}
-
 void us48_phy_disconnect(struct us48_port *p)
 {
 	if (p->ndev->phydev)
 		phy_disconnect(p->ndev->phydev);
+}
+
+/* ndo_stop: link down + BMCR PDN inside phy_stop (HALTED), then detach: an attached PHY pins this module (drv_owner). */
+void us48_phy_stop(struct us48_port *p)
+{
+	if (p->ndev->phydev) {
+		phy_stop(p->ndev->phydev);
+		us48_phy_disconnect(p);
+	}
 }
 
 /* Never-opened ports of a re-powered octal (us48_cmic_pwr.c): no phydev attached, BMCR only. */
