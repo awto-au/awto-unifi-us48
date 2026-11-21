@@ -56,6 +56,7 @@ __sfr __at(0xB5) B5_SEL;   /* trim / calibration register select (I: stock 0x415
 __sfr __at(0xB6) B6_DAT;   /* signed 8-bit data for B5 (I) */
 __sfr __at(0xB7) B7_DAT;   /* signed 8-bit data for B5 (I) */
 __sfr __at(0xD7) D7_TRIM;  /* trim word: bits 5:0 and bit 7 (I: stock 0x416C) */
+__sfr __at(0xF3) SFR_F3;   /* per-channel power-good status, bit n = channel n (I: stock 0x5074, POE_FW_SEQ) */
 __sfr __at(0xF4) SFR_F4;
 __sfr __at(0xB1) CH0_CTRL;
 __sfr __at(0xB2) CH1_CTRL;
@@ -212,5 +213,14 @@ u8 class_code(u16 w);                 /* stock 0x4900 */
 void meas_step(void);
 void meas_init(void);
 extern __bit __at(0x05) meas_due;
+
+#ifdef POE_FW_SEQ
+/* seq_class.c accessors (hal_analog.c, POE_FW_SEQ only) */
+u8 hal_af_read(void);
+void hal_af_write(u8 v);
+u8 hal_pg_status(u8 ch);
+void hal_ctrl_set_hi(u8 ch);
+void hal_f1_clear_lo(u8 ch);
+#endif
 
 #endif

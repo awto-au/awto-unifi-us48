@@ -234,10 +234,28 @@ def sizes(cend, tag):
     return rows, size, cs_end - 0x1B03
 
 
+def seq_check():
+    """--seq: compile-check seq_class.c + hal_analog.c with -DPOE_FW_SEQ (v21 and v18 variants). Writes nothing under hwdb/."""
+    d = WORK / "seq"
+    d.mkdir(parents=True, exist_ok=True)
+    for extra in ([], ["-DPOE_FW_SEQ_V18"]):
+        for c in ("seq_class", "hal_analog"):
+            run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", *extra,
+                 "-c", "-o", d / f"{c}.rel", SRC / f"{c}.c"])
+        log(f"seq check ok {extra or 'v21'}")
+
+
 def main():
     help_guard(__doc__)
     LOG.parent.mkdir(parents=True, exist_ok=True)
     LOG.write_text("")
+    if "--seq" in sys.argv:
+        try:
+            seq_check()
+        except Fail as e:
+            log(f"SEQ CHECK FAILED: {e}")
+            return 1
+        return 0
     try:
         r = subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_genhdr.py"), "--check"], capture_output=True, text=True)
         if r.returncode:
