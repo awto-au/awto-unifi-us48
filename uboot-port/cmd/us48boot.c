@@ -46,6 +46,10 @@ static int do_us48boot(struct cmd_tbl *cmdtp, int flag, int argc, char *const ar
 	if (ret)
 		return us48_fail("sf read image", ret);
 	puts("us48boot: image read\n");
+	/* Same arming as dev.py _arm_sp805: 10 s boot WDT is shorter than a debug kernel's time to sp805-wdt probe. */
+	ret = run_command("mw.l 18039c00 1acce551; mw.l 18039000 448b9b80; mw.l 18039008 3", 0);
+	if (ret)
+		return us48_fail("SP805 arm", ret);
 	snprintf(cmd, sizeof(cmd), "bootm 0x%x", US48_LOADBUF);
 	ret = run_command(cmd, 0);	/* returns only on failure: data CRC, unsupported image */
 	return us48_fail("bootm returned", ret);
