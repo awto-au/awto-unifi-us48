@@ -310,4 +310,44 @@ void hal_f1_clear_lo(u8 ch)
 	PWR_EN_SET &= (u8)~bit_of[ch];
 	EA = 1;
 }
+/* ---- seq_trim accessors (docs/poe-fw-seq/04-trim-measure.md). Raw SFR access only, hardware meaning U. ---- */
+__sfr __at(0xAE) AE_STAT;      /* stock 0x1B1D..0x1B3B: two status bits per channel, read-only in the image */
+__sfr __at(0xD9) DET_IDX;      /* stock 0x365E: detect sample file index (4 * ch + k) */
+__sfr __at(0xDA) DET_HI;       /* stock 0x3660: sample high byte, read first */
+__sfr __at(0xDB) DET_LO;       /* stock 0x3663: sample low byte */
+__sbit __at(0xB9) IP_1;        /* stock 0x41D4 */
+__sbit __at(0xCD) T2CON_5;     /* stock 0x41D6 */
+
+/* stock 0x1B56 / 0x1EF6 / 0x1D75 / 0x1EFC: AB = idx, then AC (low), then AD (high). */
+void hal_ind_write(u8 idx, u16 w)
+{
+	AB_IDX = idx;
+	AC_LO = (u8)w;
+	AD_HI = (u8)(w >> 8);
+}
+
+/* stock 0x1B1D..0x1B3B (read once per channel, inside the loop). */
+u8 hal_ae_status(void)
+{
+	return AE_STAT;
+}
+
+/* stock 0x3651..0x369D: D9 = idx, DA read first (high), DB second (low). */
+u16 hal_det_sample(u8 idx)
+{
+	u8 hi;
+
+	DET_IDX = idx;
+	hi = DET_HI;
+	return ((u16)hi << 8) | DET_LO;
+}
+
+/* stock 0x415C..0x41D6 and 0x1BAE..0x1D83: B5 = select, B7 / B6 read separately (selects 0, 1, 2c, 2c+1, 2c+8, 2c+9, 0x10..0x15). */
+void hal_trim_sel(u8 sel) { B5_SEL = sel; }
+u8 hal_trim_b6(void) { return B6_DAT; }
+u8 hal_trim_b7(void) { return B7_DAT; }
+u8 hal_trim_d7(void) { return D7_TRIM; }
+void hal_trim_f4_clear(void) { SFR_F4 = 0; }          /* stock 0x415C */
+void hal_trim_ff_60(void) { SFR_FF = 0x60; }          /* stock 0x4169 */
+void hal_trim_end(void) { IP_1 = 1; T2CON_5 = 1; }    /* stock 0x41D4 / 0x41D6: enables the periodic ISR path (U) */
 #endif

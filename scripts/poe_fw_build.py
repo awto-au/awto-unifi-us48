@@ -28,6 +28,8 @@ BASE = 0x1A00
 SIZE = 16384
 LIBDIR = Path("/usr/local/share/sdcc/lib/mcs51-small")
 C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "class", "chan", "hal_analog", "probe2"]
+C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "chan", "hal_analog"]
+SEQ_SRCS = ["seq_trim"]   # compiled only by --seq-compile (-DPOE_FW_SEQ, not linked into any image)
 S_SRCS = ["hosttab", "chan_isr", "startup"]   # hosttab first: CONST area starts with the write table
 IRAM_DATA_MAX = 0x7F        # stock IRAM use ends at 0x7C; upper half (0x80..) is left to the ROM stack (docs/poe-fw.md section 8)
 CODE_END_MAX = 0x5220       # RET stubs at 0x5220, tag at 0x5300
@@ -280,6 +282,21 @@ def main():
     help_guard(__doc__, strict=True, known=("--seq-check",))
     if "--seq-check" in sys.argv:
         return seq_check()
+def seq_compile():
+    d = WORK / "seq"
+    d.mkdir(parents=True, exist_ok=True)
+    for c in SEQ_SRCS:
+        run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", "-c",
+             "-o", d / f"{c}.rel", SRC / f"{c}.c"])
+    log("[seq] compile check ok")
+
+
+def main():
+    help_guard(__doc__)
+    if "--seq-compile" in sys.argv:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        seq_compile()
+        return
     LOG.parent.mkdir(parents=True, exist_ok=True)
     LOG.write_text("")
     if "--seq" in sys.argv:
