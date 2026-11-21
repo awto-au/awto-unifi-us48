@@ -16,7 +16,7 @@ static __xdata u8 meas_ok;
 void meas_init(void)
 {
 	hal_meas_calib();
-	meas_ok = 1;
+	meas_ok = 0;
 	meas_due = 0;
 }
 
@@ -95,6 +95,17 @@ void meas_step(void)
 	u8 c;
 
 	meas_temp();
+	meas_ok = 1;          /* TEMP is valid from the first measurement on: no bogus SUP event before it */
+	/* Bench diagnostics (awto image only, read-only): live raw detect SFRs D1..D4 in regs 0x71..0x74 and the class-probe word
+	 * (AB = c | 8, AD:AC) per channel: low bytes in regs 0x24..0x27, high bytes in 0x28..0x2B (0x76.. overlap our channel block). Lets the board show what the hardware returns. */
+	for (c = 0; c < NCH; c++) {
+		static __xdata u16 w;
+
+		HREG(0x71 + c) = hal_detect_raw(c);
+		w = hal_ind_word((u8)(c | 8));
+		HREG(0x24 + c) = (u8)w;
+		HREG(0x28 + c) = (u8)(w >> 8);
+	}
 	for (c = 0; c < NCH; c++)
 		meas_channel(c, (HREG(R_SAT_PWR) & (u8)(0x10 << c)) != 0, (chans[c].flags & 2) != 0);
 }

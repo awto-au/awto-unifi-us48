@@ -198,8 +198,8 @@ def boot(sim, poll):
     cmds += [f"set mem xram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x8000, 0x8200, 16)]
     cmds += [f"set mem iram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x10, 0x80, 16)]   # stock rom_init clears IRAM 0x01..0xFF
     cmds += ["set mem xram 0x8043 0xc0"]                                                    # DEV_ID, ROM / hardware
-    # analog stub: indirect register file returns one word whatever AB selects (AD:AC = 0x0200), trim registers constant
-    cmds += ["set mem sfr 0xac 0x00", "set mem sfr 0xad 0x02", "set mem sfr 0xb6 0x10", "set mem sfr 0xb7 0x20", "set mem sfr 0xd7 0x05"]
+    # analog stub: indirect register file returns one word whatever AB selects (AD:AC = 0x01E0: class 3, TEMP raw 0xF8), trim registers constant
+    cmds += ["set mem sfr 0xac 0xe0", "set mem sfr 0xad 0x01", "set mem sfr 0xb6 0x10", "set mem sfr 0xb7 0x20", "set mem sfr 0xd7 0x05"]
     cmds += [f"set mem sfr 0x81 0x{BOOT_SP:x}", f"break 0x{TRAP:x}", f"break 0x{poll:x}", f"pc 0x{sim.hook[0]:x}"]
     sim.batch(cmds)
     sim.nbp = 2
@@ -356,7 +356,7 @@ def statemachine(image):
                        f"step {STEPS}", "set mem sfr 0xd1 0x40"])
             if t in (150, 398):
                 rec = (t, sim.dump("xram", 0x800C, 0x800F), sim.dump("xram", 0x8010)[0], sim.dump("sfr", 0xF1)[0],
-                       sim.dump("xram", 0x8000)[0], sim.dump("xram", 0x8004)[0], sim.dump("xram", 0x802C, 0x8033))
+                       sim.dump("xram", 0x8000)[0], sim.dump("xram", 0x8004)[0], sim.dump("xram", 0x802C, 0x8033), sim.dump("xram", 0x8071, 0x8074), sim.dump("xram", 0x8024, 0x802B))
                 out.append(rec)
                 log(f"  tick {rec[0]}: SAT {rec[1]} SAT_PWR {rec[2]:02X} F1 {rec[3]:02X} INT {rec[4]:02X} DET_CLASS_EVT {rec[5]:02X} MEAS {rec[6]}")
     finally:
@@ -482,13 +482,15 @@ def main():
                 log(f"DIFF vs stock: {k}: ours {obs[k]} stock {sobs[k]}")
     for im, power in (((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)) if only in ("", "sm") else ()):
         log(f"== channel state machine on {im.name}, analog side stubbed (D1 forced to detect code 4, no class / measurement)")
-        (t1, sat1, pw1, f11, int1, ev1, me1), (t2, sat2, pw2, f12, int2, ev2, me2) = statemachine(im)
+        (t1, sat1, pw1, f11, int1, ev1, me1, dg1, wd1), (t2, sat2, pw2, f12, int2, ev2, me2, dg2, wd2) = statemachine(im)
         check(f"{im.name}: channel 1 detect code 4 in SAT_P1 low nibble", (sat1[0] & 0x0F) == 4, str(sat1))
-        check(f"{im.name}: class from the ADC word 0x0200 (stock 0x4900 thresholds): SAT_P1 bits 6:4 = 3", (sat2[0] >> 4) & 7 == 3, str(sat2))
-        # model of stock 0x37D2 / 0x34D0 for AD:AC = 0x0200 and trims B6 = 0x10, B7 = 0x20 (python re-implementation of the same reading)
-        check(f"{im.name}: TEMP raw 0x08, 0x2E / 0x2F = 0xC1 / 0x09 (arithmetic model of 0x37D2 + 0x34D0 tail)", me2[0:1] + me2[2:4] == [0x08, 0xC1, 0x09], str(me2))
+        check(f"{im.name}: class from the ADC word 0x01E0 (stock 0x4900 thresholds): SAT_P1 bits 6:4 = 3", (sat2[0] >> 4) & 7 == 3, str(sat2))
+        # model of stock 0x37D2 / 0x34D0 for AD:AC = 0x01E0 and trims B6 = 0x10, B7 = 0x20 (python re-implementation of the same reading)
+        check(f"{im.name}: TEMP raw 0xF8, 0x2E / 0x2F = 0xF0 / 0x08 (arithmetic model of 0x37D2 + 0x34D0 tail)", me2[0:1] + me2[2:4] == [0xF8, 0xF0, 0x08], str(me2))
+        check(f"{im.name}: bench diagnostics: regs 0x71..0x74 = raw D1..D4 (0x40 on D1), 0x24..0x2B = class-probe word 0x01E0 (low / high bytes)",
+              dg2[0] == 0x40 and wd2[0:4] == [0xE0] * 4 and wd2[4:8] == [0x01] * 4, str((dg2, wd2)))
         if power:
-            check(f"{im.name}: powered channel 1: CM = 0x0640, VM = 0x1600 (model of 0x34D0, LSB first)", me2[4:8] == [0x40, 0x06, 0x00, 0x16], str(me2))
+            check(f"{im.name}: powered channel 1: CM = 0x05DC, VM = 0x14A0 (model of 0x34D0, LSB first)", me2[4:8] == [0xDC, 0x05, 0xA0, 0x14], str(me2))
         else:
             check(f"{im.name}: unpowered channel CM / VM stay 0", me2[4:8] == [0, 0, 0, 0], str(me2))
         check(f"{im.name}: channels 2..4 (shut) untouched", sat1[1:] == [0, 0, 0] and sat2[1:] == [0, 0, 0], str(sat1))

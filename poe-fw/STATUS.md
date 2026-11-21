@@ -54,6 +54,8 @@
 | One analog probe at a time (`probe_owner`) replacing stock 0x3DA6 / 0x316B arbitration | DONE, **G** | G |
 | Temperature check (SUP_EVT when TEMP raw < 0x40, stock 0x3D51) | DONE, live once the first measurement ran | I |
 
+| **Board 2026-11-21 (camera, MSPI field 2): detect result never published (SAT 0, invalid-signature counter counts, `D(n) >> 4` = 0)** | OPEN: stock sequencer 0x316B (D5/D6 stepping, ADC samples) not ported; diagnostics regs 0x71..0x74 (raw D1..D4) and 0x24..0x2B (class-probe words) added to the awto images to see what the hardware returns | I |
+
 ## d. Analog / unknown hardware (`src/hal_analog.c`)
 
 Every access names the stock function. Nothing is invented: DONE items copy the stock SFR write order.
