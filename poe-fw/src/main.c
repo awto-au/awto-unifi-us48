@@ -27,6 +27,7 @@ void periodic_body(void) __using(2)
 void tick_body(void) __using(3)
 {
 	chan_tick();
+	wd_tick();
 }
 
 void fw_main(void)
@@ -48,6 +49,7 @@ void fw_main(void)
 	HREG(R_CRC_STATUS) = 0xAA;      /* firmware running (stock writes this first, 0x4071; moved after init) */
 
 	for (;;) {                      /* main_loop 0x3D1A */
+		wd_service();
 		poll_common();
 		if (svc0) { svc0 = 0; chan_run(0); }
 		if (svc1) { svc1 = 0; chan_run(1); }

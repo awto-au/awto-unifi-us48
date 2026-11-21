@@ -33,7 +33,7 @@ public class ApplyPoeProtocol extends GhidraScript {
                 setPlateComment(x, cm);
                 nr++;
                 for (int k = 5; k <= 6; k++) {
-                    if (f[k].isEmpty()) continue;
+                    if (f[k].isEmpty() || !f[k].startsWith("CODE:")) continue;
                     Function fx = getFunctionAt(toAddr(f[k]));
                     if (fx == null) continue;
                     String p = k == 5 ? "wh_" : "rh_";
