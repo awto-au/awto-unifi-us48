@@ -88,6 +88,9 @@ def dependents(host: str, mod: str) -> list[str]:
 def board_script(rid: str, stop: list[str], start: list[tuple[str, list[str]]], net: bool) -> str:
     L = ["#!/bin/sh", f"exec >>{BOARD_LOG} 2>&1", "M=/lib/modules/$(uname -r)",
          f"echo \"== {rid} start $(cat /proc/uptime)\""]
+    if "us48_cmic" in stop:
+        # an up copper port keeps its PHY attached and the PHY holds a reference on us48_cmic: rmmod fails (EAGAIN) until the ports are down
+        L.append("for n in /sys/class/net/ge* /sys/class/net/xe*; do [ -d \"$n\" ] && ip link set \"${n##*/}\" down; done")
     for m in stop:
         L.append(f"grep -q '^{m} ' /proc/modules && {{ rmmod {m} && echo 'rmmod {m} ok' || {{ echo 'rmmod {m} FAILED'; "
                  f"echo '== {rid} failed'; exit 1; }}; }}")
