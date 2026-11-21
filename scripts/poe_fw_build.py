@@ -136,13 +136,86 @@ def checks(mem, txt, syms, tag):
     return errs, bytes(img), cend
 
 
-def sizes(syms, stock_tsv, cend, tag):
-    ours = sorted((a, n) for n, a in syms.items() if 0x1B03 <= a < cend and not n.startswith("___"))
+# our function(s) -> stock function names (hwdb/firmware/bcm59111-v21.names.tsv): same role, not the same scope
+ROLE = {
+    "i2c slave ISR": (["_isr_i2c_body", "_hook_i2c"], ["isr_i2c_slave"]),
+    "host table dispatch": (["_host_wr_dispatch", "_host_rd_dispatch"], ["host_reg_dispatch"]),
+    "channel ISRs (4)": (["_hook_chan0", "_hook_chan1", "_hook_chan2", "_hook_chan3"],
+                         ["isr_chan0", "isr_chan1", "isr_chan2", "isr_chan3"]),
+    "event ISR 2": (["_isr2_body", "_hook_isr2"], ["isr_event_ext"]),
+    "timer tick": (["_chan_tick", "_tick_body", "_hook_timer1"], ["isr_timer1_tick", "tick_timers"]),
+    "periodic ISR (measurement chain NOT ported)": (["_periodic_body", "_hook_periodic", "_hal_periodic"],
+                                                    ["isr_periodic", "meas_cur_offset_trim", "meas_temp_calib",
+                                                     "meas_convert_cm_vm_temp", "periodic_dc_mux_scheduler",
+                                                     "periodic_detcls_sequencer"]),
+    "channel state machine (+ arm / timers)": (["_chan_run", "_arm", "_tmr_set", "_wait_then", "_chan_init", "_chan_request",
+                                                "_svc_set", "_opmode", "_sat_set", "_acquire_probe", "_release_probe",
+                                                "_chan_restart_all", "_chan_i2c_error_reload"],
+                                               ["st_port_reset", "st_port_shutdown", "st_port_cfg", "st_mode_select",
+                                                "st_detect_arm", "st_detect_start", "st_detect_wait", "st_detect_result",
+                                                "st_detect_invalid", "st_class_gate", "st_class_hw_start", "st_class_wait",
+                                                "st_class_done", "st_class_eval", "st_power_request", "st_power_on",
+                                                "st_poweron_hold", "st_power_good", "st_fault_shutdown", "st_fault_cooldown",
+                                                "st_disconnect_cleanup", "st_idle", "st_wait_b1", "st_wait_b3", "st_wait_b6",
+                                                "st_wait_b6b", "st_wait_b7", "st_retry_wait_a", "st_retry_wait_b",
+                                                "st_detect_ok_wait", "st_chan_enable", "arm_channel", "arm_channel_cur",
+                                                "run_state", "set_timer"]),
+    "start-up, main loop, init": (["_fw_main", "_slot0", "_rom_init", "_rom_strap_call", "_hostregs_init", "_hal_sfr_init",
+                                   "_hal_timer_init", "_hal_ext_init"],
+                                  ["main", "main_loop", "startup_idata_clear", "init_i2c_status", "init_regs_set_a",
+                                   "init_regs_set_b", "init_fw_rev_crc", "init_hp_defaults", "init_icut_defaults",
+                                   "init_ilim_defaults", "init_hw_channels", "reload_after_i2c_error"]),
+    "host write handlers (28 regs)": (["_wh_*"], ["wh_op_mod", "wh_int_mask", "wh_cfg42", "wh_dis_sen_en", "wh_det_class_en", "wh_reg_15",
+                                           "wh_reg_17", "wh_pb_detclass", "wh_pb_pwr", "wh_pb_reset", "wh_reg_1e", "wh_reg_1f",
+                                           "wh_hp_en", "wh_reg_46", "wh_reg_47", "wh_reg_48", "wh_reg_4b", "wh_reg_4c",
+                                           "wh_reg_4d", "wh_reg_50", "wh_reg_51", "wh_reg_52", "wh_reg_55", "wh_reg_56",
+                                           "wh_reg_57", "wh_reg_5e", "wh_reg_5f"]),
+    "host read handlers (5 events + 16 counters)": (["_rh_*"], ["rh_pwr_evt_clr", "rh_det_evt_clr", "rh_fault_evt_clr", "rh_evt8_clr",
+                                                         "rh_therm_evt_clr"] + [f"rh_cnt_p{p}_{k}" for p in range(1, 5) for k in range(4)]),
+    "poll / events / INT helpers": (["_poll_common", "_evt_raise", "_sup_event", "_evt_clear_channel", "_cnt_inc"],
+                                    ["poll_common", "int_raise_pwr_good", "int_raise_class", "set_sup_event",
+                                     "int_line_update", "poll_detect_class_regs", "chan_event_latch"]),
+}
+
+
+def local_funcs():
+    """Every code label of the linked .rst listings with its address (static functions included)."""
+    out = {}
+    for rst in sorted((WORK / "main").glob("*.rst")):
+        for ln in rst.read_text().splitlines():
+            m = re.match(r"^\s+([0-9A-F]{6})\s+\d+ (_\w+):", ln)
+            if m and 0x1B03 <= int(m.group(1), 16) < 0x3000:
+                out[m.group(2)] = int(m.group(1), 16)
+    return out
+
+
+def sizes(cend, tag):
+    labels = local_funcs()
+    cs_end = 0x1B03
+    txt = (WORK / "main" / "out.map").read_text()
+    cs = [m for m in re.finditer(r"^CSEG\s+([0-9A-F]{8})\s+([0-9A-F]{8})", txt, re.M)][-1]
+    cs_end = int(cs.group(1), 16) + int(cs.group(2), 16)
+    order = sorted((a, n) for n, a in labels.items())
+    size = {}
+    for i, (a, n) in enumerate(order):
+        size[n] = (order[i + 1][0] if i + 1 < len(order) else cs_end) - a
+    stock = {}
+    for ln in (ROOT / "hwdb/firmware/bcm59111-v21.functions.tsv").read_text().splitlines()[1:]:
+        f = ln.split("\t")
+        stock[f[1]] = int(f[2])
+    names = {}
+    for ln in (ROOT / "hwdb/firmware/bcm59111-v21.names.tsv").read_text().splitlines():
+        if ln.startswith("CODE:"):
+            f = ln.split("\t")
+            names[f[1]] = int(f[0][5:], 16)
     rows = []
-    for i, (a, n) in enumerate(ours):
-        nxt = ours[i + 1][0] if i + 1 < len(ours) else cend
-        rows.append((n, a, nxt - a))
-    return rows
+    for role, (ours, theirs) in ROLE.items():
+        names_o = [m for n in ours for m in ([k for k in size if k.startswith(n[:-1])] if n.endswith("*") else [n])]
+        o = sum(size.get(n, 0) for n in names_o)
+        missing = [n for n in names_o if n not in size]
+        st = sum(stock.get(n, 0) for n in theirs)
+        rows.append((role, o, st, missing))
+    return rows, size, cs_end - 0x1B03
 
 
 def main():
@@ -163,10 +236,17 @@ def main():
             (OUT_DIR / out).write_bytes(img)
             log(f"[{tag}] wrote {OUT_DIR / out} ({len(img)} B)")
             if tag == "main":
-                rows = sizes(syms, None, cend, tag)
+                rows, size, cseg = sizes(cend, tag)
                 p = ROOT / "tmp/poe-fw/sizes.tsv"
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text("name\taddr\tsize\n" + "".join(f"{n}\t{a:04X}\t{s}\n" for n, a, s in rows))
+                lines = ["role\tours_B\tstock_B\tnote"]
+                for role, o, st, missing in rows:
+                    lines.append(f"{role}\t{o}\t{st}\t{'missing ' + ','.join(missing) if missing else ''}")
+                lines.append(f"all CSEG code\t{cseg}\t\t")
+                lines += ["", "function\tsize"] + [f"{n}\t{v}" for n, v in sorted(size.items(), key=lambda kv: -kv[1])]
+                p.write_text("\n".join(lines) + "\n")
+                for ln in lines[:len(rows) + 2]:
+                    log("size " + ln.replace("\t", " | "))
     except Fail as e:
         log(f"BUILD REFUSED: {e}")
         return 1

@@ -113,8 +113,8 @@ extern __data u8 i2c_rx;
 extern __data u8 i2c_ptr;
 
 /* asm: table dispatch, tail-jumps into the [FF hi lo] handler (hooks.s) */
-void host_wr_dispatch(u8 reg);
-void host_rd_dispatch(u8 reg);
+void host_wr_dispatch(u8 reg) __using(1);
+void host_rd_dispatch(u8 reg) __using(1);   /* __using: sdcc switches the bank around calls into another bank */
 
 /* host regs / events (hostregs.c) */
 void evt_raise(u8 pair_reg, u8 mask, u8 intbit);

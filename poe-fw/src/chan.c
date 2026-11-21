@@ -315,11 +315,15 @@ void chan_run(u8 ch)
 			arm(ch, ST_PORT_RESET, 1);
 			break;
 		}
+#ifdef POE_FW_NO_POWER
+		arm(ch, ST_IDLE, 0);                            /* bench build: stop after detect / class */
+#else
 		c->pend &= (u8)~CH_PEND_PWR_ON;
 		hal_dis_sen(ch, (HREG(R_DIS_SEN_EN) & m) != 0);   /* 0x30C3 [I] */
 		hal_chan_enable(ch, 1);
 		hal_power_on(ch, (HREG(R_HP_EN) & (u8)(0x10 << ch)) != 0);
 		wait_then(ch, TMR_IDLE, 20, ST_POWER_GOOD, 0);    /* 0x4FB7: power-up hold 20 ticks (<= Tpon) */
+#endif
 		break;
 
 	case ST_POWER_GOOD:
