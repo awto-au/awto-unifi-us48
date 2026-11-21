@@ -656,7 +656,8 @@ static struct us48_port *sw_port(struct us48_cmic *u, int lport)
 
 static bool fdb_live(const struct us48_br *b, const struct us48_fdb *f)
 {
-	return b->aware ? f->vid && f->vid < VID_RSVD_MIN : !f->vid;
+	/* VLAN-unaware: the bridge reports its default-PVID entries as vid 1 (same key as vid 0 here), notified back with that vid */
+	return b->aware ? f->vid && f->vid < VID_RSVD_MIN : f->vid <= 1;
 }
 
 static int fdb_hw(struct us48_cmic *u, struct us48_br *b, struct us48_fdb *f, bool add)

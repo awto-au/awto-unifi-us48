@@ -1098,10 +1098,12 @@ def ping_ok(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str) -> bool
     return b.check(name, bool(got) and int(got.group(1)) >= 1, " | ".join(out.splitlines()[-2:]))
 
 
-def check_aware(b: Board, tag: str, stg: int) -> None:
+def check_aware(b: Board, tag: str, stg: int, sm: "Sampler | None" = None) -> None:
     """ASIC state of brv: VLAN 1 {CPU, ge8} UT ge8, VLAN 10 {CPU, ge8, ge9} tagged, VLAN 20 {CPU, ge9}; FID = VID; STG = stg."""
     if not b.apply:
         return
+    if sm:
+        sm.grace = sm.q.qsize() + 6    # ~15 ssh S-channel reads: dropbear + schan load, no loop possible; pps guard stays
     lp8, lp9 = LP["ge8"], LP["ge9"]
     want = {1: (1 | 1 << lp8, 1 << lp8), VID_T: (1 | 1 << lp8 | 1 << lp9, 0), VID_X: (1 | 1 << lp9, 0)}
     for v, (pb, ut) in want.items():
@@ -1196,7 +1198,7 @@ def step_vlan(b: Board) -> None:
              f"ip addr add {NET_TA}/24 dev ge17.{VID_T}'")
         b.sh(f"ip link add link brv name brv.{VID_T} type vlan id {VID_T}; echo 1 > /proc/sys/net/ipv6/conf/brv.{VID_T}/disable_ipv6; "
              f"ip addr add {NET_TBR}/24 dev brv.{VID_T}; ip link set brv.{VID_T} up")
-        check_aware(b, "aware", stg)
+        check_aware(b, "aware", stg, sm)
         ping_ok(b, sm, ns, NET_BR, "vlan untagged ping A -> brv (VID 1 = ge8 PVID)")
         ping_ok(b, sm, ns, NET_TBR, f"vlan tagged ping A ge17.{VID_T} -> brv.{VID_T} (CPU RX tagged, SOBMH TX tagged)")
         # 3. FDB per VID: A learned in both VIDs; bridge-local MAC -> CPU per VID; static per VID
@@ -1276,7 +1278,7 @@ def step_vlan(b: Board) -> None:
         if sm:
             sm.grace = sm.q.qsize() + 6
         b.sh("echo 1 > /sys/class/net/brv/bridge/vlan_filtering")
-        check_aware(b, "filtering 1 again", stg)
+        check_aware(b, "filtering 1 again", stg, sm)
         s = b.l2_lookup(VID_T, MAC_STATIC)
         if b.apply:
             e, f = b.rmem("VLAN_TAB", slot)
