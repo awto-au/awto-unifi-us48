@@ -7,6 +7,10 @@
 
 typedef uint8_t u8;
 typedef uint16_t u16;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef uint32_t u32;
 
 #define NCH 4
 
@@ -44,6 +48,15 @@ __sfr __at(0xA3) CH2_LIMIT;
 __sfr __at(0xA4) CH3_LIMIT;
 __sfr __at(0xA5) SFR_A5;
 __sfr __at(0xA7) SFR_A7;
+__sfr __at(0xAB) AB_IDX;   /* indirect analog register index (I: stock 0x34ED, 0x37D8) */
+__sfr __at(0xAC) AC_LO;    /* indirect register data, low byte (I) */
+__sfr __at(0xAD) AD_HI;    /* indirect register data, high byte (I) */
+__sfr __at(0xAF) AF_MUX;   /* analog mux / class sample select: ch*4 + {1,2,3,5} (I: stock 0x29EE) */
+__sfr __at(0xB5) B5_SEL;   /* trim / calibration register select (I: stock 0x415C) */
+__sfr __at(0xB6) B6_DAT;   /* signed 8-bit data for B5 (I) */
+__sfr __at(0xB7) B7_DAT;   /* signed 8-bit data for B5 (I) */
+__sfr __at(0xD7) D7_TRIM;  /* trim word: bits 5:0 and bit 7 (I: stock 0x416C) */
+__sfr __at(0xF4) SFR_F4;
 __sfr __at(0xB1) CH0_CTRL;
 __sfr __at(0xB2) CH1_CTRL;
 __sfr __at(0xB3) CH2_CTRL;
@@ -190,5 +203,14 @@ void hal_power_off(u8 ch);
 u8 hal_temp_valid(void);
 void hal_wdt_mode(u8 v) __using(1);
 void hal_periodic(void) __using(2);
+
+/* measurement chain (meas.c, hal_analog.c) */
+u16 hal_ind_word(u8 idx);             /* AB = idx; (AD << 8) | AC */
+void hal_meas_calib(void);            /* stock 0x415C */
+void hal_class_mux(u8 ch, u8 on);
+u8 class_code(u16 w);                 /* stock 0x4900 */
+void meas_step(void);
+void meas_init(void);
+extern __bit __at(0x05) meas_due;
 
 #endif

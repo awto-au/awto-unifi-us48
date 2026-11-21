@@ -45,11 +45,16 @@ void fw_main(void)
 	hal_ext_init();                 /* 0x50B7 */
 	hal_sfr_init();                 /* tail of init_hw_channels 0x3922 */
 	chan_init();                    /* head of init_hw_channels 0x3922 */
+	meas_init();                    /* stock 0x415C */
 	EA = 1;
 	HREG(R_CRC_STATUS) = 0xAA;      /* firmware running (stock writes this first, 0x4071; moved after init) */
 
 	for (;;) {                      /* main_loop 0x3D1A */
 		wd_service();
+		if (meas_due) {
+			meas_due = 0;
+			meas_step();
+		}
 		poll_common();
 		if (svc0) { svc0 = 0; chan_run(0); }
 		if (svc1) { svc1 = 0; chan_run(1); }

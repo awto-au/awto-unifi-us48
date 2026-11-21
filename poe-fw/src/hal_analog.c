@@ -137,12 +137,10 @@ void hal_class_stop(void)
 	CLASS_START_A = 0;
 }
 
-/* Stock gets the class code from periodic_detcls_sequencer 0x316B (IRAM 0x42+ch bits 6:4): NOT PORTED.
- * Returns 0xFF = unknown; chan.c then reports class 0. TODO. */
+/* stock 0x29EE sub-state 3 / 0x4900: class code from the ADC word at AB = ch | 8. */
 u8 hal_class_result(u8 ch)
 {
-	(void)ch;
-	return 0xFF;
+	return class_code(hal_ind_word((u8)(ch | 8)));
 }
 
 /* stock chcfg_4DD0 0x4DD0 (via 0x225C / 0x4DE2): F2 |= bit (on) or F2 &= ~bit (off), EA off around the RMW. */
@@ -179,12 +177,6 @@ void hal_power_off(u8 ch)
 	EA = 1;
 }
 
-/* Measurement chain (stock 0x1B03 / 0x37D2 / 0x34D0 / 0x29EE: AB/AC/AD, B5..B7, E9..EF) NOT PORTED: TEMP, CM, VM stay 0. TODO. */
-u8 hal_temp_valid(void)
-{
-	return 0;
-}
-
 void hal_periodic(void) __using(2)
 {
 }
@@ -193,4 +185,55 @@ void hal_periodic(void) __using(2)
 void hal_wdt_mode(u8 v) __using(1)
 {
 	I2C_MODE = ((v & 0x1E) == 0x16) ? 0x0B : 0x0A;
+}
+
+/* ---- measurement chain: indirect analog register file (AB = index, AC = low, AD = high) and trim registers (B5 select, B6 / B7) ---- */
+
+/* stock 0x34ED..0x3513 / 0x37D8..0x37E0: word = (AD << 8) | AC after AB = idx (word cells are stored AD first, AC second). I. */
+u16 hal_ind_word(u8 idx)
+{
+	u8 lo;
+
+	AB_IDX = idx;
+	lo = AC_LO;
+	return ((u16)AD_HI << 8) | lo;
+}
+
+/* calibration values read once, stock 0x415C..0x41D6 (names TSV meas_*): written to cal[] by meas.c via these raw accessors. */
+extern __xdata s16 cal_temp_off;     /* IRAM 0x4E:0x4F  B5 = 0x14, B6 sign-extended */
+extern __xdata s16 cal_slope;        /* IRAM 0x4A:0x4B  B5 = 1, B7 sign-extended */
+extern __xdata u8 cal_c49;           /* IRAM 0x49       B5 = 0, B7 */
+extern __xdata s16 cal_off4c;        /* IRAM 0x4C:0x4D  B5 = 0 B6 + B5 = 0x15 B6, sign-extended */
+extern __xdata u8 cal_ch[4];         /* IRAM 0x62..0x65 per-channel offset trims (consumer: 0x1B03, not ported) */
+
+void hal_meas_calib(void)
+{
+	u8 base, d7, c;
+
+	SFR_F4 = 0;
+	B5_SEL = 0x14;
+	cal_temp_off = (s8)B6_DAT;
+	SFR_FF = 0x60;
+	d7 = D7_TRIM;
+	base = d7 & 0x3F;
+	if (base & 0x20)
+		base = (u8)(base + 0xC0);
+	base = (u8)(base + 0x51);
+	for (c = 0; c < 4; c++) {
+		B5_SEL = (u8)(0x10 + c);
+		cal_ch[c] = (u8)(base + B6_DAT);
+	}
+	B5_SEL = 1;
+	cal_slope = (s8)B7_DAT;
+	B5_SEL = 0;
+	cal_c49 = B7_DAT;
+	cal_off4c = (s8)B6_DAT;
+	B5_SEL = 0x15;
+	cal_off4c += (s8)B6_DAT;
+}
+
+/* stock 0x2A3E / 0x2A..: class sample mux, AF = ch * 4 | 1 while sampling, ch * 4 afterwards (state 5). Copy of the stock values; timing G. */
+void hal_class_mux(u8 ch, u8 on)
+{
+	AF_MUX = (u8)(ch * 4) | (on ? 1 : 0);
 }

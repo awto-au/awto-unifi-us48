@@ -17,6 +17,7 @@ enum {
 	ST_DETECT_INVALID,  /* 0x48BE */
 	ST_CLASS_GATE,      /* 0x41D9 */
 	ST_CLASS_START,     /* 0x49BD */
+	ST_CLASS_SAMPLE,    /* class ADC sample inside the window, stock 0x29EE state 3 (tick 14) [G timing] */
 	ST_CLASS_DONE,      /* 0x47E4 */
 	ST_POWER_REQUEST,   /* 0x3FBE */
 	ST_POWER_ON,        /* 0x4A31 */
@@ -37,6 +38,11 @@ enum {
 #define TMR_IDLE   7   /* idle 60 ticks / power-up hold 20 ticks (0x4EEF / 0x4FB7) */
 
 #define F_POWERED 0x01
+#define F_HP      0x02     /* class 4: F2 enabled, current scale 6403 (stock bit 5 of 0x80DE + 2c) */
+
+/* stock tables 0x4C03 (A1..A4 limit per class code) and 0x4C0B (F2 enable per class code), read at 0x30EA / 0x30DA (C values, U meaning) */
+static const __code u8 lim_tab[8] = { 0xF0, 0x48, 0x84, 0xF0, 0xCC, 0xF0, 0xF0, 0xF0 };
+static const __code u8 hp_tab[8] = { 0, 0, 0, 0, 1, 0, 0, 0 };
 
 static __data u8 probe_owner;     /* one channel at a time uses the detect / class hardware [G: replaces stock 0x3DA6 / 0x316B] */
 
@@ -160,6 +166,7 @@ void chan_tick(void) __using(3)
 	u8 c, i;
 	struct chan __xdata *p;
 
+	meas_due = 1;
 	for (c = 0; c < NCH; c++) {
 		p = &chans[c];
 		if (p->dly && --p->dly == 0)
@@ -298,20 +305,30 @@ void chan_run(u8 ch)
 			break;
 		}
 		hal_class_start(ch);
-		wait_then(ch, TMR_CLASS, 100, ST_CLASS_DONE, 0);
+		hal_class_mux(ch, 1);
+		wait_then(ch, TMR_CLASS, 14, ST_CLASS_SAMPLE, 0);
 		break;
 
-	case ST_CLASS_DONE: {
-		/* 0x47E4: class into SAT bits 6:4. Hardware class result not ported: unknown -> 6 = class 0 [G] */
-		u8 r = hal_class_result(ch);
+	case ST_CLASS_SAMPLE:
+		/* stock 0x29EE: word at AB = ch | 8 -> class code 0x4900; sampled 14 ticks into the window (tick unit G) */
+		c->rsv = hal_class_result(ch);
+		wait_then(ch, TMR_CLASS, 86, ST_CLASS_DONE, 0);
+		break;
 
+	case ST_CLASS_DONE:
+		/* 0x47E4: class code into SAT bits 6:4 as the driver reads it (1..4 = class 1..4, 6 = class 0); 7 = above class 4: no power */
 		hal_class_stop();
-		sat_set(ch, 0x70, (u8)(((r == 0xFF) ? 6 : (r & 7)) << 4));
+		hal_class_mux(ch, 0);
+		sat_set(ch, 0x70, (u8)(c->rsv << 4));
 		evt_raise(R_DET_CLASS_EVT, (u8)(m << 4), 0x10);
 		release_probe(ch);
-		arm(ch, ST_POWER_REQUEST, 10);
+		if (c->rsv == 7) {
+			cnt_inc(ch, CNT_DENIED);
+			arm(ch, ST_IDLE, 0);
+		} else {
+			arm(ch, ST_POWER_REQUEST, 10);
+		}
 		break;
-	}
 
 	case ST_POWER_REQUEST:
 		/* 0x3FBE: shutdown -> reset; manual needs a request; semi-auto and auto power up [G for auto: stock auto is
@@ -335,7 +352,13 @@ void chan_run(u8 ch)
 #else
 		c->pend &= (u8)~CH_PEND_PWR_ON;
 		hal_dis_sen(ch, (HREG(R_DIS_SEN_EN) & m) != 0);   /* 0x30C3 [I] */
-		hal_chan_enable(ch, 1);
+		{
+			u8 cls = (HREG(R_SAT(ch)) >> 4) & 7;
+
+			hal_set_limit(ch, lim_tab[cls]);          /* 0x30EA: A(ch) from the class table [C] */
+			hal_chan_enable(ch, hp_tab[cls]);         /* 0x30DF: F2 only for class 4 [C] */
+			c->flags = hp_tab[cls] ? F_HP : 0;
+		}
 		hal_power_on(ch, (HREG(R_HP_EN) & (u8)(0x10 << ch)) != 0);
 		wait_then(ch, TMR_IDLE, 20, ST_POWER_GOOD, 0);    /* 0x4FB7: power-up hold 20 ticks (<= Tpon) */
 #endif

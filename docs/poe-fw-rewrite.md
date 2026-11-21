@@ -81,3 +81,51 @@ Dan 2026-11-21: the chip must be poked every 200 ms, else drop all PoE and tell 
 - Steady state: 6 reads over several seconds, HOST_WD_STAT 0x82 (feature + armed), HOST_WD_TIME 0x14, no expiry, no poke failure.
 - Forced expiry (`i2cset` HOST_WD_TIME = 2, i.e. 20 ms, between two driver pokes): STAT went 0x82 -> 0x81 (expired, disarmed) within ~40 ms; the next driver poke cycle logged `firmware host watchdog expired: all PoE was dropped; restarting and re-enabling 0 port(s)`, wrote the restart; STAT back to 0x82, TIME 0x14, OP_MOD 0x00.
 - Not tested: expiry with powered ports (the `-nopower` image never powers one; needs the full image and a PD), real stall of the kernel/workqueue, interaction with the measured-power watcher, INT line.
+
+## Phase 2: measurement, class (offline, #26)
+
+Ported from the stock disassembly (addresses = stock v21 CPU addresses). Evidence: C = code bytes, I = inferred meaning, G = our guess, U = hardware unverified. The sim stubs the analog side with one constant word, so its checks are arithmetic regressions of the port, not hardware validation.
+
+### Analog SFRs as read from the stock code
+
+| SFR | Fact | Ev |
+|---|---|---|
+| `AB` / `AC` / `AD` | Indirect analog register file: write index to AB, read AC (low) and AD (high); word = `AD << 8 \| AC` (0x34ED..0x3513, 0x37D8..0x37E0). Indices seen: `0x2C` temperature sensor, `0x30` temperature feedback value, `ch\|4` voltage word, `ch\|8` current / class-probe word, `ch` third word (stored, unused). | C access, I meaning |
+| `B5` / `B6` / `B7` | Trim register file: B5 = index, B6 / B7 = signed 8-bit data. At start-up (0x415C): `0x14` -> temperature offset (B6), `0x10..0x13` -> per-channel offsets (B6 + base from `D7`), `1` -> slope (B7), `0` -> B7 constant and B6, `0x15` -> B6 added to the `0` value. | C access, I meaning |
+| `D7` | Trim word: bits 5:0 (sign bit 5) base for the per-channel offsets, bit 7 flag (0x416C..0x4181). | C / I |
+| `AF` | Analog mux for the class sample: `ch*4 + {1, 2, 3, 5}` (0x2A3E, 0x2ACB, 0x2AFC, 0x2B49, 0x2ADC). | C values, I meaning |
+| `D1..D4` | Detect: write 1 to start, 2 for the second phase, result `>> 4` = detect code (4 = good) (0x4601, 0x1A60, 0x3B3C). | C / I |
+| `D5` / `D6` | Class start: both OR-ed with the channel bit, both cleared by 0x227C. | C / I |
+| `A1..A4` | Per-channel limit byte, init 0xF0; auto mode loads it from table 0x4C03 indexed by class code (`F0 48 84 F0 CC F0 F0 F0`), F2 enable from table 0x4C0B (only class code 4) (0x30DA..0x30EA). | C tables, I meaning |
+| `F1` / `F2` | Power enable set / enable; stock semi-auto path ORs F1 (0x4A31). | C |
+| `C9` | Equals `~DIS_SEN_EN` after a host write (0x23EF..0x23F8): disconnect-sense gate. | C |
+| `E9..EF` | Math unit: write `E9:EA` and `ED:EE` = 16x16 -> 32 multiply, result `E9..EC` after one NOP (0x4764); `EF = 0x20 \| n` = 32-bit logical shift right by n on `E9..EC` after ~8 NOPs (0x4777; n = 3, 6, 10, 14). Replaced by C arithmetic here. | C |
+| Class decode | ADC word thresholds `0x6F 0xF7 0x189 0x233 0x322` give code 6 (class 0), 1, 2, 3, 4, 7 (above class 4) (0x4900). The code is `SAT_Pn` bits 6:4, exactly as the kernel driver reads it. | C |
+
+### Ported
+
+- Calibration (0x415C), TEMP raw (reg 0x2C = low byte of `(offset + word(AB=0x2C)) >> 1`), regs 0x2E / 0x2F (stock bench read 0x89 / 0x23 on a live chip), per-channel VM (`word(c|4) * 11`) and CM (`word(c|8) * 3201 >> 10`, 6403 for class 4) for powered channels, class code from the ADC word, class-table limit `A1..A4` and F2 enable at power-up, temperature check (SUP_EVT 0x80 when TEMP raw < 0x40) now live.
+- Runs from the main loop once per 10 ms tick; stock runs it from the periodic ISR at an unknown rate (G). Temporaries in XDATA (IRAM is full: data ends 0x7F; stock used up to 0x7C).
+
+### Not ported (TODO)
+
+- 0x1B03 current offset trim (feedback writes to `AB = c | 4`): CM / VM carry the uncorrected offset.
+- The 0x29EE class mux schedule (AF 1 / 2 / 3 / 5 with four sample points) and the 0x316B / 0x30EF sequencer: ours does one sample 14 ticks into the 100-tick class window (tick unit G).
+- Power-good from hardware (the event bit that 0x2F8C waits for is not identified): still a 20-tick hold.
+- ICUT / ILIM apply (0x3334 `calc_limit`, math unit, clamps 0x0A / 0x15 / 0x2A): host values are stored, the limit byte comes from the class table only. HP_EN is read for the F1 mask only.
+- Stock auto-mode trigger (clear `B(ch).bit2` after programming limits, 0x30EF..0x3126): ours still uses F1.
+- Detect result scaling (0x3651, SFR D9..DB).
+
+### Which image for which bench step
+
+| Image | Never powers | Detect | Class | TEMP / CM / VM | Use |
+|---|---|---|---|---|---|
+| `bcm59111-awto-nopower.bin` (this is the detect-only image: no separate third variant) | yes | yes | yes | yes (CM / VM stay 0: no channel is powered) | bench steps 1..5: register compare, detect nibble, class nibble, TEMP |
+| `bcm59111-awto.bin` | no | yes | yes | yes | step 6 only, after 4 / 5 match stock on the second port, PD = the camera, meter on the pair |
+
+### Bench steps 4..6 with the camera (phase 2)
+
+Chip PoE-12 runs ours, a second port of a stock chip (same camera, moved) is the reference. Host watchdog stays armed by the driver.
+4. `-nopower` image: TEMP (reg 0x2C) vs stock (stock live read 0xA7 at a similar temperature; the unit differs by ~1 C per count), reg 0x2E / 0x2F vs stock (0x89 0x23 seen); camera on one port of ours: `SAT_Pn` detect nibble 4 and class nibble (camera class from the datasheet / stock reading) via the driver's port status; compare with stock on the same camera. A different class nibble means the AF mux / sample time (G) or the thresholds need work: record the `0x813x`-equivalent word by reading nothing else (we have no raw-word register: add a debug reg if needed).
+5. Same with the camera moved between ports; power must stay off (check with a meter / the driver's mW = 0).
+6. Full image, camera, ports shut first: driver enables one port. Expect power-good bit, `SAT_PWR` 0x11, driver mW and V plausible against the stock chip with the same camera (CM / VM use the uncorrected offsets: expect a small difference), disconnect: unplug the camera, expect MPS-absent counter (0x63) and SAT_PWR 0 within ~300 ms. Stop at the first difference; limits (ICUT / ILIM) are not applied from the host values yet (class table only).
