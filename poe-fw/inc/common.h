@@ -94,6 +94,23 @@ __sbit __at(0xBA) IP_2;
 __sbit __at(0xBB) IP_3;
 __sbit __at(0xBC) IP_4;
 __sbit __at(0xBD) IP_5;
+__sbit __at(0xB9) IP_1;
+__sbit __at(0xCD) T2CON_5;
+__sbit __at(0xCF) T2CON_7;
+
+#ifdef POE_FW_PROBE
+/* Bench probe (docs/poe-fw-seq/05-timing.md section 9): free-running 16-bit entry counters per hook in unused plain host
+ * registers (lo, hi). Host reads hi, lo, hi and retries when hi differs (the pair is not updated atomically). */
+#define P_H3_LO  R_REG_22
+#define P_H3_HI  R_REG_23
+#define P_H8_LO  R_REG_2D
+#define P_H8_HI  R_REG_40
+#define P_H2_LO  R_REG_45
+#define P_H2_HI  R_REG_4F
+/* slots 4..7: probe.s (0x54/0x59, 0x5A/0x5B, 0x5C/0x5D, 0x1C/0x1D) */
+#define P_STAT   R_REG_16   /* [7:4] variant (1 A, 2 B, 3 C), 0: hook 3 body entered since last re-arm, 1: IP.1 / T2CON.5 armed, 2: EXF2/TF2 re-arm done at least once */
+#define PCNT(lo, hi) do { if (++HREG(lo) == 0) ++HREG(hi); } while (0)
+#endif
 
 /* IRAM bit flags at the stock addresses (C). Service flags 0x23.1..4, dirty flags 0x20..0x22. */
 __bit __at(0x19) svc0;

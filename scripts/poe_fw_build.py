@@ -7,6 +7,9 @@ Usage: poe_fw_build.py [--no-power-only]
   Writes hwdb/firmware/bcm59111-awto.bin and bcm59111-awto-nopower.bin (-DPOE_FW_NO_POWER: no power-up path, bench stage 1).
   Refuses (exit 1, reason printed) if hook table, size, base, entry, tag, IRAM or code-end checks fail, or if the generated
   header / tables no longer match hwdb/firmware/bcm59111-regs.tsv (poe_fw_genhdr.py --check).
+  Also writes the bench probe images bcm59111-awto-probeA / B / C.bin (-DPOE_FW_PROBE on the -nopower base: 16-bit entry counters
+  per hook in unused host regs; A = stock arming IP.1 / T2CON.5, B = no arming, C = A plus EXF2 / TF2 re-arm every 50 ticks;
+  docs/poe-fw-seq/05-timing.md section 9). The normal images do not change with these defines off.
   Also writes tmp/poe-fw/sizes.tsv (per-function size, ours vs stock v21 functions.tsv). Log: tmp/logs/poe_fw_build.log.
 """
 import re
@@ -72,18 +75,21 @@ def ihx_to_image(path):
     return mem
 
 
-def build(tag, defs):
+def build(tag, defs, probe=False):
     d = WORK / tag
     d.mkdir(parents=True, exist_ok=True)
     rels = []
+    inc = SRC / ("probe" if probe else "normal")      # chanhooks.inc: plain hook table or counting trampolines
     for s in S_SRCS:
-        run(["sdas8051", "-plosgff", "-o", d / f"{s}.rel", SRC / f"{s}.s"])
+        run(["sdas8051", "-plosgff", f"-I{inc}", "-o", d / f"{s}.rel", SRC / f"{s}.s"])
+    if probe:
+        run(["sdas8051", "-plosgff", "-o", d / "probe.rel", SRC / "probe/probe.s"])
     for c in C_SRCS:
         run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", *defs, "-c",
              "-o", d / f"{c}.rel", SRC / f"{c}.c"])
     # link order: hosttab first so CONST starts with the tables
     rels = [d / f"{s}.rel" for s in ["hosttab"]] + [d / f"{c}.rel" for c in C_SRCS] + \
-           [d / f"{s}.rel" for s in S_SRCS if s != "hosttab"]
+           [d / f"{s}.rel" for s in S_SRCS if s != "hosttab"] + ([d / "probe.rel"] if probe else [])
     lnk = d / "link.lnk"
     lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x4000", "-aDSEG=0x30",
                               "-aXSEG=0x80C0", f"-k{LIBDIR}", "-lmcs51", *map(str, rels), "-e", ""]))
@@ -242,8 +248,12 @@ def main():
         r = subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_genhdr.py"), "--check"], capture_output=True, text=True)
         if r.returncode:
             raise Fail("generated files stale vs hwdb regs.tsv: run scripts/poe_fw_genhdr.py\n" + r.stdout)
-        for tag, defs, out in (("main", [], "bcm59111-awto.bin"), ("nopower", ["-DPOE_FW_NO_POWER"], "bcm59111-awto-nopower.bin")):
-            d, mem = build(tag, defs)
+        base = ["-DPOE_FW_NO_POWER", "-DPOE_FW_PROBE"]
+        for tag, defs, out in (("main", [], "bcm59111-awto.bin"), ("nopower", ["-DPOE_FW_NO_POWER"], "bcm59111-awto-nopower.bin"),
+                               ("probeA", base + ["-DPOE_FW_PROBE_ID=1", "-DPOE_FW_PROBE_ARM"], "bcm59111-awto-probeA.bin"),
+                               ("probeB", base + ["-DPOE_FW_PROBE_ID=2"], "bcm59111-awto-probeB.bin"),
+                               ("probeC", base + ["-DPOE_FW_PROBE_ID=3", "-DPOE_FW_PROBE_ARM", "-DPOE_FW_PROBE_T2"], "bcm59111-awto-probeC.bin")):
+            d, mem = build(tag, defs, tag.startswith("probe"))
             txt, syms = parse_map(d)
             errs, img, cend = checks(mem, txt, syms, tag)
             log(f"[{tag}] code end 0x{cend:04X}, image bytes used {len(mem)}")

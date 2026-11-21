@@ -165,3 +165,27 @@ Board items need the awto image on a PoE chip; MCU-side registers only, host-vis
 6. Sources of slots 2 and 4..7: probe counters in each hook, PD plugged / unplugged.
 7. Mark / class interval on the wire (scope on the port): the AF = 2 interval of 4 calls gives P directly; not MCU-only.
 8. Sim (no board): interrupt-driven stock run works (`poe_fw_isr_cycles.py --irq N`: ROM vector stubs at 0x0B / 0x1B, T0 stand-in). For the full detect / class chain over time it still needs (a) a timer source at P, (b) time-varying analog stubs for D1..D4, AE, AC / AD, B5..B7, DD (ucsim has no PSE peripheral: inject with SFR event breakpoints), (c) `-X` set to the candidate f_cpu. Limits: MOVX stretch / wait states not modelled (awto-sdcc docs/dual-dptr.md); default xtal 11.0592 MHz (clk counts do not depend on it).
+
+## 10. Probe images (experiments 1..4, section 9)
+
+Built by `scripts/poe_fw_build.py` from the `-nopower` base with `-DPOE_FW_PROBE` (normal images byte-identical with the defines off, checked against a rebuild of the base). Sim: `scripts/poe_fw_probe_sim.py` (48 checks: counters, carry, arming, probeC re-arm, host regs equal to `-nopower` outside the probe regs). Reader: `scripts/poe_fw_probe_read.py` (`--selftest` covers wrap, torn pairs, aliasing).
+
+| Image | Arming IP.1 + T2CON.5 (stock 0x41D4 / 0x41D6) | Timer-2 re-arm | Answers |
+|---|---|---|---|
+| `bcm59111-awto-probeA.bin` | yes | no | does slot 3 fire with the stock arming |
+| `bcm59111-awto-probeB.bin` | no | no | does slot 3 fire without it |
+| `bcm59111-awto-probeC.bin` | yes | EXF2 + TF2 set every 50 hook-8 ticks | does a software T2 request raise slot 3 |
+
+- Hook 3 body is the counter only (no measurement work, so the period is not distorted by its cost). TEMP / CM / VM still run from the main loop as in `-nopower`. IRAM unchanged (counters live in host regs).
+- Registers (lo, hi; plain XRAM, no handler, not clear-on-read; rows in `hwdb/firmware/bcm59111-regs.tsv`, source `awto-probe`): hook 3 `0x22` / `0x23`, hook 8 `0x2D` / `0x40`, hook 2 `0x45` / `0x4F`, slot 4 `0x54` / `0x59`, slot 5 `0x5A` / `0x5B`, slot 6 `0x5C` / `0x5D`, slot 7 `0x1C` / `0x1D`. Zeroed at start-up. Slots 4..7 count in trampolines (`poe-fw/src/probe/probe.s`, hook table via `poe-fw/src/probe/chanhooks.inc`); normal builds include `poe-fw/src/normal/chanhooks.inc`.
+- Status `0x16`: bits 7:4 variant (1 A, 2 B, 3 C), bit 0 hook 3 body entered since the last re-arm (cleared by the probeC re-arm, set by every hook-3 call), bit 1 arming done at build time, bit 2 probeC re-arm done at least once.
+- Torn reads: counters are not updated atomically. The host reads hi, lo, hi; when the two hi differ, lo < 0x80 means the carry came first (use the second hi). The reader does this.
+- Risk (probeC, and A / B if the ROM wrapper never clears the request): a request that stays pending re-enters its hook back to back and starves the main loop. The I2C hook has its own bank and the watchdog poke path is the main loop's: if the chip stops answering sensibly, the driver's host watchdog expires, which is the intended failure signal. Reload clears it.
+- Interpretation: rate of hook 8 gives T and f_cpu = 80016 / T. Hook 3 counter rate gives P (period). Zero hook-3 count in A and B: the ROM does not start the source. Count in A but not in B: the arming bits gate it. Count in C only: the software request raises it (rate then is every 50 ticks, `hook 3 per tick` = 0.02, not a period). Counter equal to hook 3 back-to-back rate = about 24116 clk / f_cpu + wrapper: a stuck request.
+
+Board steps (chip PoE-07 per the DT patch 0026: mux channel 5 (PoE card 1), address 0x28; the kernel bus number must be read from `/sys/bus/i2c/devices`, it is not recorded in docs):
+1. Stage the image: `tmp/poe-fw-override` line `PoE-07=<path>/hwdb/firmware/bcm59111-awto-probeA.bin` (untracked, see poe-fw-rewrite.md "Bench loading"); build the mainline image, boot with all ports shut, no PD change, driver arms and pokes the host watchdog as for `-nopower`.
+2. Confirm: dmesg `firmware rev 0xa1 ... firmware loaded` for PoE-07; the chip is `<bus>-0028` (find the bus with `ls /sys/bus/i2c/devices | grep -- -0028`).
+3. `python3 scripts/poe_fw_probe_read.py --chip <bus>-0028 --seconds 12` (read only). Log `tmp/logs/poe_fw_probe.log`.
+4. Repeat with probeB, then probeC (each is a fresh load of the chip: reset / cold chip as for any image change). Camera on ch1 may stay; ports stay shut.
+5. Check afterwards: SAT / TEMP regs as for `-nopower`, host watchdog still armed (reg 0x21 = 0x82).
