@@ -20,6 +20,7 @@ Issue #26. Decision (Dan 2026-11-21): core is a DW8051, reversal spec ([poe-fw.m
 
 - `python3 scripts/poe_fw_build.py`: writes `hwdb/firmware/bcm59111-awto.bin` and `bcm59111-awto-nopower.bin` (no power-up path), checks layout, log `tmp/logs/poe_fw_build.log`, per-function sizes `tmp/poe-fw/sizes.tsv`. Exit 1 with the reason on any layout failure.
 - `python3 scripts/poe_fw_sim.py [--stock-diff]`: ucsim_51 `-t RL6449` (DW8051 model), log `tmp/logs/poe_fw_sim.log`. `--stock-diff` runs the same I2C scenarios on the stock image: the only observed difference is `FW_REV`.
+- Harness notes: every ucsim `step` is sent alone (queued console input aborts a running step), a free TCP port per run, IRAM zeroed like the stock `rom_init`, ROM 0x03..0xFF filled with RETI, simulated interrupts off (the harness calls the hooks).
 - Sim limits: ROM (< 0x1A00) absent (vectors RETI, strap pointer -> RET), analog SFRs are plain registers (detect result forced), no timing model beyond ticks injected by the harness.
 - Regenerate header: `python3 scripts/poe_fw_genhdr.py` after editing the regs TSV.
 
@@ -55,3 +56,22 @@ One chip only, one port at a time, Dan present. Steps 1..3 are read-only apart f
 - Step 3 PARTIAL: write/read round trip on 0x13, 0x1E, 0x1F verified and restored; 0x12 stays 0, 0x75 stays 0xAA. Not run: clear-on-read behaviour, INT pin, 0x14 / 0x44 writes.
 - Steps 4..6 not run (need a PD and a meter; measurement chain, class sequencer and limits are TODO).
 - Bench loading: `tmp/poe-fw-override` (untracked, `PoE-NN=<file>`) is staged into the image by `build_mainline.py`; `S06us48-poe` then passes `fw_override=` to the driver and keeps all ports shut. `scripts/poe_fw_bench.py` does the register compare (it needs ssh to the board; over serial use `i2cdump -f -y -r 0x0c-0x5f 8 0x2d b`).
+
+## Host watchdog (awto image only)
+
+Dan 2026-11-21: the chip must be poked every 200 ms, else drop all PoE and tell the driver; the driver can request a restart. Present in both images (`-nopower` too).
+
+- Registers (added to `hwdb/firmware/bcm59111-regs.tsv`, source `awto rewrite`; stock ignores both):
+  - `0x20` HOST_WD_TIME, W (read returns the last written value): timeout in 10 ms ticks (timer-1 tick, docs/poe-fw.md section 17). 0 = disarmed. Non-zero write arms and reloads the countdown = the poke; writing the same value again pokes. 1 is treated as 2 (range 2..255). 200 ms = 20.
+  - `0x21` HOST_WD_STAT: read b0 EXPIRED (latched, not cleared by reading), b1 ARMED, b7 = 1 always (feature marker, no FW_REV test needed). Write b7 = 1 = restart request; writes without b7 do nothing.
+- Why not `0x42` WDT_TIME: stock semantics are kept; it programs the 8051's own watchdog period (SFR F9, `wh_wdt_time`).
+- Boot default: disarmed, OP_MOD 0 (all ports off) until the host arms it.
+- Countdown: one decrement per timer-1 tick while armed (`wd_tick` in the tick hook). Expiry = the 20th tick after the last poke for a value of 20.
+- Expiry:
+  - tick hook: latch EXPIRED, clear ARMED (cannot re-fire), SUP_EVT |= 0x40 (both copies), INT bit 7 (SUP) set, INT output (`F8.0`) asserted if INT_MASK b7 and MISC_CONF b7 allow (same gating as every other event).
+  - main loop (next pass, well under a tick): OP_MOD := 0 and the PORT_RESET path for every channel (power off, `F1` / `F2`, SAT_PWR cleared, PWR_EVT raised). No new analog sequence.
+  - INT choice: all 8 stock INT bits are taken; SUP (bit 7) with SUP_EVT bit 0x40 is used (stock uses 0x80 for invalid temperature). The host reads 0x0B to clear the INT cause; EXPIRED stays latched until a restart.
+- While EXPIRED: OP_MOD writes are stored but the state machines treat the mode as 0, nothing powers. Arming while EXPIRED is accepted (the watchdog runs, EXPIRED stays).
+- Restart (STAT write b7 = 1): clears EXPIRED and the SUP_EVT 0x40 / INT bit 7 cause, line off, disarms; main loop shuts all channels (OP_MOD 0) and re-initialises the state machines. The host then writes OP_MOD and re-arms with HOST_WD_TIME.
+- No watchdog action on I2C bus errors.
+- Tests: `scripts/poe_fw_sim.py` section "host watchdog" (disarmed default, arm, pokes at 10 / 19 / 28 ticks, expiry on exactly the 20th tick, outputs cleared, INT, no re-fire, OP_MOD while expired, restart, clamp, re-arm, disarm), both images.

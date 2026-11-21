@@ -116,6 +116,22 @@ extern __data u8 i2c_ptr;
 void host_wr_dispatch(u8 reg) __using(1);
 void host_rd_dispatch(u8 reg) __using(1);   /* __using: sdcc switches the bank around calls into another bank */
 
+#define INT_UPDATE() do { if (!(HREG(R_INT) & HREG(R_INT_MASK))) INT_OUT = 0; } while (0)
+
+/* host watchdog (hostwd.c): awto-image-only regs 0x20 / 0x21 */
+#define WDS_EXPIRED 0x01
+#define WDS_ARMED   0x02
+#define WDS_PRESENT 0x80
+#define WD_SUP_BIT  0x40      /* SUP_EVT bit raised on expiry; INT bit 7 (SUP) */
+extern __data u8 wd_armed;
+extern __data u8 wd_cnt;
+extern __bit __at(0x03) wd_trip;         /* set by the tick ISR on expiry, served by the main loop */
+extern __bit __at(0x04) wd_restart;      /* set by the STAT write handler, served by the main loop */
+void wd_init(void);
+void wd_tick(void) __using(3);
+void wd_service(void);
+void chan_shutdown_all(void);
+
 /* host regs / events (hostregs.c) */
 void evt_raise(u8 pair_reg, u8 mask, u8 intbit);
 void evt_clear_channel(u8 ch);

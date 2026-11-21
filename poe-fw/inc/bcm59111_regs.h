@@ -34,8 +34,8 @@
 #define R_REG_1D               0x1D
 #define R_TIMER_P1P2           0x1E
 #define R_TIMER_P3P4           0x1F
-#define R_REG_20               0x20
-#define R_REG_21               0x21
+#define R_HOST_WD_TIME         0x20
+#define R_HOST_WD_STAT         0x21
 #define R_REG_22               0x22
 #define R_REG_23               0x23
 #define R_REG_24               0x24
@@ -144,6 +144,8 @@
 	X(RST_PUSH) \
 	X(TIMER_P1P2) \
 	X(TIMER_P3P4) \
+	X(HOST_WD_TIME) \
+	X(HOST_WD_STAT) \
 	X(WDT_TIME) \
 	X(HP_EN) \
 	X(HP_P1_MOD) \

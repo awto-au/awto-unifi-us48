@@ -33,8 +33,8 @@ reg	name	access	width	clear_on_read	write_handler	read_handler	meaning	source	co
 1D	REG_1D	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
 1E	TIMER_P1P2	RW	1		CODE:5117		timer P1/P2	UDM GPL bcm59111.h	I
 1F	TIMER_P3P4	RW	1		CODE:5120		timer P3/P4	UDM GPL bcm59111.h	I
-20	REG_20	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
-21	REG_21	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
+20	HOST_WD_TIME	RW	1		awto		awto-image-only host watchdog timeout in 10 ms ticks (0 = disarmed, any non-zero write arms and pokes, < 2 clamps to 2); read returns the last written value; stock ignores it	awto rewrite	G
+21	HOST_WD_STAT	RW	1		awto		awto-image-only: read b0 EXPIRED (latched), b1 ARMED, b7 = 1 feature marker; write b7 = 1 = restart request (clears EXPIRED, ports shut, disarmed); stock ignores it	awto rewrite	G
 22	REG_22	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
 23	REG_23	R	1				no stock use / no handler	poe-fw-re (v21 image)	I
 24	REG_24	R	1				no stock use / no handler	poe-fw-re (v21 image)	I

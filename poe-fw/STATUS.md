@@ -16,7 +16,7 @@
 | Tag `POETEC_IMAGE+...` at 0x5300 | DONE (stock string, `POWERUO` typo fixed, `+AWTO_OSS` appended) | C |
 | `FW_REV` = **0xA1** (new; stock 0x15, Meraki 0x12); read semantics unchanged (Linux driver only logs it) | DONE | C |
 | `CRC_STATUS` 0xAA | DONE, written **after** init (stock writes it first) | C |
-| Host dispatch tables | DONE, CONST at 0x3000 (stock 0x26EE: our code is larger, no need to match) | C |
+| Host dispatch tables | DONE, CONST at 0x3400 (stock 0x26EE: our code is larger, no need to match) | C |
 
 ## b. Host I2C slave
 
@@ -33,6 +33,9 @@
 | ICUT / ILIM / HP_MOD / HP_EN / timer regs 0x1E 0x1F | PARTIAL: stored, read back, dirty flags set; **not applied to hardware** (stock `calc_limit` 0x3334 + math unit not ported) | C store, TODO apply |
 | Regs 0x5E / 0x5F consumer (stock 0x230D: event-to-channel map, 0x80BF..C3) | TODO (defaults only) | I |
 | Divergence: table index masked to 0..0x7F (stock reads past the table for pointers >= 0x80) | DONE | n/a |
+
+| Host watchdog regs 0x20 HOST_WD_TIME / 0x21 HOST_WD_STAT (awto-only; poke every <= 200 ms or all ports shut, EXPIRED latch, INT via SUP bit 7 / SUP_EVT 0x40, restart request b7) | DONE, sim-tested on both images; INT cause choice and arming-while-expired are **G** | G |
+| Host watchdog does not use stock 0x42 WDT_TIME (8051 SFR F9 period) | DONE | C |
 
 ## c. Channel state machine
 
@@ -91,14 +94,14 @@ Measured by `scripts/poe_fw_build.py` (log `tmp/logs/poe_fw_build.log`, `tmp/poe
 | table dispatch | 38 | 17 (plus shared Keil helpers) |
 | channel ISRs x4 (asm) | 500 | 487 |
 | event ISR 2 | 108 | 69 |
-| timer tick (hook + tick) | 253 | 218 |
+| timer tick (hook + tick, incl. host watchdog tick) | 256 | 218 |
 | periodic ISR | 19 (empty) | 1869 (measurement chain) |
-| channel state machine + arm / timers | 2164 | 2639 (states only; stock helpers elsewhere) |
-| start-up / init / main loop | 444 | 643 |
-| host write handlers | 274 | 78 |
+| channel state machine + arm / timers | 2175 | 2639 (states only; stock helpers elsewhere) |
+| start-up / init / main loop | 461 | 643 |
+| host write handlers (incl. 2 watchdog) | 382 | 78 |
 | host read handlers | 270 | 63 |
 | poll / events / INT helpers | 495 | 1330 |
-| **all code (CSEG)** | **5166** | stock code 0x1A60..0x5260 = 14336 |
+| **all code (CSEG)** | **5469** | stock code 0x1A60..0x5260 = 14336 |
 
 Total image bytes occupied (non-zero-fill, incl. tables and tag): see the build log (`image bytes used`). No size win is claimed: for the same scope ours is not smaller (I2C ISR, dispatch, handlers, ISR 2 are larger); the smaller total is mostly missing functionality.
 
@@ -111,7 +114,7 @@ Total image bytes occupied (non-zero-fill, incl. tables and tag): see the build 
 | hook slots 9..14 | 1AFD 1AFE 1AFF 5220 5221 5222 | identical |
 | 0x1B00 | `LJMP 0x50EA` | `LJMP 0x2E9E` |
 | code starts | 0x1A60 | 0x1B03 (0x1AFC..0x1B02 fixed entry block) |
-| host tables | 0x26EE / 0x286E | CONST at 0x3000 |
+| host tables | 0x26EE / 0x286E | CONST at 0x3400 |
 | tag | 0x5300, `...+DEFAULT_AF_AUTO_MODE` | 0x5300, `...+DEFAULT_AF_AUTO_MODE+AWTO_OSS` (typo `POWERUO` -> `POWERUP`) |
-| code extent | 0x1A60..0x5260 (14336 B) | 0x1B03..0x3304 incl. tables (CSEG code 5166 B) |
-| IRAM data | 0x24..0x7C | 0x30..0x76 |
+| code extent | 0x1A60..0x5260 (14336 B) | 0x1B03..0x3704 incl. tables (CSEG code 5469 B) |
+| IRAM data | 0x24..0x7C | 0x30..0x78 |
