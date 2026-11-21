@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Build the open-source BCM59111 PSE firmware (poe-fw/, #26) with sdcc and write the 16 KiB RAM image.
 
-Usage: poe_fw_build.py [--seq-check]
+Usage: poe_fw_build.py [--no-power-only]
   Compiles poe-fw/src (sdcc mcs51 small model, awto-sdcc) and links to the stock image layout: CPU base 0x1A00, hook table at
   file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x4C00, tag at 0x5300, padded to 16384 B.
   Writes hwdb/firmware/bcm59111-awto.bin and bcm59111-awto-nopower.bin (-DPOE_FW_NO_POWER: no power-up path, bench stage 1).
-  --seq-check: only compile seq_detect.c + hal_analog.c with -DPOE_FW_SEQ (not linked, no image written, default images unchanged).
   Refuses (exit 1, reason printed) if hook table, size, base, entry, tag, IRAM or code-end checks fail, or if the generated
   header / tables no longer match hwdb/firmware/bcm59111-regs.tsv (poe_fw_genhdr.py --check).
   Also writes tmp/poe-fw/sizes.tsv (per-function size, ours vs stock v21 functions.tsv). Log: tmp/logs/poe_fw_build.log.
@@ -28,8 +27,6 @@ BASE = 0x1A00
 SIZE = 16384
 LIBDIR = Path("/usr/local/share/sdcc/lib/mcs51-small")
 C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "class", "chan", "hal_analog", "probe2"]
-C_SRCS = ["main", "i2c", "hostregs", "hostwd", "meas", "chan", "hal_analog"]
-SEQ_SRCS = ["seq_trim"]   # compiled only by --seq-compile (-DPOE_FW_SEQ, not linked into any image)
 S_SRCS = ["hosttab", "chan_isr", "startup"]   # hosttab first: CONST area starts with the write table
 IRAM_DATA_MAX = 0x7F        # stock IRAM use ends at 0x7C; upper half (0x80..) is left to the ROM stack (docs/poe-fw.md section 8)
 CODE_END_MAX = 0x5220       # RET stubs at 0x5220, tag at 0x5300
@@ -255,57 +252,10 @@ def sizes(cend, tag):
     return rows, size, cs_end - 0x1B03
 
 
-def seq_check():
-    """Compile-only check of the unwired detect sequencer (docs/poe-fw-seq/01-detect-sequencer.md)."""
-    d = WORK / "seq"
-    d.mkdir(parents=True, exist_ok=True)
-    try:
-        for c in ("seq_detect", "hal_analog"):
-            run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", "-c",
-                 "-o", d / f"{c}.rel", SRC / f"{c}.c"])
-        log("seq-check: seq_detect.c + hal_analog.c compile with -DPOE_FW_SEQ")
-    except Fail as e:
-        log(f"SEQ CHECK FAILED: {e}")
-        return 1
-    return 0
-    """--seq: compile-check seq_class.c + hal_analog.c with -DPOE_FW_SEQ (v21 and v18 variants). Writes nothing under hwdb/."""
-    d = WORK / "seq"
-    d.mkdir(parents=True, exist_ok=True)
-    for extra in ([], ["-DPOE_FW_SEQ_V18"]):
-        for c in ("seq_class", "hal_analog"):
-            run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", *extra,
-                 "-c", "-o", d / f"{c}.rel", SRC / f"{c}.c"])
-        log(f"seq check ok {extra or 'v21'}")
-
-
-def main():
-    help_guard(__doc__, strict=True, known=("--seq-check",))
-    if "--seq-check" in sys.argv:
-        return seq_check()
-def seq_compile():
-    d = WORK / "seq"
-    d.mkdir(parents=True, exist_ok=True)
-    for c in SEQ_SRCS:
-        run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", "-c",
-             "-o", d / f"{c}.rel", SRC / f"{c}.c"])
-    log("[seq] compile check ok")
-
-
 def main():
     help_guard(__doc__)
-    if "--seq-compile" in sys.argv:
-        LOG.parent.mkdir(parents=True, exist_ok=True)
-        seq_compile()
-        return
     LOG.parent.mkdir(parents=True, exist_ok=True)
     LOG.write_text("")
-    if "--seq" in sys.argv:
-        try:
-            seq_check()
-        except Fail as e:
-            log(f"SEQ CHECK FAILED: {e}")
-            return 1
-        return 0
     try:
         r = subprocess.run([sys.executable, str(ROOT / "scripts/poe_fw_genhdr.py"), "--check"], capture_output=True, text=True)
         if r.returncode:
