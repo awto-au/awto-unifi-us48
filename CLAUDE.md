@@ -1,6 +1,6 @@
 # CLAUDE.md — awto-unifi-us48
 
-Mainline Linux port + RE for the UniFi US-48-500W. Target: native mainline (`scripts/build_mainline.py`, `mainline/`). OpenWrt was removed 2026-11-18 (Dan: only noise); last state in tag `openwrt-parked` (#74). **Public repo** — no secret values (filesystem paths + device IDs are fine), no backups/firmware images. SDK source + derived register tables ARE fine to commit (Dan 2026-10-14).
+Mainline Linux port + RE for the UniFi US-48-500W. Target: native mainline (`scripts/build_mainline.py`, `mainline/`). OpenWrt was removed 2026-11-18 (Dan: only noise); last state in tag `openwrt-parked` (#74). **Public repo** — no secret values (filesystem paths + device IDs are fine), no backups/firmware images, except the BCM59111 PoE firmware (`hwdb/firmware/`, Dan 2026-11-21). SDK source + derived register tables ARE fine to commit (Dan 2026-10-14).
 
 - Entry point `scripts/dev.py` (`describe` lists every command; `doctor`, `console`, `send`, `boot-ram`, `flash-net`, `boot-flash`). Console = one visible tio window; scripts use its socket, never the tty. Adapter is local on Selwyn since 2026-11-14 (leave `US48_HOST` unset; set `US48_HOST=lizard` only if it moves back).
 - Build: `python3 scripts/build_mainline.py` (kernel + modules: Fedora `arm-linux-gnu-gcc`; rootfs `mainline/rootfs/` via `scripts/build_rootfs.py`: busybox + dropbear, static musl). No OpenWrt anywhere (tag `openwrt-parked`). Details: `docs/mainline.md`.
