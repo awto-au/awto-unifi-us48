@@ -56,6 +56,8 @@
 
 | **Board 2026-11-21 (camera, MSPI field 2): detect result never published (SAT 0, invalid-signature counter counts, `D(n) >> 4` = 0)** | OPEN: stock sequencer 0x316B (D5/D6 stepping, ADC samples) not ported; diagnostics regs 0x71..0x74 (raw D1..D4) and 0x24..0x2B (class-probe words) added to the awto images to see what the hardware returns | I |
 
+| Detect / class sequencer 0x316B / 0x30EF / 0x30C3 / 0x29EE schedule, power-good event, `calc_limit` 0x3334, offset trim 0x1B03, auto trigger | **TODO, blocker.** Phase 3 only decoded the sequencer structure (record layout, state dispatch table, helper map): docs/poe-fw-rewrite.md section "Phase 3 status". Nothing ported | C (decode) |
+
 ## d. Analog / unknown hardware (`src/hal_analog.c`)
 
 Every access names the stock function. Nothing is invented: DONE items copy the stock SFR write order.
