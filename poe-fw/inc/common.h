@@ -7,6 +7,10 @@
 
 typedef uint8_t u8;
 typedef uint16_t u16;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef uint32_t u32;
 
 #define NCH 4
 
@@ -44,6 +48,23 @@ __sfr __at(0xA3) CH2_LIMIT;
 __sfr __at(0xA4) CH3_LIMIT;
 __sfr __at(0xA5) SFR_A5;
 __sfr __at(0xA7) SFR_A7;
+__sfr __at(0xAB) AB_IDX;   /* indirect analog register index (I: stock 0x34ED, 0x37D8) */
+__sfr __at(0xAC) AC_LO;    /* indirect register data, low byte (I) */
+__sfr __at(0xAD) AD_HI;    /* indirect register data, high byte (I) */
+__sfr __at(0xAF) AF_MUX;   /* analog mux / class sample select: ch*4 + {1,2,3,5} (I: stock 0x29EE) */
+__sfr __at(0xAE) AE_STAT;   /* trim ready / state bits per channel (C: stock 0x1B03 reads it once per channel) */
+__sfr __at(0x81) SFR_SP;
+__sfr __at(0xA8) SFR_IE;
+__sfr __at(0xB8) SFR_IP;
+__sfr __at(0x88) SFR_TCON;
+__sfr __at(0xB5) B5_SEL;   /* trim / calibration register select (I: stock 0x415C) */
+__sfr __at(0xB6) B6_DAT;   /* signed 8-bit data for B5 (I) */
+__sfr __at(0xB7) B7_DAT;   /* signed 8-bit data for B5 (I) */
+__sfr __at(0xD9) D9_IDX;   /* detect sample file index / high / low (stock 0x3651) */
+__sfr __at(0xDA) DA_HI;
+__sfr __at(0xDB) DB_LO;
+__sfr __at(0xD7) D7_TRIM;  /* trim word: bits 5:0 and bit 7 (I: stock 0x416C) */
+__sfr __at(0xF4) SFR_F4;
 __sfr __at(0xB1) CH0_CTRL;
 __sfr __at(0xB2) CH1_CTRL;
 __sfr __at(0xB3) CH2_CTRL;
@@ -66,6 +87,7 @@ __sfr __at(0xE7) SFR_E7;
 __sfr __at(0xE8) SFR_E8;
 __sfr __at(0xF1) PWR_EN_SET;
 __sfr __at(0xF2) PWR_EN_CLR;
+__sfr __at(0xF3) PWR_GOOD;    /* per-channel power-good status, read after BC bit 4 (stock 0x5074, oracle) */
 __sfr __at(0xF5) I2C_CTRL;
 __sfr __at(0xF6) I2C_TX;
 __sfr __at(0xF7) I2C_RX;
@@ -77,6 +99,8 @@ __sbit __at(0xAA) EX1;       /* IE.2 */
 __sbit __at(0xAB) ET1;       /* IE.3 */
 __sbit __at(0xAF) EA;
 __sbit __at(0xCE) T2CON_6;
+__sbit __at(0xCD) T2CON_5;
+__sbit __at(0xB9) IP_1;
 __sbit __at(0xBA) IP_2;
 __sbit __at(0xBB) IP_3;
 __sbit __at(0xBC) IP_4;
@@ -181,14 +205,59 @@ void hal_dis_sen(u8 ch, u8 on);
 void hal_detect_start(u8 ch);
 void hal_detect_phase2(u8 ch);
 u8 hal_detect_raw(u8 ch);
-void hal_class_start(u8 ch);
-void hal_class_stop(void);
-u8 hal_class_result(u8 ch);
 void hal_chan_enable(u8 ch, u8 on);
 void hal_power_on(u8 ch, u8 hp);
+void hal_ind_write(u8 idx, u16 w);
+extern __xdata u8 cal_valid;
+void meas_trim(void);
+void live_check(void);
+u8 hal_pwr_good(u8 ch);
+void hal_ctrl_pulse(u8 ch);
+void hal_ctrl_trigger(u8 ch);
+void hal_ctrl_bit2(u8 ch);
 void hal_power_off(u8 ch);
 u8 hal_temp_valid(void);
 void hal_wdt_mode(u8 v) __using(1);
 void hal_periodic(void) __using(2);
 
+/* measurement chain (meas.c, hal_analog.c) */
+u16 hal_ind_word(u8 idx);             /* AB = idx; (AD << 8) | AC */
+void hal_meas_calib(void);            /* stock 0x415C */
+void hal_af(u8 ch, u8 v);             /* AF = ch * 4 + v */
+extern __xdata u8 dc_nib;
+extern __xdata u8 dc_diag[8];
+u8 detect_classify(u8 ch);   /* dc_nib in, dc_diag out (XDATA: IRAM is full) */
+void class_request(u8 ch);
+void class_cancel(u8 ch);
+u8 class_take_done(u8 ch);
+u8 class_code_of(u8 ch);
+void class_step(void);
+void svc_request(u8 ch);
+u8 class_code(u16 w);                 /* stock 0x4900 */
+void meas_step(void);
+extern __xdata u8 per_cnt;            /* hook 3 entries (periodic ISR), consumed by the main loop */
+void periodic_chain(void);
+void meas_init(void);
+extern __bit __at(0x05) meas_due;
+
+#endif
+
+/* PROBE v2 (bcm59111-awto-probe2.bin only): detect evidence in host regs, see docs/poe-fw-rewrite.md "Probe v2" */
+#ifdef POE_FW_PROBE3
+#define PR_N 3     /* raw D ring samples */
+#else
+#define PR_N 16
+#endif
+#ifdef POE_FW_PROBE2
+void probe_hist(u8 ch, u8 st);
+void probe_start(u8 ch);
+void probe_ev6(u8 ch);
+void probe_end(u8 ch, u8 tmo);
+void probe_poll(void);
+#else
+#define probe_hist(a, b) ((void)0)
+#define probe_start(a)   ((void)0)
+#define probe_ev6(a)     ((void)0)
+#define probe_end(a, b)  ((void)0)
+#define probe_poll()     ((void)0)
 #endif

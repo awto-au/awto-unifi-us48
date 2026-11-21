@@ -123,28 +123,6 @@ u8 hal_detect_raw(u8 ch)
 	}
 }
 
-/* stock st_class_hw_start 0x49BD..0x49D7: D5 |= bit, D6 |= bit. U. */
-void hal_class_start(u8 ch)
-{
-	CLASS_START_A |= bit_of[ch];
-	CLASS_START_B |= bit_of[ch];
-}
-
-/* stock detcls_227C 0x227C: D5 = D6 = 0. */
-void hal_class_stop(void)
-{
-	CLASS_START_B = 0;
-	CLASS_START_A = 0;
-}
-
-/* Stock gets the class code from periodic_detcls_sequencer 0x316B (IRAM 0x42+ch bits 6:4): NOT PORTED.
- * Returns 0xFF = unknown; chan.c then reports class 0. TODO. */
-u8 hal_class_result(u8 ch)
-{
-	(void)ch;
-	return 0xFF;
-}
-
 /* stock chcfg_4DD0 0x4DD0 (via 0x225C / 0x4DE2): F2 |= bit (on) or F2 &= ~bit (off), EA off around the RMW. */
 void hal_chan_enable(u8 ch, u8 on)
 {
@@ -154,6 +132,43 @@ void hal_chan_enable(u8 ch, u8 on)
 	else
 		PWR_EN_CLR &= (u8)~bit_of[ch];
 	EA = 1;
+}
+
+/* stock 0x5074: F3 & bit(ch). C (oracle: the stock handler reads F3 after BC bit 4). */
+u8 hal_pwr_good(u8 ch)
+{
+	return (PWR_GOOD & bit_of[ch]) != 0;
+}
+
+/* power-good block B writes: B2 04 then 00 (oracle tick 25), later bit 7 (tick 27). Meaning of the bits I. */
+void hal_ctrl_pulse(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x04; CH0_CTRL &= 0xFB; break;
+	case 1: CH1_CTRL |= 0x04; CH1_CTRL &= 0xFB; break;
+	case 2: CH2_CTRL |= 0x04; CH2_CTRL &= 0xFB; break;
+	default: CH3_CTRL |= 0x04; CH3_CTRL &= 0xFB; break;
+	}
+}
+
+void hal_ctrl_bit2(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x04; break;
+	case 1: CH1_CTRL |= 0x04; break;
+	case 2: CH2_CTRL |= 0x04; break;
+	default: CH3_CTRL |= 0x04; break;
+	}
+}
+
+void hal_ctrl_trigger(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x80; break;
+	case 1: CH1_CTRL |= 0x80; break;
+	case 2: CH2_CTRL |= 0x80; break;
+	default: CH3_CTRL |= 0x80; break;
+	}
 }
 
 #ifdef POE_FW_NO_POWER
@@ -179,12 +194,6 @@ void hal_power_off(u8 ch)
 	EA = 1;
 }
 
-/* Measurement chain (stock 0x1B03 / 0x37D2 / 0x34D0 / 0x29EE: AB/AC/AD, B5..B7, E9..EF) NOT PORTED: TEMP, CM, VM stay 0. TODO. */
-u8 hal_temp_valid(void)
-{
-	return 0;
-}
-
 void hal_periodic(void) __using(2)
 {
 }
@@ -193,4 +202,67 @@ void hal_periodic(void) __using(2)
 void hal_wdt_mode(u8 v) __using(1)
 {
 	I2C_MODE = ((v & 0x1E) == 0x16) ? 0x0B : 0x0A;
+}
+
+/* ---- measurement chain: indirect analog register file (AB = index, AC = low, AD = high) and trim registers (B5 select, B6 / B7) ---- */
+
+/* stock 0x34ED..0x3513 / 0x37D8..0x37E0: word = (AD << 8) | AC after AB = idx (word cells are stored AD first, AC second). I. */
+u16 hal_ind_word(u8 idx)
+{
+	u8 lo;
+
+	AB_IDX = idx;
+	lo = AC_LO;
+	return ((u16)AD_HI << 8) | lo;
+}
+
+/* stock 0x1B03 write side: AB = idx, AC = low, AD = high. C */
+void hal_ind_write(u8 idx, u16 w)
+{
+	AB_IDX = idx;
+	AC_LO = (u8)w;
+	AD_HI = (u8)(w >> 8);
+}
+
+/* calibration values read once, stock 0x415C..0x41D6 (names TSV meas_*): written to cal[] by meas.c via these raw accessors. */
+extern __xdata s16 cal_temp_off;     /* IRAM 0x4E:0x4F  B5 = 0x14, B6 sign-extended */
+extern __xdata s16 cal_slope;        /* IRAM 0x4A:0x4B  B5 = 1, B7 sign-extended */
+extern __xdata u8 cal_c49;           /* IRAM 0x49       B5 = 0, B7 */
+extern __xdata s16 cal_off4c;        /* IRAM 0x4C:0x4D  B5 = 0 B6 + B5 = 0x15 B6, sign-extended */
+extern __xdata u8 cal_ch[4];         /* IRAM 0x62..0x65 per-channel offset trims (consumer: 0x1B03, not ported) */
+
+void hal_meas_calib(void)
+{
+	u8 base, d7, c;
+
+	SFR_F4 = 0;
+	B5_SEL = 0x14;
+	cal_temp_off = (s8)B6_DAT;
+	SFR_FF = 0x60;
+	d7 = D7_TRIM;
+	cal_valid = d7 & 0x80;           /* 0x6A.7 */
+	base = d7 & 0x3F;
+	if (base & 0x20)
+		base = (u8)(base + 0xC0);
+	base = (u8)(base + 0x51);
+	for (c = 0; c < 4; c++) {
+		B5_SEL = (u8)(0x10 + c);
+		cal_ch[c] = (u8)(base + B6_DAT);
+	}
+	B5_SEL = 1;
+	cal_slope = (s8)B7_DAT;
+	B5_SEL = 0;
+	cal_c49 = B7_DAT;
+	cal_off4c = (s8)B6_DAT;
+	B5_SEL = 0x15;
+	cal_off4c += (s8)B6_DAT;
+	/* stock 0x41D4 / 0x41D6: arm the periodic hook (slot 3). Without both the ROM never calls it (board 2026-11-21: probeB). C */
+	IP_1 = 1;
+	T2CON_5 = 1;
+}
+
+/* stock 0x29EE: AF = ch * 4 + v, v = 0 / 1 / 2 (C values, U meaning). */
+void hal_af(u8 ch, u8 v)
+{
+	AF_MUX = (u8)(ch * 4) + v;
 }

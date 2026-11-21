@@ -8,6 +8,12 @@ __data u8 i2c_ptr;     /* stock 0x35 */
 
 void isr_i2c_body(void) __using(1)
 {
+#ifdef POE_FW_PROBE3
+	HREG(0x35) = SFR_SP;                                     /* interrupted context: SP, IE, IP, TCON */
+	HREG(0x36) = SFR_IE;
+	HREG(0x37) = SFR_IP;
+	HREG(0x71) = SFR_TCON;
+#endif
 	if ((I2C_STATUS & 0x11) == 0x11) {
 		I2C_CTRL = 0x03;
 		i2c_rx = I2C_RX;

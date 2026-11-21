@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Simulator tests for the PSE firmware rewrite (poe-fw/, #26) on ucsim_51 with the DW8051 model (-t RL6449, as awto-sdcc's tests).
 
-Usage: poe_fw_sim.py [--image PATH] [--stock-diff]
+Usage: poe_fw_sim.py [--image PATH] [--stock-diff] [--only host|sm|wd]
   Boots the image at its hook-table slot 0 (start-up) up to the main loop, injects the I2C slave SFR sequences of
   docs/poe-fw.md section 9 (SFR 0xDD status, 0xF7 code) by calling hook slot 1 with the return address on a trap, and asserts:
   register write / read round trip, auto-increment, clear-on-read (03/05/07/09/0B, counters), OP_MOD write restarts channel
@@ -198,6 +198,8 @@ def boot(sim, poll):
     cmds += [f"set mem xram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x8000, 0x8200, 16)]
     cmds += [f"set mem iram 0x{a:x} " + " ".join(["0"] * 16) for a in range(0x10, 0x80, 16)]   # stock rom_init clears IRAM 0x01..0xFF
     cmds += ["set mem xram 0x8043 0xc0"]                                                    # DEV_ID, ROM / hardware
+    # analog stub: indirect register file returns one word whatever AB selects (AD:AC = 0x02A0: class 4, TEMP raw 0x58), trim registers constant
+    cmds += ["set mem sfr 0xac 0xa0", "set mem sfr 0xad 0x02", "set mem sfr 0xb6 0x10", "set mem sfr 0xb7 0x20", "set mem sfr 0xd7 0x05"]
     cmds += [f"set mem sfr 0x81 0x{BOOT_SP:x}", f"break 0x{TRAP:x}", f"break 0x{poll:x}", f"pc 0x{sim.hook[0]:x}"]
     sim.batch(cmds)
     sim.nbp = 2
@@ -338,36 +340,76 @@ def verdicts(o, rev):
     check("bus error sets 0x8042.0 and 0x804A", o["err42"] & 1 and o["err4a"] == 1, f"{o['err42']:02X} {o['err4a']:02X}")
 
 
-def statemachine(image):
+def tick(sim, poll, n=1):
+    """n timer-1 hook calls (10 ms ticks), each followed by one main-loop pass. With sim.det_mode set ('camera', 'open',
+    'timeout') the hardware detect is modelled per tick: after the firmware writes D1 = 1 the harness waits 10 ticks, then (not
+    for 'timeout') sets D1 = 0x40 (camera) / 0x60 (open) and raises channel event bit 6 of channel 0 (BC = 0x40) through the
+    channel-0 ISR (hook slot 4), like the hardware (U9 in docs/poe-fw-seq/04-trim-measure.md)."""
+    one = [f"set mem sfr 0x81 0x{STACK:x}", f"set mem iram 0x{STACK - 1:x} 0x{TRAP & 255:x} 0x{TRAP >> 8:x}",
+           f"pc 0x{sim.hook[8]:x}", f"step {STEPS}", "set mem sfr 0x88 0", "set mem sfr 0xa8 0", f"set mem sfr 0x81 0x{sim.sp_main:x}",
+           f"pc 0x{poll:x}", f"step {STEPS}"]
+    mode = getattr(sim, "det_mode", None)
+    if not mode:
+        sim.batch(one * n)
+        return
+    clk = lambda text: [int(x) for x in re.findall(r"stepped (\d+) ticks", text)]
+    for k in range(n):
+        # hook 8 (tick), then 4.45 calls of hook 3 per tick (board: 437..440 / s vs 98.1 ticks / s), then one main-loop pass
+        sim.batch(one[:4] + one[4:6])
+        sim.tick_no = getattr(sim, "tick_no", 0) + 1
+        for _ in range(5 if sim.tick_no % 9 in (1, 3, 5, 7) else 4):
+            sim.call(sim.hook[3])
+        text = sim.batch(one[6:])
+        sim.main_clk = getattr(sim, "main_clk", []) + clk(text)
+        if sim.dump("sfr", 0xF1)[0] & 1 and getattr(sim, "pg_pending", None) is None and not getattr(sim, "pg_done", False):
+            sim.pg_pending = 0                       # F1 bit 0 written: hardware power-good follows
+        pg = getattr(sim, "pg_pending", None)
+        if pg is not None:
+            sim.pg_pending = pg + 1
+            if pg + 1 >= 2:                          # 2 ticks after F1 (oracle pg_latency): F3 bit + channel event bit 4
+                sim.pg_pending, sim.pg_done = None, True
+                sim.batch(["set mem sfr 0xf3 0x01", "set mem sfr 0xbc 0x10"])
+                sim.call(sim.hook[4])
+                sim.setmem("sfr", 0xBC, 0)
+        d1 = sim.dump("sfr", 0xD1)[0]
+        pend = getattr(sim, "det_pending", None)
+        if pend is None:
+            if d1 == 1:
+                sim.det_pending = 0
+            continue
+        sim.det_pending = pend + 1
+        if sim.det_pending >= 10 and mode != "timeout":
+            sim.det_pending = None
+            sim.batch([f"set mem sfr 0xd1 0x{0x40 if mode == 'camera' else 0x04 if mode == 'bad' else 0x60:x}", "set mem sfr 0xbc 0x40"])
+            sim.call(sim.hook[4])                    # channel 0 ISR: BC.6 -> ev_lo bit 0
+            sim.setmem("sfr", 0xBC, 0)
+        elif sim.det_pending > 80:
+            sim.det_pending = None
+
+
+def statemachine(image, scen, ticks):
     poll = map_syms(image)["_poll_common"]
     sim = Sim(image)
-    out = []
+    sim.det_mode = scen
     try:
         boot(sim, poll)
         sim.setmem("xram", 0x8014, 0xFF)             # detect + class enabled, all channels (host would write this)
         wr(sim, poll, 0x12, 0x03)                    # channel 1 auto, others shut
-        for t in range(400):
-            # timer 1 hook = one 10 ms tick, then one main-loop pass (stops at the poll breakpoint), then the analog stub:
-            # D1 forced to detect result code 4 (good) for channel 1
-            sim.batch([f"set mem sfr 0x81 0x{STACK:x}", f"set mem iram 0x{STACK - 1:x} 0x{TRAP & 255:x} 0x{TRAP >> 8:x}",
-                       f"pc 0x{sim.hook[8]:x}", f"step {STEPS}", f"set mem sfr 0x81 0x{sim.sp_main:x}", f"pc 0x{poll:x}",
-                       f"step {STEPS}", "set mem sfr 0xd1 0x40"])
-            if t in (150, 398):
-                rec = (t, sim.dump("xram", 0x800C, 0x800F), sim.dump("xram", 0x8010)[0], sim.dump("sfr", 0xF1)[0],
-                       sim.dump("xram", 0x8000)[0], sim.dump("xram", 0x8004)[0])
-                out.append(rec)
-                log(f"  tick {rec[0]}: SAT {rec[1]} SAT_PWR {rec[2]:02X} F1 {rec[3]:02X} INT {rec[4]:02X} DET_CLASS_EVT {rec[5]:02X}")
+        tick(sim, poll, ticks)
+        rec = {"sat": sim.dump("xram", 0x800C, 0x800F), "pwr": sim.dump("xram", 0x8010)[0], "F1": sim.dump("sfr", 0xF1)[0],
+               "F2": sim.dump("sfr", 0xF2)[0], "meas": sim.dump("xram", 0x802C, 0x8033), "raw": sim.dump("xram", 0x8071, 0x8074),
+               "cls": sim.dump("xram", 0x8024, 0x802B), "cnt0": sim.dump("xram", 0x8060)[0], "path": sim.dump("xram", 0x801C, 0x801D), 
+               "main_clk": sim.main_clk if getattr(sim, "main_clk", None) else [0],
+               "h": sim.dump("xram", 0x8022, 0x8023) + sim.dump("xram", 0x802D) + sim.dump("xram", 0x8040) + sim.dump("xram", 0x8016),
+               "dw": sim.dump("xram", 0x8076, 0x8077) + sim.dump("xram", 0x8059, 0x805C) + sim.dump("xram", 0x805D) + sim.dump("xram", 0x8040)}
+        log(f"  [{scen}] after {ticks} ticks: SAT {rec['sat']} SAT_PWR {rec['pwr']:02X} F1 {rec['F1']:02X} F2 {rec['F2']:02X} path/raw {rec['path']} "
+            f"MEAS {rec['meas']}")
+        mc = rec["main_clk"]
+        log(f"    CPU: main-loop pass after hook 8 + hooks 3 averages {sum(mc) // len(mc)} clk, max {max(mc)} clk of 80016 clk per tick "
+            f"({100 * sum(mc) // len(mc) // 800}% of the CPU); hook-3 calls {rec['h'][0] | rec['h'][1] << 8}, hook-8 calls {rec['h'][2] | rec['h'][3] << 8}, status reg 0x16 = {rec['h'][4]:02X}")
     finally:
         sim.close()
-    return out
-
-
-def tick(sim, poll, n=1):
-    """n timer-1 hook calls (10 ms ticks), each followed by one main-loop pass and the analog stub (D1 = detect code 4)."""
-    one = [f"set mem sfr 0x81 0x{STACK:x}", f"set mem iram 0x{STACK - 1:x} 0x{TRAP & 255:x} 0x{TRAP >> 8:x}",
-           f"pc 0x{sim.hook[8]:x}", f"step {STEPS}", "set mem sfr 0x88 0", "set mem sfr 0xa8 0", f"set mem sfr 0x81 0x{sim.sp_main:x}",
-           f"pc 0x{poll:x}", f"step {STEPS}", "set mem sfr 0xd1 0x40"]
-    sim.batch(one * n)
+    return rec
 
 
 def wd_state(sim):
@@ -450,8 +492,9 @@ def wd_scenarios(image, power):
         tick(sim, poll, 40)
         check(f"{nm}: disarmed after 0: no expiry", wd_state(sim)["stat"] == 0x80)
         if power:
+            sim.det_mode = "camera"
             wr(sim, poll, 0x12, 0x03)
-            tick(sim, poll, 400)
+            tick(sim, poll, 260)
             st = wd_state(sim)
             check(f"{nm}: after restart ports power again on a good detect (F1 set, SAT_PWR enable+good)",
                   st["F1"] & 1 and st["sat_pwr"] & 0x11 == 0x11, f"{st}")
@@ -466,29 +509,43 @@ def main():
     img = FW / "bcm59111-awto.bin"
     if "--image" in sys.argv:
         img = Path(sys.argv[sys.argv.index("--image") + 1])
-    log(f"== host I2C scenarios on {img.name} (ucsim_51 -t RL6449)")
-    obs = host_scenarios(img, False)
-    verdicts(obs, 0xA1)
-    if "--stock-diff" in sys.argv:
+    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else ""
+    if only in ("", "host"):
+        log(f"== host I2C scenarios on {img.name} (ucsim_51 -t RL6449)")
+        obs = host_scenarios(img, False)
+        verdicts(obs, 0xA1)
+    if "--stock-diff" in sys.argv and only in ("", "host"):
         log("== same scenarios on stock bcm59111-v21.bin (reference behaviour)")
         sobs = host_scenarios(FW / "bcm59111-v21.bin", True)
         verdicts(sobs, 0x15)
         for k in obs:
             if obs[k] != sobs[k]:
                 log(f"DIFF vs stock: {k}: ours {obs[k]} stock {sobs[k]}")
-    for im, power in ((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)):
-        log(f"== channel state machine on {im.name}, analog side stubbed (D1 forced to detect code 4, no class / measurement)")
-        (t1, sat1, pw1, f11, int1, ev1), (t2, sat2, pw2, f12, int2, ev2) = statemachine(im)
-        check(f"{im.name}: channel 1 detect code 4 in SAT_P1 low nibble", (sat1[0] & 0x0F) == 4, str(sat1))
-        check(f"{im.name}: channels 2..4 (shut) untouched", sat1[1:] == [0, 0, 0] and sat2[1:] == [0, 0, 0], str(sat1))
-        check(f"{im.name}: detect event latched (DET_CLASS_EVT bit 0)", (ev1 | ev2) & 1, f"{ev1:02X} {ev2:02X}")
+    for im, power in (((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)) if only in ("", "sm") else ()):
+        nm = im.name
+        log(f"== detect / class / measurement on {nm}: hardware modelled per tick (event bit 6 ten ticks after D1 = 1)")
+        r = statemachine(im, "camera", 120)
+        check(f"{nm}: camera: SAT_P1 detect nibble 4 and a class code (class value itself depends on the plain AC/AD stub the 0x1B03 trim overwrites: oracle covers it)", (r["sat"][0] & 0x0F) == 4 and (r["sat"][0] >> 4) != 0, str(r["sat"]))
+        check(f"{nm}: camera: other ports untouched (0 = never detected, shut)", r["sat"][1:] == [0, 0, 0], str(r["sat"]))
+        check(f"{nm}: camera: result came from the event path (diag 0x1C path 1, raw D 0x1D = 0x40)",
+              r["path"][0] & 3 == 1 and r["path"][1] == 0x40, str(r["path"]))
         if power:
-            check(f"{im.name}: power up after good detect: F1 set, SAT_PWR enable+good bits",
-                  (f12 & 0x01) and (pw2 & 0x11) == 0x11, f"F1 {f12:02X} SAT_PWR {pw2:02X}")
+            check(f"{nm}: camera powers (F1 bit 0, SAT_PWR enable + good after the hardware power-good event)",
+                  (r["F1"] & 1) and (r["pwr"] & 0x11) == 0x11, str(r))
         else:
-            check(f"{im.name}: no-power build never sets F1 or SAT_PWR", f11 == 0 and f12 == 0 and pw1 == 0 and pw2 == 0,
-                  f"F1 {f12:02X} SAT_PWR {pw2:02X}")
-    for im, power in ((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)):
+            check(f"{nm}: no-power image: detect + class + measurement run, SAT_PWR enable only (0x01), F1 / F2 stay 0, CM / VM 0",
+                  r["F1"] == 0 and r["F2"] == 0 and r["pwr"] == 0x01 and r["meas"][4:8] == [0, 0, 0, 0], str(r))
+        rb = statemachine(im, "bad", 140)
+        check(f"{nm}: result code 0 (D = 0x04): two re-detect cycles, invalid counter >= 2, hook-8 counter ran all 140 ticks, hook 3 ran",
+              rb["cnt0"] >= 2 and (rb["h"][2] | rb["h"][3] << 8) == 140 and (rb["h"][0] | rb["h"][1] << 8) > 400, str((rb["cnt0"], rb["h"])))
+        if not power:
+            ro = statemachine(im, "open", 110)
+            check(f"{nm}: open port (D nibble 6 after the event): SAT_P1 = 0x06, no class, no power",
+                  ro["sat"][0] == 0x06 and ro["F1"] == 0 and ro["pwr"] == 0 and ro["path"][0] & 3 == 1, str(ro))
+            rt = statemachine(im, "timeout", 110)
+            check(f"{nm}: no hardware event: timeout path after 50 ticks (D = 2, SAT nibble 0, no result read)",
+                  rt["sat"][0] & 0x0F == 0 and rt["path"][0] & 3 == 2, str(rt))
+    for im, power in (((FW / "bcm59111-awto.bin", True), (FW / "bcm59111-awto-nopower.bin", False)) if only in ("", "wd") else ()):
         log(f"== host watchdog on {im.name}")
         wd_scenarios(im, power)
     ok = all(results)

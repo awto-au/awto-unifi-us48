@@ -69,6 +69,8 @@ _slot0:
 	movx @dptr,a
 	ljmp _fw_main
 
+; Bench probe (always on): free-running 16-bit entry counters, hook 3 regs 0x22 / 0x23, hook 8 regs 0x2D / 0x40, hook 2 regs 0x45 / 0x4F
+; (lo, hi; same map as scripts/poe_fw_probe_read.py of wip/poe-seq-5, status reg 0x16). A, DPTR and carry only.
 ; hooks 1, 2, 3, 8: stock prologue PUSH PSW; MOV PSW,#bank ... POP PSW; RET (no RETI, ROM saves ACC/B/DPTR, I)
 _hook_i2c:
 	push psw
@@ -78,12 +80,28 @@ _hook_i2c:
 	ret
 _hook_isr2:
 	push psw
+	mov	dptr,#0x8045
+	movx	a,@dptr
+	add	a,#1
+	movx	@dptr,a
+	mov	dptr,#0x804F
+	movx	a,@dptr
+	addc	a,#0
+	movx	@dptr,a
 	mov psw,#0x18
 	lcall _isr2_body
 	pop psw
 	ret
 _hook_periodic:
 	push psw
+	mov	dptr,#0x8022
+	movx	a,@dptr
+	add	a,#1
+	movx	@dptr,a
+	mov	dptr,#0x8023
+	movx	a,@dptr
+	addc	a,#0
+	movx	@dptr,a
 	mov psw,#0x10
 	clr 0xB9                              ; IP.1 off while running (stock 0x4EBF)
 	lcall _periodic_body
@@ -92,6 +110,14 @@ _hook_periodic:
 	ret
 _hook_timer1:
 	push psw
+	mov	dptr,#0x802D
+	movx	a,@dptr
+	add	a,#1
+	movx	@dptr,a
+	mov	dptr,#0x8040
+	movx	a,@dptr
+	addc	a,#0
+	movx	@dptr,a
 	mov psw,#0x18
 	clr 0x8E                              ; TCON.6 (TR1) off, reload, tick, on (stock 0x4FD2..0x4FDD)
 	mov 0x8B,#0xF4

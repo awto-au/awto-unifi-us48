@@ -16,7 +16,7 @@
 | Tag `POETEC_IMAGE+...` at 0x5300 | DONE (stock string, `POWERUO` typo fixed, `+AWTO_OSS` appended) | C |
 | `FW_REV` = **0xA1** (new; stock 0x15, Meraki 0x12); read semantics unchanged (Linux driver only logs it) | DONE | C |
 | `CRC_STATUS` 0xAA | DONE, written **after** init (stock writes it first) | C |
-| Host dispatch tables | DONE, CONST at 0x3400 (stock 0x26EE: our code is larger, no need to match) | C |
+| Host dispatch tables | DONE, CONST at 0x4C00 (stock 0x26EE: our code is larger, no need to match) | C |
 
 ## b. Host I2C slave
 
@@ -44,7 +44,7 @@
 | States and transitions of docs/poe-fw.md section 11, 10 ms tick, timers (50 / 200 / 100 / 75 / 30 / 60 / 20 ticks) | DONE (`chan.c`) | I |
 | Detect: `D1..D4 = 1`, 50-tick window, `= 2`, result `>> 4`, code 4 = good | DONE, SFR sequence from stock 0x4601 / 0x1A60 / 0x3B3C | C sequence, U meaning |
 | Detect result scaling (stock 0x3651, SFR D9..DB) | TODO | I |
-| Class: `D5 \|= bit`, `D6 \|= bit`, 100-tick window | PARTIAL: result **not read** (stock sequencer 0x316B not ported); reports class 0 (SAT bits 6:4 = 6) | G |
+| Class: `D5 \|= bit`, `D6 \|= bit`, 100-tick window, class code from the ADC word at AB = ch\|8 with the stock thresholds (0x4900), sampled 14 ticks into the window; SAT bits 6:4 = 6 (class 0), 1..4, 7 = above class 4 (no power) | PARTIAL: thresholds C; mux AF = ch*4\|1 while sampling and the sample time are G (stock 0x29EE schedule not ported) | C / G |
 | OP_MOD modes: shut -> reset; manual needs push-button request; semi-auto and auto power up after a good detect | DONE, **auto is G**: stock auto is sequenced by 0x316B / 0x30C3 (limits, B-bit2 trigger), ours drives `F1` like stock semi-auto | I / G |
 | Power-up: `C9` gate, `F2 \|=`, `F1 \|=` (HP bit decides mask), 20-tick hold | DONE (not in `-nopower` image) | C sequence |
 | Power good | PARTIAL: assumed after the hold, no hardware good indication read | U |
@@ -52,7 +52,11 @@
 | Counters 0x60..0x6F (invalid signature, short, MPS absent); denied / overload not incremented | PARTIAL | G |
 | Per-port enable / disable via OP_MOD, `DET_CLASS_EN` nibbles, `DIS_SEN_EN` | DONE | C |
 | One analog probe at a time (`probe_owner`) replacing stock 0x3DA6 / 0x316B arbitration | DONE, **G** | G |
-| Temperature check (SUP_EVT when TEMP raw < 0x40) | gated off: TEMP stays 0 without the measurement chain | TODO |
+| Temperature check (SUP_EVT when TEMP raw < 0x40, stock 0x3D51) | DONE, live once the first measurement ran | I |
+
+| **Board 2026-11-21 (camera, MSPI field 2): detect result never published (SAT 0, invalid-signature counter counts, `D(n) >> 4` = 0)** | OPEN: stock sequencer 0x316B (D5/D6 stepping, ADC samples) not ported; diagnostics regs 0x71..0x74 (raw D1..D4) and 0x24..0x2B (class-probe words) added to the awto images to see what the hardware returns | I |
+
+| Detect / class sequencer 0x316B / 0x30EF / 0x30C3 / 0x29EE schedule, power-good event, `calc_limit` 0x3334, offset trim 0x1B03, auto trigger | **TODO, blocker.** Phase 3 only decoded the sequencer structure (record layout, state dispatch table, helper map): docs/poe-fw-rewrite.md section "Phase 3 status". Nothing ported | C (decode) |
 
 ## d. Analog / unknown hardware (`src/hal_analog.c`)
 
@@ -63,8 +67,9 @@ Every access names the stock function. Nothing is invented: DONE items copy the 
 | SFR init (A1..A5, A7, B1..B4, C9, E5..E8, F1/F2, 96, FF, T2CON.6, IP.2..5) | DONE copy of stock 0x39F3..0x3A2F |
 | Timer 1 / EX1 init, `93` from P2 | DONE copy |
 | Detect (D1..D4), class (D5/D6), power (F1/F2), gate (C9), ctrl (B1..B4), limit (A1..A4) accessors | DONE copy |
-| Measurement chain AB/AC/AD, B5..B7, E9..EF math unit (stock 0x1B03 0x37D2 0x34D0 0x29EE): TEMP, CM, VM | **TODO** (registers read 0) |
-| Class result, power-good indication, limit programming (0x316B, 0x30C3, 0x3334) | **TODO** |
+| Measurement: calibration 0x415C, TEMP + 0x2E / 0x2F (0x37D2 + 0x34D0 tail), CM / VM for powered channels (0x34D0 + publish 0x442B), temperature check live (0x3D51) | DONE as arithmetic port, sim-checked against a python model only; U hardware. Math unit E9..EF replaced by C arithmetic (I). Offset trim 0x1B03 **TODO** |
+| Auto-mode limit byte A1..A4 and F2 from the class tables 0x4C03 / 0x4C0B at power-up (0x30DA..0x30EA) | DONE (C tables); other limit math (ICUT / ILIM, `calc_limit` 0x3334) **TODO** |
+| Power-good indication (event waited by 0x2F8C not identified), ICUT / ILIM apply (0x3334), 0x29EE class mux schedule, 0x316B sequencer, detect scaling 0x3651 | **TODO** |
 | ROM strap call (`0x1900` / `0x1903` pointer in ROM, stock 0x3CF1) | DONE copy (U: ROM content unknown) |
 
 ## Deliberate differences from stock
@@ -103,7 +108,7 @@ Measured by `scripts/poe_fw_build.py` (log `tmp/logs/poe_fw_build.log`, `tmp/poe
 | poll / events / INT helpers | 495 | 1330 |
 | **all code (CSEG)** | **5469** | stock code 0x1A60..0x5260 = 14336 |
 
-Total image bytes occupied (non-zero-fill, incl. tables and tag): see the build log (`image bytes used`). No size win is claimed: for the same scope ours is not smaller (I2C ISR, dispatch, handlers, ISR 2 are larger); the smaller total is mostly missing functionality.
+Phase 2 sizes: see the build log; measurement + class code are the new rows. Total image bytes occupied (non-zero-fill, incl. tables and tag): see the build log (`image bytes used`). No size win is claimed: for the same scope ours is not smaller (I2C ISR, dispatch, handlers, ISR 2 are larger); the smaller total is mostly missing functionality.
 
 ## Layout versus stock (measured on the built images)
 
@@ -114,7 +119,17 @@ Total image bytes occupied (non-zero-fill, incl. tables and tag): see the build 
 | hook slots 9..14 | 1AFD 1AFE 1AFF 5220 5221 5222 | identical |
 | 0x1B00 | `LJMP 0x50EA` | `LJMP 0x2E9E` |
 | code starts | 0x1A60 | 0x1B03 (0x1AFC..0x1B02 fixed entry block) |
-| host tables | 0x26EE / 0x286E | CONST at 0x3400 |
+| host tables | 0x26EE / 0x286E | CONST at 0x4C00 |
 | tag | 0x5300, `...+DEFAULT_AF_AUTO_MODE` | 0x5300, `...+DEFAULT_AF_AUTO_MODE+AWTO_OSS` (typo `POWERUO` -> `POWERUP`) |
 | code extent | 0x1A60..0x5260 (14336 B) | 0x1B03..0x3704 incl. tables (CSEG code 5469 B) |
 | IRAM data | 0x24..0x7C | 0x30..0x78 |
+
+## Phase 4 (oracle acceptance)
+| Item | State | Evidence |
+|---|---|---|
+| Event-driven detect, timeout path, classifier overrides | DONE | C (oracle diff, sim) |
+| Hook 3 arming IP.1 / T2CON.5, chain from hook 3 | DONE (chain in main loop) | C / G |
+| Power-good by hardware event, no timeout; limits at the event | DONE | C |
+| OV_CUT 0x11 for classes other than 4 | TODO | U |
+| Offset trim 0x1B03, F3 monitor (3 clear passes -> fault), auto trigger meaning | TODO | U |
+| Oracle diff `scripts/poe_fw_oracle_diff.py` | DONE, 0 write-log differences (awto) | C |
