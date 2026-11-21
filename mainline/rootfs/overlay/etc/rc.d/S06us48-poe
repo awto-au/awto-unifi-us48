@@ -1,11 +1,11 @@
 #!/bin/sh
 # PoE on at boot, all 48 ports (Dan 2026-11-21). The chips come up without firmware after a cold boot (reg 0x75 = 0):
 # fw_load=1 loads v21 into each of the 12 chips (~4 s each), so it runs in the background and does not delay the boot.
-# Budget: DT regulators (436 W); reserve_mw=9000 x 48 = 432 W fits it (default 30 W/port admits only 14 ports). Parameters and safety: docs/poe-pse.md; kill switch: `us48-poe-off`.
+# Max power: 30 W/port reserved (class 4), DT budget 1440 W = 48 x 30 W (stock PSU budget 436 W is not enforced here). Parameters and safety: docs/poe-pse.md; kill switch: `us48-poe-off`.
 
 M=/lib/modules/$(uname -r)
 [ -d /sys/module/bcm59111 ] && exit 0
 (
 	exec 2>/dev/kmsg
-	insmod $M/bcm59111.ko fw_load=1 enable_ports=0xffffffffffff reserve_mw=9000 || echo "us48-poe: insmod bcm59111 failed rc=$?" > /dev/kmsg
+	insmod $M/bcm59111.ko fw_load=1 enable_ports=0xffffffffffff || echo "us48-poe: insmod bcm59111 failed rc=$?" > /dev/kmsg
 ) &

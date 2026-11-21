@@ -4,7 +4,7 @@ Date: Thu, 19 Nov 2026 03:00:00 +1100
 Subject: [PATCH 28/28] ARM: dts: broadcom: us-48-500w: Add PoE power budget and PSE
  PIs
 
-Add the 436 W PoE budget as fixed regulators (total, one per PoE card) and
+Add the PoE budget (48 x 30 W) as fixed regulators (total, one per PoE card) and
 the four pse-pi nodes of each BCM59111, with the front port range of every
 chip in a comment. The PIs have no pairsets or ports: the ge ports have no
 phy_device a pses phandle could be attached to.
@@ -26,7 +26,7 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
 +		regulator-name = "poe-total";
 +		regulator-min-microvolt = <54000000>;
 +		regulator-max-microvolt = <54000000>;
-+		regulator-power-budget-milliwatt = <436000>;
++		regulator-power-budget-milliwatt = <1440000>;
 +	};
 +
 +	poe_card0: regulator-poe-card0 {
@@ -34,7 +34,7 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
 +		regulator-name = "poe-card0";
 +		regulator-min-microvolt = <54000000>;
 +		regulator-max-microvolt = <54000000>;
-+		regulator-power-budget-milliwatt = <436000>;
++		regulator-power-budget-milliwatt = <1440000>;
 +		vin-supply = <&poe_total>;
 +	};
 +
@@ -43,7 +43,7 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
 +		regulator-name = "poe-card1";
 +		regulator-min-microvolt = <54000000>;
 +		regulator-max-microvolt = <54000000>;
-+		regulator-power-budget-milliwatt = <436000>;
++		regulator-power-budget-milliwatt = <1440000>;
 +		vin-supply = <&poe_total>;
 +	};
 +
