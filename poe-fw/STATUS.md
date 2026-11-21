@@ -16,7 +16,7 @@
 | Tag `POETEC_IMAGE+...` at 0x5300 | DONE (stock string, `POWERUO` typo fixed, `+AWTO_OSS` appended) | C |
 | `FW_REV` = **0xA1** (new; stock 0x15, Meraki 0x12); read semantics unchanged (Linux driver only logs it) | DONE | C |
 | `CRC_STATUS` 0xAA | DONE, written **after** init (stock writes it first) | C |
-| Host dispatch tables | DONE, CONST at 0x4000 (stock 0x26EE: our code is larger, no need to match) | C |
+| Host dispatch tables | DONE, CONST at 0x4400 (stock 0x26EE: our code is larger, no need to match) | C |
 
 ## b. Host I2C slave
 
@@ -119,7 +119,17 @@ Phase 2 sizes: see the build log; measurement + class code are the new rows. Tot
 | hook slots 9..14 | 1AFD 1AFE 1AFF 5220 5221 5222 | identical |
 | 0x1B00 | `LJMP 0x50EA` | `LJMP 0x2E9E` |
 | code starts | 0x1A60 | 0x1B03 (0x1AFC..0x1B02 fixed entry block) |
-| host tables | 0x26EE / 0x286E | CONST at 0x4000 |
+| host tables | 0x26EE / 0x286E | CONST at 0x4400 |
 | tag | 0x5300, `...+DEFAULT_AF_AUTO_MODE` | 0x5300, `...+DEFAULT_AF_AUTO_MODE+AWTO_OSS` (typo `POWERUO` -> `POWERUP`) |
 | code extent | 0x1A60..0x5260 (14336 B) | 0x1B03..0x3704 incl. tables (CSEG code 5469 B) |
 | IRAM data | 0x24..0x7C | 0x30..0x78 |
+
+## Phase 4 (oracle acceptance)
+| Item | State | Evidence |
+|---|---|---|
+| Event-driven detect, timeout path, classifier overrides | DONE | C (oracle diff, sim) |
+| Hook 3 arming IP.1 / T2CON.5, chain from hook 3 | DONE (chain in main loop) | C / G |
+| Power-good by hardware event, no timeout; limits at the event | DONE | C |
+| OV_CUT 0x11 for classes other than 4 | TODO | U |
+| Offset trim 0x1B03, F3 monitor (3 clear passes -> fault), auto trigger meaning | TODO | U |
+| Oracle diff `scripts/poe_fw_oracle_diff.py` | DONE, 0 write-log differences (awto) | C |

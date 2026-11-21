@@ -55,6 +55,9 @@ __sfr __at(0xAF) AF_MUX;   /* analog mux / class sample select: ch*4 + {1,2,3,5}
 __sfr __at(0xB5) B5_SEL;   /* trim / calibration register select (I: stock 0x415C) */
 __sfr __at(0xB6) B6_DAT;   /* signed 8-bit data for B5 (I) */
 __sfr __at(0xB7) B7_DAT;   /* signed 8-bit data for B5 (I) */
+__sfr __at(0xD9) D9_IDX;   /* detect sample file index / high / low (stock 0x3651) */
+__sfr __at(0xDA) DA_HI;
+__sfr __at(0xDB) DB_LO;
 __sfr __at(0xD7) D7_TRIM;  /* trim word: bits 5:0 and bit 7 (I: stock 0x416C) */
 __sfr __at(0xF4) SFR_F4;
 __sfr __at(0xB1) CH0_CTRL;
@@ -79,6 +82,7 @@ __sfr __at(0xE7) SFR_E7;
 __sfr __at(0xE8) SFR_E8;
 __sfr __at(0xF1) PWR_EN_SET;
 __sfr __at(0xF2) PWR_EN_CLR;
+__sfr __at(0xF3) PWR_GOOD;    /* per-channel power-good status, read after BC bit 4 (stock 0x5074, oracle) */
 __sfr __at(0xF5) I2C_CTRL;
 __sfr __at(0xF6) I2C_TX;
 __sfr __at(0xF7) I2C_RX;
@@ -90,6 +94,8 @@ __sbit __at(0xAA) EX1;       /* IE.2 */
 __sbit __at(0xAB) ET1;       /* IE.3 */
 __sbit __at(0xAF) EA;
 __sbit __at(0xCE) T2CON_6;
+__sbit __at(0xCD) T2CON_5;
+__sbit __at(0xB9) IP_1;
 __sbit __at(0xBA) IP_2;
 __sbit __at(0xBB) IP_3;
 __sbit __at(0xBC) IP_4;
@@ -194,11 +200,12 @@ void hal_dis_sen(u8 ch, u8 on);
 void hal_detect_start(u8 ch);
 void hal_detect_phase2(u8 ch);
 u8 hal_detect_raw(u8 ch);
-void hal_class_start(u8 ch);
-void hal_class_stop(void);
-u8 hal_class_result(u8 ch);
 void hal_chan_enable(u8 ch, u8 on);
 void hal_power_on(u8 ch, u8 hp);
+u8 hal_pwr_good(u8 ch);
+void hal_ctrl_pulse(u8 ch);
+void hal_ctrl_trigger(u8 ch);
+void hal_ctrl_bit2(u8 ch);
 void hal_power_off(u8 ch);
 u8 hal_temp_valid(void);
 void hal_wdt_mode(u8 v) __using(1);
@@ -207,9 +214,20 @@ void hal_periodic(void) __using(2);
 /* measurement chain (meas.c, hal_analog.c) */
 u16 hal_ind_word(u8 idx);             /* AB = idx; (AD << 8) | AC */
 void hal_meas_calib(void);            /* stock 0x415C */
-void hal_class_mux(u8 ch, u8 on);
+void hal_af(u8 ch, u8 v);             /* AF = ch * 4 + v */
+extern __xdata u8 dc_nib;
+extern __xdata u8 dc_diag[8];
+u8 detect_classify(u8 ch);   /* dc_nib in, dc_diag out (XDATA: IRAM is full) */
+void class_request(u8 ch);
+void class_cancel(u8 ch);
+u8 class_take_done(u8 ch);
+u8 class_code_of(u8 ch);
+void class_step(void);
+void svc_request(u8 ch);
 u8 class_code(u16 w);                 /* stock 0x4900 */
 void meas_step(void);
+extern __xdata u8 per_cnt;            /* hook 3 entries (periodic ISR), consumed by the main loop */
+void periodic_chain(void);
 void meas_init(void);
 extern __bit __at(0x05) meas_due;
 

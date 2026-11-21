@@ -151,3 +151,40 @@ What the disassembly shows about the sequencer (decoded in this phase, evidence 
 - Not yet read: the result / publish code that turns these states into SAT_Pn 0x06 / 0x4x (0x2C79..0x2EDD monitor, 0x2F8C power good, 0x30EF..0x3126 limit programming and B(ch).bit2 trigger, 0x3334 `calc_limit`, 0x1B03 offset trim, 0x3651). Each is 100..480 bytes with 16/32-bit math and 20+ record fields; a faithful port needs all of them and a way to model the analog side per state in the sim.
 
 Planned bench plan once the sequencer exists (unchanged): A = `-nopower` image on chip PoE-07 with the camera on ch1: expect SAT_P1 0x44, other ports 0x06, TEMP ~0xA1, supply word ~0x2310, SAT_PWR 0, CM / VM 0. B = full image, same setup: SAT_PWR 0x22, SAT_P1 0x44, VM ~0x2305, ICUT (reg 0x4C) 0x11 and 0x4E = 0x01. Everything in A / B is a target; only the register layout and the arithmetic of TEMP / 0x2E / 0x2F / CM / VM have been modelled (phase 2), nothing about detect, class timing, power-good or limits has been confirmed against hardware.
+
+## Phase 4: event-driven detect, hook 3 wiring, oracle diff (offline, #26)
+
+Evidence: C code/oracle run, I inferred, G our guess, U unverified.
+
+### What changed
+- Detect flow as stock (C): D(c) = 1, 50-tick timer, BC bit 6 -> `ev_lo` bit 0 -> result read 4 ticks later (0x3B3C) -> D>>4 classifier with HP_Pn_MOD overrides, 9 -> 6 -> SAT_Pn; timeout path D = 2, nibble cleared, idle after 2 ticks.
+- Class: code 4 clears the HP scale flag, class gate arms the 0x29EE mux (AF = ch*4 + {1,2}, 0x4900 thresholds); SAT_P1 0x04 then 0x44, open port 0x06.
+- Hook 3 arming (C, bench): end of `hal_meas_calib` sets IP.1 and T2CON.5 (stock 0x41D4 / 0x41D6). Without it the periodic ISR never fires.
+- Hook 3 body counts calls only; the chain (class_step every call, meas_step every 4th, lag cap 8) runs in the main loop (G: keeps the I2C ISR and the watchdog poke path free).
+- Power-up as stock (C, oracle): F2/F1 at power-on, then wait for the hardware power-good event (BC bit 4, F3 bit set), no timeout; at the event C9 release, F2, A limit, B pulse, OV_CUT 0x11 (class 4 only, G for other classes), SAT_PWR good nibble; B bit 7 two ticks later.
+- `arm()` sets the service flag at once (stock 0x49FF); the delay only re-arms the flag. Shutdown mode parks in `st_port_shutdown` (stock 0x2F5C). Both found by the oracle diff.
+- SUP_EVT bit 7 set at the first measurement, no INT (C, oracle; meaning I).
+- CONST moved 0x4000 -> 0x4400 (code grew).
+
+### Oracle diff (`scripts/poe_fw_oracle_diff.py`, engine `scripts/poe_fw_oracle.py` + `scripts/mcs51.py` from wip/poe-seq-6)
+- Same analog model and host setup for stock v21, awto and awto-nopower; rewrite host writes go through its I2C ISR.
+- Result, camera / open / timeout / no-power-good scenarios, channel 1 and 0, pt 1 and 4: SFR write log (C9 F1 F2 A1..A4 B2 D1..D4 D9 S95 BD) identical in value, order and tick for the awto image; final published registers identical.
+- nopower: identical up to SAT_P1 0x44 and SAT_PWR enable (0x01 / 0x02); F2/F1 power-on writes and everything after the power-good event absent by design; F1 never non-zero.
+- Remaining explained differences: measurement pacing (rewrite meas_step every 4th hook-3 call, stock every call; same rate at the bench 4.45 calls/tick); stock's offset trim (0x1B03) not ported.
+- CPU (oracle cycle count, 1 tick = 20000 cycles at 7.9 MHz / 4): stock hook 3 4155 cycles/call = 94 % of a tick at 4.45 calls/tick; rewrite hook 3 42 cycles, hook 8 about 1900 cycles per tick, chain pass about 725 cycles per call: about 26 % in total.
+
+### New diagnostic registers (awto image, read-only)
+| Reg | Meaning |
+|---|---|
+| 0x16 | status 0x43 |
+| 0x1C / 0x1D | detect path (1 event, 2 timeout) / raw D at read time |
+| 0x22/0x23, 0x2D/0x40, 0x45/0x4F | hook 3, hook 8, hook 2 entry counters (lo/hi) |
+| 0x24..0x27 / 0x28..0x2B | class-probe word low / high per channel |
+| 0x71..0x74 | live raw D1..D4 |
+| 0x76/77, 0x59/5A, 0x5B/5C, 0x5D/54 | detect words A, B, C, D (D9-indexed) |
+
+### Bench steps
+1. Load `bcm59111-awto-nopower.bin`, ports shut, no PD: read 0x22/0x23 and 0x2D/0x40 twice 1 s apart: hook 3 about 440/s, hook 8 about 98/s; 0x20 watchdog poke still works.
+2. OP_MOD auto for the camera port, camera attached: 0x1C = 1 (event), 0x1D = 0x40, SAT_Pn 0x04 then 0x44, SAT_PWR enable bit only (0x02 for port 2), F1 stays 0.
+3. Empty port: SAT_Pn 0x06, 0x1C = 1, 0x1D = 0x60.
+4. Full image `bcm59111-awto.bin`, camera: SAT_Pn 0x44, SAT_PWR 0x02 then 0x22 once F3/BC bit 4 arrive, OV_CUT (0x4C for port 2) 0x11, HP_SAT 0x4E = 1, CM/VM live. If SAT_PWR stays 0x02 the hardware power-good event or F3 meaning differs (U): file the 0x1C/0x1D and counters.

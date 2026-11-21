@@ -16,6 +16,7 @@ static __xdata u8 meas_ok;
 void meas_init(void)
 {
 	hal_meas_calib();
+	HREG(R_REG_16) = 0x42;        /* bench status: variant 4 (rewrite), IP.1 / T2CON.5 armed */
 	meas_ok = 0;
 	meas_due = 0;
 }
@@ -95,6 +96,8 @@ void meas_step(void)
 	u8 c;
 
 	meas_temp();
+	if (!meas_ok)
+		HREG(R_SUP_EVT) |= 0x80;      /* oracle: stock sets SUP_EVT bit 7 at the first measurement, no INT (meaning I) */
 	meas_ok = 1;          /* TEMP is valid from the first measurement on: no bogus SUP event before it */
 	/* Bench diagnostics (awto image only, read-only): live raw detect SFRs D1..D4 in regs 0x71..0x74 and the class-probe word
 	 * (AB = c | 8, AD:AC) per channel: low bytes in regs 0x24..0x27, high bytes in 0x28..0x2B (0x76.. overlap our channel block). Lets the board show what the hardware returns. */
@@ -108,4 +111,21 @@ void meas_step(void)
 	}
 	for (c = 0; c < NCH; c++)
 		meas_channel(c, (HREG(R_SAT_PWR) & (u8)(0x10 << c)) != 0, (chans[c].flags & 2) != 0);
+}
+
+/* Main-loop side of hook 3: one run per hook-3 call in the stock order (0x1B03 not ported, 0x37D2 / 0x34D0 = meas_step every 4th
+ * call because it is the expensive part, 0x29EE = class_step every call). If the main loop was starved, older calls are dropped. */
+void periodic_chain(void)
+{
+	static __xdata u8 done, div;
+	u8 lag = (u8)(per_cnt - done);
+
+	if (lag == 0)
+		return;
+	if (lag > 8)
+		done = (u8)(per_cnt - 8);
+	done++;
+	if ((++div & 3) == 0)
+		meas_step();
+	class_step();
 }

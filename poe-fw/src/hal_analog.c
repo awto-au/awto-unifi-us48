@@ -123,26 +123,6 @@ u8 hal_detect_raw(u8 ch)
 	}
 }
 
-/* stock st_class_hw_start 0x49BD..0x49D7: D5 |= bit, D6 |= bit. U. */
-void hal_class_start(u8 ch)
-{
-	CLASS_START_A |= bit_of[ch];
-	CLASS_START_B |= bit_of[ch];
-}
-
-/* stock detcls_227C 0x227C: D5 = D6 = 0. */
-void hal_class_stop(void)
-{
-	CLASS_START_B = 0;
-	CLASS_START_A = 0;
-}
-
-/* stock 0x29EE sub-state 3 / 0x4900: class code from the ADC word at AB = ch | 8. */
-u8 hal_class_result(u8 ch)
-{
-	return class_code(hal_ind_word((u8)(ch | 8)));
-}
-
 /* stock chcfg_4DD0 0x4DD0 (via 0x225C / 0x4DE2): F2 |= bit (on) or F2 &= ~bit (off), EA off around the RMW. */
 void hal_chan_enable(u8 ch, u8 on)
 {
@@ -152,6 +132,43 @@ void hal_chan_enable(u8 ch, u8 on)
 	else
 		PWR_EN_CLR &= (u8)~bit_of[ch];
 	EA = 1;
+}
+
+/* stock 0x5074: F3 & bit(ch). C (oracle: the stock handler reads F3 after BC bit 4). */
+u8 hal_pwr_good(u8 ch)
+{
+	return (PWR_GOOD & bit_of[ch]) != 0;
+}
+
+/* power-good block B writes: B2 04 then 00 (oracle tick 25), later bit 7 (tick 27). Meaning of the bits I. */
+void hal_ctrl_pulse(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x04; CH0_CTRL &= 0xFB; break;
+	case 1: CH1_CTRL |= 0x04; CH1_CTRL &= 0xFB; break;
+	case 2: CH2_CTRL |= 0x04; CH2_CTRL &= 0xFB; break;
+	default: CH3_CTRL |= 0x04; CH3_CTRL &= 0xFB; break;
+	}
+}
+
+void hal_ctrl_bit2(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x04; break;
+	case 1: CH1_CTRL |= 0x04; break;
+	case 2: CH2_CTRL |= 0x04; break;
+	default: CH3_CTRL |= 0x04; break;
+	}
+}
+
+void hal_ctrl_trigger(u8 ch)
+{
+	switch (ch) {
+	case 0: CH0_CTRL |= 0x80; break;
+	case 1: CH1_CTRL |= 0x80; break;
+	case 2: CH2_CTRL |= 0x80; break;
+	default: CH3_CTRL |= 0x80; break;
+	}
 }
 
 #ifdef POE_FW_NO_POWER
@@ -230,10 +247,13 @@ void hal_meas_calib(void)
 	cal_off4c = (s8)B6_DAT;
 	B5_SEL = 0x15;
 	cal_off4c += (s8)B6_DAT;
+	/* stock 0x41D4 / 0x41D6: arm the periodic hook (slot 3). Without both the ROM never calls it (board 2026-11-21: probeB). C */
+	IP_1 = 1;
+	T2CON_5 = 1;
 }
 
-/* stock 0x2A3E / 0x2A..: class sample mux, AF = ch * 4 | 1 while sampling, ch * 4 afterwards (state 5). Copy of the stock values; timing G. */
-void hal_class_mux(u8 ch, u8 on)
+/* stock 0x29EE: AF = ch * 4 + v, v = 0 / 1 / 2 (C values, U meaning). */
+void hal_af(u8 ch, u8 v)
 {
-	AF_MUX = (u8)(ch * 4) | (on ? 1 : 0);
+	AF_MUX = (u8)(ch * 4) + v;
 }

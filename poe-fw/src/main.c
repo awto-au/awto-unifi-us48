@@ -17,10 +17,15 @@ void isr2_body(void) __using(3)
 	MUX_SEL = 0x3F;
 }
 
-/* hook 3, stock isr_periodic 0x4EBA (bank 2): measurement chain, not ported (hal_periodic). */
+/* hook 3, stock isr_periodic 0x4EBA (bank 2): stock runs 0x1B03 / 0x37D2 / 0x34D0 / 0x29EE / 0x316B here (about 4.4 calls per tick,
+ * board 2026-11-21). Ours only counts the call; the main loop runs the chain (periodic_chain): the long arithmetic needs the
+ * non-reentrant library routines and bank 0, so it must not run in this ISR. */
+__xdata u8 per_cnt;
+
 void periodic_body(void) __using(2)
 {
-	hal_periodic();
+	per_cnt++;
+	HREG(R_REG_16) |= 0x01;      /* bench status: hook 3 body entered */
 }
 
 /* hook 8 body: stock tick_timers */
@@ -51,10 +56,7 @@ void fw_main(void)
 
 	for (;;) {                      /* main_loop 0x3D1A */
 		wd_service();
-		if (meas_due) {
-			meas_due = 0;
-			meas_step();
-		}
+		periodic_chain();
 		poll_common();
 		if (svc0) { svc0 = 0; chan_run(0); }
 		if (svc1) { svc1 = 0; chan_run(1); }
