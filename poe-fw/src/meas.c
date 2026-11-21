@@ -20,10 +20,6 @@ void meas_init(void)
 	HREG(R_REG_16) = 0x42;        /* bench status: variant 4 (rewrite), IP.1 / T2CON.5 armed */
 	meas_ok = 0;
 	meas_due = 0;
-#ifdef POE_FW_PROBE_ARM
-	IP_1 = 1;                     /* stock 0x41D4 / 0x41D6: last two instructions of meas_init */
-	T2CON_5 = 1;
-#endif
 }
 
 u8 hal_temp_valid(void)
