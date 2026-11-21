@@ -75,3 +75,9 @@ Dan 2026-11-21: the chip must be poked every 200 ms, else drop all PoE and tell 
 - Restart (STAT write b7 = 1): clears EXPIRED and the SUP_EVT 0x40 / INT bit 7 cause, line off, disarms; main loop shuts all channels (OP_MOD 0) and re-initialises the state machines. The host then writes OP_MOD and re-arms with HOST_WD_TIME.
 - No watchdog action on I2C bus errors.
 - Tests: `scripts/poe_fw_sim.py` section "host watchdog" (disarmed default, arm, pokes at 10 / 19 / 28 ticks, expiry on exactly the 20th tick, outputs cleared, INT, no re-fire, OP_MOD while expired, restart, clamp, re-arm, disarm), both images.
+
+## Bench results: host watchdog (2026-11-21, chip PoE-12 = 8-002d, `-nopower` image, ports shut, kernel driver `host_wd_ms` = 200)
+- Load: `firmware rev 0xa1 ... firmware loaded`, then `host watchdog armed: 200 ms, poke every 100 ms` (driver detects the feature from HOST_WD_STAT b7).
+- Steady state: 6 reads over several seconds, HOST_WD_STAT 0x82 (feature + armed), HOST_WD_TIME 0x14, no expiry, no poke failure.
+- Forced expiry (`i2cset` HOST_WD_TIME = 2, i.e. 20 ms, between two driver pokes): STAT went 0x82 -> 0x81 (expired, disarmed) within ~40 ms; the next driver poke cycle logged `firmware host watchdog expired: all PoE was dropped; restarting and re-enabling 0 port(s)`, wrote the restart; STAT back to 0x82, TIME 0x14, OP_MOD 0x00.
+- Not tested: expiry with powered ports (the `-nopower` image never powers one; needs the full image and a PD), real stall of the kernel/workqueue, interaction with the measured-power watcher, INT line.
