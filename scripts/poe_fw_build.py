@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Build the open-source BCM59111 PSE firmware (poe-fw/, #26) with sdcc and write the 16 KiB RAM image.
 
-Usage: poe_fw_build.py [--no-power-only]
+Usage: poe_fw_build.py [--seq-check]
   Compiles poe-fw/src (sdcc mcs51 small model, awto-sdcc) and links to the stock image layout: CPU base 0x1A00, hook table at
   file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x4C00, tag at 0x5300, padded to 16384 B.
   Writes hwdb/firmware/bcm59111-awto.bin and bcm59111-awto-nopower.bin (-DPOE_FW_NO_POWER: no power-up path, bench stage 1).
+  --seq-check: only compile seq_detect.c + hal_analog.c with -DPOE_FW_SEQ (not linked, no image written, default images unchanged).
   Refuses (exit 1, reason printed) if hook table, size, base, entry, tag, IRAM or code-end checks fail, or if the generated
   header / tables no longer match hwdb/firmware/bcm59111-regs.tsv (poe_fw_genhdr.py --check).
   Also writes tmp/poe-fw/sizes.tsv (per-function size, ours vs stock v21 functions.tsv). Log: tmp/logs/poe_fw_build.log.
@@ -252,8 +253,25 @@ def sizes(cend, tag):
     return rows, size, cs_end - 0x1B03
 
 
+def seq_check():
+    """Compile-only check of the unwired detect sequencer (docs/poe-fw-seq/01-detect-sequencer.md)."""
+    d = WORK / "seq"
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        for c in ("seq_detect", "hal_analog"):
+            run(["sdcc", "-mmcs51", "--model-small", "--opt-code-size", "--nooverlay", "--std-c11", f"-I{INC}", "-DPOE_FW_SEQ", "-c",
+                 "-o", d / f"{c}.rel", SRC / f"{c}.c"])
+        log("seq-check: seq_detect.c + hal_analog.c compile with -DPOE_FW_SEQ")
+    except Fail as e:
+        log(f"SEQ CHECK FAILED: {e}")
+        return 1
+    return 0
+
+
 def main():
-    help_guard(__doc__)
+    help_guard(__doc__, strict=True, known=("--seq-check",))
+    if "--seq-check" in sys.argv:
+        return seq_check()
     LOG.parent.mkdir(parents=True, exist_ok=True)
     LOG.write_text("")
     try:

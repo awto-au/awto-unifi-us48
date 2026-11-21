@@ -266,3 +266,11 @@ void hal_af(u8 ch, u8 v)
 {
 	AF_MUX = (u8)(ch * 4) + v;
 }
+
+#ifdef POE_FW_SEQ
+/* stock 0x3292..0x3299 (states 4 / 6 of 0x316B): D6 = (ch << 6) | 0x20, a plain store (no read-modify-write). U. */
+void hal_class_select(u8 ch)
+{
+	CLASS_START_B = (u8)(ch << 6) | 0x20;
+}
+#endif
