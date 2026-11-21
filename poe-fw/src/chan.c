@@ -184,7 +184,11 @@ void chan_i2c_error_reload(void)
 /* stock tick_timers 0x3C1E, called from the timer 1 hook. Bank 3, no calls. */
 #ifdef POE_FW_PROBE2
 extern __xdata u8 pr_ch, pr_t, pr_idx;
-static const __code u8 probe_sched[16] = { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 70 };
+#ifdef POE_FW_PROBE3
+static const __code u8 probe_sched[PR_N] = { 1, 5, 15 };
+#else
+static const __code u8 probe_sched[PR_N] = { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 70 };
+#endif
 #endif
 
 void chan_tick(void) __using(3)
@@ -202,7 +206,7 @@ void chan_tick(void) __using(3)
 			case 2: HREG(0x30 + pr_idx) = CH2_DET; break;
 			default: HREG(0x30 + pr_idx) = CH3_DET; break;
 			}
-			if (++pr_idx == 16)
+			if (++pr_idx == PR_N)
 				pr_ch = 0xFF;
 		}
 	}

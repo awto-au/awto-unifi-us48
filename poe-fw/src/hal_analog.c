@@ -216,6 +216,14 @@ u16 hal_ind_word(u8 idx)
 	return ((u16)AD_HI << 8) | lo;
 }
 
+/* stock 0x1B03 write side: AB = idx, AC = low, AD = high. C */
+void hal_ind_write(u8 idx, u16 w)
+{
+	AB_IDX = idx;
+	AC_LO = (u8)w;
+	AD_HI = (u8)(w >> 8);
+}
+
 /* calibration values read once, stock 0x415C..0x41D6 (names TSV meas_*): written to cal[] by meas.c via these raw accessors. */
 extern __xdata s16 cal_temp_off;     /* IRAM 0x4E:0x4F  B5 = 0x14, B6 sign-extended */
 extern __xdata s16 cal_slope;        /* IRAM 0x4A:0x4B  B5 = 1, B7 sign-extended */
@@ -232,6 +240,7 @@ void hal_meas_calib(void)
 	cal_temp_off = (s8)B6_DAT;
 	SFR_FF = 0x60;
 	d7 = D7_TRIM;
+	cal_valid = d7 & 0x80;           /* 0x6A.7 */
 	base = d7 & 0x3F;
 	if (base & 0x20)
 		base = (u8)(base + 0xC0);

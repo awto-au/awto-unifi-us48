@@ -52,6 +52,11 @@ __sfr __at(0xAB) AB_IDX;   /* indirect analog register index (I: stock 0x34ED, 0
 __sfr __at(0xAC) AC_LO;    /* indirect register data, low byte (I) */
 __sfr __at(0xAD) AD_HI;    /* indirect register data, high byte (I) */
 __sfr __at(0xAF) AF_MUX;   /* analog mux / class sample select: ch*4 + {1,2,3,5} (I: stock 0x29EE) */
+__sfr __at(0xAE) AE_STAT;   /* trim ready / state bits per channel (C: stock 0x1B03 reads it once per channel) */
+__sfr __at(0x81) SFR_SP;
+__sfr __at(0xA8) SFR_IE;
+__sfr __at(0xB8) SFR_IP;
+__sfr __at(0x88) SFR_TCON;
 __sfr __at(0xB5) B5_SEL;   /* trim / calibration register select (I: stock 0x415C) */
 __sfr __at(0xB6) B6_DAT;   /* signed 8-bit data for B5 (I) */
 __sfr __at(0xB7) B7_DAT;   /* signed 8-bit data for B5 (I) */
@@ -202,6 +207,10 @@ void hal_detect_phase2(u8 ch);
 u8 hal_detect_raw(u8 ch);
 void hal_chan_enable(u8 ch, u8 on);
 void hal_power_on(u8 ch, u8 hp);
+void hal_ind_write(u8 idx, u16 w);
+extern __xdata u8 cal_valid;
+void meas_trim(void);
+void live_check(void);
 u8 hal_pwr_good(u8 ch);
 void hal_ctrl_pulse(u8 ch);
 void hal_ctrl_trigger(u8 ch);
@@ -234,6 +243,11 @@ extern __bit __at(0x05) meas_due;
 #endif
 
 /* PROBE v2 (bcm59111-awto-probe2.bin only): detect evidence in host regs, see docs/poe-fw-rewrite.md "Probe v2" */
+#ifdef POE_FW_PROBE3
+#define PR_N 3     /* raw D ring samples */
+#else
+#define PR_N 16
+#endif
 #ifdef POE_FW_PROBE2
 void probe_hist(u8 ch, u8 st);
 void probe_start(u8 ch);

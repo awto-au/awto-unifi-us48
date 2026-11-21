@@ -19,7 +19,8 @@ import poe_fw_oracle as O  # noqa: E402
 ROOT = O.ROOT
 LOGF = ROOT / "tmp/logs/poe_fw_oracle_diff.log"
 IMG = {"stock": "v21", "main": ROOT / "hwdb/firmware/bcm59111-awto.bin", "nopower": ROOT / "hwdb/firmware/bcm59111-awto-nopower.bin",
-       "probe2": ROOT / "hwdb/firmware/bcm59111-awto-probe2.bin"}
+       "probe2": ROOT / "hwdb/firmware/bcm59111-awto-probe2.bin",
+       "probe3": ROOT / "hwdb/firmware/bcm59111-awto-probe3.bin"}
 DIFF_KEYS = {0xA1, 0xA2, 0xA3, 0xA4, 0xB2, 0xC9, 0xD1, 0xD2, 0xD3, 0xD4, 0xD9, 0xF1, 0xF2, 0x95, 0xBD, 0xBC, 0xBE, 0xBF}
 _out = []
 
@@ -70,10 +71,21 @@ def build(which, args):
         m = O.Machine("v21", args.pt, args.passes)
     else:
         m = RewriteMachine(which, args.pt, args.passes)
+    if getattr(args, "calib", None) is not None:
+        m.cpu.sfr[0xD7] = 0x85 if args.calib else 0x05      # trim-valid bit (0x6A.7) on / off at calibration
     m.boot()
     O.CH = args.ch
     O.host_setup(m, 3 << (2 * args.ch))
     s = args.scen
+    if getattr(args, "calib", None) is not None:
+        import random
+        rng = random.Random(7 + args.calib)
+        m.an.adc = {k: rng.randrange(256) if rng.random() < 0.8 else 0 for k in range(0x20)}
+        for i in range(0x40):
+            m.an.words[i] = rng.randrange(0x100, 0x500) if i < 4 or 0x24 <= i < 0x2C else rng.randrange(0, 0x600)
+        m.an.ae = 0x55 if args.ae else 0xAA
+        m.an.det_code[:] = [4, 4, 4, 4]
+        return m
     O.mkword(m, det={"camera": 4, "nopg": 4, "open": 6, "timeout": 4, "bad": 0}[s], cls=0x300, cm=0x30, vm=0x32E)
     if s == "timeout":
         m.an.det_latency = 10 ** 6
@@ -125,6 +137,24 @@ def run(which, args):
     return m, pub, ded, xl
 
 
+def calib_compare(args):
+    """AC/AD writes (AB index, value) of the first calls, stock vs rewrite, same random analog stimulus."""
+    out = {}
+    for w in ("stock", "main"):
+        m = build(w, args)
+        for _ in range(args.ticks):
+            m.step_tick()
+        out[w] = [(x[4], x[2], x[3]) for x in m.wlog if x[1] != "boot" and x[0] >= 1 and x[2] in (0xAC, 0xAD)]
+    n = min(len(out["stock"]), len(out["main"]))
+    bad = [(i, out["stock"][i], out["main"][i]) for i in range(n) if out["stock"][i] != out["main"][i]]
+    log("calib=%d ae=%d: stock %d writes, rewrite %d writes, compared %d, mismatches %d" % (args.calib, args.ae, len(out["stock"]), len(out["main"]), n, len(bad)))
+    for i, a, b in bad[:12]:
+        log("  #%d stock AB=%02X %s=%02X   mine AB=%02X %s=%02X" % (i, a[0], "AC" if a[1] == 0xAC else "AD", a[2], b[0], "AC" if b[1] == 0xAC else "AD", b[2]))
+    LOGF.parent.mkdir(parents=True, exist_ok=True)
+    LOGF.write_text("\n".join(_out) + "\n")
+    return 1 if bad else 0
+
+
 def main():
     help_guard(__doc__)
     ap = argparse.ArgumentParser(add_help=False)
@@ -134,7 +164,11 @@ def main():
     ap.add_argument("--ch", type=int, default=1)
     ap.add_argument("--scen", default="camera")
     ap.add_argument("--images", default="stock,main,nopower")
+    ap.add_argument("--calib", type=int, default=None, help="0 / 1: compare the AB/AC/AD calibration writes (0x1B03) with trim-valid off / on")
+    ap.add_argument("--ae", type=int, default=0, help="--calib: AE status 0x55 (accumulate on) instead of 0xAA")
     args = ap.parse_args()
+    if args.calib is not None:
+        return calib_compare(args)
     res = {}
     for w in args.images.split(","):
         m, pub, wl, xl = run(w, args)

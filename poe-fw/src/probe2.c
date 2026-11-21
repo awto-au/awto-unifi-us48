@@ -25,7 +25,7 @@ void probe_start(u8 ch)
 {
 	static __xdata u8 i;
 
-	for (i = 0; i < 16; i++)
+	for (i = 0; i < PR_N; i++)
 		HREG(0x30 + i) = 0xEE;
 	pr_t = 0;
 	pr_idx = 0;

@@ -224,3 +224,22 @@ Nopower base (no F1/F2/C9 at power-up), host watchdog and CRC/layout checks kept
 - Hook counters: hook 3 0x22/0x23; hook 8 0x2D only (0x40 and the hook-2 regs are probe regs here).
 - State numbers (chan.c enum): 0 reset, 1 shutdown (parked if OP_MOD = 0), 2 cfg, 3 mode select, 4 detect arm, 5 detect start, 6 detect wait, 7 detect result, 8 detect invalid, 9 class gate, 10 class wait, 11 power request, 12 power on, 13 power wait, 14 power trigger, 15 monitor, 16 fault, 17 disconnect, 18 idle, 19 generic wait.
 - Read-out: load, ports shut, wait 2 s; set OP_MOD 0x0c; read in one pass 0x1E..0x1F, 0x24..0x2B, 0x30..0x3F, 0x45, 0x4F, 0x74, 0x2D at about 1 s and 5 s; write 0x40 = 1 and repeat to capture again.
+
+## Board result 2 (probe v2 ba24626): freeze and empty detect data; probe v3
+
+### Freeze (board: hook 8 / hook 3 counters stop after the first detect result, I2C still answers, 0x40 re-arm ignored)
+- Offline reproduction: none. The oracle injects ISRs at the main-loop top and cannot show priority or interrupt-controller effects; 300-tick runs of camera / open / timeout / nopg / bad (pt 1 and 4) finish without runaway, write logs identical to stock.
+- Facts from the board and the code: tick 0x43 = D write tick (0x34) + 15 = the event tick; result read, invalid, idle all run in that same tick (arm() sets the service flag at once, as stock). So the freeze starts at the first channel event ISR (hook 5) and the first result read.
+- Leading hypothesis (G, unproven): an interrupt storm on the shared event interrupt (INT1 = channel ISRs). A stuck-asserted event line starves hook 8 / hook 3 and the main loop (one instruction per RETI), while the I2C slave is still served (higher priority in the poll order). It fits: counters frozen, I2C alive, host regs 0x24/0x25 changing slowly, re-arm (needs hook 3 + main) ignored. Stock would see the same line but runs the calibration (0x1B03) that we lacked.
+- Mitigations in all images (not in stock): channel ISRs count entries in `storm_cnt`; at 128 entries without a main-loop pass the ISR switches EX1 off; the main loop clears the counter every pass and re-enables EX1 after 256 passes (`storm_check`, main.c; build.py inserts the counter into chan_isr.s). `live_check`: about 65536 main passes with neither tick counter moving re-arms timer 1, EX1 and IP = 0x3E.
+- Probe v3 shows which case it is: regs 0x35..0x37, 0x71 (SP, IE, IP, TCON sampled in the I2C ISR, i.e. the interrupted state), 0x34 (main-loop pass counter), 0x72/0x73 (hook 5 entry counter: a storm = huge), 0x33 (low nibble live_check recoveries, high nibble storm limiter trips).
+
+### 0x1B03 offset trim ported (meas.c `meas_trim`)
+- Port of `seq_offset_trim` from wip/poe-seq-4 (C arithmetic, the math unit E9..EF replaced by C), plus the 0x6A.7 trim-valid flag (`cal_valid` = D7.7 from the calibration).
+- Runs from the main-loop chain on every hook-3 call in stock order trim, temperature + convert (every 4th call), class mux. It writes the indirect words AB = c | 8 and c | 4 each call.
+- Oracle acceptance: `scripts/poe_fw_oracle_diff.py --calib 0|1 --ae 0|1`, random ADC / word stimulus, stock vs rewrite AC/AD write values: 0 mismatches over up to 5760 writes (trim-valid on and off, accumulate path on and off, pt 1 and 4).
+- Cost (oracle cycles): the chain pass about 6800 cycles per call (stock whole hook 3 about 4190); main-context chain therefore runs at about 2.6 of the 4.45 calls per tick; calls are dropped (lag cap 8), the sample-averaging runs slower than stock.
+
+### Probe v3 (`hwdb/firmware/bcm59111-awto-probe3.bin`): nopower + probe v2 + freeze mitigations + 0x1B03
+- Regs as probe v2 except: raw D ring is 3 samples at 0x30..0x32 (ticks 1, 5, 15); 0x33 recoveries / storms; 0x34 main loop counter; 0x35 SP, 0x36 IE, 0x37 IP, 0x71 TCON (sampled at each I2C access); 0x72/0x73 hook 5 entry count; 0x38/0x39 trim call count; 0x3A/0x3B last word written at AB = 5 (channel 1 VM); 0x3C/0x3D last word written at AB = 9 (channel 1 CM / class); 0x3E/0x3F raw word read at AB = 1.
+- Read-out: load, ports shut, 2 s; read 0x22/0x23, 0x2D, 0x33..0x39, 0x3A..0x3F, 0x71..0x73 twice 1 s apart (all must move except 0x3E/0x3F); OP_MOD 0x0c; read again at 1 s, 5 s, 15 s: 0x2D and 0x22/0x23 must keep counting, 0x45/0x4F/0x1E/0x1F/0x74, 0x24..0x2B, 0x30..0x32, 0x1C/0x1D, SAT 0x0C..0x0F.

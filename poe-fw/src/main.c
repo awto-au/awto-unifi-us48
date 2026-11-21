@@ -35,6 +35,58 @@ void tick_body(void) __using(3)
 	wd_tick();
 }
 
+/* Timer liveness (G, probe v3 freeze): about 65536 main passes (several seconds) with neither the hook-8 nor the hook-3 counter moving
+ * means the timer interrupts are dead: re-arm timer 1, INT1 and the priorities. HREG(0x33) counts recoveries in the probe v3 image. */
+__xdata u8 storm_cnt;       /* channel ISR entries since the last main-loop pass (incremented by chan_isr.s, build.py) */
+
+/* Interrupt storm limiter (G): if a channel event line is stuck asserted the channel ISRs would starve the timers and the main loop
+ * (board 2026-11-22, freeze after the first detect result). chan_isr.s switches EX1 off at 128 entries; here it comes back after a
+ * cool-down of 256 main passes. HREG(0x33) high nibble counts storms in the probe v3 image. */
+static void storm_check(void)
+{
+	static __xdata u8 wait;
+
+	if (!storm_cnt)
+		return;
+	if (storm_cnt < 0x80) {
+		storm_cnt = 0;
+		return;
+	}
+	if (++wait == 0) {
+		storm_cnt = 0;
+		EX1 = 1;
+#ifdef POE_FW_PROBE3
+		HREG(0x33) += 0x10;
+#endif
+	}
+}
+
+void live_check(void)
+{
+	storm_check();
+	static __xdata u16 n;
+	static __xdata u8 t8, p3;
+
+	if (++n)
+		return;
+	if (HREG(0x2D) == t8 && per_cnt == p3) {
+		EA = 0;
+		TMOD |= 0x10;
+		TL1 = 0xF4;
+		TH1 = 0xE5;
+		TR1 = 1;
+		ET1 = 1;
+		EX1 = 1;
+		SFR_IP = 0x3E;
+		EA = 1;
+#ifdef POE_FW_PROBE3
+		HREG(0x33)++;
+#endif
+	}
+	t8 = HREG(0x2D);
+	p3 = per_cnt;
+}
+
 void fw_main(void)
 {
 	u8 strap;
@@ -55,6 +107,10 @@ void fw_main(void)
 	HREG(R_CRC_STATUS) = 0xAA;      /* firmware running (stock writes this first, 0x4071; moved after init) */
 
 	for (;;) {                      /* main_loop 0x3D1A */
+#ifdef POE_FW_PROBE3
+		HREG(0x34)++;               /* main loop pass counter (low byte) */
+#endif
+		live_check();
 		wd_service();
 		periodic_chain();
 		poll_common();

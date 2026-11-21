@@ -3,7 +3,7 @@
 
 Usage: poe_fw_build.py [--no-power-only]
   Compiles poe-fw/src (sdcc mcs51 small model, awto-sdcc) and links to the stock image layout: CPU base 0x1A00, hook table at
-  file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x4400, tag at 0x5300, padded to 16384 B.
+  file offset 0, 0x1B00 ROM entry, host tables (CONST) at 0x4C00, tag at 0x5300, padded to 16384 B.
   Writes hwdb/firmware/bcm59111-awto.bin and bcm59111-awto-nopower.bin (-DPOE_FW_NO_POWER: no power-up path, bench stage 1).
   Refuses (exit 1, reason printed) if hook table, size, base, entry, tag, IRAM or code-end checks fail, or if the generated
   header / tables no longer match hwdb/firmware/bcm59111-regs.tsv (poe_fw_genhdr.py --check).
@@ -78,11 +78,22 @@ def build(tag, defs):
     rels = []
     for s in S_SRCS:
         src = SRC / f"{s}.s"
-        if s == "startup" and tag == "probe2":      # probe2 uses regs 0x40 / 0x45 / 0x4F: no hook 8 hi / hook 2 counters
+        if s == "startup" and tag in ("probe2", "probe3"):      # probe2 uses regs 0x40 / 0x45 / 0x4F: no hook 8 hi / hook 2 counters
             txt = src.read_text()
             for a in ("0x8045", "0x804F", "0x8040"):
                 txt = re.sub(r"\tmov\tdptr,#%s\n\tmovx\ta,@dptr\n\t(?:add\ta,#1|addc\ta,#0)\n\tmovx\t@dptr,a\n" % a, "", txt)
             src = d / "startup.s"
+            src.write_text(txt)
+        if s == "chan_isr":
+            txt = src.read_text()
+            if tag == "probe3":      # hook 5 (channel 1 event ISR) entry counter in regs 0x72 / 0x73
+                txt = txt.replace("_hook_chan1:\n", "_hook_chan1:\n\tmov\tdptr,#0x8072\n\tmovx\ta,@dptr\n\tadd\ta,#1\n\tmovx\t@dptr,a\n\tmov\tdptr,#0x8073\n\tmovx\ta,@dptr\n\taddc\ta,#0\n\tmovx\t@dptr,a\n", 1)
+            # interrupt storm limiter, all images: 128 entries without a main-loop pass in between switch the event interrupt off (EX1);
+            # the main loop clears the counter every pass and re-enables after a cool-down (main.c). Not in stock.
+            for n in range(4):
+                lbl = "_hook_chan%d:\n" % n
+                txt = txt.replace(lbl, lbl + "\tmov\tdptr,#_storm_cnt\n\tmovx\ta,@dptr\n\tinc\ta\n\tmovx\t@dptr,a\n\tcjne\ta,#0x80,%d$\n\tclr\t0xAA\n%d$:\n" % (90 + n, 90 + n), 1)
+            src = d / "chan_isr.s"
             src.write_text(txt)
         run(["sdas8051", "-plosgff", "-o", d / f"{s}.rel", src])
     for c in C_SRCS:
@@ -92,7 +103,7 @@ def build(tag, defs):
     rels = [d / f"{s}.rel" for s in ["hosttab"]] + [d / f"{c}.rel" for c in C_SRCS] + \
            [d / f"{s}.rel" for s in S_SRCS if s != "hosttab"]
     lnk = d / "link.lnk"
-    lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x4400", "-aDSEG=0x30",
+    lnk.write_text("\n".join(["-mjwxiu", f"-i {d / 'out.ihx'}", "-aCSEG=0x1B03", "-aCONST=0x4C00", "-aDSEG=0x30",
                               "-aXSEG=0x80C8", f"-k{LIBDIR}", "-lmcs51", *map(str, rels), "-e", ""]))
     run(["sdld", "-f", lnk])
     return d, ihx_to_image(d / "out.ihx")
@@ -154,8 +165,8 @@ def checks(mem, txt, syms, tag):
     if dend - 1 > IRAM_DATA_MAX:
         errs.append(f"IRAM data ends at 0x{dend - 1:02X}, beyond 0x{IRAM_DATA_MAX:02X}")
     cs = [m for m in re.finditer(r"^CSEG\s+([0-9A-F]{8})\s+([0-9A-F]{8})", txt, re.M)][-1]
-    if int(cs.group(1), 16) + int(cs.group(2), 16) > 0x4400:
-        errs.append("CSEG runs into CONST at 0x4400")
+    if int(cs.group(1), 16) + int(cs.group(2), 16) > 0x4C00:
+        errs.append("CSEG runs into CONST at 0x4C00")
     return errs, bytes(img), cend
 
 
@@ -207,7 +218,7 @@ def local_funcs():
     for rst in sorted((WORK / "main").glob("*.rst")):
         for ln in rst.read_text().splitlines():
             m = re.match(r"^\s+([0-9A-F]{6})\s+\d+ (_\w+):", ln)
-            if m and 0x1B03 <= int(m.group(1), 16) < 0x4400:
+            if m and 0x1B03 <= int(m.group(1), 16) < 0x4C00:
                 out[m.group(2)] = int(m.group(1), 16)
     return out
 
@@ -250,7 +261,8 @@ def main():
         if r.returncode:
             raise Fail("generated files stale vs hwdb regs.tsv: run scripts/poe_fw_genhdr.py\n" + r.stdout)
         for tag, defs, out in (("main", [], "bcm59111-awto.bin"), ("nopower", ["-DPOE_FW_NO_POWER"], "bcm59111-awto-nopower.bin"),
-                              ("probe2", ["-DPOE_FW_NO_POWER", "-DPOE_FW_PROBE2"], "bcm59111-awto-probe2.bin")):
+                              ("probe2", ["-DPOE_FW_NO_POWER", "-DPOE_FW_PROBE2"], "bcm59111-awto-probe2.bin"),
+                              ("probe3", ["-DPOE_FW_NO_POWER", "-DPOE_FW_PROBE2", "-DPOE_FW_PROBE3"], "bcm59111-awto-probe3.bin")):
             d, mem = build(tag, defs)
             txt, syms = parse_map(d)
             errs, img, cend = checks(mem, txt, syms, tag)
