@@ -12,10 +12,7 @@
 	.db 0xFF, >_hook_i2c, _hook_i2c       ; 1 I2C slave ISR
 	.db 0xFF, >_hook_isr2, _hook_isr2     ; 2 event ISR
 	.db 0xFF, >_hook_periodic, _hook_periodic ; 3 periodic ISR
-	.db 0xFF, >_hook_chan0, _hook_chan0   ; 4..7 channel ISRs
-	.db 0xFF, >_hook_chan1, _hook_chan1
-	.db 0xFF, >_hook_chan2, _hook_chan2
-	.db 0xFF, >_hook_chan3, _hook_chan3
+	.include "chanhooks.inc"              ; 4..7 channel ISRs (probe builds: counting trampolines)
 	.db 0xFF, >_hook_timer1, _hook_timer1 ; 8 timer 1 tick
 	.db 0xFF, 0x1A, 0xFD                  ; 9..11 RET stubs
 	.db 0xFF, 0x1A, 0xFE
