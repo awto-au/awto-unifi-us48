@@ -145,9 +145,10 @@ struct bcm_hr2_ge {
 	u16 vid;
 	bool external_phy;		/* BCM54282 octal on external MIIM bus 0, lane 0 at phy - lane */
 	bool blk_ready;
+	bool phy_managed;		/* a phylib driver (Linux) owns the PHY: bring-up does the octal top reset only */
 };
 
-/* GPORT MAC init, PHY AN start, private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
+/* GPORT MAC init, PHY AN start (unless phy_managed), private VLAN, PORT_VID, EGR_ENABLE, link bitmap. */
 int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge);
 /* Unknown multicast from lport may reach the CPU (UNKNOWN_MCAST_BLOCK_MASK_64 CPU bit 0, #127). */
 int bcm_hr2_umc_cpu_unblock(struct bcm_cmic_unit *u, int lport);

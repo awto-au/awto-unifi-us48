@@ -575,12 +575,16 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */
 	gp_wr(u, b, 0x11700 | l, 0xc);			/* TX_IPG_LENGTH */
 	gp_wr(u, b, GP_CC(l), GP_CC_BASE);
-	if (ge->external_phy) {
-		ret = ge->blk_ready ? 0 : bcm54282_top_reset(u, ge->phy - l);
-		ret = ret ?: bcm54282_link_init(u, ge->phy);
-	} else {
-		/* Integrated GPHY powers up with BMCR PDN set: AN enable + restart + FD + 1000, PDN clear (OM step 4). */
-		ret = bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340);
+	if (ge->external_phy && !ge->blk_ready)
+		ret = bcm54282_top_reset(u, ge->phy - l);
+	else
+		ret = 0;
+	if (!ge->phy_managed) {
+		if (ge->external_phy)
+			ret = ret ?: bcm54282_link_init(u, ge->phy);
+		else
+			/* Integrated GPHY powers up with BMCR PDN set: AN enable + restart + FD + 1000, PDN clear (OM step 4). */
+			ret = ret ?: bcm_cmic_miim_write(u, true, 0, ge->phy, 0, 0x1340);
 	}
 	if (ret)
 		return ret;
