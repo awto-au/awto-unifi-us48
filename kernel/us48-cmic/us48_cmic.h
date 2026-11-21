@@ -75,14 +75,16 @@
 #define L2U_ENTRIES		128
 #define L2_AGE_TIMER		0x02000400	/* IPIPE register */
 
-/* One offloaded Linux bridge on one unit = one ASIC VLAN + STG (docs/switchdev.md). */
+/* One offloaded bridge on one unit: VLAN-unaware = slot ASIC VLAN + STG; VLAN-aware = ASIC VLAN per VID (docs/switchdev.md). */
 #define US48_BR_MAX		8
 struct us48_br {
 	struct net_device *dev;		/* bridge; NULL = free slot */
-	u16 vid;			/* ASIC VLAN, also its FID_ID (L2 key) */
-	u8 stg;
+	u16 vid;			/* slot ASIC VLAN (VLAN-unaware), also its FID_ID (L2 key) */
+	u8 stg;				/* slot STG (VLAN-unaware) */
+	bool aware;			/* VLAN-aware: ASIC VLAN = bridge VID, STG = astg */
+	u8 astg;			/* STG of every VID of a VLAN-aware bridge: VLAN 1's (the private VLANs') */
 	u32 members;			/* logical port bitmap */
-	struct list_head hosts;		/* bridge-local MACs (struct us48_host) -> CPU */
+	struct list_head fdbs;		/* static/local FDB entries (struct us48_fdb), all VIDs; rtnl */
 };
 
 /* Logical port numbers are the chip's p2l view of the physical SerDes: board.md "Physical -> logical". */
@@ -110,7 +112,7 @@ struct us48_port {
 	struct us48_cmic *u;
 	struct net_device *ndev;
 	const struct port_cfg *cfg;
-	u16 vid;			/* private VLAN id (hwdb_gen ports_c: copper 100 + front, xe front) */
+	u16 vid;			/* private VLAN id (hwdb_gen ports_c: HW_CONST_VID_PRIVATE_BASE + front) */
 	bool open;
 	bool registered;
 	bool rx_tuned;			/* xe: one RX restart after the first link up (#87) */
@@ -144,7 +146,8 @@ struct us48_port {
 	struct us48_br *br;		/* offloaded bridge (switchdev), NULL = private VLAN; rtnl */
 	u8 stp;				/* BR_STATE_* of the port in br */
 	bool learning;			/* BR_LEARNING: PORT_TAB CML 8 while in br */
-	u16 rx_vid;			/* VLAN tag stripped on RX: vid, or br->vid while bridged */
+	u16 rx_vid;			/* VLAN tag stripped on RX: vid, br->vid while bridged, none (0xffff) VLAN-aware */
+	struct us48_pvlan *pv;		/* bridge VLANs of the port (us48_cmic_sw.c) while in br; rtnl */
 };
 
 struct us48_cmic {
@@ -203,6 +206,10 @@ struct us48_cmic {
 	bool l2resync;			/* FIFO was full or a pop failed: events may be lost; rtnl */
 	bool l2mod_on;			/* rtnl */
 	struct us48_ledu *leds;		/* LEDUP0 port LEDs (us48_cmic_led.c), NULL = none */
+	u32 v1_vt[4], v1_ev[3];		/* VLAN_TAB/EGR_VLAN[1] before a VLAN-aware bridge took VID 1; rtnl */
+	bool v1_held;
+	u32 vflush;			/* lports with a removed bridge VID: dynamic L2X entries to flush; rtnl */
+	struct work_struct vflush_work;
 };
 
 /* Second chip (unit 1, PCIe): SFP+ 1/2 plus copper test ports. */

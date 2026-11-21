@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * us48_cmic switchdev L2 offload, stage 1 (docs/switchdev.md, #57): a VLAN-unaware Linux bridge = one ASIC VLAN + STG per
- * unit. HW learns and ages (L2_MOD_FIFO reports it to the bridge); static/local FDB -> L2X; STP state -> STG_TAB/EGR_VLAN_STG.
- * One hardware domain per unit: cross-unit bridge traffic goes through the CPU (HiGig offload = stage 2). All state: rtnl.
+ * us48_cmic switchdev L2 offload (docs/switchdev.md, #57): VLAN-unaware bridge = one slot ASIC VLAN + STG per unit;
+ * VLAN-aware bridge (one per unit) = ASIC VLAN per bridge VID. HW learns and ages (L2_MOD_FIFO reports it to the bridge);
+ * static/local FDB -> L2X; STP -> STG_TAB/EGR_VLAN_STG. One hwdom per unit (HiGig offload = stage 2). All state: rtnl.
  */
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/if_bridge.h>
+#include <linux/if_vlan.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
@@ -15,6 +16,7 @@
 #include <net/switchdev.h>
 
 #include "us48_cmic.h"
+#include "us48_hwdb.h"
 #include "bcm_cmic.h"
 
 static bool switchdev = true;
@@ -28,9 +30,14 @@ static uint l2_check_s;
 module_param(l2_check_s, uint, 0644);
 MODULE_PARM_DESC(l2_check_s, "L2X vs bridge consistency walk every N s while a bridge is offloaded; 0 (default) = off");
 
-/* Bridge slot i: ASIC VLAN SW_VID_BASE + i, STG SW_STG_BASE + i; unused by stock and our init (tmp/schan_stock_writes*.txt). */
-#define SW_VID_BASE		4000
-#define SW_STG_BASE		2
+/* VID plan (hwdb/board/vlan.toml): bridge VIDs below VID_RSVD_MIN; slots, private VLANs, VLAN 4094 above. */
+#define SW_VID_BASE		HW_CONST_VID_SLOT_BASE
+#define SW_STG_BASE		2	/* slot STG 2 + i: unused by stock and our init (tmp/schan_stock_writes*.txt) */
+#define VID_RSVD_MIN		((int)HW_CONST_VID_RSVD_MIN)
+#define VID_RSVD_MAX		((int)HW_CONST_VID_RSVD_MAX)
+#define RX_VID_NONE		0xffff	/* VLAN-aware port: no tag stripped on RX, the bridge classifies */
+static_assert(SW_VID_BASE >= VID_RSVD_MIN && SW_VID_BASE + US48_BR_MAX <= HW_CONST_VID_PRIVATE_BASE + 1);
+static_assert(HW_CONST_VID_PRIVATE_BASE + 52 <= VID_RSVD_MAX && VID_RSVD_MAX < VLAN_N_VID - 1);
 
 /* Field positions (lsb, width): regdb/hr2_mems.tsv */
 struct fld {
@@ -75,9 +82,21 @@ struct fld {
 #define CML_LEARN		8
 #define BPDU_MAC		0x0180c2000000ULL
 
-struct us48_host {
+/* Static/local FDB entry of a bridge; in L2X only in its mode (vid 0 = VLAN-unaware, else VLAN-aware), fdb_live(). */
+struct us48_fdb {
 	struct list_head node;
 	u8 mac[ETH_ALEN];
+	u16 vid;			/* bridge VID, 0 = no VLAN */
+	s8 lport;			/* -1 = bridge-local -> CPU */
+};
+
+/* Bridge VLANs of a port, kept in either mode (a vlan_filtering toggle is not replayed by the bridge). */
+struct us48_pvlan {
+	DECLARE_BITMAP(member, VLAN_N_VID);
+	DECLARE_BITMAP(untag, VLAN_N_VID);
+	u16 pvid;			/* 0 = none */
+	u8 stg_old;			/* SP_TREE of the port in the private STG before a VLAN-aware join */
+	bool hw;			/* VLAN-aware and the VIDs are in the ASIC */
 };
 
 /*
@@ -201,6 +220,16 @@ static int stg_port_set(struct us48_cmic *u, u8 stg, int lport, u8 hw)
 	return ret;
 }
 
+static int stg_port_get(struct us48_cmic *u, u8 stg, int lport, u8 *hw)
+{
+	u32 e[2];
+	int ret = mrd(u, BLK_IPIPE, STG_TAB(stg), e, 2);
+
+	if (!ret)
+		*hw = ent_get(e, FLD(2 * lport, 2));
+	return ret;
+}
+
 /* Whole STG entry: CPU (port 0) forwarding as ge_vlan_init, every other port disabled (SDK fb stg.c _bcm_xgs3_stg_stp_init). */
 static int stg_init(struct us48_cmic *u, u8 stg, bool clear)
 {
@@ -285,6 +314,136 @@ static int port_tab(struct us48_cmic *u, int lport, u16 vid, u8 cml)
 	return mwr(u, BLK_IPIPE, PORT_TAB(lport), e, 8);
 }
 
+/*
+ * VLAN-aware: ASIC VLAN = FID = bridge VID, STG = VLAN 1's (kept: private VLANs clone it). CPU = tagged member of every VID
+ * (SDK fb vlan.c _bcm_xgs3_vlan_table_port_add drops CMIC from ubmp): the bridge sees the VID; host/cross-unit need the copy.
+ */
+static int v1_tmpl(struct us48_cmic *u, u32 *e, u32 *g)
+{
+	if (u->v1_held) {
+		memcpy(e, u->v1_vt, sizeof(u->v1_vt));
+		memcpy(g, u->v1_ev, sizeof(u->v1_ev));
+		return 0;
+	}
+	return mrd(u, BLK_IPIPE, VLAN_TAB(1), e, 4) ?: mrd(u, BLK_EPIPE, EGR_VLAN(1), g, 3);
+}
+
+/* Ports of the unit (except skip) with vid in the ASIC: VLAN-aware bridge members. */
+static int vid_users(struct us48_cmic *u, u16 vid, struct us48_port *skip)
+{
+	int i, n = 0;
+
+	for (i = 0; i < u->nports; i++) {
+		struct us48_port *q = u->port[i];
+
+		n += q && q != skip && q->pv && q->pv->hw && test_bit(vid, q->pv->member);
+	}
+	return n;
+}
+
+/* First member of vid: ASIC VLAN {CPU} from VLAN 1's template. VLAN 1 itself (cold init: HiGig 28/29) is saved, taken over. */
+static int avlan_get(struct us48_cmic *u, struct us48_br *b, u16 vid)
+{
+	u32 e[4], g[3];
+	int ret = mrd(u, BLK_IPIPE, VLAN_TAB(vid), e, 4);
+
+	if (ret)
+		return ret;
+	if (vid != 1 && ent_get(e, VT_VALID)) {
+		dev_err(u->dev, "switchdev: VLAN %u already valid (not ours): not touching\n", vid);
+		return -EBUSY;
+	}
+	ret = vid == 1 ? mrd(u, BLK_EPIPE, EGR_VLAN(1), g, 3) : v1_tmpl(u, e, g);
+	if (ret)
+		return ret;
+	if (vid == 1 && !u->v1_held) {
+		memcpy(u->v1_vt, e, sizeof(e));
+		memcpy(u->v1_ev, g, sizeof(g));
+	}
+	ent_put(g, EV_UT_BITMAP, 0);
+	ent_put(g, EV_PORT_BITMAP, BIT(0));
+	ent_put(g, EV_STG, b->astg);
+	parity(g, 3, EV_PARITY);
+	ent_put(e, VT_PORT_BITMAP, BIT(0));
+	ent_put(e, VT_STG, b->astg);
+	ent_put(e, VT_FID_ID, vid);
+	parity(e, 4, VT_PARITY);
+	ret = mwr(u, BLK_EPIPE, EGR_VLAN(vid), g, 3) ?: mwr(u, BLK_IPIPE, VLAN_TAB(vid), e, 4);
+	if (!ret && vid == 1)
+		u->v1_held = true;
+	dev_info(u->dev, "switchdev: %s VID %u -> ASIC VLAN %u STG %u (FID %u)%s%s\n", netdev_name(b->dev), vid, vid, b->astg,
+		 vid, vid == 1 ? ", VLAN 1 taken (HiGig 28/29 out until restored)" : "", ret ? ": WRITE FAILED" : "");
+	return ret;
+}
+
+/* Last member of vid gone: VLAN invalid again, VLAN 1 back to its saved entries (ingress first). */
+static void avlan_put(struct us48_cmic *u, u16 vid)
+{
+	u32 z[4] = { };
+	int ret;
+
+	if (vid == 1) {
+		if (!u->v1_held)
+			return;
+		ret = mwr(u, BLK_IPIPE, VLAN_TAB(1), u->v1_vt, 4) ?: mwr(u, BLK_EPIPE, EGR_VLAN(1), u->v1_ev, 3);
+		u->v1_held = false;
+	} else {
+		ret = mwr(u, BLK_IPIPE, VLAN_TAB(vid), z, 4) ?: mwr(u, BLK_EPIPE, EGR_VLAN(vid), z, 3);
+	}
+	dev_info(u->dev, "switchdev: ASIC VLAN %u %s%s\n", vid, vid == 1 ? "restored" : "released", ret ? ": WRITE FAILED" : "");
+}
+
+/* Port in/out of ASIC VLAN vid: VLAN_TAB/EGR_VLAN PORT_BITMAP, EGR_VLAN UT_BITMAP = untagged egress. */
+static int vid_set(struct us48_port *p, u16 vid, bool on, bool untag)
+{
+	struct us48_cmic *u = p->u;
+	int lp = p->cfg->lport, others = vid_users(u, vid, p), ret = 0;
+	u32 e[4], g[3];
+
+	if (on && !others)
+		ret = avlan_get(u, p->br, vid);
+	ret = ret ?: mrd(u, BLK_IPIPE, VLAN_TAB(vid), e, 4) ?: mrd(u, BLK_EPIPE, EGR_VLAN(vid), g, 3);
+	if (ret || (!on && !ent_get(e, VT_VALID)))
+		return ret;
+	ent_put(e, FLD(lp, 1), on);
+	parity(e, 4, VT_PARITY);
+	ent_put(g, FLD(lp, 1), on && untag);
+	ent_put(g, FLD(30 + lp, 1), on);
+	parity(g, 3, EV_PARITY);
+	if (on)
+		return mwr(u, BLK_EPIPE, EGR_VLAN(vid), g, 3) ?: mwr(u, BLK_IPIPE, VLAN_TAB(vid), e, 4);
+	ret = mwr(u, BLK_IPIPE, VLAN_TAB(vid), e, 4) ?: mwr(u, BLK_EPIPE, EGR_VLAN(vid), g, 3);
+	if (!others)
+		avlan_put(u, vid);
+	return ret;
+}
+
+/* PORT_VID while bridged: slot VLAN; VLAN-aware: PVID, else the private VLAN (untagged -> CPU only, the bridge drops them). */
+static u16 hw_vid(struct us48_port *p)
+{
+	return p->br->aware ? (p->pv->pvid ?: p->vid) : p->br->vid;
+}
+
+static u8 hw_cml(struct us48_port *p)
+{
+	return p->learning ? CML_LEARN : 0;
+}
+
+static u8 br_stg(struct us48_br *b)
+{
+	return b->aware ? b->astg : b->stg;
+}
+
+static int br_aware_init(struct us48_cmic *u, struct us48_br *b)
+{
+	u32 e[4], g[3];
+	int ret = v1_tmpl(u, e, g);
+
+	if (!ret)
+		b->astg = ent_get(e, VT_STG);
+	return ret;
+}
+
 /* Static L2X entry {vid, mac} -> port lport (cpu: CPU port 0 + copy to CPU), as l2_op_cpu / bcm_hr2_ge_l2_cpu. */
 static int l2x_static(struct us48_cmic *u, u16 vid, const u8 *mac, int lport, bool cpu, bool add)
 {
@@ -326,10 +485,13 @@ static int l2x_walk(struct us48_cmic *u, l2x_fn fn, void *arg)
 
 static void l2_set(struct us48_cmic *u, int idx, const struct us48_l2rec *n);
 
+/* Entry on p in a VLAN of b: the slot VLAN, or (VLAN-aware) any VID below the reserved range (0 = private-VLAN learning). */
 static bool l2x_on_port(struct us48_port *p, struct us48_br *b, const u32 *e)
 {
-	return ent_get(e, L2_VLAN_ID) == b->vid && !ent_get(e, L2_T) && ent_get(e, L2_MODULE_ID) == p->u->l2_modid &&
-	       ent_get(e, L2_PORT_NUM) == p->cfg->lport && !ent_get(e, L2_CPU);
+	u16 v = ent_get(e, L2_VLAN_ID);
+
+	return (b->aware ? v < VID_RSVD_MIN : v == b->vid) && !ent_get(e, L2_T) &&
+	       ent_get(e, L2_MODULE_ID) == p->u->l2_modid && ent_get(e, L2_PORT_NUM) == p->cfg->lport && !ent_get(e, L2_CPU);
 }
 
 struct flush_arg {
@@ -360,8 +522,12 @@ static void port_flush(struct us48_port *p, struct us48_br *b, bool all)
 	struct flush_arg f = { .p = p, .b = b, .all = all };
 	int ret = l2x_walk(p->u, flush_one, &f);
 
-	netdev_info(p->ndev, "switchdev: L2 flush (%s) in VLAN %u: %d deleted%s\n", all ? "all" : "dynamic", b->vid,
-		    f.n, ret ? ", walk FAILED" : "");
+	if (b->aware)
+		netdev_info(p->ndev, "switchdev: L2 flush (%s) in the bridge VIDs: %d deleted%s\n", all ? "all" : "dynamic",
+			    f.n, ret ? ", walk FAILED" : "");
+	else
+		netdev_info(p->ndev, "switchdev: L2 flush (%s) in VLAN %u: %d deleted%s\n", all ? "all" : "dynamic", b->vid,
+			    f.n, ret ? ", walk FAILED" : "");
 }
 
 /*
@@ -478,54 +644,124 @@ static bool br_any(struct us48_cmic *u)
 	return false;
 }
 
-static int host_set(struct us48_cmic *u, struct us48_br *b, const u8 *mac, bool add)
-{
-	struct us48_host *h;
-	int ret;
-
-	list_for_each_entry(h, &b->hosts, node)
-		if (ether_addr_equal(h->mac, mac))
-			goto found;
-	if (!add)
-		return 0;
-	h = kzalloc_obj(*h);
-	if (!h)
-		return -ENOMEM;
-	ret = l2x_static(u, b->vid, mac, 0, true, true);
-	if (ret) {
-		kfree(h);
-		dev_warn(u->dev, "switchdev: host %pM in VLAN %u: L2 insert failed (%d)\n", mac, b->vid, ret);
-		return ret;
-	}
-	ether_addr_copy(h->mac, mac);
-	list_add(&h->node, &b->hosts);
-	return 0;
-found:
-	if (add)
-		return 0;
-	l2x_static(u, b->vid, mac, 0, true, false);
-	list_del(&h->node);
-	kfree(h);
-	return 0;
-}
-
-/* Bridge port of this unit with logical port lport in the bridge VLAN vid, else NULL. */
-static struct us48_port *l2_port(struct us48_cmic *u, u16 vid, u8 lport)
+static struct us48_port *sw_port(struct us48_cmic *u, int lport)
 {
 	int i;
 
-	for (i = 0; i < u->nports; i++) {
-		struct us48_port *p = u->port[i];
-
-		if (p && p->cfg->lport == lport && p->br && p->br->dev && p->br->vid == vid)
-			return p;
-	}
+	for (i = 0; i < u->nports; i++)
+		if (u->port[i] && u->port[i]->cfg->lport == lport)
+			return u->port[i];
 	return NULL;
 }
 
-static void l2_notify(struct us48_port *p, const u8 *mac, bool add)
+static bool fdb_live(const struct us48_br *b, const struct us48_fdb *f)
 {
-	struct switchdev_notifier_fdb_info info = { .addr = mac, .vid = 0, .offloaded = true };
+	return b->aware ? f->vid && f->vid < VID_RSVD_MIN : !f->vid;
+}
+
+static int fdb_hw(struct us48_cmic *u, struct us48_br *b, struct us48_fdb *f, bool add)
+{
+	return l2x_static(u, b->aware ? f->vid : b->vid, f->mac, max_t(int, f->lport, 0), f->lport < 0, add);
+}
+
+static void fdb_offloaded(struct us48_cmic *u, struct us48_fdb *f, bool on)
+{
+	struct switchdev_notifier_fdb_info info = { .addr = f->mac, .vid = f->vid, .offloaded = on };
+	struct us48_port *p = sw_port(u, f->lport);
+
+	if (p)
+		call_switchdev_notifiers(SWITCHDEV_FDB_OFFLOADED, p->ndev, &info.info, NULL);
+}
+
+/* Static entry {mac, vid} -> lport (-1 = CPU) added/removed. 1 = in L2X now, 0 = kept for the other mode / gone, < 0 error. */
+static int fdb_set(struct us48_cmic *u, struct us48_br *b, const u8 *mac, u16 vid, int lport, bool add)
+{
+	struct us48_fdb *f;
+	int ret = 0;
+
+	list_for_each_entry(f, &b->fdbs, node)
+		if (f->vid == vid && ether_addr_equal(f->mac, mac))
+			goto found;
+	if (!add)
+		return 0;
+	f = kzalloc_obj(*f);
+	if (!f)
+		return -ENOMEM;
+	ether_addr_copy(f->mac, mac);
+	f->vid = vid;
+	list_add(&f->node, &b->fdbs);
+found:
+	if (!add) {
+		if (f->lport != lport)
+			return 0;
+		if (fdb_live(b, f))
+			ret = fdb_hw(u, b, f, false);
+		list_del(&f->node);
+		kfree(f);
+		return ret;
+	}
+	f->lport = lport;
+	if (!fdb_live(b, f))
+		return 0;
+	ret = fdb_hw(u, b, f, true);
+	if (ret) {
+		dev_warn(u->dev, "switchdev: static %pM vid %u: L2 insert failed (%d)\n", mac, vid, ret);
+		list_del(&f->node);
+		kfree(f);
+		return ret;
+	}
+	return 1;
+}
+
+/* Mode change: the live entries leave L2X (on false) or enter it under the new mode's key (on true). */
+static void fdbs_hw(struct us48_cmic *u, struct us48_br *b, bool on)
+{
+	struct us48_fdb *f;
+	int ret;
+
+	list_for_each_entry(f, &b->fdbs, node) {
+		if (!fdb_live(b, f))
+			continue;
+		ret = fdb_hw(u, b, f, on);
+		if (ret && on)
+			dev_warn(u->dev, "switchdev: static %pM vid %u: L2 insert failed (%d)\n", f->mac, f->vid, ret);
+		if (f->lport >= 0)
+			fdb_offloaded(u, f, on && !ret);
+	}
+}
+
+/* Port left: its entries are gone from L2X (port_flush all), the bridge deletes its own. */
+static void fdb_drop_port(struct us48_br *b, int lport)
+{
+	struct us48_fdb *f, *t;
+
+	list_for_each_entry_safe(f, t, &b->fdbs, node)
+		if (f->lport == lport) {
+			list_del(&f->node);
+			kfree(f);
+		}
+}
+
+/* ASIC VLAN vid is a VLAN of p's bridge: the slot VLAN, or a VID of the port (VLAN-aware, in the ASIC). */
+static bool vid_in_br(struct us48_port *p, u16 vid)
+{
+	if (!p->br->aware)
+		return vid == p->br->vid;
+	return vid && vid < VID_RSVD_MIN && p->pv->hw && test_bit(vid, p->pv->member);
+}
+
+/* Bridge port of this unit with logical port lport in the ASIC VLAN vid of its bridge, else NULL. */
+static struct us48_port *l2_port(struct us48_cmic *u, u16 vid, u8 lport)
+{
+	struct us48_port *p = sw_port(u, lport);
+
+	return p && p->br && p->br->dev && vid_in_br(p, vid) ? p : NULL;
+}
+
+/* HW entry -> bridge: vid 0 on a VLAN-unaware bridge, the VID on a VLAN-aware one. */
+static void l2_notify(struct us48_port *p, const u8 *mac, u16 vid, bool add)
+{
+	struct switchdev_notifier_fdb_info info = { .addr = mac, .vid = p->br->aware ? vid : 0, .offloaded = true };
 
 	call_switchdev_notifiers(add ? SWITCHDEV_FDB_ADD_TO_BRIDGE : SWITCHDEV_FDB_DEL_TO_BRIDGE, p->ndev, &info.info, NULL);
 }
@@ -555,12 +791,12 @@ static int l2_upd(struct us48_cmic *u, int idx, const struct us48_l2rec *n)
 		return 0;
 	p = o->vid ? l2_port(u, o->vid, o->lport) : NULL;
 	if (p) {
-		l2_notify(p, o->mac, false);
+		l2_notify(p, o->mac, o->vid, false);
 		r |= 1;
 	}
 	p = n->vid ? l2_port(u, n->vid, n->lport) : NULL;
 	if (p) {
-		l2_notify(p, n->mac, true);
+		l2_notify(p, n->mac, n->vid, true);
 		r |= 2;
 	}
 	*o = *n;
@@ -805,14 +1041,36 @@ static void l2mod_stop(struct us48_cmic *u)
 		 u->l2fast, u->l2resyncs, u->l2mismatch, left);
 }
 
-/* Port left vid: the bridge drops its FDB entries itself; forget ours so a later join reports afresh. */
+/* Port left vid (0 = every bridge VID): the bridge drops its FDB entries itself; forget ours so a later join reports afresh. */
 static void l2_forget(struct us48_cmic *u, u16 vid, int lport)
 {
 	int i;
 
-	for (i = 0; u->l2shadow && i < L2X_ENTRIES; i++)
-		if (u->l2shadow[i].vid == vid && (lport < 0 || u->l2shadow[i].lport == lport))
+	for (i = 0; u->l2shadow && i < L2X_ENTRIES; i++) {
+		u16 v = u->l2shadow[i].vid;
+
+		if (v && (vid ? v == vid : v < VID_RSVD_MIN) && (lport < 0 || u->l2shadow[i].lport == lport))
 			memset(&u->l2shadow[i], 0, sizeof(u->l2shadow[i]));
+	}
+}
+
+/* vlan_filtering toggle: the bridge keeps extern_learn entries (vid 0 or the VID): withdraw what b's ports were told. */
+static void l2_unreport(struct us48_cmic *u, struct us48_br *b)
+{
+	int i, n = 0;
+
+	for (i = 0; u->l2shadow && i < L2X_ENTRIES; i++) {
+		struct us48_l2rec *r = &u->l2shadow[i];
+		struct us48_port *p = r->vid ? l2_port(u, r->vid, r->lport) : NULL;
+
+		if (p && p->br == b) {
+			l2_notify(p, r->mac, r->vid, false);
+			memset(r, 0, sizeof(*r));
+			n++;
+		}
+	}
+	if (n)
+		dev_info(u->dev, "switchdev: %s: %d HW-learned entries withdrawn from the bridge\n", netdev_name(b->dev), n);
 }
 
 /* {vid, mac} is a user static entry now: the bridge owns it, no extern_learn record (rtnl). */
@@ -827,27 +1085,43 @@ static void l2_drop(struct us48_cmic *u, u16 vid, const u8 *mac)
 
 static void br_release(struct us48_cmic *u, struct us48_br *b)
 {
-	struct us48_host *h, *t;
+	struct us48_fdb *f, *t;
 
-	list_for_each_entry_safe(h, t, &b->hosts, node) {
-		l2x_static(u, b->vid, h->mac, 0, true, false);
-		list_del(&h->node);
-		kfree(h);
+	list_for_each_entry_safe(f, t, &b->fdbs, node) {
+		if (fdb_live(b, f))
+			fdb_hw(u, b, f, false);
+		list_del(&f->node);
+		kfree(f);
 	}
-	br_vlan_destroy(u, b);
-	l2_forget(u, b->vid, -1);
+	if (!b->aware) {
+		br_vlan_destroy(u, b);
+		l2_forget(u, b->vid, -1);
+	}
 	b->dev = NULL;
 	b->members = 0;
+	b->aware = false;
 	if (!br_any(u)) {
 		l2u_bpdu_put(u);
 		l2mod_stop(u);
 	}
 }
 
-/* Bridge slot for br on this unit, ASIC VLAN created on first use; NULL = no offload (logged). */
+/* Unit's VLAN-aware bridge other than br: one per unit, its VIDs are the ASIC VLANs. */
+static struct us48_br *br_aware_other(struct us48_cmic *u, const struct net_device *br)
+{
+	int i;
+
+	for (i = 0; i < US48_BR_MAX; i++)
+		if (u->br[i].dev && u->br[i].dev != br && u->br[i].aware)
+			return &u->br[i];
+	return NULL;
+}
+
+/* Bridge slot for br on this unit, ASIC VLAN created on first use (VLAN-unaware); NULL = no offload (logged). */
 static struct us48_br *br_get(struct us48_cmic *u, struct net_device *br)
 {
 	struct us48_br *b = br_find(u, br);
+	int ret;
 
 	if (b)
 		return b;
@@ -861,8 +1135,11 @@ static struct us48_br *br_get(struct us48_cmic *u, struct net_device *br)
 		return NULL;
 	}
 	b->dev = br;
-	if (br_vlan_create(u, b)) {
+	b->aware = br_vlan_enabled(br);
+	ret = b->aware ? br_aware_init(u, b) : br_vlan_create(u, b);
+	if (ret) {
 		b->dev = NULL;
+		b->aware = false;
 		if (!br_any(u))
 			l2u_bpdu_put(u);
 		return NULL;
@@ -888,14 +1165,57 @@ static void cross_unit_note(struct us48_port *p, struct net_device *br)
 	}
 }
 
+/* VLAN-aware join: private-STG state saved, bridge STP state set, every VID of the port, then PORT_VID (ingress last). */
+static int aw_join(struct us48_port *p, struct us48_br *b)
+{
+	struct us48_pvlan *pv = p->pv;
+	int lp = p->cfg->lport, ret;
+	u16 vid;
+
+	ret = stg_port_get(p->u, b->astg, lp, &pv->stg_old) ?: stg_port_set(p->u, b->astg, lp, stp_hw(p->stp));
+	if (ret)
+		return ret;
+	pv->hw = true;			/* from here aw_leave undoes it */
+	for_each_set_bit(vid, pv->member, VLAN_N_VID) {
+		ret = vid_set(p, vid, true, test_bit(vid, pv->untag));
+		if (ret)
+			return ret;
+	}
+	return port_tab(p->u, lp, hw_vid(p), hw_cml(p));
+}
+
+static void aw_leave(struct us48_port *p, struct us48_br *b)
+{
+	struct us48_pvlan *pv = p->pv;
+	int lp = p->cfg->lport, ret, err = 0;
+	u16 vid;
+
+	err = port_tab(p->u, lp, p->vid, 0);
+	if (pv->hw) {
+		for_each_set_bit(vid, pv->member, VLAN_N_VID) {
+			ret = vid_set(p, vid, false, false);
+			err = err ?: ret;
+		}
+		ret = stg_port_set(p->u, b->astg, lp, pv->stg_old);
+		err = err ?: ret;
+	}
+	pv->hw = false;
+	if (err)
+		netdev_err(p->ndev, "switchdev: leave the bridge VIDs: write failed (%d)\n", err);
+	port_flush(p, b, true);
+	l2_forget(p->u, 0, lp);
+}
+
 /* Join order: STG state disabled, VLAN membership, then PORT_VID (ingress moves last). */
 static int hw_join(struct us48_port *p, struct us48_br *b)
 {
 	struct us48_cmic *u = p->u;
 	int lp = p->cfg->lport;
 
+	if (b->aware)
+		return aw_join(p, b);
 	return stg_port_set(u, b->stg, lp, stp_hw(p->stp)) ?: br_vlan_member(u, b, lp, true) ?:
-	       port_tab(u, lp, b->vid, p->learning ? CML_LEARN : 0);
+	       port_tab(u, lp, b->vid, hw_cml(p));
 }
 
 /* Leave order: PORT_VID back to the private VLAN (CML 0), out of the VLAN, STG disabled, then its L2 entries. */
@@ -904,6 +1224,10 @@ static void hw_leave(struct us48_port *p, struct us48_br *b)
 	struct us48_cmic *u = p->u;
 	int lp = p->cfg->lport, ret;
 
+	if (b->aware) {
+		aw_leave(p, b);
+		return;
+	}
 	ret = port_tab(u, lp, p->vid, 0) ?: br_vlan_member(u, b, lp, false) ?: stg_port_set(u, b->stg, lp, 0);
 	if (ret)
 		netdev_err(p->ndev, "switchdev: leave VLAN %u: write failed (%d)\n", b->vid, ret);
@@ -911,8 +1235,67 @@ static void hw_leave(struct us48_port *p, struct us48_br *b)
 	l2_forget(u, b->vid, lp);
 }
 
+static u16 rx_vid_br(struct us48_port *p)
+{
+	return p->br->aware ? RX_VID_NONE : p->br->vid;
+}
+
+/*
+ * vlan_filtering toggle: HW-learned entries withdrawn from the bridge, statics out of L2X, every member leaves in the old
+ * mode and joins in the new one (slot VLAN <-> per-VID ASIC VLANs), statics back under the new mode's key.
+ */
+static int br_mode_set(struct us48_cmic *u, struct us48_br *b, bool aware)
+{
+	int i, ret = 0;
+
+	l2_unreport(u, b);
+	fdbs_hw(u, b, false);
+	for (i = 0; i < u->nports; i++)
+		if (u->port[i] && u->port[i]->br == b)
+			hw_leave(u->port[i], b);
+	if (!b->aware)
+		br_vlan_destroy(u, b);
+	b->aware = aware;
+	ret = aware ? br_aware_init(u, b) : br_vlan_create(u, b);
+	for (i = 0; i < u->nports; i++) {
+		struct us48_port *q = u->port[i];
+
+		if (!q || q->br != b)
+			continue;
+		ret = ret ?: hw_join(q, b);
+		WRITE_ONCE(q->rx_vid, rx_vid_br(q));
+	}
+	fdbs_hw(u, b, true);
+	dev_info(u->dev, "switchdev: %s: vlan_filtering %d -> %s%s\n", netdev_name(b->dev), aware,
+		 aware ? "ASIC VLAN per bridge VID" : "slot VLAN", ret ? ": FAILED" : "");
+	return ret;
+}
+
+static int sw_vlan_filtering(struct us48_port *p, bool on, struct netlink_ext_ack *extack)
+{
+	struct us48_cmic *u = p->u;
+	struct us48_br *b = p->br;
+	int ret;
+
+	if (b->aware == on)
+		return 0;
+	if (on && br_aware_other(u, b->dev)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack, "%s already offloads a VLAN-aware bridge on this unit (one per unit)",
+				       netdev_name(br_aware_other(u, b->dev)->dev));
+		return -EBUSY;
+	}
+	ret = br_mode_set(u, b, on);
+	if (ret) {
+		NL_SET_ERR_MSG_MOD(extack, "ASIC write failed: vlan_filtering not changed");
+		br_mode_set(u, b, !on);
+	}
+	return ret;
+}
+
 static int sw_can_join(struct us48_port *p, struct net_device *br, struct netlink_ext_ack *extack)
 {
+	u16 proto = ETH_P_8021Q;
+
 	if (!switchdev)
 		return 0;
 	if (p->cfg->front == 1 && !p->u->modid && !mgmt_bridge) {
@@ -921,8 +1304,15 @@ static int sw_can_join(struct us48_port *p, struct net_device *br, struct netlin
 			    netdev_name(br));
 		return -EPERM;
 	}
-	if (br_vlan_enabled(br)) {
-		NL_SET_ERR_MSG_MOD(extack, "VLAN-aware bridge offload is stage 2");
+	if (br_vlan_enabled(br) && br_aware_other(p->u, br)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack, "%s already offloads a VLAN-aware bridge on this unit (one per unit)",
+				       netdev_name(br_aware_other(p->u, br)->dev));
+		netdev_warn(p->ndev, "switchdev: refused join of %s: second VLAN-aware bridge on the unit\n", netdev_name(br));
+		return -EBUSY;
+	}
+	br_vlan_get_proto(br, &proto);
+	if (proto != ETH_P_8021Q || br_mst_enabled(br)) {
+		NL_SET_ERR_MSG_MOD(extack, "offload needs vlan_protocol 802.1Q and mst_enabled 0");
 		return -EOPNOTSUPP;
 	}
 	return 0;
@@ -964,24 +1354,35 @@ static int sw_join(struct us48_port *p, struct net_device *br, struct netlink_ex
 	ret = l2_modid_check(p);
 	if (ret)
 		return ret == -EXDEV ? 0 : ret;
+	p->pv = kzalloc_obj(*p->pv);
+	if (!p->pv)
+		return -ENOMEM;
 	b = br_get(u, br);
-	if (!b)
+	if (!b) {
+		kfree(p->pv);
+		p->pv = NULL;
 		return 0;
+	}
 	p->stp = BR_STATE_DISABLED;	/* new bridge port: state disabled, BR_LEARNING on (net/bridge/br_if.c new_nbp) */
 	p->learning = true;
+	b->members |= BIT(p->cfg->lport);
+	p->br = b;
 	ret = hw_join(p, b);
 	if (ret)
 		goto err_hw;
-	b->members |= BIT(p->cfg->lport);
-	p->br = b;
-	WRITE_ONCE(p->rx_vid, b->vid);
+	WRITE_ONCE(p->rx_vid, rx_vid_br(p));
+	/* replays the port's VLANs (sw_obj_add) and FDB with ctx = p */
 	ret = switchdev_bridge_port_offload(p->ndev, p->ndev, p, &sw_atomic_nb, &sw_blocking_nb, false, extack);
 	if (ret) {
 		netdev_err(p->ndev, "switchdev: bridge port offload failed (%d)\n", ret);
 		goto err_hw;
 	}
-	netdev_info(p->ndev, "switchdev: offloaded to %s: ASIC VLAN %u STG %u, learning %s\n", netdev_name(br), b->vid,
-		    b->stg, p->learning ? "on" : "off");
+	if (b->aware)
+		netdev_info(p->ndev, "switchdev: offloaded to %s: VLAN-aware, ASIC VLAN = bridge VID, STG %u, learning %s\n",
+			    netdev_name(br), b->astg, p->learning ? "on" : "off");
+	else
+		netdev_info(p->ndev, "switchdev: offloaded to %s: ASIC VLAN %u STG %u, learning %s\n", netdev_name(br), b->vid,
+			    b->stg, p->learning ? "on" : "off");
 	cross_unit_note(p, br);
 	return 0;
 err_hw:
@@ -989,6 +1390,9 @@ err_hw:
 	b->members &= ~BIT(p->cfg->lport);
 	p->br = NULL;
 	WRITE_ONCE(p->rx_vid, p->vid);
+	fdb_drop_port(b, p->cfg->lport);
+	kfree(p->pv);
+	p->pv = NULL;
 	if (!b->members)
 		br_release(u, b);
 	return ret;
@@ -1011,27 +1415,61 @@ static void sw_leave(struct us48_port *p)
 	b->members &= ~BIT(p->cfg->lport);
 	p->br = NULL;
 	WRITE_ONCE(p->rx_vid, p->vid);
+	fdb_drop_port(b, p->cfg->lport);
+	kfree(p->pv);
+	p->pv = NULL;
 	netdev_info(p->ndev, "switchdev: left %s: back in private VLAN %u\n", netdev_name(b->dev), p->vid);
 	if (!b->members)
 		br_release(p->u, b);
 }
 
+/* ge_vlan_init cloned the new private VLAN from VLAN 1: while a bridge holds VID 1 that is FID 1, put VLAN 1's own back. */
+static int priv_fid_fix(struct us48_port *p)
+{
+	struct us48_cmic *u = p->u;
+	u32 e[4];
+	int ret;
+
+	if (!u->v1_held)
+		return 0;
+	ret = mrd(u, BLK_IPIPE, VLAN_TAB(p->vid), e, 4);
+	if (ret || !ent_get(e, VT_VALID) || ent_get(e, VT_FID_ID) == ent_get(u->v1_vt, VT_FID_ID))
+		return ret;
+	ent_put(e, VT_FID_ID, ent_get(u->v1_vt, VT_FID_ID));
+	parity(e, 4, VT_PARITY);
+	return mwr(u, BLK_IPIPE, VLAN_TAB(p->vid), e, 4);
+}
+
+/*
+ * After the first open's copper bring-up (private VLAN + PORT_TAB written): bridge PORT_TAB back; VLAN-aware, the private
+ * STG state ge_vlan_init just set (3) is what the leave restores, the bridge state goes back in.
+ */
 void us48_sw_port_reapply(struct us48_port *p)
 {
+	int lp = p->cfg->lport, ret;
+
 	ASSERT_RTNL();
-	if (p->br && port_tab(p->u, p->cfg->lport, p->br->vid, p->learning ? CML_LEARN : 0))
-		netdev_err(p->ndev, "switchdev: PORT_TAB re-apply after bring-up failed\n");
+	if (priv_fid_fix(p))
+		netdev_err(p->ndev, "switchdev: private VLAN %u FID fix failed\n", p->vid);
+	if (!p->br)
+		return;
+	ret = port_tab(p->u, lp, hw_vid(p), hw_cml(p));
+	if (!ret && p->br->aware && p->pv->hw)
+		ret = stg_port_get(p->u, p->br->astg, lp, &p->pv->stg_old) ?:
+		      stg_port_set(p->u, p->br->astg, lp, stp_hw(p->stp));
+	if (ret)
+		netdev_err(p->ndev, "switchdev: bridge PORT_TAB/STG re-apply after bring-up failed (%d)\n", ret);
 }
 
 static int sw_stp_set(struct us48_port *p, u8 state)
 {
-	u8 old = p->stp;
-	int ret = stg_port_set(p->u, p->br->stg, p->cfg->lport, stp_hw(state));
+	u8 old = p->stp, stg = br_stg(p->br);
+	int ret = stg_port_set(p->u, stg, p->cfg->lport, stp_hw(state));
 
 	if (ret)
 		return ret;
 	p->stp = state;
-	netdev_info(p->ndev, "switchdev: STP state %u -> STG %u SP_TREE %u\n", state, p->br->stg, stp_hw(state));
+	netdev_info(p->ndev, "switchdev: STP state %u -> STG %u SP_TREE %u\n", state, stg, stp_hw(state));
 	if (stp_learns(old) && !stp_learns(state))
 		port_flush(p, p->br, false);
 	return 0;
@@ -1079,13 +1517,22 @@ static int sw_attr_set(struct net_device *dev, const void *ctx, const struct swi
 		p->learning = !!(attr->u.brport_flags.val & BR_LEARNING);
 		if (!p->learning)
 			port_flush(p, p->br, false);
-		return port_tab(p->u, p->cfg->lport, p->br->vid, p->learning ? CML_LEARN : 0);
+		return port_tab(p->u, p->cfg->lport, hw_vid(p), hw_cml(p));
 	case SWITCHDEV_ATTR_ID_BRIDGE_AGEING_TIME:
 		age_set(p->u, attr->u.ageing_time);
 		return 0;
 	case SWITCHDEV_ATTR_ID_BRIDGE_VLAN_FILTERING:
-		if (attr->u.vlan_filtering) {
-			NL_SET_ERR_MSG_MOD(extack, "VLAN-aware bridge offload is stage 2");
+		return sw_vlan_filtering(p, attr->u.vlan_filtering, extack);
+	case SWITCHDEV_ATTR_ID_BRIDGE_VLAN_PROTOCOL:
+		/* the bridge treats -EOPNOTSUPP as "fine" here: refuse what the ASIC would tag differently */
+		if (attr->u.vlan_protocol != ETH_P_8021Q) {
+			NL_SET_ERR_MSG_MOD(extack, "only 802.1Q (TPID 0x8100) is offloaded");
+			return -EINVAL;
+		}
+		return 0;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MST:
+		if (attr->u.mst) {
+			NL_SET_ERR_MSG_MOD(extack, "MST is not offloaded: one STG per bridge");
 			return -EINVAL;
 		}
 		return 0;
@@ -1094,12 +1541,13 @@ static int sw_attr_set(struct net_device *dev, const void *ctx, const struct swi
 	}
 }
 
-/* Deferred FDB event: bridge-local entry (orig = bridge) -> CPU, user static entry on a port -> that port. */
+/* Deferred FDB event: bridge-local entry (orig = bridge) -> CPU, user static entry on a port -> that port; any VID. */
 struct sw_fdb_work {
 	struct work_struct work;
 	struct net_device *dev, *orig;
 	unsigned long event;
 	u8 mac[ETH_ALEN];
+	u16 vid;
 };
 
 static void sw_fdb_work_fn(struct work_struct *w)
@@ -1114,15 +1562,17 @@ static void sw_fdb_work_fn(struct work_struct *w)
 	if (netif_is_bridge_master(fw->orig)) {
 		b = br_find(p->u, fw->orig);
 		if (b)
-			host_set(p->u, b, fw->mac, add);
+			fdb_set(p->u, b, fw->mac, fw->vid, -1, add);
 	} else if (p->br && p->br->dev == netdev_master_upper_dev_get(fw->dev)) {
-		ret = l2x_static(p->u, p->br->vid, fw->mac, p->cfg->lport, false, add);
-		if (ret && (add || ret != -ENOENT))
-			netdev_warn(fw->dev, "switchdev: static %pM %s failed (%d)\n", fw->mac, add ? "insert" : "delete", ret);
-		if (!ret && add) {
-			l2_drop(p->u, p->br->vid, fw->mac);
-			struct switchdev_notifier_fdb_info info = { .addr = fw->mac, .offloaded = true };
+		b = p->br;
+		ret = fdb_set(p->u, b, fw->mac, fw->vid, p->cfg->lport, add);
+		if (ret < 0 && (add || ret != -ENOENT))
+			netdev_warn(fw->dev, "switchdev: static %pM vid %u %s failed (%d)\n", fw->mac, fw->vid,
+				    add ? "insert" : "delete", ret);
+		if (ret > 0 && add) {
+			struct switchdev_notifier_fdb_info info = { .addr = fw->mac, .vid = fw->vid, .offloaded = true };
 
+			l2_drop(p->u, b->aware ? fw->vid : b->vid, fw->mac);
 			call_switchdev_notifiers(SWITCHDEV_FDB_OFFLOADED, fw->dev, &info.info, NULL);
 		}
 	}
@@ -1145,7 +1595,7 @@ static int sw_fdb_mod(struct net_device *dev, struct net_device *orig, unsigned 
 	struct sw_fdb_work *fw;
 	bool host = netif_is_bridge_master(orig);
 
-	if ((ctx && ctx != p) || fi->vid)	/* VLAN-unaware: vid 0 only (vid 1 entries are the same key here) */
+	if ((ctx && ctx != p) || fi->vid >= VID_RSVD_MIN)	/* fdb_live() picks the mode's VIDs at apply time */
 		return 0;
 	if (!host && (orig != dev || switchdev_fdb_is_dynamically_learned(fi)))
 		return 0;			/* foreign port (stage 2), or learned: the ASIC learns it itself */
@@ -1156,6 +1606,7 @@ static int sw_fdb_mod(struct net_device *dev, struct net_device *orig, unsigned 
 	fw->dev = dev;
 	fw->orig = orig;
 	fw->event = event;
+	fw->vid = fi->vid;
 	ether_addr_copy(fw->mac, fi->addr);
 	dev_hold(dev);
 	dev_hold(orig);
@@ -1178,13 +1629,156 @@ static int sw_atomic_event(struct notifier_block *nb, unsigned long event, void 
 	return NOTIFY_DONE;
 }
 
+struct vflush_arg {
+	u32 lports;
+	int n;
+};
+
+/* Dynamic entry of a pending port in a VID it is no longer a member of (the bridge already dropped its copy). */
+static int vflush_one(struct us48_cmic *u, int idx, u32 *e, void *arg)
+{
+	struct vflush_arg *a = arg;
+	u16 v = ent_get(e, L2_VLAN_ID);
+	int lp = ent_get(e, L2_PORT_NUM);
+	struct us48_l2rec z = { };
+	struct us48_port *p;
+
+	if (!(a->lports & BIT(lp)) || ent_get(e, L2_STATIC) || ent_get(e, L2_CPU) || ent_get(e, L2_T) ||
+	    ent_get(e, L2_MODULE_ID) != u->l2_modid || !v || v >= VID_RSVD_MIN)
+		return 0;
+	p = sw_port(u, lp);
+	if (!p || !p->br || !p->br->aware || test_bit(v, p->pv->member))
+		return 0;
+	if (!us48_sbus(u, BCM_SCHAN_TABLE_DELETE, BLK_IPIPE, L2X, e, 4)) {
+		a->n++;
+		if (u->l2shadow)
+			l2_set(u, idx, &z);
+	}
+	return 0;
+}
+
+/* One L2X walk for every VID removal queued since the last run (a port leaving with N VIDs = one walk, not N). */
+static void vflush_fn(struct work_struct *w)
+{
+	struct us48_cmic *u = container_of(w, struct us48_cmic, vflush_work);
+	struct vflush_arg a = { };
+	int ret;
+
+	rtnl_lock();
+	a.lports = u->vflush;
+	u->vflush = 0;
+	if (a.lports) {
+		ret = l2x_walk(u, vflush_one, &a);
+		dev_info(u->dev, "switchdev: L2 flush of removed bridge VIDs (lports %#x): %d deleted%s\n", a.lports, a.n,
+			 ret ? ", walk FAILED" : "");
+	}
+	rtnl_unlock();
+}
+
+/* PORT_VLAN add/change: recorded in either mode, in the ASIC only VLAN-aware. Failure = config refused, state as before. */
+static int sw_vlan_add(struct us48_port *p, const struct switchdev_obj_port_vlan *v, struct netlink_ext_ack *extack)
+{
+	struct us48_pvlan *pv = p->pv;
+	bool untag = v->flags & BRIDGE_VLAN_INFO_UNTAGGED, was = test_bit(v->vid, pv->member);
+	bool was_ut = test_bit(v->vid, pv->untag);
+	u16 old_pvid = pv->pvid;
+	int lp = p->cfg->lport, ret;
+
+	__set_bit(v->vid, pv->member);
+	__assign_bit(v->vid, pv->untag, untag);
+	if (v->flags & BRIDGE_VLAN_INFO_PVID)
+		pv->pvid = v->vid;
+	else if (pv->pvid == v->vid)
+		pv->pvid = 0;
+	if (!pv->hw)
+		return 0;
+	ret = vid_set(p, v->vid, true, untag);
+	if (!ret && pv->pvid != old_pvid)
+		ret = port_tab(p->u, lp, hw_vid(p), hw_cml(p));
+	if (!ret)
+		return 0;
+	__assign_bit(v->vid, pv->member, was);
+	__assign_bit(v->vid, pv->untag, was_ut);
+	pv->pvid = old_pvid;
+	vid_set(p, v->vid, was, was_ut);
+	port_tab(p->u, lp, hw_vid(p), hw_cml(p));
+	NL_SET_ERR_MSG_FMT_MOD(extack, "VID %u: ASIC VLAN write failed (%d)", v->vid, ret);
+	return ret;
+}
+
+static void sw_vlan_del(struct us48_port *p, u16 vid)
+{
+	struct us48_pvlan *pv = p->pv;
+	u16 old_pvid = pv->pvid;
+	int ret = 0;
+
+	if (!test_bit(vid, pv->member))
+		return;
+	__clear_bit(vid, pv->member);
+	__clear_bit(vid, pv->untag);
+	if (pv->pvid == vid)
+		pv->pvid = 0;
+	if (!pv->hw)
+		return;
+	ret = vid_set(p, vid, false, false);
+	if (!ret && pv->pvid != old_pvid)
+		ret = port_tab(p->u, p->cfg->lport, hw_vid(p), hw_cml(p));
+	if (ret)
+		netdev_err(p->ndev, "switchdev: VID %u removal: write failed (%d)\n", vid, ret);
+	p->u->vflush |= BIT(p->cfg->lport);
+	queue_work(sw_wq, &p->u->vflush_work);
+}
+
+/* VIDs from VID_RSVD_MIN are the driver's (slot/private VLANs, 4094): refused for ports and for the bridge itself. */
+static int sw_vlan_ok(u16 vid, struct netlink_ext_ack *extack)
+{
+	if (vid < VID_RSVD_MIN)
+		return 0;
+	NL_SET_ERR_MSG_FMT_MOD(extack, "VID %u: %d-%d are us48_cmic internal VLANs", vid, VID_RSVD_MIN, VID_RSVD_MAX);
+	return -EINVAL;
+}
+
+static int sw_obj_add(struct net_device *dev, const void *ctx, const struct switchdev_obj *obj, struct netlink_ext_ack *extack)
+{
+	struct us48_port *p = netdev_priv(dev);
+	const struct switchdev_obj_port_vlan *v;
+	int ret;
+
+	if (obj->id != SWITCHDEV_OBJ_ID_PORT_VLAN || (ctx && ctx != p) || !p->br)
+		return -EOPNOTSUPP;	/* MDB: the bridge keeps it in software */
+	v = SWITCHDEV_OBJ_PORT_VLAN(obj);
+	ret = sw_vlan_ok(v->vid, extack);
+	if (ret || !v->vid || netif_is_bridge_master(obj->orig_dev))
+		return ret;		/* host VLAN: the CPU is in every ASIC VLAN of the bridge already */
+	return sw_vlan_add(p, v, extack);
+}
+
+static int sw_obj_del(struct net_device *dev, const void *ctx, const struct switchdev_obj *obj)
+{
+	struct us48_port *p = netdev_priv(dev);
+	u16 vid;
+
+	if (obj->id != SWITCHDEV_OBJ_ID_PORT_VLAN || (ctx && ctx != p) || !p->br)
+		return -EOPNOTSUPP;
+	vid = SWITCHDEV_OBJ_PORT_VLAN(obj)->vid;
+	if (vid && vid < VID_RSVD_MIN && !netif_is_bridge_master(obj->orig_dev))
+		sw_vlan_del(p, vid);
+	return 0;
+}
+
 static int sw_blocking_event(struct notifier_block *nb, unsigned long event, void *ptr)
 {
 	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
 
-	if (event == SWITCHDEV_PORT_ATTR_SET)
+	switch (event) {
+	case SWITCHDEV_PORT_OBJ_ADD:
+		return notifier_from_errno(switchdev_handle_port_obj_add(dev, ptr, us48_is_port, sw_obj_add));
+	case SWITCHDEV_PORT_OBJ_DEL:
+		return notifier_from_errno(switchdev_handle_port_obj_del(dev, ptr, us48_is_port, sw_obj_del));
+	case SWITCHDEV_PORT_ATTR_SET:
 		return notifier_from_errno(switchdev_handle_port_attr_set(dev, ptr, us48_is_port, sw_attr_set));
-	return NOTIFY_DONE;		/* objects (VLAN, MDB): not offloaded, the bridge keeps them in software */
+	}
+	return NOTIFY_DONE;
 }
 
 static int sw_netdev_event(struct notifier_block *nb, unsigned long event, void *ptr)
@@ -1236,11 +1830,13 @@ static int dump_one(struct us48_cmic *u, int idx, u32 *e, void *arg)
 {
 	struct dump_arg *d = arg;
 	struct ndo_fdb_dump_context *ctx = (void *)d->cb->ctx;
+	bool aware = d->p->br->aware;
+	u16 vid = ent_get(e, L2_VLAN_ID);
 	struct nlmsghdr *nlh;
 	struct ndmsg *ndm;
 	u8 mac[ETH_ALEN];
 
-	if (!l2x_on_port(d->p, d->p->br, e))
+	if (!l2x_on_port(d->p, d->p->br, e) || (aware && !vid))
 		return 0;
 	if (d->idx < ctx->fdb_idx)
 		goto skip;
@@ -1255,7 +1851,7 @@ static int dump_one(struct us48_cmic *u, int idx, u32 *e, void *arg)
 	ndm->ndm_ifindex = d->p->ndev->ifindex;
 	ndm->ndm_state = ent_get(e, L2_STATIC) ? NUD_NOARP : NUD_REACHABLE;
 	u64_to_ether_addr(ent_get(e, L2_MAC), mac);
-	if (nla_put(d->skb, NDA_LLADDR, ETH_ALEN, mac)) {
+	if (nla_put(d->skb, NDA_LLADDR, ETH_ALEN, mac) || (aware && nla_put_u16(d->skb, NDA_VLAN, vid))) {
 		nlmsg_cancel(d->skb, nlh);
 		return -EMSGSIZE;
 	}
@@ -1289,9 +1885,10 @@ void us48_sw_unit_init(struct us48_cmic *u)
 	for (i = 0; i < US48_BR_MAX; i++) {
 		u->br[i].vid = SW_VID_BASE + i;
 		u->br[i].stg = SW_STG_BASE + i;
-		INIT_LIST_HEAD(&u->br[i].hosts);
+		INIT_LIST_HEAD(&u->br[i].fdbs);
 	}
 	INIT_DELAYED_WORK(&u->l2mod, l2mod_fn);
+	INIT_WORK(&u->vflush_work, vflush_fn);
 }
 
 void us48_sw_unit_exit(struct us48_cmic *u)
@@ -1300,6 +1897,7 @@ void us48_sw_unit_exit(struct us48_cmic *u)
 	l2mod_stop(u);			/* normally done: the last bridge left with the netdevs */
 	rtnl_unlock();
 	cancel_delayed_work_sync(&u->l2mod);
+	cancel_work_sync(&u->vflush_work);
 	kvfree(u->l2shadow);
 	kvfree(u->l2buf);
 	kvfree(u->l2pop);

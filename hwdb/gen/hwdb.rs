@@ -86,6 +86,14 @@ pub const HW_CONST_PVTMON_CALC_OFFSET: i64 = 4180000;
 pub const HW_CONST_PVTMON_CALC_SLOPE: i64 = 5556;
 // const TOP_SBUS_BLK [C]
 pub const HW_CONST_TOP_SBUS_BLK: i64 = 16;
+// const VID_PRIVATE_BASE [C]
+pub const HW_CONST_VID_PRIVATE_BASE: i64 = 4040;
+// const VID_RSVD_MAX [C]
+pub const HW_CONST_VID_RSVD_MAX: i64 = 4094;
+// const VID_RSVD_MIN [C]
+pub const HW_CONST_VID_RSVD_MIN: i64 = 4032;
+// const VID_SLOT_BASE [C]
+pub const HW_CONST_VID_SLOT_BASE: i64 = 4032;
 
 // block cmic1 (axi0) [I]
 pub const HW_CMIC1_BASE: u32 = 0x0a000000;

@@ -343,24 +343,24 @@ def gen_ports(db):
 PORTS_H_DOC = """/*
  * Driver port tables (struct port_cfg initialisers, kernel/us48-cmic/us48_cmic.h), one macro per unit.
  * - Rows: copper fronts (phy gphy|octal) and ports with a `linux` name; xe rows first (probe order: TSC before copper).
- * - vid: copper 100 + front (VLAN 1 = stock's); xe = front. blk: QSGMII<n> -> GPORT S-channel block 2 + n.
+ * - vid: private VLAN = HW_CONST_VID_PRIVATE_BASE + front (hwdb/board/vlan.toml). blk: QSGMII<n> -> GPORT S-channel block 2 + n.
  * - lport indexes PORT_TAB, VLAN/STG bitmaps, EPC_LINK_BMAP, L2X, the module header; phys indexes EGR_ENABLE (#124).
  */"""
 
 
-def port_cfg(p):
+def port_cfg(db, p):
     m = re.fullmatch(r"(QSGMII(\d) lane|TSC lane) (\d)", p["lane"])
     if not m:
         raise SystemExit("ports.toml front %d: lane %r not parsable" % (p["front"], p["lane"]))
-    lane = int(m.group(3))
+    lane, vid = int(m.group(3)), db.pvid(p["front"])
     if p["phy"] in ("gphy", "octal"):
         return ('{ .name = "ge%d", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d, .copper = true, .blk = %d, '
-                '.phy = 0x%02x%s }' % (p["front"], 100 + p["front"], p["front"], p["logical"], p["phys"], lane,
+                '.phy = 0x%02x%s }' % (p["front"], vid, p["front"], p["logical"], p["phys"], lane,
                                        2 + int(m.group(2)), p["phy_addr"], ", .external_phy = true" if p["phy"] == "octal" else ""))
     pol = "".join(", .%s = true" % f for k, f in (("tx_polarity", "tx_pol"), ("rx_polarity", "rx_pol")) if p.get(k))
     cap = ", .max_speed = %d" % p["speed_cap"] if p.get("speed_cap") else ""
     return '{ .name = "%s", .vid = %d, .front = %d, .lport = %d, .phys = %d, .lane = %d%s%s }' % (
-        p["linux"], p["front"], p["front"], p["logical"], p["phys"], lane, pol, cap)
+        p["linux"], vid, p["front"], p["logical"], p["phys"], lane, pol, cap)
 
 
 def gen_ports_c(db):
@@ -369,7 +369,7 @@ def gen_ports_c(db):
         rows = [p for p in db.ports if p["unit"] == unit and p["front"] and (p["phy"] in ("gphy", "octal") or "linux" in p)]
         rows.sort(key=lambda p: (p["phy"] in ("gphy", "octal"), p["front"]))
         o += ["", "#define US48_PORTS_UNIT%d \\" % unit]
-        o += ["\t%s, \\" % port_cfg(p) for p in rows[:-1]] + ["\t%s" % port_cfg(rows[-1])]
+        o += ["\t%s, \\" % port_cfg(db, p) for p in rows[:-1]] + ["\t%s" % port_cfg(db, rows[-1])]
     o += ["", "/* Driver MAC = US48_MAC_PREFIX, front (ports.toml mac_prefix) */",
           "#define US48_MAC_PREFIX %s" % ", ".join("0x" + b for b in db.mac_prefix.split(":"))]
     o += ["", "#endif /* US48_PORTS_H */"]

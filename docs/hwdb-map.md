@@ -53,6 +53,10 @@
 | `PVTMON_CALC_OFFSET` | 4180000 | C | T[mC] = (PVTMON_CALC_OFFSET - PVTMON_CALC_SLOPE * TEMP_DATA) / PVTMON_CALC_DIV, i.e. T[C] = 418 - 0.5556 * code | docs/clock-audit.md s3: OpenBCM openhurricane2.c:6172-6175 (0.1 C result), bcm-ns.dtsi:555 coefficients <(-556) 418000> |
 | `PVTMON_CALC_SLOPE` | 5556 | C | see PVTMON_CALC_OFFSET | docs/clock-audit.md s3 |
 | `TOP_SBUS_BLK` | 16 | C | S-channel block id of the TOP block (header bits 25:20) | docs/clock-audit.md s3 (READ_REG header 0x2d000200) |
+| `VID_PRIVATE_BASE` | 4040 | C | private VLAN {CPU, port} of front port f = VID_PRIVATE_BASE + f (fronts 1-52 -> 4041-4092), every port type | docs/switchdev.md VID plan |
+| `VID_RSVD_MAX` | 4094 | C | last reserved VID: VLAN 4094 is written by the stock cold-init replay (VLAN_TAB L3_IIF 4094, HiGig 28/29) | common/bcm-cmic/bcm_cmic_hr2_init_data.h (stock trace line 58575-58577) |
+| `VID_RSVD_MIN` | 4032 | C | first driver-reserved VID: bridge VLANs (PORT_VLAN objects) at or above it are refused with an extack | docs/switchdev.md VID plan |
+| `VID_SLOT_BASE` | 4032 | C | VLAN-unaware bridge slot i (0-7) = ASIC VLAN VID_SLOT_BASE + i, STG 2 + i | docs/switchdev.md VID plan |
 
 ## Blocks
 

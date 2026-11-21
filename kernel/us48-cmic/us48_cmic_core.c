@@ -874,6 +874,20 @@ static void port_tab_set(struct us48_cmic *u, int lport, u32 vid, bool cml_off)
 	sbus(u, 0x09, BLK_IPIPE, PORT_TAB(lport), e, 8);
 }
 
+/*
+ * PORT_TAB.EN_IFILTER (5, regdb) = 1 on every driver port from probe on (Dan, #144): a tagged frame of a non-member never
+ * enters a VLAN (VLAN 1/4094, bridges). Cold init leaves 0; stock 1 on some ports (trace u0 ord 4875 PORT_TAB[2] 0x01430039).
+ */
+static void port_ifilter_on(struct us48_cmic *u, int lport)
+{
+	u32 e[8];
+
+	if (sbus(u, 0x07, BLK_IPIPE, PORT_TAB(lport), e, 8))
+		return;
+	e[0] |= BIT(5);
+	sbus(u, 0x09, BLK_IPIPE, PORT_TAB(lport), e, 8);
+}
+
 static void set_field(u32 *e, int lsb, int width, u64 v)
 {
 	int i;
@@ -1658,6 +1672,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		struct us48_port *p = u->port[i];
 
 		port_enable(p);
+		port_ifilter_on(u, p->cfg->lport);
 		/* Down until opened, as SDK _bcm_port_probe ("leave port disabled"); copper_enable() does VLAN + PORT_TAB. */
 		if (p->cfg->copper) {
 			us48_copper_power(p, false);

@@ -1,0 +1,26 @@
+# us48_cmic VLAN id plan (docs/switchdev.md "VID plan", #57): bridge VIDs 1 .. VID_RSVD_MIN - 1, the rest driver-internal.
+# Consumers: scripts/hwdb_gen.py (us48_hwdb.h HW_CONST_*, us48_ports.h .vid), scripts/hwdb.py pvid(), kernel/us48-cmic.
+
+[const.VID_RSVD_MIN]
+value = 4032
+desc = "first driver-reserved VID: bridge VLANs (PORT_VLAN objects) at or above it are refused with an extack"
+src = "docs/switchdev.md VID plan"
+conf = "C"
+
+[const.VID_RSVD_MAX]
+value = 4094
+desc = "last reserved VID: VLAN 4094 is written by the stock cold-init replay (VLAN_TAB L3_IIF 4094, HiGig 28/29)"
+src = "common/bcm-cmic/bcm_cmic_hr2_init_data.h (stock trace line 58575-58577)"
+conf = "C"
+
+[const.VID_SLOT_BASE]
+value = 4032
+desc = "VLAN-unaware bridge slot i (0-7) = ASIC VLAN VID_SLOT_BASE + i, STG 2 + i"
+src = "docs/switchdev.md VID plan"
+conf = "C"
+
+[const.VID_PRIVATE_BASE]
+value = 4040
+desc = "private VLAN {CPU, port} of front port f = VID_PRIVATE_BASE + f (fronts 1-52 -> 4041-4092), every port type"
+src = "docs/switchdev.md VID plan"
+conf = "C"
