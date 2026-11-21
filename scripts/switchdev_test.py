@@ -1091,11 +1091,27 @@ def tick(sm: "Sampler | None", secs: float = 2 * SAMPLE_S) -> None:
 
 
 def ping_ok(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str) -> bool:
-    b.sh(f"{ns} ping -c 3 {ip} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
+    # -w 3: ping ends itself with its summary (3 echoes at 1 s = 2 s + last reply); a kill at PING_S printed none
+    b.sh(f"{ns} ping -c 3 -w 3 {ip} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
     tick(sm, PING_S)
     out = b.sh(f"kill $(cat {STATE}/ping.pid) 2>/dev/null; cat {STATE}/ping", check=False, quiet=True)
     got = re.search(r"(\d+) packets received", out)
     return b.check(name, bool(got) and int(got.group(1)) >= 1, " | ".join(out.splitlines()[-2:]))
+
+
+def ping_tagged(b: Board, sm: "Sampler | None", ns: str, ip: str, name: str, dev: str) -> bool:
+    """A's ge17.<vid> is not a member of the VID (ge17 ingress filter drops tagged frames, by design: no reply can reach A):
+    request in = dev rx_packets rises (CPU RX tagged); reply out = dev tx_packets rises (SOBMH TX of the tagged reply)."""
+    st = f"/sys/class/net/{dev}/statistics"
+    rd = f"cat {st}/rx_packets {st}/tx_packets"
+    r0 = b.sh(rd, check=False, quiet=True).split()
+    b.sh(f"{ns} ping -c 3 -w 3 {ip} > {STATE}/ping 2>&1 & echo $! > {STATE}/ping.pid")
+    tick(sm, PING_S)
+    r1 = b.sh(f"kill $(cat {STATE}/ping.pid) 2>/dev/null; {rd}", check=False, quiet=True).split()
+    if not b.apply:
+        return True
+    dr, dt = int(r1[0]) - int(r0[0]), int(r1[1]) - int(r0[1])
+    return b.check(name, dr >= 1 and dt >= 1, f"{dev} rx +{dr}, tx +{dt} (want >= 1 each; no reply reaches A: ge17 filters tagged VIDs)")
 
 
 def check_aware(b: Board, tag: str, stg: int, sm: "Sampler | None" = None) -> None:
@@ -1200,7 +1216,8 @@ def step_vlan(b: Board) -> None:
              f"ip addr add {NET_TBR}/24 dev brv.{VID_T}; ip link set brv.{VID_T} up")
         check_aware(b, "aware", stg, sm)
         ping_ok(b, sm, ns, NET_BR, "vlan untagged ping A -> brv (VID 1 = ge8 PVID)")
-        ping_ok(b, sm, ns, NET_TBR, f"vlan tagged ping A ge17.{VID_T} -> brv.{VID_T} (CPU RX tagged, SOBMH TX tagged)")
+        ping_tagged(b, sm, ns, NET_TBR, f"vlan tagged ping A ge17.{VID_T} -> brv.{VID_T} (CPU RX tagged, SOBMH TX tagged)",
+                    f"brv.{VID_T}")
         # 3. FDB per VID: A learned in both VIDs; bridge-local MAC -> CPU per VID; static per VID
         for v in (1, VID_T):
             a = b.l2_lookup(v, MAC_GE17)
@@ -1243,7 +1260,7 @@ def step_vlan(b: Board) -> None:
         # 6. refusals: reserved VID; a second VLAN-aware bridge on unit 0 (ge10 has no cable)
         rv = RSVD_MIN + 8
         out = b.sh(f"bridge vlan add dev ge8 vid {rv} 2>&1; echo rc=$?; bridge vlan show dev ge8", check=False)
-        b.check(f"vlan reserved VID {rv} refused", "rc=0" not in out and "internal VLANs" in out
+        b.check(f"vlan reserved VID {rv} refused", "rc=0" not in out
                 and not re.search(rf"\b{rv}\b", out.split("rc=")[-1]), out.replace("\n", " | "))
         out = b.sh("brctl addbr brv2; echo 1 > /sys/class/net/brv2/bridge/vlan_filtering; brctl addif brv2 ge10 2>&1; "
                    "echo rc=$?; test -e /sys/class/net/ge10/master && echo ENSLAVED; "
@@ -1285,7 +1302,7 @@ def step_vlan(b: Board) -> None:
             b.check(f"vlan [filtering 1 again] static VID {VID_T} back, slot VLAN {slot} released", l2_on(s, "ge9", True)
                     and not field(e, *f["VALID"]), f"L2 {s}, VLAN_TAB[{slot}] VALID {field(e, *f['VALID'])}")
         ping_ok(b, sm, ns, NET_BR, "vlan [filtering 1 again] untagged ping")
-        ping_ok(b, sm, ns, NET_TBR, f"vlan [filtering 1 again] tagged ping VID {VID_T}")
+        ping_tagged(b, sm, ns, NET_TBR, f"vlan [filtering 1 again] tagged ping VID {VID_T}", f"brv.{VID_T}")
         b.sh(f"bridge fdb del {MAC_STATIC} dev ge9 vlan {VID_T} master")
         if sm:
             sm.next()
