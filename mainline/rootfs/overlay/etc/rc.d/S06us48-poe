@@ -9,6 +9,8 @@ OV=
 # bench: override file = one chip runs a test image; every port stays shut
 [ -s /etc/poe-fw-override ] && { OV="fw_override=$(cat /etc/poe-fw-override)"; EN=0; }
 [ -d /sys/module/bcm59111 ] && exit 0
+# bcm59111 links against us48_boardio (portN_mode, passive 24 V); S14us48-thermal skips it when loaded
+[ -d /sys/module/us48_boardio ] || insmod $M/us48_boardio.ko || echo "us48-poe: insmod us48_boardio failed rc=$?" > /dev/kmsg
 (
 	exec 2>/dev/kmsg
 	insmod $M/bcm59111.ko fw_load=1 enable_ports=$EN $OV || echo "us48-poe: insmod bcm59111 failed rc=$?" > /dev/kmsg

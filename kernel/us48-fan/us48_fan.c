@@ -17,9 +17,6 @@
 
 #define NLEVEL		4
 #define LEVEL_FULL	(NLEVEL - 1)
-#define FRAME_LEN	7	/* byte 0 = level << 4; bytes 1..6 are PoE mode bits (poe_field, default 0) */
-#define LEVEL_SHIFT	4
-#define NGROUP		2	/* chain US48_MSPI_FAN0 (A=1,B=0) = unit 0 fans, FAN1 (A=1,B=1) = unit 1 fans */
 /* Sensor check period (WATCH_MS): LM75 and die temperatures move by degrees per minute. */
 #define WATCH_MS	2000
 
@@ -52,59 +49,6 @@ struct fan {
 	int nzones;
 	struct delayed_work watch;
 };
-
-/* PoE mode-select field of every port in bytes 1..6 of the (1,x) frames: 2 = 802.3 (stock capture: 0xaa on all ports, docs/poe.md 6;
- * field 0 = no detection, bench 2026-11-21 #26). 1 (passive 24 V) is never written. Changes are sent at once. */
-static uint poe_field = 2;
-static uint test_bits;	/* bench: OR-ed into byte 0 of every frame (bit walk #12); 0 = off */
-static struct fan *fan_inst;
-static int fan_frame(struct fan *f, unsigned int level);
-
-static int poe_field_set(const char *val, const struct kernel_param *kp)
-{
-	uint v;
-	int ret = kstrtouint(val, 0, &v);
-
-	if (ret)
-		return ret;
-	if (v != 0 && v != 2)
-		return -EINVAL;
-	poe_field = v;
-	if (fan_inst) {
-		mutex_lock(&fan_inst->lock);
-		if (fan_inst->hw >= 0)
-			ret = fan_frame(fan_inst, fan_inst->hw);
-		mutex_unlock(&fan_inst->lock);
-	}
-	return ret;
-}
-
-static const struct kernel_param_ops poe_field_ops = { .set = poe_field_set, .get = param_get_uint };
-module_param_cb(poe_field, &poe_field_ops, &poe_field, 0644);
-
-static int test_bits_set(const char *val, const struct kernel_param *kp)
-{
-	uint v;
-	int ret = kstrtouint(val, 0, &v);
-
-	if (ret)
-		return ret;
-	if (v > 0xff || (v & 0x30))	/* the fan level bits stay owned by the level logic */
-		return -EINVAL;
-	test_bits = v;
-	if (fan_inst) {
-		mutex_lock(&fan_inst->lock);
-		if (fan_inst->hw >= 0)
-			ret = fan_frame(fan_inst, fan_inst->hw);
-		mutex_unlock(&fan_inst->lock);
-	}
-	return ret;
-}
-
-static const struct kernel_param_ops test_bits_ops = { .set = test_bits_set, .get = param_get_uint };
-module_param_cb(test_bits, &test_bits_ops, &test_bits, 0644);
-MODULE_PARM_DESC(test_bits, "bench only: bits OR-ed into byte 0 (not 5:4), 0 = off");
-MODULE_PARM_DESC(poe_field, "PoE mode-select field written for all 48 ports: 2 = 802.3 as stock (default; 0 leaves the 802.3 path off, PDs are never detected); 1 (passive 24 V) is refused");
 
 /* floor in automatic mode: the thermal governor requests 0 while no trip is active */
 static unsigned int base_level(void)
@@ -147,15 +91,7 @@ ATTRIBUTE_GROUPS(fan);
 
 static int fan_frame(struct fan *f, unsigned int level)
 {
-	u8 buf[FRAME_LEN] = { (level << LEVEL_SHIFT) | test_bits };
-	int g, ret = 0;
-
-	if (poe_field == 2)
-		memset(buf + 1, 0xaa, FRAME_LEN - 1);
-
-	for (g = 0; g < NGROUP && !ret; g++)
-		ret = us48_mspi_frame(US48_MSPI_FAN0 + g, buf, sizeof(buf));
-	return ret;
+	return us48_boardio_fan_level(level);	/* byte 0 of both (1,x) frames; the PoE bytes are boardio's */
 }
 
 /* Caller holds f->lock. Sends the wanted level if it differs from the wire; a failed write falls back to 3. */
@@ -323,7 +259,6 @@ static void fan_stop(void *data)
 {
 	struct fan *f = data;
 
-	fan_inst = NULL;
 	cancel_delayed_work_sync(&f->watch);
 	mutex_lock(&f->lock);
 	f->sensors_ok = false;
@@ -378,7 +313,6 @@ static int fan_probe(struct spi_device *spi)
 	if (IS_ERR(hw))
 		return PTR_ERR(hw);
 	spi_set_drvdata(spi, f);
-	fan_inst = f;
 	ret = devm_add_action_or_reset(dev, fan_stop, f);	/* runs first on unbind */
 	if (ret)
 		return ret;

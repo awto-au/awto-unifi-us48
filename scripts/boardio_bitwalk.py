@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""boardio_bitwalk: set each unused bit of fan-frame byte 0 alone (us48_fan.test_bits) and diff board state before/after (#12).
+"""boardio_bitwalk: set each unused bit of fan-frame byte 0 alone (us48_boardio.test_bits) and diff board state before/after (#12).
 
 Usage: scripts/boardio_bitwalk.py [--bits 0x01,0x02,0x04,0x08,0x40,0x80]
-- Needs us48_fan built with the test_bits param (bench only). Bits 5:4 (fan level) are refused by the module.
+- Needs us48_boardio (param test_bits, bench only). Bits 5:4 (fan level) are refused by the module.
 - Per bit: write test_bits, 1 snapshot (netdev carrier + speed, PoE port status of both cameras, hwmon temps, new kernel log lines), restore 0.
 - Prints only the lines that differ from the baseline taken with test_bits = 0 right before. Same frame goes to both chains ((1,0) and (1,1)).
 - Settle: 2 s per bit = link-state and PoE detect changes show within one 1 s PoE scan + SFP/PHY polls; not a measured value.
@@ -20,7 +20,7 @@ from _cli import help_guard  # noqa: E402
 from lx import OPTS  # noqa: E402
 
 LOG = Path(__file__).resolve().parent.parent / "tmp/logs/boardio_bitwalk.log"
-PARAM = "/sys/module/us48_fan/parameters/test_bits"
+PARAM = "/sys/module/us48_boardio/parameters/test_bits"
 SNAP = (
     "for n in /sys/class/net/*; do echo net $(basename $n) $(cat $n/carrier 2>&1) $(cat $n/speed 2>/dev/null); done; "
     "for p in /sys/bus/i2c/devices/*/port*_status; do echo poe $p $(cat $p); done; "
@@ -52,7 +52,7 @@ def main():
             fh.write(line + "\n")
             fh.flush()
         if "No such file" in sh(f"ls {PARAM}"):
-            say("FAIL: us48_fan has no test_bits param (module not the bench build)")
+            say("FAIL: us48_boardio has no test_bits param")
             return 1
         sh(f"echo 0 > {PARAM}")
         base = snap()

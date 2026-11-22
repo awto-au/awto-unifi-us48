@@ -12,11 +12,13 @@
 #include <linux/ktime.h>
 #include <linux/math64.h>
 #include <linux/module.h>
+#include <linux/netdevice.h>
 #include <linux/of.h>
 #include <linux/pse-pd/pse.h>
 #include <linux/property.h>
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
+#include "../us48-boardio/us48_boardio.h"
 
 #define NPORT		4
 #define REG_STAT_P(c)	(0x0c + (c))		/* [3:0] detect, [6:4] class */
@@ -108,7 +110,7 @@ MODULE_PARM_DESC(total_mw, "read-only: total measured port power at the last sca
 
 static unsigned long long passive_ports;
 module_param(passive_ports, ullong, 0444);
-MODULE_PARM_DESC(passive_ports, "UNVERIFIED (M1/M6): 24 V passive front ports; NOT IMPLEMENTED (needs MSPI field 1 in us48_boardio), non-zero only warns");
+MODULE_PARM_DESC(passive_ports, "opt-in mask (bit 0 = front port 1) of ports that portN_mode may switch to passive 24 V (spare pairs powered, no detection, hazard to any other device); default 0 = none");
 
 struct bcm59111 {
 	struct i2c_client *client;
@@ -119,6 +121,7 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	bool passive[NPORT];		/* MSPI field = 1: 24 V passive; the 802.3 chip channel stays off */
 	bool want[NPORT];		/* admin-enabled by the driver: restored after a watchdog restart */
 	bool hwd;			/* firmware has the host watchdog and it is armed by us */
 	struct delayed_work hwd_work;
@@ -287,6 +290,8 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 
 	if (!pcdev->pi[id].rdev)
 		return -ENODEV;	/* port without a pse-pi node */
+	if (b->passive[id])
+		return -EBUSY;	/* 24 V passive owns the port until portN_mode = 802.3 */
 	ret = budget_take(b, id);
 	if (ret)
 		return ret;
@@ -321,6 +326,39 @@ static int bcm_pi_enable(struct pse_controller_dev *pcdev, int id)
 	return ret;
 }
 
+/* Front port (0-based) of chip channel id: label PoE-NN = chip NN, front ports 4(NN-1)+1..4(NN-1)+4 */
+static int bcm_front_port(struct bcm59111 *b, int id)
+{
+	unsigned int n;
+
+	if (!b->label || strncmp(b->label, "PoE-", 4) || kstrtouint(b->label + 4, 10, &n) || n < 1 || n > 12)
+		return -EINVAL;
+	return 4 * (n - 1) + id;
+}
+
+/*
+ * Passive 24 V = MSPI port field 1 (docs/poe.md 6). Switch order and settle times are stock's (`0x60620c`):
+ * field 0, 100 ms, new field, 50 ms. The chip channel is off while passive (checked by the caller).
+ * Returns to 802.3 (field 2) on request; unbind does the same.
+ */
+static int bcm_passive_set(struct bcm59111 *b, int id, bool on)
+{
+	int port = bcm_front_port(b, id), ret;
+
+	if (port < 0)
+		return port;
+	ret = us48_boardio_poe_field(port, US48_POE_FIELD_NONE);
+	if (ret)
+		return ret;
+	msleep(100);
+	ret = us48_boardio_poe_field(port, on ? US48_POE_FIELD_PASSIVE : US48_POE_FIELD_8023);
+	if (ret)
+		return ret;
+	msleep(50);
+	b->passive[id] = on;
+	return 0;
+}
+
 /* Driver unbind (rmmod, reboot path, probe failure after this point) = PoE off on this chip, stock firmware included (Dan 2026-11-21). */
 static void bcm_ports_off(void *data)
 {
@@ -332,8 +370,11 @@ static void bcm_ports_off(void *data)
 	if (!ret)
 		ret = rd(b, REG_OP_MODE);
 	mutex_unlock(&b->pcdev.lock);
-	for (id = 0; id < NPORT; id++)
+	for (id = 0; id < NPORT; id++) {
 		b->want[id] = false;
+		if (b->passive[id])
+			bcm_passive_set(b, id, false);	/* 24 V off on unbind, as 802.3 */
+	}
 	if (ret)
 		dev_err(&b->client->dev, "unbind: ports not shut down (reg 0x12 = %d)\n", ret);
 	else
@@ -436,6 +477,70 @@ static ssize_t status_show(struct device *dev, struct device_attribute *a, char 
 			  b->reserved[id] ? b->reserve_mw : 0);
 }
 
+static ssize_t mode_show(struct device *dev, struct device_attribute *a, char *buf)
+{
+	struct bcm59111 *b = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%s\n", b->passive[to_sensor_dev_attr(a)->index] ? "passive24" : "802.3");
+}
+
+/*
+ * passive24 refuses unless: the port is in passive_ports (opt-in), the channel is off (reg 0x12 field 0), the front
+ * port's netdev geN exists and has no carrier (a device with a link would get 24 V on its spare pairs). Hazard: docs/poe-pse.md.
+ */
+static ssize_t mode_store(struct device *dev, struct device_attribute *a, const char *buf, size_t len)
+{
+	struct bcm59111 *b = dev_get_drvdata(dev);
+	int id = to_sensor_dev_attr(a)->index, port, op, ret;
+	struct net_device *nd;
+	char name[16];
+	bool passive;
+
+	if (sysfs_streq(buf, "passive24"))
+		passive = true;
+	else if (sysfs_streq(buf, "802.3"))
+		passive = false;
+	else
+		return -EINVAL;
+	port = bcm_front_port(b, id);
+	if (port < 0)
+		return port;
+	mutex_lock(&b->pcdev.lock);
+	if (passive == b->passive[id]) {
+		ret = 0;
+	} else if (passive) {
+		op = rd(b, REG_OP_MODE);
+		snprintf(name, sizeof(name), "ge%d", port + 1);
+		nd = dev_get_by_name(&init_net, name);
+		if (!(passive_ports & BIT_ULL(port)))
+			ret = -EPERM;
+		else if (op < 0)
+			ret = op;
+		else if ((op >> (2 * id)) & 3)
+			ret = -EBUSY;	/* 802.3 channel not off */
+		else if (!nd)
+			ret = -ENODEV;	/* link state not verifiable */
+		else if (netif_carrier_ok(nd))
+			ret = -EBUSY;
+		else
+			ret = bcm_passive_set(b, id, true);
+		if (nd)
+			dev_put(nd);
+		if (!ret)
+			dev_warn(dev, "port %d: passive 24 V ON\n", port + 1);
+	} else {
+		ret = bcm_passive_set(b, id, false);
+		if (!ret)
+			dev_info(dev, "port %d: passive 24 V off\n", port + 1);
+	}
+	mutex_unlock(&b->pcdev.lock);
+	return ret ? ret : len;
+}
+
+static SENSOR_DEVICE_ATTR_RW(port1_mode, mode, 0);
+static SENSOR_DEVICE_ATTR_RW(port2_mode, mode, 1);
+static SENSOR_DEVICE_ATTR_RW(port3_mode, mode, 2);
+static SENSOR_DEVICE_ATTR_RW(port4_mode, mode, 3);
 static SENSOR_DEVICE_ATTR_RW(port1_enable, enable, 0);
 static SENSOR_DEVICE_ATTR_RW(port2_enable, enable, 1);
 static SENSOR_DEVICE_ATTR_RW(port3_enable, enable, 2);
@@ -446,6 +551,8 @@ static SENSOR_DEVICE_ATTR_RO(port3_status, status, 2);
 static SENSOR_DEVICE_ATTR_RO(port4_status, status, 3);
 
 static struct attribute *bcm_attrs[] = {
+	&sensor_dev_attr_port1_mode.dev_attr.attr, &sensor_dev_attr_port2_mode.dev_attr.attr,
+	&sensor_dev_attr_port3_mode.dev_attr.attr, &sensor_dev_attr_port4_mode.dev_attr.attr,
 	&sensor_dev_attr_port1_enable.dev_attr.attr, &sensor_dev_attr_port2_enable.dev_attr.attr,
 	&sensor_dev_attr_port3_enable.dev_attr.attr, &sensor_dev_attr_port4_enable.dev_attr.attr,
 	&sensor_dev_attr_port1_status.dev_attr.attr, &sensor_dev_attr_port2_status.dev_attr.attr,
@@ -841,7 +948,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 	if (ret)
 		return ret;
 	if (bcm_chip_mask(b, passive_ports, "passive_ports"))
-		dev_warn(dev, "passive_ports: not implemented, no port switched to 24 V\n");
+		dev_warn(dev, "passive_ports: ports allowed to switch to passive 24 V through portN_mode (none switched at probe)\n");
 	mask = bcm_chip_mask(b, enable_ports, "enable_ports");
 	for (port = 0; port < NPORT; port++) {
 		if (!(mask & BIT(port)))

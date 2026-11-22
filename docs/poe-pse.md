@@ -43,7 +43,10 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - Chip config registers are untouched on a warm start (stock configuration persists, #24). After a firmware load by this driver only: `0x13=0f`, `0x14=ff`, `0x44=0f`, per channel `46=01`, ICUT `e2` (638 mA), ILIM `c0` (stock runtime defaults, poe.md 4 step 11; ICUT/ILIM still M2), ports remain shut.
 - Firmware: only with module parameter `fw_load=1`, `request_firmware("bcm59111-v21.bin")`, size must be 16384. Raw I2C blocks of 36 bytes (needs `I2C_FUNC_I2C`; iproc has it). Wait for `0x75 == 0xaa` every 50 ms up to 2.5 s (stock sleeps 2 s then checks once; x1.25); expiry logs reg value + limit and fails. Load time not measured (M4).
 - GPIO 9 reset is not touched (no output driver for CCA GPIO; polarity unconfirmed, M3). A chip without firmware therefore stays unusable until reset elsewhere.
-- Passive 24 V is not implemented. It needs MSPI field `01` (frames owned by `us48_fan`, which writes zeros for bytes 1..6) and has the hazard of 24 V on spare pairs of any device on that port. Plan when wanted: explicit per-port DT opt-in plus a sysfs enable, preconditions per poe.md 6 (chip field `00`, MSPI field `0`, 100 ms, field `1`, 50 ms; refuse when a PD is detected or link is up), shared MSPI shadow API with the fan driver. M1 (is MSPI field `10` needed for 802.3?) and M6 come first.
+- Passive 24 V (#149): `portN_mode` (`802.3` / `passive24`) per port, opt-in mask `passive_ports` (bit 0 = front port 1, default none). Frame state (fan level + per-port MSPI field) is owned by `us48_boardio` (`us48_boardio_poe_field`), not the fan driver.
+  - `passive24` refused unless: port in `passive_ports` (EPERM), chip channel off (EBUSY), netdev `geN` exists with no carrier (ENODEV / EBUSY). `enable` is refused (EBUSY) while passive.
+  - Order (stock `0x60620c`): field 0, 100 ms, field 1, 50 ms. Unbind returns passive ports to field 2 (24 V off). Kernel dead = field stays as last written (24 V stays on).
+  - Passive power is not in the measured-power budget. Front port N to field index N-1 is an inference; verify with a meter on an unplugged port before trusting it.
 - Module unload (driver unbind) shuts all ports of the chip (Dan 2026-11-21); a warm reboot keeps the chips as they are (#24).
 
 ## 4. Test plan (board; nothing run yet)
@@ -89,4 +92,4 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - Both cameras: class 4, 52.3 V, `power_mW` 2192 / 2234 (stock showed 2.47 / 2.39 W), total 4382 mW.
 - `power_limit_mw` set to 3000: next scan (<= 1 s) logged `over budget (4382 mW > 3000 mW): port 4 (PoE-10) shut and blocked, was 2190 mW`; port 40 (the later port of the same scan) went `blocked_over_budget`, port 26 kept delivering, total 2195 mW.
 - Limit back to 436000 and `portN_enable` = 1 on port 40: block cleared, port delivers again.
-- Needs `us48_fan.poe_field` = 2 (default): with field 0 the PSE never detects a PD (docs/poe.md M1).
+- Needs `us48_boardio.poe_field` = 2 (default): with field 0 the PSE never detects a PD (docs/poe.md M1).

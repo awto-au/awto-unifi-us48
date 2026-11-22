@@ -21,4 +21,12 @@ int us48_boardio_attach(struct spi_device *spi);
 int us48_mspi_frame(enum us48_mspi_chain ch, const u8 *buf, size_t len);
 int us48_poe_leds_attach(struct device *dev);
 
+/* Frame state of the two (1,x) chains is owned here: byte 0 = fan level (bits 5:4), bytes 1..6 = 2-bit PoE mode field per port */
+#define US48_POE_FIELD_NONE	0
+#define US48_POE_FIELD_PASSIVE	1	/* 24 V on the spare pairs, no detection: the caller owns the safety checks (bcm59111 portN_mode) */
+#define US48_POE_FIELD_8023	2
+int us48_boardio_fan_level(unsigned int level);			/* both chains */
+int us48_boardio_poe_field(unsigned int port, unsigned int field);	/* port 0..47 = front port - 1 (I: order not bench-verified) */
+int us48_boardio_poe_field_get(unsigned int port);
+
 #endif

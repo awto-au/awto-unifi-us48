@@ -34,6 +34,6 @@
 
 ## Board-specific
 
-- MSPI mode-select field must be 2 (`us48_fan.poe_field`, default 2); with 0 every port reads open (`docs/poe.md` M1).
+- MSPI mode-select field must be 2 (`us48_boardio.poe_field`, default 2); with 0 every port reads open (`docs/poe.md` M1).
 - Bench camera (class 4): 52.3 V, steady 43..44 mA (about 2.3 W) idle; driver showed up to 7.7 W under activity.
 - Sweep of ICUT raw 17..1 on this camera: powered down to raw 2 (37.5 mA), tripped at raw 1 (18.75 mA); why a 44 mA load holds at 37.5 mA is open (#26).
