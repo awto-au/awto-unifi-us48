@@ -91,9 +91,9 @@ for v in {vals}; do
     p=$(g 0x10); s=$(g 0x{sat:02x})
     case "$p" in 0x*) if [ $(( p & (0x10 << {ch}) )) -ne 0 ] && [ "$pg" = "-" ]; then pg=$(( $(up) - t0 )); fi;; esac
   done
-  p=$(g 0x10); s=$(g 0x{sat:02x}); cm=$(( $(g 0x{0x34 + 4 * ch:02x}) + 256 * $(g 0x{0x35 + 4 * ch:02x}) )); vm=$(( $(g 0x{0x36 + 4 * ch:02x}) + 256 * $(g 0x{0x37 + 4 * ch:02x}) ))
+  p=$(g 0x10); s=$(g 0x{sat:02x}); cm=$(( $(g 0x{0x30 + 4 * ch:02x}) + 256 * $(g 0x{0x31 + 4 * ch:02x}) )); vm=$(( $(g 0x{0x32 + 4 * ch:02x}) + 256 * $(g 0x{0x33 + 4 * ch:02x}) ))
   e4=$(g 0x04); e6=$(g 0x06); e8=$(g 0x08); ea=$(g 0x0a)
-  echo "SWEEP icut $v | first_pg_cs $pg | end SAT $s PWR $p CM $cm VM $vm | events 04 $e4 06 $e6 08 $e8 0a $ea | counters before $c0 after $(g 0x65) $(g 0x66) $(g 0x67) | ICUT now $(g 0x{icut:02x}) ILIM $(g 0x{ilim:02x}) OP $(g 0x12)"
+  echo "SWEEP icut $v | first_pg_cs $pg | end SAT $s PWR $p I_mA $(( cm * 12207 / 100000 )) V_mV $(( vm * 5835 / 1000 )) | events 04 $e4 06 $e6 08 $e8 0a $ea | counters before $c0 after $(g 0x65) $(g 0x66) $(g 0x67) | ICUT now $(g 0x{icut:02x}) ILIM $(g 0x{ilim:02x}) OP $(g 0x12)"
 done
 mode 0
 w 0x{icut:02x} 0xe2; w 0x{ilim:02x} 0xc0
