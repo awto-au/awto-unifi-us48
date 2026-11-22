@@ -108,6 +108,8 @@ Applied for boards `0xb3440004` and `0xb3440006` (48-port); per-unit SDK propert
 - Model index from a string compare (`0x5924b4`): `es48`=0 (ES-48-750W), `es48l`=1 (**ES-48-500W**), `es24`=2, `es24l`=3, `es48n`=4 (48 Lite), `es24n`=5, `es16`=6, `es12f`=7, `ep16`=8, `es8`=9. C (string table `0x14ee548..`).
 - Name tables: long names `0x570d30`, short names `0x570e38`, same index.
 - FastPath board ids: ES24 PoE `0xb3440003`, ES48 PoE `0xb3440004` (750W and 500W share it), ES24 non-PoE `0xb3440005`, ES48 non-PoE `0xb3440006`, `0xb3440007` / `0xb3460001` = smaller 12/16-port boards. C.
+  - `0xb3440007`: 12 SFP ports (port index 0..11 only, switchdrvr `0x5f5d14` / `0x5f61xx`), 12-bit SFP tx-disable out + 12 x 2-bit in via MSPI bank 4/5 (`0x5f7460` / `0x5f77b4`), SFP select = GPIO 6..9 cleared on port change. C. Most likely the ES-12F (model index 7 `es12f`). I.
+  - `0xb3460001`: ports 0x10 / 0x11 on `mux0` (I2C), likely the 2 SFP+ of the ES-16-XG-class board. I.
 - 500W vs 750W differ by model index only in the code paths reviewed (same card table, same thresholds: `0x1c9cf4c` rows for model 0 and 1 point at the same threshold table). The PoE power budget itself is not in these tables (open).
 
 ## Open
