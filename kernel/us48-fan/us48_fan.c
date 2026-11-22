@@ -56,6 +56,7 @@ struct fan {
 /* PoE mode-select field of every port in bytes 1..6 of the (1,x) frames: 2 = 802.3 (stock capture: 0xaa on all ports, docs/poe.md 6;
  * field 0 = no detection, bench 2026-11-21 #26). 1 (passive 24 V) is never written. Changes are sent at once. */
 static uint poe_field = 2;
+static uint test_bits;	/* bench: OR-ed into byte 0 of every frame (bit walk #12); 0 = off */
 static struct fan *fan_inst;
 static int fan_frame(struct fan *f, unsigned int level);
 
@@ -80,6 +81,29 @@ static int poe_field_set(const char *val, const struct kernel_param *kp)
 
 static const struct kernel_param_ops poe_field_ops = { .set = poe_field_set, .get = param_get_uint };
 module_param_cb(poe_field, &poe_field_ops, &poe_field, 0644);
+
+static int test_bits_set(const char *val, const struct kernel_param *kp)
+{
+	uint v;
+	int ret = kstrtouint(val, 0, &v);
+
+	if (ret)
+		return ret;
+	if (v > 0xff || (v & 0x30))	/* the fan level bits stay owned by the level logic */
+		return -EINVAL;
+	test_bits = v;
+	if (fan_inst) {
+		mutex_lock(&fan_inst->lock);
+		if (fan_inst->hw >= 0)
+			ret = fan_frame(fan_inst, fan_inst->hw);
+		mutex_unlock(&fan_inst->lock);
+	}
+	return ret;
+}
+
+static const struct kernel_param_ops test_bits_ops = { .set = test_bits_set, .get = param_get_uint };
+module_param_cb(test_bits, &test_bits_ops, &test_bits, 0644);
+MODULE_PARM_DESC(test_bits, "bench only: bits OR-ed into byte 0 (not 5:4), 0 = off");
 MODULE_PARM_DESC(poe_field, "PoE mode-select field written for all 48 ports: 2 = 802.3 as stock (default; 0 leaves the 802.3 path off, PDs are never detected); 1 (passive 24 V) is refused");
 
 /* floor in automatic mode: the thermal governor requests 0 while no trip is active */
@@ -123,7 +147,7 @@ ATTRIBUTE_GROUPS(fan);
 
 static int fan_frame(struct fan *f, unsigned int level)
 {
-	u8 buf[FRAME_LEN] = { level << LEVEL_SHIFT };
+	u8 buf[FRAME_LEN] = { (level << LEVEL_SHIFT) | test_bits };
 	int g, ret = 0;
 
 	if (poe_field == 2)
