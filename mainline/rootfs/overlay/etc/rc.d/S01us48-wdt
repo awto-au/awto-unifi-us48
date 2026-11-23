@@ -1,0 +1,7 @@
+#!/bin/sh
+# Userspace owns the SP805 from here (#159): busybox watchdog feeds it every 5 s with a 30 s hardware timeout.
+# A hung init, a stopped feeder or a starved scheduler resets the board after 30 s; a clean `kill` does not stop it
+# (no magic close), so only a hang or crash of this process or the kernel triggers the reset.
+# 30 s = longest observed userspace stall (module load + PoE bring-up) x about 5; 5 s feed = 6 feeds per timeout.
+exec 2>/dev/kmsg
+watchdog -T 30 -t 5 /dev/watchdog || echo "us48-wdt: watchdog failed rc=$?" > /dev/kmsg
