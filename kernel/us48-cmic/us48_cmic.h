@@ -38,7 +38,7 @@
 #define MIIM_TIMEOUT_US		65
 /* Abort completes after one in-flight descriptor (tens of us); 10 ms backstop, logged on expiry. */
 #define ABORT_TIMEOUT_US	10000
-/* No IRQ yet: poll every 1 ms; NAPI drains the ring. */
+/* Unit 1 (PCIe, no IRQ route yet, #170): poll every 1 ms; NAPI drains the ring. Unit 0 uses the DMA interrupts. */
 #define POLL_NS			(1000 * 1000)
 /* Copper carrier once a second: a link change needs no faster reaction. xe ports: phylink's 1 s PCS poll. */
 
@@ -163,7 +163,9 @@ struct us48_cmic {
 	struct us48_port *port[MAXPORTS];
 	struct net_device *napi_dev;	/* NAPI needs a netdev; the rings serve all ports */
 	struct napi_struct napi;
-	struct hrtimer poll_timer;
+	struct hrtimer poll_timer;	/* unit 1 only */
+	int dma_irq[2];			/* unit 0: virq of CMC0 IRQ_STAT0 ch0 / ch1 DESC_DONE (us48_cmic_irq); 0 = unit polls */
+	unsigned long irq_dis;		/* bit i: handler disabled dma_irq[i] until NAPI completes */
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
 	u8 tsc_phy;			/* MIIM address of us48_tsc_rd/wr: 0 = TSC0_PHY; set only while holding mdio */
 	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */

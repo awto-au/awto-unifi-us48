@@ -1,4 +1,4 @@
-From 3724414a60d6f13c9e9bc9fc3673f2339465776d Mon Sep 17 00:00:00 2001
+From 45bd9174782b9e7fce24977a3b9d4efdf509d55b Mon Sep 17 00:00:00 2001
 From: Dan on Selwyn <dan@awto.au>
 Date: Mon, 23 Nov 2026 17:39:00 +1100
 Subject: [PATCH 33/33] ARM: dts: broadcom: us-48-500w: Wire the CMIC SMBus
@@ -10,7 +10,7 @@ CMC0 IRQ_STAT1 bit 0 (I2C_INTR) through UC0_IRQ_MASK1 reaches GIC SPI 162; a sma
  1 file changed, 13 insertions(+), 1 deletion(-)
 
 diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
-index 58b82855e..f974a9b77 100644
+index 58b82855e..b5b2a9745 100644
 --- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 +++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 @@ -378,10 +378,22 @@ port@34 {
@@ -18,10 +18,10 @@ index 58b82855e..f974a9b77 100644
  	};
  
 -	/* SMBus controller in the CMIC of the BCM53344, no interrupt wired */
-+	/* CMIC CMC0 interrupt status: bit 0 = SMBus; UC0_IRQ_MASK1 routes it to GIC SPI 162 (bench-verified, #158) */
-+	cmic_irq: interrupt-controller@48031404 {
++	/* CMIC CMC0 IRQ_STAT0/1 behind UC0_IRQ_MASK0/1 -> GIC SPI 162 (bench-verified, #158): STAT1 bit 0 = SMBus, STAT0 = DMA */
++	cmic_irq: interrupt-controller@48031400 {
 +		compatible = "ubnt,us48-cmic-irq";
-+		reg = <0x48031404 0x30>;
++		reg = <0x48031400 0x34>;
 +		interrupt-controller;
 +		#interrupt-cells = <1>;
 +		interrupt-parent = <&gic>;

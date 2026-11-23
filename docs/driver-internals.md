@@ -915,3 +915,11 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
 - Not detected: a change that keeps CC_BASE and CC_EXT identical (a module rewriting bytes and fixing both sums).
 - A2h present: byte 110 each poll, one line per transition of RX_LOS (bit 1) and TX_FAULT (bit 2).
 - Other loud lines: `module inserted`, `module removed`, `state old -> new` (none/ok/unsupported/fault, from every state change), `presence glitch` (mod-def0 present < 2 polls; a pulse shorter than 300 ms is not seen), `EEPROM unreadable after previously readable` (state `fault:eeprom-unreadable`), `EEPROM readable again` (re-judged or compared with the snapshot).
+
+## CMC0 interrupts (unit 0, #158, #170)
+
+- Route (bench 2026-11-23): `UC0_IRQ_MASK0/1` (`0x48031428/2c`) gate `IRQ_STAT0/1` (`0x48031400/04`) onto GIC ID 194 (SPI 162); `PCIE_IRQ_MASK1` -> ID 196, `UC1_IRQ_MASK1` -> ID 195. CPS reset clears the masks (carried over in `us48_cps_reset`).
+- `us48_cmic_irq` (chained irqchip, DT `ubnt,us48-cmic-irq`): hwirq 0..31 = STAT1 bit (0 = SMBus), 32..63 = STAT0 bit. Users: SMBus (hwirq 0), DMA ch1 RX DESC_DONE (44 = STAT0 b12), ch0 TX DESC_DONE (46 = b14).
+- DMA DESC_DONE is a level latched until `DMA_STAT_CLR` bit ch (DESCRD_CMPLT_CLR; INTR_COALESCING / DESC_CONTROLLED clears do not drop it). Handler disables its line and schedules NAPI; `us48_poll` clears both latches first, drains, re-enables on `napi_complete_done`.
+- Stray guard: a pending + unmasked bit with no handler is masked and counted; a GIC interrupt with nothing pending counts as `nopend`. `cat /sys/bus/platform/drivers/us48-cmic-irq/*/stray`.
+- Unit 1 (PCIe) still polls every 1 ms: no INTx/MSI route yet.

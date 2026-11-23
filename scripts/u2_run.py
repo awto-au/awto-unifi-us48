@@ -89,5 +89,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    help_guard(__doc__, strict=True, known=('--no-cycle',))
+    help_guard(__doc__, strict=True, known=('--no-cycle', '--stay'))
     sys.exit(main())

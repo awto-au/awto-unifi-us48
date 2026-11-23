@@ -12,7 +12,10 @@
 #include <linux/hrtimer.h>
 #include <linux/dma-mapping.h>
 #include <linux/if_vlan.h>
+#include <linux/interrupt.h>
 #include <linux/iopoll.h>
+#include <linux/irqdomain.h>
+#include <linux/of.h>
 #include <linux/firmware.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -1086,11 +1089,75 @@ static void us48_pool_fill(struct work_struct *w)
 	}
 }
 
+/* DMA_STAT -> IRQ_STAT0 -> UC0_IRQ_MASK0 -> GIC 194 (docs/driver-internals.md): level, stays set until DMA_STAT_CLR, so the
+ * handler leaves its line disabled and NAPI re-enables it after the clear + drain. */
+static irqreturn_t us48_dma_irq(int irq, void *data)
+{
+	struct us48_cmic *u = data;
+	int i;
+
+	for (i = 0; i < 2; i++)
+		if (irq == u->dma_irq[i] && !test_and_set_bit(i, &u->irq_dis))
+			disable_irq_nosync(irq);
+	napi_schedule(&u->napi);
+	return IRQ_HANDLED;
+}
+
+static void us48_dma_irq_rearm(struct us48_cmic *u)
+{
+	int i;
+
+	for (i = 0; i < 2; i++)
+		if (test_and_clear_bit(i, &u->irq_dis))
+			enable_irq(u->dma_irq[i]);
+}
+
+/* Both lines off, depth balanced, after NAPI is disabled (stop / unbind). */
+static void us48_dma_irq_quiesce(struct us48_cmic *u)
+{
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		disable_irq(u->dma_irq[i]);
+		if (test_and_clear_bit(i, &u->irq_dis))
+			enable_irq(u->dma_irq[i]);	/* undo the handler's own disable */
+	}
+}
+
+#define DMA_IRQ_HW_TX	46	/* us48_cmic_irq hwirq: 32 + IRQ_STAT0 bit 14 (ch0 DESC_DONE) */
+#define DMA_IRQ_HW_RX	44	/* 32 + bit 12 (ch1 DESC_DONE) */
+
+static int us48_dma_irq_setup(struct us48_cmic *u, struct device *dev)
+{
+	static const unsigned int hw[2] = { DMA_IRQ_HW_TX, DMA_IRQ_HW_RX };
+	struct device_node *np = of_find_compatible_node(NULL, NULL, "ubnt,us48-cmic-irq");
+	struct irq_domain *dom = np ? irq_find_host(np) : NULL;
+	int i, ret;
+
+	of_node_put(np);
+	if (!dom) {
+		dev_err(dev, "no us48_cmic_irq domain: load us48_cmic_irq first\n");
+		return -EPROBE_DEFER;
+	}
+	for (i = 0; i < 2; i++) {
+		u->dma_irq[i] = irq_create_mapping(dom, hw[i]);
+		if (!u->dma_irq[i])
+			return -ENOMEM;
+		ret = devm_request_irq(dev, u->dma_irq[i], us48_dma_irq, IRQF_NO_AUTOEN, "us48-cmic-dma", u);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
 static int us48_poll(struct napi_struct *napi, int budget)
 {
 	struct us48_cmic *u = container_of(napi, struct us48_cmic, napi);
 	int done = 0;
 
+	/* Clear the DESC_DONE latches first: a frame finishing during the reap below sets them again and re-fires the interrupt. */
+	if (u->dma_irq[0])
+		wr(u, DMA_STAT_CLR, BIT(RX_CH) | BIT(TX_CH));
 	tx_reap(u);
 	while (done < budget) {
 		int i = u->rx_next;
@@ -1113,8 +1180,8 @@ static int us48_poll(struct napi_struct *napi, int budget)
 		rx_arm(u);
 	if (skb_queue_len(&u->skb_pool) < SKB_POOL / 2)
 		schedule_work(&u->pool_work);
-	if (done < budget)
-		napi_complete_done(napi, done);
+	if (done < budget && napi_complete_done(napi, done) && u->dma_irq[0])
+		us48_dma_irq_rearm(u);
 	return done;
 }
 
@@ -1248,7 +1315,12 @@ static int us48_open(struct net_device *nd)
 		us48_pool_fill(&u->pool_work);
 		rx_arm(u);
 		napi_enable(&u->napi);
-		hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
+		if (u->dma_irq[0]) {
+			enable_irq(u->dma_irq[0]);
+			enable_irq(u->dma_irq[1]);
+		} else {
+			hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
+		}
 	}
 	netif_start_queue(nd);
 	if (p->pl)
@@ -1280,6 +1352,8 @@ static int us48_stop(struct net_device *nd)
 	if (--u->nopen == 0) {
 		hrtimer_cancel(&u->poll_timer);
 		napi_disable(&u->napi);
+		if (u->dma_irq[0])
+			us48_dma_irq_quiesce(u);
 		dma_abort(u, RX_CH);
 		spin_lock_bh(&u->tx_lock);
 		dma_abort(u, TX_CH);
@@ -1419,7 +1493,8 @@ EXPORT_SYMBOL_GPL(us48_remove_common);
  * chain uses and the kernel's SMBus master (xfer fails after 50 s; its interrupt mask too): carry them over, then redo ring map/timeout/rate.
  */
 #define CPS_RESET_WAIT_MS	9		/* OpenMDK _bmd_reset 10 ms, delay rule -10 % */
-#define CMIC_UC0_IRQ_MASK1	0x3142c	/* CMC0 mask the SMBus interrupt controller (us48_cmic_irq) owns, #158 */
+#define CMIC_UC0_IRQ_MASK0	0x31428	/* CMC0 masks the interrupt controller (us48_cmic_irq) owns: DMA, #170 */
+#define CMIC_UC0_IRQ_MASK1	0x3142c	/* SMBus, #158 */
 
 static void us48_cps_reset(struct bcm_cmic_unit *cu)
 {
@@ -1428,7 +1503,7 @@ static void us48_cps_reset(struct bcm_cmic_unit *cu)
 	u32 strap = readl(b + HW_CMIC0_OVERRIDE_STRAP);
 	static const u32 i2c_regs[] = { HW_CMIC0_I2CM_CFG, HW_CMIC0_I2CM_TIM_CFG, HW_CMIC0_I2CM_S_CFG_SMBUS_ADDR,
 					HW_CMIC0_I2CM_M_FIFO_CTRL, HW_CMIC0_I2CM_S_FIFO_CTRL, HW_CMIC0_I2CM_IE,
-					CMIC_UC0_IRQ_MASK1 };
+					CMIC_UC0_IRQ_MASK0, CMIC_UC0_IRQ_MASK1 };
 	u32 i2c[ARRAY_SIZE(i2c_regs)];
 	int i;
 
@@ -1552,6 +1627,13 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	if (ret)
 		return ret;
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	if (modid == 0) {
+		ret = us48_dma_irq_setup(u, dev);
+		if (ret)
+			return ret;
+	} else {
+		dev_info(dev, "unit %u: no DMA interrupt route yet, polling every %d us (#170)\n", modid, POLL_NS / 1000);
+	}
 	us48_sw_unit_init(u);
 	ret = us48_mdio_register(u);	/* copper PHYs probe here and power down (BMCR PDN) until their netdev opens */
 	if (ret)
