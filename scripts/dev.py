@@ -1380,11 +1380,34 @@ def cmd_cmic_load(extra: list[str]) -> int:
 FLASH_DD_S = 300
 
 
+def _ensure_stock() -> bool:
+    """Autochain: a reboot boots mainline, stock (kernel1) only through the RAM-only us48stock variant (docs/autochain.md)."""
+    if not console.restart(console.BAUD):
+        return False
+    s = console.Session()
+    try:
+        st = _board_state(s)
+    finally:
+        s.close()
+    if st in ("stock-login", "stock-shell"):
+        return True
+    img = REPO / "tmp/uboot/us48-uboot-stock.bin"
+    if not img.exists():
+        log(f"{img.relative_to(REPO)} missing: building it (build_uboot.py --stock)")
+        if subprocess.run([sys.executable, str(REPO / "scripts/build_uboot.py"), "--stock"]).returncode:
+            return False
+    log(f"board state {st}: stock only through scripts/stock_ramboot.py --cycle (relay power cycle, RAM only)", "WARN")
+    return subprocess.run([sys.executable, str(REPO / "scripts/stock_ramboot.py"), "--cycle"]).returncode == 0
+
+
 @command("write an image to a kernel0 slot FROM STOCK over the LAN (scp + dd mtdblock3 + sha256), then boot it",
          args="[--slot uboot|linux] [--no-boot]", kind="action")
 def cmd_flash_net(extra: list[str]) -> int:
     import hashlib
     slot, slot_off, slot_len, image = _slot(extra)
+    if not _ensure_stock():
+        log("could not reach stock Linux", "FATAL")
+        return 1
     if not image.exists():
         log(f"{image.relative_to(REPO)} missing — run: scripts/dev.py build", "FATAL")
         return 1
