@@ -146,6 +146,7 @@ struct bcm59111 {
 	u8 pg;				/* last power-good nibble seen by the poll */
 	struct led_trigger *poe_trig[NPORT];	/* ge<N>-poe-good: the PoE LED of us48_boardio follows power-good (#178) */
 	char poe_trig_name[NPORT][16];	/* the LED core keeps the name pointer, not a copy */
+	u32 cnt[NPORT][5];		/* accumulated COR counters 0x60+4c: invalid signature, power denied, short, overload, MPS absent */
 	bool temp_over;			/* die at or over temp1_max at the last scan */
 	u8 led_on;			/* last power-good nibble sent to the triggers */
 	unsigned int stag_pending;	/* enable_ports bits still to enable (stagger worker) */
@@ -583,6 +584,37 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *a, const 
 	return ret ? ret : len;
 }
 
+/* Event counters (#187): 0x60+4c = [invalid signature][power denied][short lo nibble / overload hi nibble][MPS absent], clear on read, 8 bit.
+ * Folded into 32-bit sums on every sysfs read and every 10th power scan (a counter cannot wrap unseen below 25 events/s). Caller holds pcdev.lock. */
+static void bcm_counters_fold(struct bcm59111 *b)
+{
+	u8 c[16];
+	int id;
+
+	if (rd_blk(b, 0x60, c, sizeof(c)))
+		return;
+	for (id = 0; id < NPORT; id++) {
+		b->cnt[id][0] += c[4 * id];
+		b->cnt[id][1] += c[4 * id + 1];
+		b->cnt[id][2] += c[4 * id + 2] & 0xf;
+		b->cnt[id][3] += c[4 * id + 2] >> 4;
+		b->cnt[id][4] += c[4 * id + 3];
+	}
+}
+
+static ssize_t counters_show(struct device *dev, struct device_attribute *a, char *buf)
+{
+	struct bcm59111 *b = dev_get_drvdata(dev);
+	int id = to_sensor_dev_attr(a)->index;
+	u32 v[5];
+
+	mutex_lock(&b->pcdev.lock);
+	bcm_counters_fold(b);
+	memcpy(v, b->cnt[id], sizeof(v));
+	mutex_unlock(&b->pcdev.lock);
+	return sysfs_emit(buf, "invalid_signature %u power_denied %u short %u overload %u mps_absent %u\n", v[0], v[1], v[2], v[3], v[4]);
+}
+
 static SENSOR_DEVICE_ATTR_RW(port1_mode, mode, 0);
 static SENSOR_DEVICE_ATTR_RW(port2_mode, mode, 1);
 static SENSOR_DEVICE_ATTR_RW(port3_mode, mode, 2);
@@ -591,12 +623,18 @@ static SENSOR_DEVICE_ATTR_RW(port1_enable, enable, 0);
 static SENSOR_DEVICE_ATTR_RW(port2_enable, enable, 1);
 static SENSOR_DEVICE_ATTR_RW(port3_enable, enable, 2);
 static SENSOR_DEVICE_ATTR_RW(port4_enable, enable, 3);
+static SENSOR_DEVICE_ATTR_RO(port1_counters, counters, 0);
+static SENSOR_DEVICE_ATTR_RO(port2_counters, counters, 1);
+static SENSOR_DEVICE_ATTR_RO(port3_counters, counters, 2);
+static SENSOR_DEVICE_ATTR_RO(port4_counters, counters, 3);
 static SENSOR_DEVICE_ATTR_RO(port1_status, status, 0);
 static SENSOR_DEVICE_ATTR_RO(port2_status, status, 1);
 static SENSOR_DEVICE_ATTR_RO(port3_status, status, 2);
 static SENSOR_DEVICE_ATTR_RO(port4_status, status, 3);
 
 static struct attribute *bcm_attrs[] = {
+	&sensor_dev_attr_port1_counters.dev_attr.attr, &sensor_dev_attr_port2_counters.dev_attr.attr,
+	&sensor_dev_attr_port3_counters.dev_attr.attr, &sensor_dev_attr_port4_counters.dev_attr.attr,
 	&sensor_dev_attr_port1_mode.dev_attr.attr, &sensor_dev_attr_port2_mode.dev_attr.attr,
 	&sensor_dev_attr_port3_mode.dev_attr.attr, &sensor_dev_attr_port4_mode.dev_attr.attr,
 	&sensor_dev_attr_port1_enable.dev_attr.attr, &sensor_dev_attr_port2_enable.dev_attr.attr,
@@ -849,6 +887,7 @@ static int bcm_led_add(struct bcm59111 *b)
 
 static void bcm_watch(struct work_struct *w)
 {
+	static unsigned int scan_n;
 	unsigned int total = 0;
 	int i, id;
 
@@ -868,6 +907,8 @@ static void bcm_watch(struct work_struct *w)
 			bcm_led_update(b, (pwr >> 4) & 0xf);
 			bcm_temp_check(b, sc[REG_TEMP - SCAN_BASE]);
 		}
+		if (!(scan_n % 10))
+			bcm_counters_fold(b);
 		for (id = 0; id < NPORT; id++) {
 			int mw = -1;
 
@@ -887,6 +928,7 @@ static void bcm_watch(struct work_struct *w)
 		}
 		mutex_unlock(&b->pcdev.lock);
 	}
+	scan_n++;
 	total_mw = total;
 	while (power_limit_mw && total > power_limit_mw) {
 		struct bcm59111 *nb = NULL;
