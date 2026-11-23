@@ -1,7 +1,7 @@
-From 5043161b553f8c88f6ea1be385e8d0f0e9859da8 Mon Sep 17 00:00:00 2001
+From 8c91fc977048988cb514c3331aae01cd12edbab5 Mon Sep 17 00:00:00 2001
 From: Dan on Selwyn <dan@awto.au>
 Date: Fri, 20 Nov 2026 23:37:38 +1100
-Subject: [PATCH] net: sfp: Add quirk for Cisco-Finisar GLC-SX-MM
+Subject: [PATCH 31/32] net: sfp: Add quirk for Cisco-Finisar GLC-SX-MM
 
 Some CISCO-FINISAR GLC-SX-MM modules (rev 6.0) fill the unused binary
 fields of the EEPROM with ASCII spaces (0x20) instead of zeros, and
@@ -33,7 +33,7 @@ Signed-off-by: TODO
  1 file changed, 40 insertions(+)
 
 diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
-index 85e57a1..2111942 100644
+index 85e57a16b..211194208 100644
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
 @@ -2516,6 +2516,43 @@ static int sfp_module_parse_sff8472(struct sfp *sfp)
@@ -90,6 +90,3 @@ index 85e57a1..2111942 100644
  	sfp->id = id;
  
  	dev_info(sfp->dev, "module %.*s %.*s rev %.*s sn %.*s dc %.*s\n",
--- 
-2.56.1
-

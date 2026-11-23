@@ -206,7 +206,7 @@ Rules for Linux (safe default):
 
 - M1 ANSWERED (bench 2026-11-21, two real 802.3at cameras on front 26 and 40): with MSPI field `0` every port detects `open` (BCM auto, detect + class enabled); writing field `2` (all `0xaa` in the (1,x) frame bytes 1..6, as stock) makes both cameras detect class 4 and power up (52.3 V, 2.2 W each). Field `2` is required for 802.3. `us48_boardio.poe_field` (default 2) writes it. Passive field `1` is never written.
 - M2: Read `0x44`, `0x46..0x48`, `0x01`, `0x13`, `0x14` on a stock-configured chip (read-only) to settle ICUT/ILIM/mask values.
-- M3: Cold-boot chip state; reset polarity and OUTEN source (scope or read CCA `0x18000064/68` right after POR).
+- M3 ANSWERED (bench 2026-11-23): CCA GPIO 9 is an input at boot (OUTEN bit 9 = 0, DIN bit 9 = 1, pulled up); driving it low (OUTEN bit 9 set, DOUT bit 9 = 0) resets all 12 chips: reg `0x75` 0xaa -> 0, reg `0x41` reads 0xff. Active low. Release = OUTEN bit 9 cleared (pull-up). Driver: `bcm59111.fw_reset` = off / on / pulse (DT `reset-gpios = <&cca0 9 GPIO_ACTIVE_LOW>` on PoE-01); a pulse reloads all 12 chips in about 48 s (1 s settle + about 4 s per chip).
 - M4: FW load time on the real bus (sets the timeout; #26).
 - M5: Chip-side behaviour on over-budget (power-denied counter).
 - M6: Physical meaning of field `01` (which pins carry 24 V, enable mapping): measure on a dummy load before ever enabling.

@@ -1,15 +1,20 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From e2b0921e7b536c188b097726ecf500f19ff931c2 Mon Sep 17 00:00:00 2001
 From: Dan on Selwyn <dan@selwyn>
 Date: Thu, 19 Nov 2026 03:00:00 +1100
-Subject: [PATCH 27/28] dt-bindings: net: pse-pd: Add Broadcom BCM59111
+Subject: [PATCH 28/32] dt-bindings: net: pse-pd: Add Broadcom BCM59111
 
 Describe the BCM59111 four-port PoE PSE controller. Ports are PSE PIs with a
 vpwr supply whose power budget bounds the reservations of the enabled ports.
 
 Signed-off-by: TODO
 ---
+ .../bindings/net/pse-pd/brcm,bcm59111.yaml    | 80 +++++++++++++++++++
+ 1 file changed, 80 insertions(+)
+ create mode 100644 Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml
+
 diff --git a/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml b/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml
 new file mode 100644
+index 000000000..e198a3e16
 --- /dev/null
 +++ b/Documentation/devicetree/bindings/net/pse-pd/brcm,bcm59111.yaml
 @@ -0,0 +1,80 @@
@@ -93,6 +98,3 @@ new file mode 100644
 +            };
 +        };
 +    };
--- 
-2.52.0
-

@@ -19,7 +19,8 @@
 #define CCA_DOUT	(HW_CCA_GPIO_DOUT - HW_CCA_GPIO_DIN)
 #define CCA_OUTEN	(HW_CCA_GPIO_OUTEN - HW_CCA_GPIO_DIN)
 /* Unit 0 system LED: stock gpiodev sets OUTEN 6/7 and writes DOUT 6/7 (kernel-pse.md 3.1); uboot-1 the same */
-#define CCA_U0_OUTPUTS	(BIT(6) | BIT(7))
+/* + pin 9: PoE chip reset, shared by all 12 chips, active low (bcm59111 fw_reset) */
+#define CCA_U0_OUTPUTS	(BIT(6) | BIT(7) | BIT(9))
 
 struct cca {
 	struct gpio_chip gc;

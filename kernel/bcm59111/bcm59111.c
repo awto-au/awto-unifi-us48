@@ -6,6 +6,7 @@
  */
 #include <linux/delay.h>
 #include <linux/firmware.h>
+#include <linux/gpio/consumer.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/i2c.h>
@@ -1028,12 +1029,137 @@ static const struct i2c_device_id bcm_ids[] = {
 };
 MODULE_DEVICE_TABLE(i2c, bcm_ids);
 
+static struct i2c_driver bcm_driver;
+
+/*
+ * Chip reset line (CCA GPIO 9, shared by all 12 chips, active low, bench 2026-11-23: low = firmware gone, reg 0x75 0xaa -> 0):
+ * fw_reset = off (all drivers unbound = ports shut, line held low, firmware gone), on (release, wait, drivers rebind = firmware
+ * load as fw_load says), pulse (off, 10 ms, on). Delays are stock's host path (docs/poe.md 8): 10 ms pulse, 1 s before the load.
+ */
+#define NCHIP		12
+#define RST_PULSE_MS	10
+#define RST_SETTLE_MS	1000
+static DEFINE_MUTEX(rst_lock);
+static struct gpio_desc *rst_gpio;		/* held asserted while the firmware is off */
+static struct device *rst_devs[NCHIP];
+static int rst_n;
+
+static int rst_collect(struct device *dev, void *data)
+{
+	if (rst_n < NCHIP)
+		rst_devs[rst_n++] = get_device(dev);
+	return 0;
+}
+
+static int rst_off_locked(void)
+{
+	struct gpio_desc *g = NULL;
+	int i, ret = 0;
+
+	if (rst_gpio)
+		return -EBUSY;	/* already off */
+	driver_for_each_device(&bcm_driver.driver, NULL, NULL, rst_collect);
+	for (i = 0; i < rst_n; i++)
+		device_release_driver(rst_devs[i]);	/* unbind: ports shut (bcm_ports_off), budget released */
+	for (i = 0; i < rst_n && !g; i++) {
+		if (!device_property_present(rst_devs[i], "reset-gpios"))
+			continue;
+		g = gpiod_get(rst_devs[i], "reset", GPIOD_ASIS);
+		if (IS_ERR(g)) {
+			ret = PTR_ERR(g);
+			g = NULL;
+		}
+	}
+	if (!g) {
+		pr_err("bcm59111: no reset-gpios on any chip (%d), chips unbound but not reset\n", ret);
+		return ret ?: -ENODEV;
+	}
+	ret = gpiod_direction_output(g, 1);	/* logical 1 = asserted = low */
+	if (ret) {
+		gpiod_put(g);
+		return ret;
+	}
+	rst_gpio = g;
+	pr_info("bcm59111: reset asserted, %d chips unbound, firmware off\n", rst_n);
+	return 0;
+}
+
+static int rst_on_locked(void)
+{
+	int i;
+
+	if (!rst_gpio)
+		return -EINVAL;	/* not off */
+	gpiod_direction_output(rst_gpio, 0);
+	gpiod_direction_input(rst_gpio);	/* pulled up: released */
+	gpiod_put(rst_gpio);
+	rst_gpio = NULL;
+	msleep(RST_SETTLE_MS);
+	for (i = 0; i < rst_n; i++) {
+		device_attach(rst_devs[i]);	/* probe loads the firmware (fw_load=1) */
+		put_device(rst_devs[i]);
+	}
+	pr_info("bcm59111: reset released, %d chips rebound\n", rst_n);
+	rst_n = 0;
+	return 0;
+}
+
+static int fw_reset_set(const char *val, const struct kernel_param *kp)
+{
+	int ret;
+
+	mutex_lock(&rst_lock);
+	if (sysfs_streq(val, "off")) {
+		ret = rst_off_locked();
+	} else if (sysfs_streq(val, "on")) {
+		ret = rst_on_locked();
+	} else if (sysfs_streq(val, "pulse")) {
+		ret = rst_off_locked();
+		if (!ret) {
+			msleep(RST_PULSE_MS);
+			ret = rst_on_locked();
+		}
+	} else {
+		ret = -EINVAL;
+	}
+	mutex_unlock(&rst_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops fw_reset_ops = { .set = fw_reset_set };
+module_param_cb(fw_reset, &fw_reset_ops, NULL, 0200);
+MODULE_PARM_DESC(fw_reset, "write-only: off = unbind all chips, hold the reset line (firmware gone, PoE off); on = release + rebind (loads firmware); pulse = off, 10 ms, on");
+
 static struct i2c_driver bcm_driver = {
 	.driver = { .name = "bcm59111", .of_match_table = bcm_of_match },
 	.probe = bcm_probe,
 	.id_table = bcm_ids,
 };
-module_i2c_driver(bcm_driver);
+
+static int __init bcm_init(void)
+{
+	return i2c_add_driver(&bcm_driver);
+}
+
+static void __exit bcm_exit(void)
+{
+	int i;
+
+	mutex_lock(&rst_lock);
+	if (rst_gpio) {		/* unloaded while off: the line is released, chips come up without firmware */
+		gpiod_direction_output(rst_gpio, 0);
+		gpiod_direction_input(rst_gpio);
+		gpiod_put(rst_gpio);
+		rst_gpio = NULL;
+	}
+	for (i = 0; i < rst_n; i++)
+		put_device(rst_devs[i]);
+	rst_n = 0;
+	mutex_unlock(&rst_lock);
+	i2c_del_driver(&bcm_driver);
+}
+module_init(bcm_init);
+module_exit(bcm_exit);
 
 MODULE_DESCRIPTION("Broadcom BCM59111 PoE PSE controller: pse-pd provider and die temperature");
 MODULE_LICENSE("GPL");

@@ -1,0 +1,24 @@
+From d103cec9b18a96eb984f431130a4b75e2bd5ade1 Mon Sep 17 00:00:00 2001
+From: Dan on Selwyn <dan@awto.au>
+Date: Mon, 23 Nov 2026 16:21:59 +1100
+Subject: [PATCH 32/32] ARM: dts: broadcom: us-48-500w: Add the PoE chip reset
+ line
+
+CCA GPIO 9 resets all 12 BCM59111 chips (active low); listed on PoE-01 only.
+---
+ arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 0867ce388..58b82855e 100644
+--- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
++++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+@@ -428,6 +428,8 @@ ethernet-pse@28 {
+ 					compatible = "brcm,bcm59111";
+ 					reg = <0x28>;
+ 					label = "PoE-01";
++					/* one reset line (CCA GPIO 9, active low) for all 12 chips; bcm59111 fw_reset takes it from here */
++					reset-gpios = <&cca0 9 GPIO_ACTIVE_LOW>;
+ 
+ 					/* PIs 0..3 = channels 1..4 = front ports 1..4 (stock port map, board test) */
+ 					pse-pis {

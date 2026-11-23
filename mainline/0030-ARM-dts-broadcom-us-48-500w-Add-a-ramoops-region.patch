@@ -1,7 +1,7 @@
-From 5a1c0de000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 84cad581d42a75bd283d380a87ccc464cb22520b Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 19 Nov 2026 02:50:00 +1000
-Subject: [PATCH] ARM: dts: broadcom: us-48-500w: Add a ramoops region
+Subject: [PATCH 30/32] ARM: dts: broadcom: us-48-500w: Add a ramoops region
 
 1 MiB of DDR in the high bank for pstore (ramoops): the boot health
 record (boot counter, clean-shutdown flag) is written to pmsg and read
@@ -15,17 +15,17 @@ health line reports rec=ram/prev=none when the record does not survive.
 
 Signed-off-by: TODO
 ---
- .../boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts | 10 ++++++++++
+ .../dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts    | 10 ++++++++++
  1 file changed, 10 insertions(+)
 
 diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index b893735bd..0867ce388 100644
 --- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 +++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -44,6 +44,16 @@
- 			compatible = "shared-dma-pool";
+@@ -47,6 +47,16 @@ a2_mem: a2@4000000 {
  			reg = <0x04000000 0x04000000>;
  			reusable;
-+		};
+ 		};
 +
 +		/* us48-health boot record (pstore pmsg, RAM only): above the a2 carveout, below awto-uboot's malloc + stack */
 +		ramoops@6e000000 {
@@ -35,6 +35,7 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
 +			record-size = <0x10000>;
 +			console-size = <0x40000>;
 +			pmsg-size = <0x40000>;
- 		};
++		};
  	};
  
+ 	/* Consumer of a2_mem and carrier of the layout inside it */

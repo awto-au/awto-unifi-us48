@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From f56c7ff06811eadfe299a2a73a075c4dea0edcca Mon Sep 17 00:00:00 2001
 From: Dan on Selwyn <dan@selwyn>
 Date: Thu, 19 Nov 2026 03:00:00 +1100
-Subject: [PATCH 28/28] ARM: dts: broadcom: us-48-500w: Add PoE power budget and PSE
- PIs
+Subject: [PATCH 29/32] ARM: dts: broadcom: us-48-500w: Add PoE power budget
+ and PSE PIs
 
 Add the PoE budget (48 x 30 W) as fixed regulators (total, one per PoE card) and
 the four pse-pi nodes of each BCM59111, with the front port range of every
@@ -11,13 +11,18 @@ phy_device a pses phandle could be attached to.
 
 Signed-off-by: TODO
 ---
+ .../bcm53344-ubnt-unifi-us-48-500w.dts        | 390 ++++++++++++++++++
+ 1 file changed, 390 insertions(+)
+
 diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
+index 82f1295e3..b893735bd 100644
 --- a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
 +++ b/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts
-@@ -246,6 +246,36 @@
+@@ -282,6 +282,36 @@ map0 {
+ 		};
  	};
  
- 	/*
++	/*
 +	 * PoE power budget: 500 W PSU - 64 W reserved = 436 W (ubnthal, docs/poe.md 7), one supply per PoE card below it.
 +	 * The 54 V is nominal. The per-card limit equals the total: the real split between the cards is unknown.
 +	 */
@@ -47,11 +52,10 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
 +		vin-supply = <&poe_total>;
 +	};
 +
-+	/*
+ 	/*
  	 * SFP cages: presence = ChipcommonA GPIO 2/3 of the owning chip (low = present), TX disable = its CMIC GP pin 2/3
  	 * (high while empty in stock). LOS and TX fault are not wired to a readable pin: module status bits only.
- 	 */
-@@ -343,36 +373,216 @@
+@@ -388,36 +418,216 @@ ethernet-pse@28 {
  					compatible = "brcm,bcm59111";
  					reg = <0x28>;
  					label = "PoE-01";
@@ -268,7 +272,7 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
  				};
  			};
  
-@@ -386,36 +596,216 @@
+@@ -431,36 +641,216 @@ ethernet-pse@28 {
  					compatible = "brcm,bcm59111";
  					reg = <0x28>;
  					label = "PoE-07";
@@ -485,6 +489,3 @@ diff --git a/arch/arm/boot/dts/broadcom/bcm53344-ubnt-unifi-us-48-500w.dts b/arc
  				};
  			};
  
--- 
-2.52.0
-
