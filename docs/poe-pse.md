@@ -108,3 +108,9 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - Recovery = `fw_reset=pulse` for all 12 chips (reset, broadcast reload, rebind), up to 3 attempts (stock: 3 retries, poe.md section 4 step 7); log `firmware lost` / `attempt n of 3` / `firmware recovered`. No check runs while a recovery is in progress.
 - Ports enabled only through sysfs are lost with the rebind; `enable_ports` applies again. Bench 2026-11-23: raw reset pulse on GPIO 9 -> detected on the next check, all 12 chips reloaded in about 5.4 s, cameras delivering.
 - Not covered: a probe that finds only some chips without firmware still broadcasts without a reset first (#176).
+
+## Boot enable stagger (#165, #150)
+
+- `enable_stagger_ms` (default 200 = stock poed `stagger_ms`, poe.md section 2; 0 = all at once): `enable_ports` are not enabled in the probe loop but by one worker, one port every 200 ms in front-port order across all chips (48 ports = about 9.6 s).
+- Before each port the measured total (`bcm_watch`, `power_limit_mw`, default 436 W) is checked: at or over the limit the port and all still pending ports are blocked (log `boot enable: measured ... >= budget`), enable them by hand to retry.
+- Bench 2026-11-23: module reload with all 48 enabled: about 5 ports per second rise, 33 of 48 after 7 s; cameras delivering. The over-budget branch is not exercised (two cameras only, about 4 W).

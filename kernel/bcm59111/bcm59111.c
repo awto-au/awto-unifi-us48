@@ -68,6 +68,10 @@ static char *fw_override;
 module_param(fw_override, charp, 0444);
 MODULE_PARM_DESC(fw_override, "bench: \"PoE-NN=<file>[,PoE-MM=<file>...]\" loads <file> from /lib/firmware into that chip instead of the default image (docs/poe-fw-rewrite.md)");
 
+static unsigned int enable_stagger_ms = 200;
+module_param(enable_stagger_ms, uint, 0444);
+MODULE_PARM_DESC(enable_stagger_ms, "enable_ports at probe: one port every N ms in front-port order, none once the measured total reaches power_limit_mw; 0 = all at once (stock poed stagger_ms default 200, docs/poe.md 2)");
+
 static unsigned int fw_check_ms = 20000;
 module_param(fw_check_ms, uint, 0444);
 MODULE_PARM_DESC(fw_check_ms, "check reg 0x75 of every chip each N ms and reset + reload all chips on firmware loss; 0 = off (stock: about every 20 s, docs/poe.md 4 step 10)");
@@ -133,6 +137,7 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	unsigned int stag_pending;	/* enable_ports bits still to enable (stagger worker) */
 	bool fw_ok;			/* PSE registered: firmware was running at probe (guard: fw_check_ms) */
 	bool passive[NPORT];		/* MSPI field = 1: 24 V passive; the 802.3 chip channel stays off */
 	bool want[NPORT];		/* admin-enabled by the driver: restored after a watchdog restart */
@@ -1032,6 +1037,95 @@ static int bcm_cold_config(struct bcm59111 *b)
 	return ret ?: wr(b, REG_INT_MASK, CFG_MARK);	/* last: "configured" marker, also written by awto-uboot (poe.c) */
 }
 
+/*
+ * Staggered boot enable (#165): one port per enable_stagger_ms, front-port order, across all chips. Before each port the
+ * measured total (bcm_watch, power_limit_mw) is checked: at or over the limit the remaining ports are blocked, not enabled
+ * (an unmanaged all-at-once start of 48 ports can exceed the PSU before the first watcher scan).
+ */
+static struct bcm59111 *stag_chips[12];
+static DEFINE_MUTEX(stag_lock);
+static struct delayed_work stag_work;
+
+static void bcm_stagger(struct work_struct *w)
+{
+	struct bcm59111 *b = NULL;
+	int i, port = 0, ret;
+	bool more = false;
+
+	mutex_lock(&stag_lock);
+	for (i = 0; i < ARRAY_SIZE(stag_chips) && !b; i++)
+		if (stag_chips[i] && stag_chips[i]->stag_pending) {
+			b = stag_chips[i];
+			port = __ffs(b->stag_pending);
+		}
+	if (b) {
+		b->stag_pending &= ~BIT(port);
+		if (power_limit_mw && total_mw >= power_limit_mw) {
+			dev_warn(&b->client->dev, "boot enable: measured %u mW >= budget %u mW, port %d and the rest stay blocked\n",
+				 total_mw, power_limit_mw, port + 1);
+			for (i = 0; i < ARRAY_SIZE(stag_chips); i++) {
+				struct bcm59111 *o = stag_chips[i];
+				int p;
+
+				for (p = 0; o && p < NPORT; p++)
+					if (o->stag_pending & BIT(p) || (o == b && p == port))
+						o->blocked[p] = true;
+				if (o)
+					o->stag_pending = 0;
+			}
+		} else {
+			mutex_lock(&b->pcdev.lock);
+			ret = bcm_pi_enable(&b->pcdev, port);
+			mutex_unlock(&b->pcdev.lock);
+			if (ret)
+				dev_warn(&b->client->dev, "enable_ports: port %d not enabled: %d\n", port + 1, ret);
+		}
+	}
+	for (i = 0; i < ARRAY_SIZE(stag_chips); i++)
+		more |= stag_chips[i] && stag_chips[i]->stag_pending;
+	mutex_unlock(&stag_lock);
+	if (more)
+		schedule_delayed_work(&stag_work, msecs_to_jiffies(enable_stagger_ms));
+}
+
+static void bcm_stagger_remove(void *data)
+{
+	struct bcm59111 *b = data;
+	int i;
+
+	mutex_lock(&stag_lock);
+	b->stag_pending = 0;
+	for (i = 0; i < ARRAY_SIZE(stag_chips); i++)
+		if (stag_chips[i] == b)
+			stag_chips[i] = NULL;
+	mutex_unlock(&stag_lock);
+}
+
+/* Queue the chip's enable_ports bits; first chip starts the worker. 0 = queued, -ENOSPC = no slot (caller enables at once) */
+static int bcm_stagger_add(struct bcm59111 *b, unsigned int mask)
+{
+	int i, slot = -1;
+	bool idle = true;
+
+	mutex_lock(&stag_lock);
+	for (i = 0; i < ARRAY_SIZE(stag_chips); i++) {
+		if (stag_chips[i] && stag_chips[i]->stag_pending)
+			idle = false;
+		if (!stag_chips[i] && slot < 0)
+			slot = i;
+	}
+	if (slot >= 0) {
+		stag_chips[slot] = b;
+		b->stag_pending = mask;
+	}
+	mutex_unlock(&stag_lock);
+	if (slot < 0)
+		return -ENOSPC;
+	if (idle)
+		schedule_delayed_work(&stag_work, msecs_to_jiffies(enable_stagger_ms));
+	return devm_add_action_or_reset(&b->client->dev, bcm_stagger_remove, b);
+}
+
 /* The PSE half is optional: a chip that does not answer (reset, no firmware) keeps its hwmon device and no ports. */
 static int bcm_pse_init(struct bcm59111 *b)
 {
@@ -1133,6 +1227,8 @@ static int bcm_pse_init(struct bcm59111 *b)
 	if (bcm_chip_mask(b, passive_ports, "passive_ports"))
 		dev_warn(dev, "passive_ports: ports allowed to switch to passive 24 V through portN_mode (none switched at probe)\n");
 	mask = bcm_chip_mask(b, enable_ports, "enable_ports");
+	if (mask && enable_stagger_ms && !bcm_stagger_add(b, mask))
+		mask = 0;	/* the stagger worker enables them */
 	for (port = 0; port < NPORT; port++) {
 		if (!(mask & BIT(port)))
 			continue;
@@ -1410,8 +1506,10 @@ static struct i2c_driver bcm_driver = {
 
 static int __init bcm_init(void)
 {
-	int ret = i2c_add_driver(&bcm_driver);
+	int ret;
 
+	INIT_DELAYED_WORK(&stag_work, bcm_stagger);
+	ret = i2c_add_driver(&bcm_driver);
 	if (!ret && fw_check_ms) {
 		INIT_WORK(&fw_recover_work, fw_recover);
 		INIT_DELAYED_WORK(&fw_guard_work, fw_guard);
@@ -1424,6 +1522,7 @@ static void __exit bcm_exit(void)
 {
 	int i;
 
+	cancel_delayed_work_sync(&stag_work);
 	if (fw_check_ms) {
 		cancel_delayed_work_sync(&fw_guard_work);
 		cancel_work_sync(&fw_recover_work);
