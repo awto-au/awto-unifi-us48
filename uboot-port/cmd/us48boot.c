@@ -9,6 +9,8 @@
 #include <vsprintf.h>
 #include <linux/sizes.h>
 #include <linux/errno.h>
+#include <linux/delay.h>
+#include <asm/io.h>
 #ifdef CONFIG_US48_POE
 #include "../board/ubiquiti/us48/us48_fan.h"
 #endif
@@ -23,6 +25,35 @@ static int us48_fail(const char *what, int ret)
 	return CMD_RET_FAILURE;
 }
 
+#ifdef CONFIG_US48_STOCKBOOT
+/*
+ * Reset button recovery (#161): CCA GPIO 11, active low (docs/uboot.md 3). Held at power-on for 3 s = boot stock kernel1
+ * (read-only, us48stock) instead of the Linux slot; from stock the slots can be rewritten (dev.py flash-net).
+ * 3 s = stock ureset_button's hold time; polled every 50 ms. Released early = normal boot.
+ */
+#define US48_CCA_GPIO_DIN	0x18000060
+#define US48_RESET_BTN		BIT(11)
+#define US48_BTN_HOLD_MS	3000
+#define US48_BTN_POLL_MS	50
+
+static bool us48_button_held(void)
+{
+	int i;
+
+	if (readl(US48_CCA_GPIO_DIN) & US48_RESET_BTN)
+		return false;
+	puts("us48boot: reset button held, keep it pressed 3 s to boot stock\n");
+	for (i = 0; i < US48_BTN_HOLD_MS / US48_BTN_POLL_MS; i++) {
+		mdelay(US48_BTN_POLL_MS);
+		if (readl(US48_CCA_GPIO_DIN) & US48_RESET_BTN) {
+			puts("us48boot: button released, normal boot\n");
+			return false;
+		}
+	}
+	return true;
+}
+#endif
+
 static int do_us48boot(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	struct legacy_img_hdr *hdr = (struct legacy_img_hdr *)US48_LOADBUF;
@@ -30,6 +61,12 @@ static int do_us48boot(struct cmd_tbl *cmdtp, int flag, int argc, char *const ar
 	u32 len;
 	int ret;
 
+#ifdef CONFIG_US48_STOCKBOOT
+	if (us48_button_held()) {
+		puts("us48boot: reset button recovery: booting stock kernel1\n");
+		return run_command("us48stock", 0) ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+	}
+#endif
 #ifdef CONFIG_US48_POE
 	/* The PoE firmware load is also the abort window: a key press stops here, any other failure boots on (Linux loads it, #189) */
 	ret = us48_poe_load();

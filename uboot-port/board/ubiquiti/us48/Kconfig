@@ -66,11 +66,12 @@ config US48_CPU_REENTRY
 	  For clock sweeps: docs/cpu-sweep.md. Never for the flash image (cold entry is at 400).
 
 config US48_STOCKBOOT
-	bool "us48stock command: read kernel1 (read-only) and bootm stock from RAM (#78)"
-	default n
+	bool "us48stock command: read kernel1 (read-only) and bootm stock (#78), reset button recovery (#161)"
+	default y
+	select LZMA
 	help
-	  RAM-load variant only, never flashed (build_uboot.py --stock). Reads kernel1 with sf read, sets stock's bootargs,
-	  stops the SP805 (stock has no feeder) and boots it. Writes nothing. Power cycle returns to the normal auto-chain.
+	  Reads kernel1 with sf read, sets stock's bootargs, stops the SP805 (stock has no feeder) and boots it. Writes nothing.
+	  In the flash image us48boot boots it when the reset button (CCA GPIO 11) is held 3 s at power-on.
 
 config US48_STOCK_NO_U1
 	bool "Stock variant: no unit 1 access before us48stock (#78 clean control)"
