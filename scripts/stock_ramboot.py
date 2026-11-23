@@ -121,5 +121,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    help_guard(__doc__, strict=True, known=('--here', '--no-boot', '--no-u1', '--reboot', '--reset'))
+    help_guard(__doc__, strict=True, known=('--cycle', '--here', '--no-boot', '--no-u1', '--reboot', '--reset'))
     sys.exit(main())
