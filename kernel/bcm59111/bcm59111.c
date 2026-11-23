@@ -11,6 +11,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/i2c.h>
 #include <linux/ktime.h>
+#include <linux/leds.h>
 #include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -137,6 +138,9 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	struct led_trigger *poe_trig[NPORT];	/* ge<N>-poe-good: the PoE LED of us48_boardio follows power-good (#178) */
+	char poe_trig_name[NPORT][16];	/* the LED core keeps the name pointer, not a copy */
+	u8 led_on;			/* last power-good nibble sent to the triggers */
 	unsigned int stag_pending;	/* enable_ports bits still to enable (stagger worker) */
 	bool fw_ok;			/* PSE registered: firmware was running at probe (guard: fw_check_ms) */
 	bool passive[NPORT];		/* MSPI field = 1: 24 V passive; the 802.3 chip channel stays off */
@@ -722,6 +726,44 @@ static struct bcm59111 *chips[12];
 static DEFINE_MUTEX(chips_lock);
 static struct delayed_work watch_work;
 
+static int bcm_chip_no(struct bcm59111 *b);
+/* PoE LEDs (#178): one simple trigger per port, fired from the power scan (power-good = field 1 on the PoE LED chain) */
+static void bcm_led_update(struct bcm59111 *b, u8 pg)
+{
+	int id;
+
+	for (id = 0; id < NPORT; id++)
+		if (b->poe_trig[id] && ((pg ^ b->led_on) & BIT(id)))
+			led_trigger_event(b->poe_trig[id], pg & BIT(id) ? LED_FULL : LED_OFF);
+	b->led_on = pg;
+}
+
+static void bcm_led_remove(void *data)
+{
+	struct bcm59111 *b = data;
+	int id;
+
+	for (id = 0; id < NPORT; id++)
+		if (b->poe_trig[id]) {
+			led_trigger_event(b->poe_trig[id], LED_OFF);
+			led_trigger_unregister_simple(b->poe_trig[id]);
+			b->poe_trig[id] = NULL;
+		}
+}
+
+static int bcm_led_add(struct bcm59111 *b)
+{
+	int id, chip = bcm_chip_no(b);
+
+	if (chip < 0)
+		return 0;
+	for (id = 0; id < NPORT; id++) {
+		snprintf(b->poe_trig_name[id], sizeof(b->poe_trig_name[id]), "ge%d-poe-good", 4 * chip + id + 1);
+		led_trigger_register_simple(b->poe_trig_name[id], &b->poe_trig[id]);
+	}
+	return devm_add_action_or_reset(&b->client->dev, bcm_led_remove, b);
+}
+
 static void bcm_watch(struct work_struct *w)
 {
 	unsigned int total = 0;
@@ -736,6 +778,8 @@ static void bcm_watch(struct work_struct *w)
 			continue;
 		mutex_lock(&b->pcdev.lock);
 		pwr = rd(b, REG_STAT_PWR);
+		if (pwr >= 0)
+			bcm_led_update(b, (pwr >> 4) & 0xf);
 		for (id = 0; id < NPORT; id++) {
 			int mw = pwr >= 0 && (pwr & BIT(id + 4)) ? port_mw(b, id) : -1;
 
@@ -1212,6 +1256,9 @@ static int bcm_pse_init(struct bcm59111 *b)
 	if (ret)
 		return dev_err_probe(dev, ret, "pse register\n");
 	b->fw_ok = true;
+	ret = bcm_led_add(b);
+	if (ret)
+		return ret;
 	ret = devm_add_action_or_reset(dev, bcm_budget_release, b);
 	if (ret)
 		return ret;

@@ -128,7 +128,7 @@ Legend: **C** = confirmed (cited), **I** = inferred, **BT** = board-test item ([
 
 ### Linux interface
 - LED class `ge<N>::poe`, N = front 1-48, parent platform device `us48-board-io` (child of the fan spi device: `/sys/devices/platform/48001500.spi/spi_master/spi1/spi1.0/us48-board-io`; stable path `/sys/bus/platform/devices/us48-board-io`). Brightness 1 = field 1 (stock "802.3 power-good"). No colour in the name until BT. No upstream PoE function name (`include/dt-bindings/leds/common.h`, v7.4-rc1).
-- `default_trigger` = `ge<N>-poe-good`. TODO (#26): `bcm59111` registers one simple trigger per PI and fires 1 on power-good, 0 on disconnect; needs its IRQ path (`0x03` bits 7:4 / `0x07`, docs/poe-pse.md). Not registered today: LEDs keep their value. PI -> front map is I (`4(NN-1)+p+1`, poe-pse.md).
+- `default_trigger` = `ge<N>-poe-good`. `bcm59111` registers one simple trigger per port (names kept in the chip struct, the LED core stores the pointer) and fires it from its power scan (`bcm_watch`, 1 s, needs `power_limit_mw` and `power_poll_ms` non-zero): LED on while the chip reports power-good (STAT_PWR bits 7:4), off otherwise and on unbind (#178). Bench 2026-11-23: cameras on front 26 and 40 light their PoE LEDs (`poe_pattern` positions 26 and 40 = 1).
 - `/sys/bus/platform/devices/us48-board-io/poe_pattern` (rw): 48 digits 0-2 in front order, or `off`. `poe_frame_errors` (ro): failed PoE LED frames since probe.
 - Field 2 (passive colour) only through `poe_pattern` (tests); the passive power path itself is not implemented (poe-pse.md section 3).
 - Board check 2026-11-20 (Dan at the panel, PoE off, flashed 5ec20f4 + module reload, C):
