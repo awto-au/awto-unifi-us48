@@ -55,7 +55,7 @@ One chip only, one port at a time, Dan present. Steps 1..3 are read-only apart f
 - Step 2 PASS: regs 0x0C..0x5F vs stock chip 8-002c differ only at 0x41 (0xA1 vs 0x15, expected), 0x11 SAT_PIN (address pins: 0x28..0x2D read 08 18 28 38 0C 1C on stock and test alike), and 0x2C / 0x2E / 0x2F (stock reads measurement values, ours 0: measurement chain is TODO). 0x12, 0x13, 0x14, 0x44, 0x46..0x58, 0x5F identical.
 - Step 3 PARTIAL: write/read round trip on 0x13, 0x1E, 0x1F verified and restored; 0x12 stays 0, 0x75 stays 0xAA. Not run: clear-on-read behaviour, INT pin, 0x14 / 0x44 writes.
 - Steps 4..6 not run (need a PD and a meter; measurement chain, class sequencer and limits are TODO).
-- Bench loading: `tmp/poe-fw-override` (untracked, `PoE-NN=<file>`) is staged into the image by `build_mainline.py`; `S06us48-poe` then passes `fw_override=` to the driver and keeps all ports shut. `scripts/poe_fw_bench.py` does the register compare (it needs ssh to the board; over serial use `i2cdump -f -y -r 0x0c-0x5f 8 0x2d b`).
+- Bench loading: `tmp/poe-fw-override` (untracked, `PoE-NN=<file>`) is staged into the image by `build_mainline.py`; `S15us48-poe` then passes `fw_override=` to the driver and keeps all ports shut. `scripts/poe_fw_bench.py` does the register compare (it needs ssh to the board; over serial use `i2cdump -f -y -r 0x0c-0x5f 8 0x2d b`).
 
 ## Host watchdog (awto image only)
 

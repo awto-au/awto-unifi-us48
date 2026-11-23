@@ -305,7 +305,7 @@ def stage_rootfs() -> str:
     # Rewrite images (poe-fw/, docs/poe-fw-rewrite.md): staged for bench loads via the driver's fw_override
     for fwf in sorted((ROOT / "hwdb/firmware").glob("bcm59111-awto*.bin")):
         shutil.copy2(fwf, stage / "lib/firmware" / fwf.name)
-    ov = ROOT / "tmp/poe-fw-override"	# bench only (untracked): "PoE-NN=<file>" for S06us48-poe
+    ov = ROOT / "tmp/poe-fw-override"	# bench only (untracked): "PoE-NN=<file>" for S15us48-poe
     if ov.exists():
         shutil.copy2(ov, stage / "etc/poe-fw-override")
     return str(write_initramfs_list(stage))

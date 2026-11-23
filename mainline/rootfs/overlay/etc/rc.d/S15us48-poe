@@ -1,0 +1,17 @@
+#!/bin/sh
+# PoE on at boot, all 48 ports (Dan 2026-11-21). The chips come up without firmware after a cold boot (reg 0x75 = 0):
+# fw_load=1 loads v21 into all 12 chips with one broadcast download (about 5 s), in the background so it does not delay the boot.
+# Max power: 30 W/port reserved (class 4), DT budget 1440 W = 48 x 30 W (the measured-power watcher holds the stock 436 W budget, boot enables are staggered). Parameters and safety: docs/poe-pse.md; kill switch: `us48-poe-off`.
+
+M=/lib/modules/$(uname -r)
+EN=0xffffffffffff
+OV=
+# bench: override file = one chip runs a test image; every port stays shut
+[ -s /etc/poe-fw-override ] && { OV="fw_override=$(cat /etc/poe-fw-override)"; EN=0; }
+[ -d /sys/module/bcm59111 ] && exit 0
+# Runs after S14us48-thermal on purpose: us48_fan attaches us48_boardio, which sends the 802.3 mode field (0xaa) to every
+# port; with field 0 the chips detect nothing (docs/poe.md M1, #184). bcm59111 also needs the us48_boardio symbols.
+(
+	exec 2>/dev/kmsg
+	insmod $M/bcm59111.ko fw_load=1 enable_ports=$EN $OV || echo "us48-poe: insmod bcm59111 failed rc=$?" > /dev/kmsg
+) &
