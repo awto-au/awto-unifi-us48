@@ -93,3 +93,11 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - `power_limit_mw` set to 3000: next scan (<= 1 s) logged `over budget (4382 mW > 3000 mW): port 4 (PoE-10) shut and blocked, was 2190 mW`; port 40 (the later port of the same scan) went `blocked_over_budget`, port 26 kept delivering, total 2195 mW.
 - Limit back to 436000 and `portN_enable` = 1 on port 40: block cleared, port delivers again.
 - Needs `us48_boardio.poe_field` = 2 (default): with field 0 the PSE never detects a PD (docs/poe.md M1).
+
+## Stock differences (stock does X, we do Y)
+
+| Item | Stock | Ours | Reason |
+|---|---|---|---|
+| Firmware download | one download to broadcast `0x30` with mux `0x30` (both PoE cards): all 12 chips load in parallel, about 4 s | one chip at a time through its own mux channel, about 4 s per chip (about 48 s) | none recorded; poe.md section 11 step 4 marked it inferred (I). Fix: broadcast load (#26) |
+| I2C clock | 100 kHz | 100 kHz | `MODE_400` gives about 190 kHz and every device behind the mux NAKs (bench 2026-11-23, #158) |
+| Reset line | CCA GPIO 9 pulse before the load | `fw_reset` off / on / pulse | #26 |
