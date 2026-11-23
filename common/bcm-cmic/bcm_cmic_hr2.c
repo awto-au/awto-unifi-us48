@@ -567,9 +567,9 @@ int bcm_hr2_ge_bringup(struct bcm_cmic_unit *u, const struct bcm_hr2_ge *ge)
 		gp_wr(u, b, 0x02020000, 2);		/* GPORT_CONFIG (block-wide): CLR_CNT, then run with GPORT_EN */
 		gp_wr(u, b, 0x02020000, 3);
 		gp_wr(u, b, 0x02020000, 1);
-		gp_wr(u, b, 0x02020800, 0x5ee);		/* GPORT_CNTMAXSIZE (block-wide) */
+		gp_wr(u, b, 0x02020800, GE_MAX_FRAME);	/* GPORT_CNTMAXSIZE (block-wide) */
 	}
-	gp_wr(u, b, 0x10500 | l, 0x5ee);		/* FRM_LENGTH */
+	gp_wr(u, b, 0x10500 | l, GE_MAX_FRAME);	/* FRM_LENGTH */
 	gp_wr(u, b, GP_CC(l), 0x01802058);
 	gp_wr(u, b, 0x1cc00 | l, 0x2c000);		/* PAUSE_CONTROL */
 	gp_wr(u, b, 0x10600 | l, 0xffff);		/* PAUSE_QUANT */

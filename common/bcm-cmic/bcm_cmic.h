@@ -181,6 +181,9 @@ int bcm_hr2_u1_replay(struct bcm_cmic_unit *u, unsigned int mask, unsigned int f
 size_t bcm_hr2_u1_replay_entries(void);
 /* Cold init flag: run the full init even if the SBUS ring map is already set (Linux modules: every load). */
 #define BCM_HR2_INIT_FORCE	0x10000
+/* Copper MAC max frame: stock 0x5ee = 1518 (1500 + 14 + 4 FCS) drops VLAN-tagged full-size frames; 1522 = + one 802.1Q tag (bench #173) */
+#define GE_MAX_FRAME	0x5f2
+
 #define BCM_HR2_INIT_CPS	0x20000	/* unit 0: CMIC_CPS_RESET at stock's place in the TOP reset order (#78) */
 #define BCM_HR2_INIT_ALL	0x15f	/* gen_bcm_hr2_init.py categories: 1 TOP, 2 global, 4 port, 8 tables, 16 other ports, 64 ecc */
 /* Static L2X entry mac -> CPU in the port's VLAN (add or delete). */

@@ -1578,6 +1578,8 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 		nd->watchdog_timeo = HZ;	/* one frame completes in us; 1 s = stuck, logged + aborted */
 		nd->min_mtu = ETH_MIN_MTU;
 		nd->max_mtu = BUF_SZ - ETH_HLEN - VLAN_HLEN - ETH_FCS_LEN - 4;
+		if (p->cfg->copper)
+			nd->max_mtu = GE_MAX_FRAME - ETH_HLEN - ETH_FCS_LEN;	/* MAC passes 1522: MTU 1504 untagged, or 1500 + tag */
 		/* Fixed locally administered MACs: one L2 entry per port, no growth across loads. */
 		eth_hw_addr_set(nd, (const u8[ETH_ALEN]){ US48_MAC_PREFIX, p->cfg->front });
 		strscpy(nd->name, p->cfg->name, IFNAMSIZ);
