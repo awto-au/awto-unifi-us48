@@ -38,6 +38,8 @@
 #define HWD_RESTART	BIT(7)
 #define REG_INT_MASK	0x01			/* stock init value 0x66; here the configured marker (cold config last write) */
 #define CFG_MARK	0x66
+#define SCAN_BASE	0x10			/* power scan block: 0x10 STAT_PWR .. 0x3f (TEMP 0x2c, CM/VM 0x30..0x3f), no clear-on-read register inside */
+#define SCAN_LEN	0x30
 #define REG_FW_REV	0x41
 #define REG_DEV_ID	0x43
 #define REG_HP_EN	0x44
@@ -177,6 +179,18 @@ static int wr(struct bcm59111 *b, u8 reg, u8 val)
 }
 
 /* 16 bit measurement: LSB first (the read latches the MSB), as stock and UDM */
+/* One write + repeated-start read of n bytes (the firmware auto-increments, bench 2026-11-23; adapter limit seen up to 20, FIFO 64) */
+static int rd_blk(struct bcm59111 *b, u8 reg, u8 *buf, int n)
+{
+	struct i2c_msg m[2] = {
+		{ .addr = b->client->addr, .len = 1, .buf = &reg },
+		{ .addr = b->client->addr, .flags = I2C_M_RD, .len = n, .buf = buf },
+	};
+	int ret = i2c_transfer(b->client->adapter, m, 2);
+
+	return ret == 2 ? 0 : ret < 0 ? ret : -EIO;
+}
+
 static int rd16(struct bcm59111 *b, u8 reg)
 {
 	int lo = rd(b, reg), hi;
@@ -282,6 +296,12 @@ static int bcm_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 	return vm < 0 ? vm : vm * UV_PER_VM;
 }
 
+static int mw_of(int vm, int cm)
+{
+	/* mW = (vm * 5.835 mV) * (cm * 122.07 uA) */
+	return div64_u64((u64)vm * UV_PER_VM * cm * NA_PER_CM, 1000000ULL * 1000000ULL);
+}
+
 static int port_mw(struct bcm59111 *b, int id)
 {
 	int vm, cm;
@@ -290,8 +310,7 @@ static int port_mw(struct bcm59111 *b, int id)
 	cm = rd16(b, REG_CM(id));
 	if (vm < 0 || cm < 0)
 		return vm < 0 ? vm : cm;
-	/* mW = (vm * 5.835 mV) * (cm * 122.07 uA) */
-	return div64_u64((u64)vm * UV_PER_VM * cm * NA_PER_CM, 1000000ULL * 1000000ULL);
+	return mw_of(vm, cm);
 }
 
 static int bcm_pi_get_actual_pw(struct pse_controller_dev *pcdev, int id)
@@ -769,13 +788,14 @@ static struct delayed_work watch_work;
 
 static int bcm_chip_no(struct bcm59111 *b);
 /* Per scan, caller holds b->pcdev.lock: log the crossing of temp1_max, optionally shut the chip at temp_shed_c (#179) */
-static void bcm_temp_check(struct bcm59111 *b)
+static void bcm_temp_check(struct bcm59111 *b, int raw)
 {
 	long t;
 	int max = bcm_temp_max(b), id;
 
-	if (max < 0 || bcm_temp_mc(b, &t))
+	if (max < 0 || raw < TEMP_RAW_MIN)
 		return;
+	t = (TEMP_OFS_C - 2 * raw) * 1000L;
 	if ((t >= max * 1000L) != b->temp_over) {
 		b->temp_over = t >= max * 1000L;
 		dev_warn(&b->client->dev, "die %ld C %s the stock limit of %d C\n", t / 1000, b->temp_over ? "reached" : "back under", max);
@@ -834,17 +854,25 @@ static void bcm_watch(struct work_struct *w)
 	mutex_lock(&chips_lock);
 	for (i = 0; i < ARRAY_SIZE(chips); i++) {
 		struct bcm59111 *b = chips[i];
-		int pwr;
+		u8 sc[SCAN_LEN];
+		int pwr, rc;
 
 		if (!b)
 			continue;
 		mutex_lock(&b->pcdev.lock);
-		pwr = rd(b, REG_STAT_PWR);
-		if (pwr >= 0)
+		/* one transfer per chip: STAT_PWR, TEMP and CM/VM of all 4 channels (was 2 + 4 reads per powered port) */
+		rc = rd_blk(b, SCAN_BASE, sc, SCAN_LEN);
+		pwr = rc ? rc : sc[REG_STAT_PWR - SCAN_BASE];
+		if (!rc) {
 			bcm_led_update(b, (pwr >> 4) & 0xf);
-		bcm_temp_check(b);
+			bcm_temp_check(b, sc[REG_TEMP - SCAN_BASE]);
+		}
 		for (id = 0; id < NPORT; id++) {
-			int mw = pwr >= 0 && (pwr & BIT(id + 4)) ? port_mw(b, id) : -1;
+			int mw = -1;
+
+			if (!rc && (pwr & BIT(id + 4)))
+				mw = mw_of(sc[REG_VM(id) - SCAN_BASE] | sc[REG_VM(id) + 1 - SCAN_BASE] << 8,
+					   sc[REG_CM(id) - SCAN_BASE] | sc[REG_CM(id) + 1 - SCAN_BASE] << 8);
 
 			if (mw < 0) {
 				b->pw_mw[id] = 0;
