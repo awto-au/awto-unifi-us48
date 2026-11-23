@@ -11,5 +11,10 @@ struct us48_fan_rb {
 };
 
 void us48_fan_boot(void);
+void us48_smb_init(void);
+u32 us48_smb_rx(void);
+int us48_smb_xfer(const u32 *tx, int ntx, u32 cmd, int polls);
+/* PoE: reset + broadcast firmware download; 0 = ok, -EINTR = key press, other errno = failed (boot continues, Linux loads) */
+int us48_poe_load(void);
 
 #endif

@@ -35,6 +35,8 @@
 #define HWD_FEATURE	BIT(7)
 #define HWD_EXPIRED	BIT(0)
 #define HWD_RESTART	BIT(7)
+#define REG_INT_MASK	0x01			/* stock init value 0x66; here the configured marker (cold config last write) */
+#define CFG_MARK	0x66
 #define REG_FW_REV	0x41
 #define REG_DEV_ID	0x43
 #define REG_HP_EN	0x44
@@ -942,6 +944,32 @@ out:
 	return 0;
 }
 
+#ifndef RST_PULSE_MS
+#define RST_PULSE_MS	10
+#define RST_SETTLE_MS	1000
+#endif
+/*
+ * Reset of all 12 chips from the probe of PoE-01 before a broadcast load: a partly loaded state (awto-uboot stopped half way,
+ * some chips running) must not receive a download (stock resets the whole bus first, poe.md 4). Same line and delays as fw_reset.
+ */
+static int bcm_chip_reset(struct bcm59111 *b)
+{
+	struct gpio_desc *g = gpiod_get(&b->client->dev, "reset", GPIOD_ASIS);
+	int ret;
+
+	if (IS_ERR(g))
+		return PTR_ERR(g);
+	ret = gpiod_direction_output(g, 1);	/* logical 1 = asserted = low */
+	if (!ret) {
+		msleep(RST_PULSE_MS);
+		gpiod_direction_output(g, 0);
+		gpiod_direction_input(g);	/* pulled up: released */
+		msleep(RST_SETTLE_MS);
+	}
+	gpiod_put(g);
+	return ret;
+}
+
 /* Stock 0x1087ad0 / UDM format: raw write [0x70][0x80][off BE16][32 data] x 512, then 0x70 <- 0x40, then 0x75 == 0xaa. */
 static int bcm_fw_load(struct bcm59111 *b)
 {
@@ -1001,7 +1029,7 @@ static int bcm_cold_config(struct bcm59111 *b)
 		ret = ret ?: wr(b, REG_ICUT(c), 0xe2);		/* 638 mA, stock default cfg */
 		ret = ret ?: wr(b, REG_ILIM(c), 0xc0);
 	}
-	return ret;
+	return ret ?: wr(b, REG_INT_MASK, CFG_MARK);	/* last: "configured" marker, also written by awto-uboot (poe.c) */
 }
 
 /* The PSE half is optional: a chip that does not answer (reset, no firmware) keeps its hwmon device and no ports. */
@@ -1040,6 +1068,11 @@ static int bcm_pse_init(struct bcm59111 *b)
 		}
 		if (fw_bcast && !fw_override && chip >= 0 && !bcast_tried) {
 			bcast_tried = true;
+			if (chip == 0 && device_property_present(dev, "reset-gpios")) {
+				ret = bcm_chip_reset(b);
+				if (ret)
+					dev_warn(dev, "chip reset before the broadcast load failed (%d), loading without it\n", ret);
+			}
 			ret = bcm_fw_load_bcast(b);
 			if (ret) {
 				mutex_unlock(&bcast_lock);
@@ -1058,6 +1091,11 @@ static int bcm_pse_init(struct bcm59111 *b)
 		cold = true;
 	}
 	mutex_unlock(&bcast_lock);
+	if (!cold && rd(b, REG_INT_MASK) != CFG_MARK) {
+		/* firmware running but never configured by us, awto-uboot or stock (e.g. awto-uboot's load stopped half way) */
+		dev_info(dev, "chip not configured (reg 0x01 = %d): applying the cold config\n", rd(b, REG_INT_MASK));
+		cold = true;
+	}
 	rev = rd(b, REG_FW_REV);
 	/* ports off before anything else: stock "swctrl poe set off" + us48-poe-off, verified by read back (#24) */
 	ret = wr(b, REG_OP_MODE, 0);
@@ -1181,8 +1219,6 @@ static struct i2c_driver bcm_driver;
  * load as fw_load says), pulse (off, 10 ms, on). Delays are stock's host path (docs/poe.md 8): 10 ms pulse, 1 s before the load.
  */
 #define NCHIP		12
-#define RST_PULSE_MS	10
-#define RST_SETTLE_MS	1000
 static DEFINE_MUTEX(rst_lock);
 static struct gpio_desc *rst_gpio;		/* held asserted while the firmware is off */
 static struct device *rst_devs[NCHIP];

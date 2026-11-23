@@ -49,7 +49,7 @@ static struct bcm_cmic_unit unit1 = { .base = (void __iomem *)CONFIG_BCM_CMIC_UN
 
 static bool unit1_ok;
 
-/* One frame to the chain selected by A = 1 (unit 0 GP0) and B = group (unit 1 GP0); bytes 1-6 stay 0 (PoE bits) */
+/* One frame to the chain selected by A = 1 (unit 0 GP0) and B = group (unit 1 GP0); bytes 1-6 = 0xaa: every port field 2 = 802.3 (stock, docs/poe.md 6; never field 1 = passive 24 V) */
 static int fan_frame(int group, u8 level, struct us48_fan_rb *rb)
 {
 	void __iomem *m = unit0.base + MSPI;
@@ -67,7 +67,7 @@ static int fan_frame(int group, u8 level, struct us48_fan_rb *rb)
 	writel(1, m + 8);
 	writel(1, m + 12);
 	for (i = 0; i < 7; i++) {
-		writel(i ? 0 : level << 4, m + 0x40 + 8 * i);
+		writel(i ? 0xaa : level << 4, m + 0x40 + 8 * i);
 		writel(i < 6 ? 0x80 : 0, m + 0x140 + 4 * i);
 	}
 	writel(0, m + 0x10);
@@ -94,8 +94,8 @@ static int fan_group(int group, u8 level, bool quiet)
 {
 	struct us48_fan_rb rb;
 	int ret = fan_frame(group, level, &rb);
-	int ok = !ret && rb.tx[0] == (u32)level << 4 && !rb.tx[1] && !rb.tx[2] && !rb.tx[3] && !rb.tx[4] &&
-		 !rb.tx[5] && !rb.tx[6] && rb.endqp == 6 && (rb.a_out & 1) == 1 && (rb.b_out & 1) == (u32)group &&
+	int ok = !ret && rb.tx[0] == (u32)level << 4 && rb.tx[1] == 0xaa && rb.tx[2] == 0xaa && rb.tx[3] == 0xaa &&
+		 rb.tx[4] == 0xaa && rb.tx[5] == 0xaa && rb.tx[6] == 0xaa && rb.endqp == 6 && (rb.a_out & 1) == 1 && (rb.b_out & 1) == (u32)group &&
 		 (rb.a_oe & 1) && (rb.b_oe & 1);
 
 	printf("fan: group %d (unit %d) level %d (%d %%) %s: SPIF %d polls %d status 0x%x tx %02x %02x %02x %02x %02x %02x %02x A out/oe %x/%x B out/oe %x/%x\n",
@@ -166,8 +166,11 @@ static void pvt_show(const char *name, struct bcm_cmic_unit *u, int *hot)
 		*hot = 1;
 }
 
-/* Queue is TX FIFO bytes (bit 31 = last), then start; wait for START_BUSY clear. 0 = ok, else errno */
-static int smb_xfer(const u32 *tx, int ntx, u32 cmd)
+/*
+ * Queue is TX FIFO bytes (bit 31 = last), then start; wait for START_BUSY clear. 0 = ok, else errno.
+ * polls x 10 us = limit: callers size it as 1.25x the wire time (9 bits per byte at 100 kHz = 90 us per byte).
+ */
+int us48_smb_xfer(const u32 *tx, int ntx, u32 cmd, int polls)
 {
 	void __iomem *b = unit0.base;
 	int i, n;
@@ -178,16 +181,26 @@ static int smb_xfer(const u32 *tx, int ntx, u32 cmd)
 	for (i = 0; i < ntx; i++)
 		writel(tx[i], b + SMB_TX);
 	writel(BIT(31) | cmd, b + SMB_CMD);
-	for (n = 0; n < SMB_POLLS && (readl(b + SMB_CMD) & BIT(31)); n++)
+	for (n = 0; n < polls && (readl(b + SMB_CMD) & BIT(31)); n++)
 		udelay(10);
-	if (n == SMB_POLLS) {
+	if (n == polls) {
 		writel(BIT(31) | BIT(30), b + SMB_FIFO);
 		return -ETIMEDOUT;
 	}
 	return ((readl(b + SMB_CMD) >> 25) & 7) ? -EIO : 0;
 }
 
-static void smb_init(void)
+static int smb_xfer(const u32 *tx, int ntx, u32 cmd)
+{
+	return us48_smb_xfer(tx, ntx, cmd, SMB_POLLS);
+}
+
+u32 us48_smb_rx(void)
+{
+	return readl(unit0.base + SMB_RX);
+}
+
+void us48_smb_init(void)
 {
 	void __iomem *b = unit0.base;
 
@@ -225,7 +238,7 @@ static void lm75_show(int *hot)
 {
 	int a, t = 0, r;
 
-	smb_init();
+	us48_smb_init();
 	for (a = 0x48; a <= 0x4b; a++) {
 		r = lm75_read(a, &t);
 		if (r) {

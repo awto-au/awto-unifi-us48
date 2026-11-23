@@ -77,6 +77,7 @@ FILES = {
     "board/ubiquiti/us48/fan.c": "board/ubiquiti/us48/fan.c",
     "board/ubiquiti/us48/us48_fan.h": "board/ubiquiti/us48/us48_fan.h",
     "board/ubiquiti/us48/pcie.c": "board/ubiquiti/us48/pcie.c",
+    "board/ubiquiti/us48/poe.c": "board/ubiquiti/us48/poe.c",
     "board/ubiquiti/us48/us48_pcie.h": "board/ubiquiti/us48/us48_pcie.h",
     "board/ubiquiti/us48/us48_sram_clk.h": "board/ubiquiti/us48/us48_sram_clk.h",
     "include/configs/us48.h": "include/configs/us48.h",
@@ -179,6 +180,7 @@ def stage() -> None:
     write_a2_dts_header()
     # generated hwdb constants (single source), staged beside the board files
     shutil.copy2(ROOT / "hwdb/gen/us48_hwdb.h", TREE / "board/ubiquiti/us48/us48_hwdb.h")
+    shutil.copy2(ROOT / "hwdb/firmware/bcm59111-v21.bin", TREE / "board/ubiquiti/us48/bcm59111-v21.bin")  # poe.c .incbin
     log(f"staged {len(FILES)} files from uboot-port/ + hwdb/gen/us48_hwdb.h")
     r = subprocess.run([sys.executable, "-I", str(SYNC), "stage", "uboot", "--dest", str(TREE / CORE_DIR)],
                        capture_output=True, text=True, env=dict(os.environ, US48_REPO=str(ROOT)))

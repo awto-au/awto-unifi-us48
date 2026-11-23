@@ -8,6 +8,10 @@
 #include <image.h>
 #include <vsprintf.h>
 #include <linux/sizes.h>
+#include <linux/errno.h>
+#ifdef CONFIG_US48_POE
+#include "../board/ubiquiti/us48/us48_fan.h"
+#endif
 
 #define US48_KSLOT_OFF	0x2e0000	/* kernel0 slot after the 2 MiB awto-uboot slot (dev.py SLOTS, docs/autochain.md) */
 #define US48_KSLOT_SIZE	0xd00000	/* 13 MiB, to the end of kernel0 */
@@ -26,6 +30,14 @@ static int do_us48boot(struct cmd_tbl *cmdtp, int flag, int argc, char *const ar
 	u32 len;
 	int ret;
 
+#ifdef CONFIG_US48_POE
+	/* The PoE firmware load is also the abort window: a key press stops here, any other failure boots on (Linux loads it, #189) */
+	ret = us48_poe_load();
+	if (ret == -EINTR)
+		return us48_fail("aborted by a key press during the PoE load", ret);
+	if (ret)
+		printf("us48boot: PoE load failed (%d), booting anyway, Linux loads the firmware\n", ret);
+#endif
 	ret = run_command("sf probe 0", 0);
 	if (ret)
 		return us48_fail("sf probe", ret);
