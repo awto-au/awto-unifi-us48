@@ -787,6 +787,7 @@ static DEFINE_MUTEX(chips_lock);
 static struct delayed_work watch_work;
 
 static int bcm_chip_no(struct bcm59111 *b);
+static void bcm_probe_failed(void);
 /* Per scan, caller holds b->pcdev.lock: log the crossing of temp1_max, optionally shut the chip at temp_shed_c (#179) */
 static void bcm_temp_check(struct bcm59111 *b, int raw)
 {
@@ -1286,6 +1287,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 		ret = bcm_fw_wait(b);
 		if (ret) {
 			mutex_unlock(&bcast_lock);
+			bcm_probe_failed();
 			return 0;
 		}
 		cold = true;
@@ -1306,6 +1308,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 			if (ret) {
 				mutex_unlock(&bcast_lock);
 				dev_err(dev, "broadcast firmware load failed (%d), no PSE registered (fw_bcast=0 loads per chip)\n", ret);
+				bcm_probe_failed();
 				return 0;
 			}
 			bcast_pending = GENMASK(NCHIP_MAX - 1, 0) & ~BIT(chip);
@@ -1315,6 +1318,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 		}
 		if (ret) {
 			mutex_unlock(&bcast_lock);
+			bcm_probe_failed();
 			return 0;
 		}
 		cold = true;
@@ -1564,6 +1568,7 @@ MODULE_PARM_DESC(fw_reset, "write-only: off = unbind all chips, hold the reset l
 static struct delayed_work fw_guard_work;
 static struct work_struct fw_recover_work;
 static atomic_t fw_lost = ATOMIC_INIT(0);
+static atomic_t probe_recover = ATOMIC_INIT(0);
 
 static int fw_guard_chip(struct device *dev, void *data)
 {
@@ -1622,6 +1627,13 @@ static void fw_recover(struct work_struct *w)
 		pr_info("bcm59111: firmware recovered, all chips running\n");
 }
 
+/* A failed firmware load at probe (#177): one reset + broadcast reload of all chips with the guard's 3 attempts, once per module load */
+static void bcm_probe_failed(void)
+{
+	if (fw_check_ms && !atomic_xchg(&probe_recover, 1))
+		schedule_work(&fw_recover_work);
+}
+
 static void fw_guard(struct work_struct *w)
 {
 	int ret;
@@ -1646,13 +1658,13 @@ static int __init bcm_init(void)
 {
 	int ret;
 
+	/* the works must exist before i2c_add_driver: the first probes can already schedule the recovery (#177) */
 	INIT_DELAYED_WORK(&stag_work, bcm_stagger);
+	INIT_WORK(&fw_recover_work, fw_recover);
+	INIT_DELAYED_WORK(&fw_guard_work, fw_guard);
 	ret = i2c_add_driver(&bcm_driver);
-	if (!ret && fw_check_ms) {
-		INIT_WORK(&fw_recover_work, fw_recover);
-		INIT_DELAYED_WORK(&fw_guard_work, fw_guard);
+	if (!ret && fw_check_ms)
 		schedule_delayed_work(&fw_guard_work, msecs_to_jiffies(fw_check_ms));
-	}
 	return ret;
 }
 
@@ -1661,10 +1673,8 @@ static void __exit bcm_exit(void)
 	int i;
 
 	cancel_delayed_work_sync(&stag_work);
-	if (fw_check_ms) {
-		cancel_delayed_work_sync(&fw_guard_work);
-		cancel_work_sync(&fw_recover_work);
-	}
+	cancel_delayed_work_sync(&fw_guard_work);
+	cancel_work_sync(&fw_recover_work);
 	mutex_lock(&rst_lock);
 	if (rst_gpio) {		/* unloaded while off: the line is released, chips come up without firmware */
 		gpiod_direction_output(rst_gpio, 0);
