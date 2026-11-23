@@ -1199,6 +1199,10 @@ static int rst_off_locked(void)
 	ret = driver_for_each_device(&bcm_driver.driver, NULL, NULL, rst_collect);
 	if (ret)
 		return ret;
+	if (!rst_n) {
+		pr_err("bcm59111: fw_reset: no chip is bound to the driver (probe not finished or none present), nothing done\n");
+		return -ENODEV;
+	}
 	for (i = 0; i < rst_n; i++)
 		device_release_driver(rst_devs[i]);	/* unbind: ports shut (bcm_ports_off), budget released */
 	for (i = 0; i < rst_n && !g; i++) {
