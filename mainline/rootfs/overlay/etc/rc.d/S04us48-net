@@ -7,6 +7,8 @@ M=/lib/modules/$(uname -r)
 
 exec 2>/dev/kmsg
 echo "us48-net: insmod" > /dev/kmsg
+# CMIC interrupt controller first: the built-in I2C driver (PoE, SFP, sensors) defers its probe until it exists (#158)
+insmod $M/us48_cmic_irq.ko || echo "us48-net: insmod us48_cmic_irq failed rc=$?" > /dev/kmsg
 # Core + unit 0 (ge1, management) first; the unit 1 front-end is a separate module (rmmod us48_cmic_xe leaves ge1 up).
 insmod $M/us48_cmic.ko unit0=1 || { echo "us48-net: insmod failed rc=$?" > /dev/kmsg; exit 1; }
 # us48_pci creates the aux devices (a2, cmic, clk); the xe driver binds to us48_pci.cmic

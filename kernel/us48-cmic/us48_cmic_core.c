@@ -1416,9 +1416,10 @@ EXPORT_SYMBOL_GPL(us48_remove_common);
 /*
  * Stock's CMIC_CPS_RESET (init-phases-u0.md), run between TOP_SOFT_RESET_REG_2 and _REG release. Without it a second
  * full init leaves CPU TX hung (#78). The reset also clears the GP pins and the MSPI strap override the fan/board-IO
- * chain uses and the kernel's SMBus master (xfer fails after 50 s): carry them over, then redo ring map/timeout/rate.
+ * chain uses and the kernel's SMBus master (xfer fails after 50 s; its interrupt mask too): carry them over, then redo ring map/timeout/rate.
  */
 #define CPS_RESET_WAIT_MS	9		/* OpenMDK _bmd_reset 10 ms, delay rule -10 % */
+#define CMIC_UC0_IRQ_MASK1	0x3142c	/* CMC0 mask the SMBus interrupt controller (us48_cmic_irq) owns, #158 */
 
 static void us48_cps_reset(struct bcm_cmic_unit *cu)
 {
@@ -1426,7 +1427,8 @@ static void us48_cps_reset(struct bcm_cmic_unit *cu)
 	u32 gp_out = readl(b + HW_CMIC0_GP_DATA_OUT), gp_en = readl(b + HW_CMIC0_GP_OUT_EN);
 	u32 strap = readl(b + HW_CMIC0_OVERRIDE_STRAP);
 	static const u32 i2c_regs[] = { HW_CMIC0_I2CM_CFG, HW_CMIC0_I2CM_TIM_CFG, HW_CMIC0_I2CM_S_CFG_SMBUS_ADDR,
-					HW_CMIC0_I2CM_M_FIFO_CTRL, HW_CMIC0_I2CM_S_FIFO_CTRL, HW_CMIC0_I2CM_IE };
+					HW_CMIC0_I2CM_M_FIFO_CTRL, HW_CMIC0_I2CM_S_FIFO_CTRL, HW_CMIC0_I2CM_IE,
+					CMIC_UC0_IRQ_MASK1 };
 	u32 i2c[ARRAY_SIZE(i2c_regs)];
 	int i;
 
