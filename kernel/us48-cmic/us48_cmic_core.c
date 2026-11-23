@@ -1124,6 +1124,17 @@ static void us48_dma_irq_quiesce(struct us48_cmic *u)
 	}
 }
 
+static uint defer_irqs = 4;
+module_param(defer_irqs, uint, 0444);
+MODULE_PARM_DESC(defer_irqs, "unit 0 DMA interrupt mode: polls kept on the timer after work before the interrupt is re-enabled (NAPI deferred hard IRQs, #170 bench)");
+static uint defer_us = 1000;
+module_param(defer_us, uint, 0444);
+MODULE_PARM_DESC(defer_us, "unit 0 DMA interrupt mode: re-poll interval while deferred (us, NAPI gro_flush_timeout)");
+
+static bool dma_irq = true;
+module_param(dma_irq, bool, 0444);
+MODULE_PARM_DESC(dma_irq, "unit 0: complete DMA by interrupt (1, default) or by the 1 ms poll (0, A/B bench switch for #170)");
+
 #define DMA_IRQ_HW_TX	46	/* us48_cmic_irq hwirq: 32 + IRQ_STAT0 bit 14 (ch0 DESC_DONE) */
 #define DMA_IRQ_HW_RX	44	/* 32 + bit 12 (ch1 DESC_DONE) */
 
@@ -1622,17 +1633,22 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->napi_dev = alloc_netdev_dummy(0);
 	if (!u->napi_dev)
 		return -ENOMEM;
+	if (modid == 0 && dma_irq && defer_irqs) {	/* read by netif_napi_add */
+		u->napi_dev->napi_defer_hard_irqs = defer_irqs;
+		u->napi_dev->gro_flush_timeout = defer_us * 1000;
+	}
 	netif_napi_add(u->napi_dev, &u->napi, us48_poll);
 	ret = devm_add_action_or_reset(dev, us48_free_napi_dev, u);
 	if (ret)
 		return ret;
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	if (modid == 0) {
+	if (modid == 0 && dma_irq) {
 		ret = us48_dma_irq_setup(u, dev);
 		if (ret)
 			return ret;
 	} else {
-		dev_info(dev, "unit %u: no DMA interrupt route yet, polling every %d us (#170)\n", modid, POLL_NS / 1000);
+		dev_info(dev, "unit %u: %s, polling every %d us (#170)\n", modid, modid ? "no DMA interrupt route yet" : "dma_irq=0",
+			 POLL_NS / 1000);
 	}
 	us48_sw_unit_init(u);
 	ret = us48_mdio_register(u);	/* copper PHYs probe here and power down (BMCR PDN) until their netdev opens */

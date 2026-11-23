@@ -921,5 +921,6 @@ Tags: C = source/stock trace/live read, I = inferred. SDK = OpenBCM 6.5.16 (`sdk
 - Route (bench 2026-11-23): `UC0_IRQ_MASK0/1` (`0x48031428/2c`) gate `IRQ_STAT0/1` (`0x48031400/04`) onto GIC ID 194 (SPI 162); `PCIE_IRQ_MASK1` -> ID 196, `UC1_IRQ_MASK1` -> ID 195. CPS reset clears the masks (carried over in `us48_cps_reset`).
 - `us48_cmic_irq` (chained irqchip, DT `ubnt,us48-cmic-irq`): hwirq 0..31 = STAT1 bit (0 = SMBus), 32..63 = STAT0 bit. Users: SMBus (hwirq 0), DMA ch1 RX DESC_DONE (44 = STAT0 b12), ch0 TX DESC_DONE (46 = b14).
 - DMA DESC_DONE is a level latched until `DMA_STAT_CLR` bit ch (DESCRD_CMPLT_CLR; INTR_COALESCING / DESC_CONTROLLED clears do not drop it). Handler disables its line and schedules NAPI; `us48_poll` clears both latches first, drains, re-enables on `napi_complete_done`.
+- NAPI defers the hard IRQ (`defer_irqs` 4, `defer_us` 1000): while work keeps coming the poll runs on a 1 ms timer, the interrupt returns after 4 empty polls. `dma_irq=0` selects the plain 1 ms poll (A/B switch). Numbers: #170.
 - Stray guard: a pending + unmasked bit with no handler is masked and counted; a GIC interrupt with nothing pending counts as `nopend`. `cat /sys/bus/platform/drivers/us48-cmic-irq/*/stray`.
 - Unit 1 (PCIe) still polls every 1 ms: no INTx/MSI route yet.
