@@ -48,6 +48,7 @@
 #define OP_AUTO		0x3
 #define DEV_ID_59111	0xc0			/* (reg 0x43 & 0xe0): stock accepts any silicon revision */
 #define CRC_RUNNING	0xaa
+#define NCHIP_MAX	12
 #define FW_SIZE		0x4000			/* stock blob length word */
 #define FW_BLOCK	32
 #define FW_START	0x80			/* first byte of every block write */
@@ -64,6 +65,10 @@
 static char *fw_override;
 module_param(fw_override, charp, 0444);
 MODULE_PARM_DESC(fw_override, "bench: \"PoE-NN=<file>[,PoE-MM=<file>...]\" loads <file> from /lib/firmware into that chip instead of the default image (docs/poe-fw-rewrite.md)");
+
+static bool fw_bcast = true;
+module_param(fw_bcast, bool, 0444);
+MODULE_PARM_DESC(fw_bcast, "firmware load: 1 = one broadcast download (stock: address 0x30, mux channels 4+5 at once) loads all 12 chips together, 0 = one chip at a time (default 1; ignored with fw_override)");
 
 static bool fw_load;
 module_param(fw_load, bool, 0444);
@@ -825,6 +830,113 @@ static unsigned int bcm_chip_mask(struct bcm59111 *b, unsigned long long ports, 
 
 /* ---- firmware + bring-up ---- */
 
+/* Chip index 0..11 from the label PoE-NN, -EINVAL without one */
+static int bcm_chip_no(struct bcm59111 *b)
+{
+	unsigned int n;
+
+	if (!b->label || strncmp(b->label, "PoE-", 4) || kstrtouint(b->label + 4, 10, &n) || n < 1 || n > 12)
+		return -EINVAL;
+	return n - 1;
+}
+
+static int bcm_fw_get(struct bcm59111 *b, const struct firmware **fw)
+{
+	struct device *dev = &b->client->dev;
+	int ret = request_firmware(fw, b->fw_name, dev);
+
+	if (ret)
+		return dev_err_probe(dev, ret, "firmware %s\n", b->fw_name);
+	if ((*fw)->size != FW_SIZE) {
+		dev_err(dev, "firmware %s is %zu bytes, expected %u\n", b->fw_name, (*fw)->size, FW_SIZE);
+		release_firmware(*fw);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/* Wait for reg 0x75 == 0xaa (CRC ok, firmware running): poll FW_POLL_MS, limit FW_WAIT_MS, expiry logs the register */
+static int bcm_fw_wait(struct bcm59111 *b)
+{
+	unsigned int waited = 0;
+	int crc;
+
+	for (;;) {
+		crc = rd(b, REG_CRC);
+		if (crc == CRC_RUNNING)
+			return 0;
+		if (waited >= FW_WAIT_MS)
+			break;
+		msleep(FW_POLL_MS);
+		waited += FW_POLL_MS;
+	}
+	dev_err(&b->client->dev, "firmware not running after %u ms: reg 0x75 = %d (limit %u ms)\n", waited, crc, FW_WAIT_MS);
+	return -ETIMEDOUT;
+}
+
+/*
+ * Broadcast download as stock (`0x1087ad0`, docs/poe.md 4): PCA9548 channels 4+5 together (0x30), the same 512 blocks to
+ * address 0x30, then 0x70 <- 0x40. All chips behind the mux get the image at once. Runs on the root adapter under its
+ * root lock, so no other transfer can change the mux selection in between; the mux is deselected at the end.
+ * The chips are reset first (fw_reset or cold boot); each chip's probe then waits for its own 0x75 (bcm_pse_init).
+ */
+#define MUX_ADDR	0x70
+#define MUX_BOTH_CARDS	0x30
+#define BCAST_ADDR	0x30
+static unsigned long bcast_pending;	/* chips (bit n = PoE-(n+1)) loaded by the broadcast, not yet probed; bcast_lock */
+static bool bcast_tried;
+static DEFINE_MUTEX(bcast_lock);
+
+static int bcm_fw_load_bcast(struct bcm59111 *b)
+{
+	struct device *dev = &b->client->dev;
+	struct i2c_adapter *root = i2c_parent_is_i2c_adapter(b->client->adapter);
+	const struct firmware *fw;
+	u8 blk[4 + FW_BLOCK] = { REG_FW_DWN, FW_START };
+	u8 sel = MUX_BOTH_CARDS, stop[2] = { REG_FW_DWN, FW_FORCE_CRC }, off0 = 0;
+	struct i2c_msg m = { .addr = MUX_ADDR, .flags = 0, .len = 1, .buf = &sel };
+	unsigned int off;
+	int ret;
+
+	if (!root || !i2c_check_functionality(root, I2C_FUNC_I2C))
+		return dev_err_probe(dev, -EOPNOTSUPP, "no root adapter for the broadcast load\n");
+	ret = bcm_fw_get(b, &fw);
+	if (ret)
+		return ret;
+	i2c_lock_bus(root, I2C_LOCK_ROOT_ADAPTER);
+	ret = __i2c_transfer(root, &m, 1);
+	if (ret != 1)
+		goto out;
+	m.addr = BCAST_ADDR;
+	m.len = sizeof(blk);
+	m.buf = blk;
+	for (off = 0; off < FW_SIZE; off += FW_BLOCK) {
+		blk[2] = off >> 8;
+		blk[3] = off;
+		memcpy(blk + 4, fw->data + off, FW_BLOCK);
+		ret = __i2c_transfer(root, &m, 1);
+		if (ret != 1) {
+			dev_err(dev, "broadcast block at 0x%04x: %d\n", off, ret);
+			break;
+		}
+	}
+	if (ret == 1) {
+		m.len = sizeof(stop);
+		m.buf = stop;
+		ret = __i2c_transfer(root, &m, 1);
+	}
+out:
+	m.addr = MUX_ADDR;	/* deselect, also after a failure */
+	m.len = 1;
+	m.buf = &off0;
+	__i2c_transfer(root, &m, 1);
+	i2c_unlock_bus(root, I2C_LOCK_ROOT_ADAPTER);
+	release_firmware(fw);
+	if (ret != 1)
+		return ret < 0 ? ret : -EIO;
+	return 0;
+}
+
 /* Stock 0x1087ad0 / UDM format: raw write [0x70][0x80][off BE16][32 data] x 512, then 0x70 <- 0x40, then 0x75 == 0xaa. */
 static int bcm_fw_load(struct bcm59111 *b)
 {
@@ -893,7 +1005,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 	struct device *dev = &b->client->dev;
 	bool cold = false;
 	unsigned int mask;
-	int id, port, crc, rev, ret;
+	int id, port, crc, rev, ret, chip;
 
 	id = rd(b, REG_DEV_ID);
 	if (id < 0) {
@@ -905,16 +1017,42 @@ static int bcm_pse_init(struct bcm59111 *b)
 		return 0;
 	}
 	crc = rd(b, REG_CRC);
-	if (crc != CRC_RUNNING) {
+	chip = bcm_chip_no(b);
+	mutex_lock(&bcast_lock);
+	if (chip >= 0 && test_and_clear_bit(chip, &bcast_pending)) {
+		/* loaded by the broadcast of another chip's probe: wait for our own CRC, configure as after our own load */
+		ret = bcm_fw_wait(b);
+		if (ret) {
+			mutex_unlock(&bcast_lock);
+			return 0;
+		}
+		cold = true;
+	} else if (crc != CRC_RUNNING) {
 		if (!fw_load) {
+			mutex_unlock(&bcast_lock);
 			dev_warn(dev, "firmware not running (reg 0x75 = %d); fw_load=0, no PSE registered\n", crc);
 			return 0;
 		}
-		ret = bcm_fw_load(b);
-		if (ret)
+		if (fw_bcast && !fw_override && chip >= 0 && !bcast_tried) {
+			bcast_tried = true;
+			ret = bcm_fw_load_bcast(b);
+			if (ret) {
+				mutex_unlock(&bcast_lock);
+				dev_err(dev, "broadcast firmware load failed (%d), no PSE registered (fw_bcast=0 loads per chip)\n", ret);
+				return 0;
+			}
+			bcast_pending = GENMASK(NCHIP_MAX - 1, 0) & ~BIT(chip);
+			ret = bcm_fw_wait(b);
+		} else {
+			ret = bcm_fw_load(b);
+		}
+		if (ret) {
+			mutex_unlock(&bcast_lock);
 			return 0;
+		}
 		cold = true;
 	}
+	mutex_unlock(&bcast_lock);
 	rev = rd(b, REG_FW_REV);
 	/* ports off before anything else: stock "swctrl poe set off" + us48-poe-off, verified by read back (#24) */
 	ret = wr(b, REG_OP_MODE, 0);
@@ -1058,7 +1196,9 @@ static int rst_off_locked(void)
 
 	if (rst_gpio)
 		return -EBUSY;	/* already off */
-	driver_for_each_device(&bcm_driver.driver, NULL, NULL, rst_collect);
+	ret = driver_for_each_device(&bcm_driver.driver, NULL, NULL, rst_collect);
+	if (ret)
+		return ret;
 	for (i = 0; i < rst_n; i++)
 		device_release_driver(rst_devs[i]);	/* unbind: ports shut (bcm_ports_off), budget released */
 	for (i = 0; i < rst_n && !g; i++) {
@@ -1080,6 +1220,10 @@ static int rst_off_locked(void)
 		return ret;
 	}
 	rst_gpio = g;
+	mutex_lock(&bcast_lock);
+	bcast_pending = 0;
+	bcast_tried = false;
+	mutex_unlock(&bcast_lock);
 	pr_info("bcm59111: reset asserted, %d chips unbound, firmware off\n", rst_n);
 	return 0;
 }
@@ -1096,7 +1240,8 @@ static int rst_on_locked(void)
 	rst_gpio = NULL;
 	msleep(RST_SETTLE_MS);
 	for (i = 0; i < rst_n; i++) {
-		device_attach(rst_devs[i]);	/* probe loads the firmware (fw_load=1) */
+		if (device_attach(rst_devs[i]) < 0)	/* probe loads the firmware (fw_load=1) */
+			pr_err("bcm59111: rebind of chip %d failed\n", i);
 		put_device(rst_devs[i]);
 	}
 	pr_info("bcm59111: reset released, %d chips rebound\n", rst_n);

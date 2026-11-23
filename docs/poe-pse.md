@@ -98,6 +98,6 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 
 | Item | Stock | Ours | Reason |
 |---|---|---|---|
-| Firmware download | one download to broadcast `0x30` with mux `0x30` (both PoE cards): all 12 chips load in parallel, about 4 s | one chip at a time through its own mux channel, about 4 s per chip (about 48 s) | none recorded; poe.md section 11 step 4 marked it inferred (I). Fix: broadcast load (#26) |
+| Firmware download | one download to broadcast `0x30` with mux `0x30` (both PoE cards): all 12 chips load in parallel, about 4 s | one download to broadcast `0x30`, mux `0x30` on the root adapter (root lock held), each chip's probe waits for its own CRC | none recorded; poe.md section 11 step 4 marked it inferred (I). Fixed 2026-11-23: `fw_bcast=1` (default) = broadcast download, 12 chips in about 5 s after a reset (1 s settle + about 4 s); `fw_bcast=0` = old per-chip path (#26) |
 | I2C clock | 100 kHz | 100 kHz | `MODE_400` gives about 190 kHz and every device behind the mux NAKs (bench 2026-11-23, #158) |
 | Reset line | CCA GPIO 9 pulse before the load | `fw_reset` off / on / pulse | #26 |
