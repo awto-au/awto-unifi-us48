@@ -66,6 +66,10 @@ static char *fw_override;
 module_param(fw_override, charp, 0444);
 MODULE_PARM_DESC(fw_override, "bench: \"PoE-NN=<file>[,PoE-MM=<file>...]\" loads <file> from /lib/firmware into that chip instead of the default image (docs/poe-fw-rewrite.md)");
 
+static unsigned int fw_check_ms = 20000;
+module_param(fw_check_ms, uint, 0444);
+MODULE_PARM_DESC(fw_check_ms, "check reg 0x75 of every chip each N ms and reset + reload all chips on firmware loss; 0 = off (stock: about every 20 s, docs/poe.md 4 step 10)");
+
 static bool fw_bcast = true;
 module_param(fw_bcast, bool, 0444);
 MODULE_PARM_DESC(fw_bcast, "firmware load: 1 = one broadcast download (stock: address 0x30, mux channels 4+5 at once) loads all 12 chips together, 0 = one chip at a time (default 1; ignored with fw_override)");
@@ -127,6 +131,7 @@ struct bcm59111 {
 	bool reserved[NPORT];
 	bool taken[NPORT];		/* counted in budget_used */
 	u8 pg;				/* last power-good nibble seen by the poll */
+	bool fw_ok;			/* PSE registered: firmware was running at probe (guard: fw_check_ms) */
 	bool passive[NPORT];		/* MSPI field = 1: 24 V passive; the 802.3 chip channel stays off */
 	bool want[NPORT];		/* admin-enabled by the driver: restored after a watchdog restart */
 	bool hwd;			/* firmware has the host watchdog and it is armed by us */
@@ -1074,6 +1079,7 @@ static int bcm_pse_init(struct bcm59111 *b)
 	ret = devm_pse_controller_register(dev, &b->pcdev);
 	if (ret)
 		return dev_err_probe(dev, ret, "pse register\n");
+	b->fw_ok = true;
 	ret = devm_add_action_or_reset(dev, bcm_budget_release, b);
 	if (ret)
 		return ret;
@@ -1279,6 +1285,87 @@ static const struct kernel_param_ops fw_reset_ops = { .set = fw_reset_set };
 module_param_cb(fw_reset, &fw_reset_ops, NULL, 0200);
 MODULE_PARM_DESC(fw_reset, "write-only: off = unbind all chips, hold the reset line (firmware gone, PoE off); on = release + rebind (loads firmware); pulse = off, 10 ms, on");
 
+/*
+ * Firmware guard (#175, stock docs/poe.md 4 step 10): every fw_check_ms read reg 0x75 of each chip with a running PSE.
+ * Not 0xaa (or no answer) = the chip lost its firmware (brown-out, reset): the same reset + broadcast reload as fw_reset=pulse,
+ * up to FW_RECOVER_TRIES times. Ports enabled only through sysfs are lost with the rebind; enable_ports applies again.
+ */
+#define FW_RECOVER_TRIES	3	/* stock: 3 more attempts (poe.md 4 step 7) */
+static struct delayed_work fw_guard_work;
+static struct work_struct fw_recover_work;
+static atomic_t fw_lost = ATOMIC_INIT(0);
+
+static int fw_guard_chip(struct device *dev, void *data)
+{
+	struct bcm59111 *b;
+	int crc;
+	bool bad = false;
+
+	device_lock(dev);
+	if (dev->driver == &bcm_driver.driver && (b = dev_get_drvdata(dev)) && b->fw_ok) {
+		mutex_lock(&b->pcdev.lock);
+		crc = rd(b, REG_CRC);
+		mutex_unlock(&b->pcdev.lock);
+		bad = crc != CRC_RUNNING;
+		if (bad)
+			dev_err(dev, "firmware lost: reg 0x75 = %d\n", crc);
+	}
+	device_unlock(dev);
+	if (bad)
+		atomic_inc(&fw_lost);
+	return 0;
+}
+
+static int fw_all_running(struct device *dev, void *data)
+{
+	int *bad = data;
+	struct bcm59111 *b;
+
+	device_lock(dev);
+	if (dev->driver != &bcm_driver.driver || !(b = dev_get_drvdata(dev)) || !b->fw_ok)
+		(*bad)++;
+	device_unlock(dev);
+	return 0;
+}
+
+static void fw_recover(struct work_struct *w)
+{
+	int tries, bad = 1, ret, chips_bad;
+
+	for (tries = 1; tries <= FW_RECOVER_TRIES && bad; tries++) {
+		pr_err("bcm59111: firmware lost on a chip: reset + reload of all chips, attempt %d of %d\n", tries, FW_RECOVER_TRIES);
+		mutex_lock(&rst_lock);
+		ret = rst_off_locked();
+		if (!ret) {
+			msleep(RST_PULSE_MS);
+			ret = rst_on_locked();
+		}
+		mutex_unlock(&rst_lock);
+		bad = ret;
+		chips_bad = 0;
+		if (!bad)
+			bad = driver_for_each_device(&bcm_driver.driver, NULL, &chips_bad, fw_all_running) ?: chips_bad;
+	}
+	if (bad)
+		pr_err("bcm59111: firmware recovery failed after %d attempts, chips left as they are (fw_reset=pulse to retry)\n", FW_RECOVER_TRIES);
+	else
+		pr_info("bcm59111: firmware recovered, all chips running\n");
+}
+
+static void fw_guard(struct work_struct *w)
+{
+	int ret;
+
+	/* no check while a recovery runs: chips are unbound or loading, the recovery judges the result itself */
+	if (!work_busy(&fw_recover_work)) {
+		atomic_set(&fw_lost, 0);
+		ret = driver_for_each_device(&bcm_driver.driver, NULL, NULL, fw_guard_chip);
+		if (!ret && atomic_read(&fw_lost))
+			schedule_work(&fw_recover_work);
+	}
+	schedule_delayed_work(&fw_guard_work, msecs_to_jiffies(fw_check_ms));
+}
+
 static struct i2c_driver bcm_driver = {
 	.driver = { .name = "bcm59111", .of_match_table = bcm_of_match },
 	.probe = bcm_probe,
@@ -1287,13 +1374,24 @@ static struct i2c_driver bcm_driver = {
 
 static int __init bcm_init(void)
 {
-	return i2c_add_driver(&bcm_driver);
+	int ret = i2c_add_driver(&bcm_driver);
+
+	if (!ret && fw_check_ms) {
+		INIT_WORK(&fw_recover_work, fw_recover);
+		INIT_DELAYED_WORK(&fw_guard_work, fw_guard);
+		schedule_delayed_work(&fw_guard_work, msecs_to_jiffies(fw_check_ms));
+	}
+	return ret;
 }
 
 static void __exit bcm_exit(void)
 {
 	int i;
 
+	if (fw_check_ms) {
+		cancel_delayed_work_sync(&fw_guard_work);
+		cancel_work_sync(&fw_recover_work);
+	}
 	mutex_lock(&rst_lock);
 	if (rst_gpio) {		/* unloaded while off: the line is released, chips come up without firmware */
 		gpiod_direction_output(rst_gpio, 0);

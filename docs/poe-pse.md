@@ -101,3 +101,10 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 | Firmware download | one download to broadcast `0x30` with mux `0x30` (both PoE cards): all 12 chips load in parallel, about 4 s | one download to broadcast `0x30`, mux `0x30` on the root adapter (root lock held), each chip's probe waits for its own CRC | none recorded; poe.md section 11 step 4 marked it inferred (I). Fixed 2026-11-23: `fw_bcast=1` (default) = broadcast download, 12 chips in about 5 s after a reset (1 s settle + about 4 s); `fw_bcast=0` = old per-chip path (#26) |
 | I2C clock | 100 kHz | 100 kHz | `MODE_400` gives about 190 kHz and every device behind the mux NAKs (bench 2026-11-23, #158) |
 | Reset line | CCA GPIO 9 pulse before the load | `fw_reset` off / on / pulse | #26 |
+
+## Firmware guard (#175)
+
+- `fw_check_ms` (default 20000 = stock's about 20 s, poe.md section 4 step 10; 0 = off): every period reg `0x75` of each chip with a running PSE is read; not 0xaa (or no answer) = firmware lost.
+- Recovery = `fw_reset=pulse` for all 12 chips (reset, broadcast reload, rebind), up to 3 attempts (stock: 3 retries, poe.md section 4 step 7); log `firmware lost` / `attempt n of 3` / `firmware recovered`. No check runs while a recovery is in progress.
+- Ports enabled only through sysfs are lost with the rebind; `enable_ports` applies again. Bench 2026-11-23: raw reset pulse on GPIO 9 -> detected on the next check, all 12 chips reloaded in about 5.4 s, cameras delivering.
+- Not covered: a probe that finds only some chips without firmware still broadcasts without a reset first (#176).
