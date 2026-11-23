@@ -69,6 +69,10 @@ static char *fw_override;
 module_param(fw_override, charp, 0444);
 MODULE_PARM_DESC(fw_override, "bench: \"PoE-NN=<file>[,PoE-MM=<file>...]\" loads <file> from /lib/firmware into that chip instead of the default image (docs/poe-fw-rewrite.md)");
 
+static unsigned int temp_shed_c;
+module_param(temp_shed_c, uint, 0444);
+MODULE_PARM_DESC(temp_shed_c, "shut all ports of a chip whose die reaches this many degrees C (blocked until enabled by hand); 0 = off (alarm and log only at the stock limit, temp1_max)");
+
 static unsigned int enable_stagger_ms = 200;
 module_param(enable_stagger_ms, uint, 0444);
 MODULE_PARM_DESC(enable_stagger_ms, "enable_ports at probe: one port every N ms in front-port order, none once the measured total reaches power_limit_mw; 0 = all at once (stock poed stagger_ms default 200, docs/poe.md 2)");
@@ -140,6 +144,7 @@ struct bcm59111 {
 	u8 pg;				/* last power-good nibble seen by the poll */
 	struct led_trigger *poe_trig[NPORT];	/* ge<N>-poe-good: the PoE LED of us48_boardio follows power-good (#178) */
 	char poe_trig_name[NPORT][16];	/* the LED core keeps the name pointer, not a copy */
+	bool temp_over;			/* die at or over temp1_max at the last scan */
 	u8 led_on;			/* last power-good nibble sent to the triggers */
 	unsigned int stag_pending;	/* enable_ports bits still to enable (stagger worker) */
 	bool fw_ok;			/* PSE registered: firmware was running at probe (guard: fw_check_ms) */
@@ -586,6 +591,31 @@ static const struct attribute_group bcm_group = { .attrs = bcm_attrs };
 
 /* ---- hwmon: die temperature ---- */
 
+/* Stock per-chip alert limits PoE-01..12 (docs/board.md Temperature sensors, last column), degrees C */
+static const u8 temp_max_c[12] = { 75, 75, 75, 80, 85, 85, 80, 75, 75, 75, 70, 65 };
+
+static int bcm_temp_max(const struct bcm59111 *b)
+{
+	unsigned int n;
+
+	if (!b->label || strncmp(b->label, "PoE-", 4) || kstrtouint(b->label + 4, 10, &n) || n < 1 || n > 12)
+		return -ENODATA;
+	return temp_max_c[n - 1];
+}
+
+/* Die temperature in milli-degrees C; caller needs no lock (single register read) */
+static int bcm_temp_mc(struct bcm59111 *b, long *val)
+{
+	int raw = rd(b, REG_TEMP);
+
+	if (raw < 0)
+		return raw;
+	if (raw < TEMP_RAW_MIN)
+		return -ENODATA;
+	*val = (TEMP_OFS_C - 2 * raw) * 1000L;
+	return 0;
+}
+
 static umode_t bcm_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int ch)
 {
 	const struct bcm59111 *b = data;
@@ -594,23 +624,34 @@ static umode_t bcm_is_visible(const void *data, enum hwmon_sensor_types type, u3
 		return 0;
 	if (attr == hwmon_temp_input || (attr == hwmon_temp_label && b->label))
 		return 0444;
+	if ((attr == hwmon_temp_max || attr == hwmon_temp_max_alarm) && bcm_temp_max(b) >= 0)
+		return 0444;
 	return 0;
 }
 
 static int bcm_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int ch, long *val)
 {
 	struct bcm59111 *b = dev_get_drvdata(dev);
-	int raw;
+	long t;
+	int ret;
 
-	if (type != hwmon_temp || attr != hwmon_temp_input)
+	if (type != hwmon_temp)
 		return -EOPNOTSUPP;
-	raw = rd(b, REG_TEMP);
-	if (raw < 0)
-		return raw;
-	if (raw < TEMP_RAW_MIN)
-		return -ENODATA;
-	*val = (TEMP_OFS_C - 2 * raw) * 1000L;
-	return 0;
+	switch (attr) {
+	case hwmon_temp_input:
+		return bcm_temp_mc(b, val);
+	case hwmon_temp_max:
+		ret = bcm_temp_max(b);
+		*val = ret < 0 ? 0 : ret * 1000L;
+		return ret < 0 ? ret : 0;
+	case hwmon_temp_max_alarm:
+		ret = bcm_temp_mc(b, &t);
+		if (ret)
+			return ret;
+		*val = t >= bcm_temp_max(b) * 1000L;
+		return 0;
+	}
+	return -EOPNOTSUPP;
 }
 
 static int bcm_read_string(struct device *dev, enum hwmon_sensor_types type, u32 attr, int ch, const char **str)
@@ -628,7 +669,7 @@ static const struct hwmon_ops bcm_hwmon_ops = {
 };
 
 static const struct hwmon_channel_info * const bcm_info[] = {
-	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT | HWMON_T_LABEL),
+	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT | HWMON_T_LABEL | HWMON_T_MAX | HWMON_T_MAX_ALARM),
 	NULL
 };
 
@@ -727,6 +768,27 @@ static DEFINE_MUTEX(chips_lock);
 static struct delayed_work watch_work;
 
 static int bcm_chip_no(struct bcm59111 *b);
+/* Per scan, caller holds b->pcdev.lock: log the crossing of temp1_max, optionally shut the chip at temp_shed_c (#179) */
+static void bcm_temp_check(struct bcm59111 *b)
+{
+	long t;
+	int max = bcm_temp_max(b), id;
+
+	if (max < 0 || bcm_temp_mc(b, &t))
+		return;
+	if ((t >= max * 1000L) != b->temp_over) {
+		b->temp_over = t >= max * 1000L;
+		dev_warn(&b->client->dev, "die %ld C %s the stock limit of %d C\n", t / 1000, b->temp_over ? "reached" : "back under", max);
+	}
+	if (temp_shed_c && t >= temp_shed_c * 1000L) {
+		for (id = 0; id < NPORT; id++)
+			if (!b->blocked[id] && bcm_pi_disable(&b->pcdev, id) == 0) {
+				b->blocked[id] = true;
+				dev_err(&b->client->dev, "die %ld C >= temp_shed_c %u: port %d shut and blocked\n", t / 1000, temp_shed_c, id + 1);
+			}
+	}
+}
+
 /* PoE LEDs (#178): one simple trigger per port, fired from the power scan (power-good = field 1 on the PoE LED chain) */
 static void bcm_led_update(struct bcm59111 *b, u8 pg)
 {
@@ -780,6 +842,7 @@ static void bcm_watch(struct work_struct *w)
 		pwr = rd(b, REG_STAT_PWR);
 		if (pwr >= 0)
 			bcm_led_update(b, (pwr >> 4) & 0xf);
+		bcm_temp_check(b);
 		for (id = 0; id < NPORT; id++) {
 			int mw = pwr >= 0 && (pwr & BIT(id + 4)) ? port_mw(b, id) : -1;
 

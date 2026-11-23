@@ -114,3 +114,9 @@ Issue #26 (bench #28). Register facts and stock sequence: [poe.md](poe.md). Buil
 - `enable_stagger_ms` (default 200 = stock poed `stagger_ms`, poe.md section 2; 0 = all at once): `enable_ports` are not enabled in the probe loop but by one worker, one port every 200 ms in front-port order across all chips (48 ports = about 9.6 s).
 - Before each port the measured total (`bcm_watch`, `power_limit_mw`, default 436 W) is checked: at or over the limit the port and all still pending ports are blocked (log `boot enable: measured ... >= budget`), enable them by hand to retry.
 - Bench 2026-11-23: module reload with all 48 enabled: about 5 ports per second rise, 33 of 48 after 7 s; cameras delivering. The over-budget branch is not exercised (two cameras only, about 4 W).
+
+## Chip temperature (#179)
+
+- hwmon per chip: `temp1_input`, `temp1_max` = stock alert limit of that chip (PoE-01..12 = 75,75,75,80,85,85,80,75,75,75,70,65 C, docs/board.md), `temp1_max_alarm`. The power scan logs a warning when the die reaches / leaves the limit.
+- `temp_shed_c` (default 0 = off): when a chip reaches this many degrees C all its ports are shut and blocked (enable by hand after it cooled). TCUT shutdown stays chip-side.
+- Bench 2026-11-23: chips 45-59 C idle (two cameras), limits as above, no alarm; `temp_shed_c=56` shut and blocked the ports of the chips at 57 C within a scan.
