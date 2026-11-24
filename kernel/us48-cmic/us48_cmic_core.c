@@ -1103,26 +1103,104 @@ static irqreturn_t us48_dma_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+/* Unit 1: the same DESC_DONE latches reach the host as the endpoint's INTx through CMC0_PCIE_IRQ_MASK0 (masks 0 at power-up, bench 2026-11-24). */
+#define CMC0_IRQ_STAT0		0x31400
+#define CMC0_PCIE_IRQ_MASK0	0x31414
+#define IRQ0_TX			BIT(14)		/* ch0 DESC_DONE */
+#define IRQ0_RX			BIT(12)		/* ch1 DESC_DONE */
+
+static void pcie_mask_rmw(struct us48_cmic *u, u32 bits, bool on)
+{
+	unsigned long flags;
+	u32 v;
+
+	spin_lock_irqsave(&u->irq_lock, flags);
+	v = rd(u, CMC0_PCIE_IRQ_MASK0);
+	wr(u, CMC0_PCIE_IRQ_MASK0, on ? v | bits : v & ~bits);
+	if (!on)	/* the write is posted: the read completes only after the INTx deassert message reached the root complex */
+		rd(u, CMC0_PCIE_IRQ_MASK0);
+	spin_unlock_irqrestore(&u->irq_lock, flags);
+}
+
+/* Shared line: ours only when a source we unmasked is pending. The chip masks it again here; NAPI unmasks after the clear + drain. */
+static irqreturn_t us48_pcie_dma_irq(int irq, void *data)
+{
+	struct us48_cmic *u = data;
+	u32 st = rd(u, CMC0_IRQ_STAT0) & rd(u, CMC0_PCIE_IRQ_MASK0) & (IRQ0_TX | IRQ0_RX);
+
+	if (!st) {
+		if (atomic_inc_return(&u->irq_nopend) == 1)
+			dev_warn(u->dev, "unit %u INTx with no DMA source pending and unmasked (shared line; counted)\n", u->modid);
+		return IRQ_NONE;
+	}
+	if (st & IRQ0_TX)
+		set_bit(0, &u->irq_dis);
+	if (st & IRQ0_RX)
+		set_bit(1, &u->irq_dis);
+	pcie_mask_rmw(u, st, false);
+	napi_schedule(&u->napi);
+	return IRQ_HANDLED;
+}
+
+static void us48_dma_irq_enable(struct us48_cmic *u)
+{
+	if (u->irq_mode == 2) {
+		pcie_mask_rmw(u, IRQ0_TX | IRQ0_RX, true);
+		return;
+	}
+	enable_irq(u->dma_irq[0]);
+	enable_irq(u->dma_irq[1]);
+}
+
 static void us48_dma_irq_rearm(struct us48_cmic *u)
 {
 	int i;
 
+	if (u->irq_mode == 2) {
+		u32 bits = (test_and_clear_bit(0, &u->irq_dis) ? IRQ0_TX : 0) | (test_and_clear_bit(1, &u->irq_dis) ? IRQ0_RX : 0);
+
+		if (bits)
+			pcie_mask_rmw(u, bits, true);
+		return;
+	}
 	for (i = 0; i < 2; i++)
 		if (test_and_clear_bit(i, &u->irq_dis))
 			enable_irq(u->dma_irq[i]);
 }
 
-/* Both lines off, depth balanced, after NAPI is disabled (stop / unbind). */
+/* Both sources off, depth balanced, after NAPI is disabled (stop / unbind). */
 static void us48_dma_irq_quiesce(struct us48_cmic *u)
 {
 	int i;
 
+	if (u->irq_mode == 2) {
+		pcie_mask_rmw(u, IRQ0_TX | IRQ0_RX, false);
+		synchronize_irq(u->pcie_irq);
+		u->irq_dis = 0;
+		return;
+	}
 	for (i = 0; i < 2; i++) {
 		disable_irq(u->dma_irq[i]);
 		if (test_and_clear_bit(i, &u->irq_dis))
 			enable_irq(u->dma_irq[i]);	/* undo the handler's own disable */
 	}
 }
+
+static int dma_irq_stats_get(char *buf, const struct kernel_param *kp)
+{
+	int n = 0, i;
+
+	for (i = 0; i < 2; i++) {
+		struct us48_cmic *u = READ_ONCE(schan_units[i]);
+
+		if (u)
+			n += sysfs_emit_at(buf, n, "unit %d: mode %u irq_dis %lx nopend %d\n", i, u->irq_mode, u->irq_dis,
+					   atomic_read(&u->irq_nopend));
+	}
+	return n;
+}
+static const struct kernel_param_ops dma_irq_stats_ops = { .get = dma_irq_stats_get };
+module_param_cb(dma_irq_stats, &dma_irq_stats_ops, NULL, 0444);
 
 static uint defer_irqs = 4;
 module_param(defer_irqs, uint, 0444);
@@ -1133,7 +1211,7 @@ MODULE_PARM_DESC(defer_us, "unit 0 DMA interrupt mode: re-poll interval while de
 
 static bool dma_irq = true;
 module_param(dma_irq, bool, 0444);
-MODULE_PARM_DESC(dma_irq, "unit 0: complete DMA by interrupt (1, default) or by the 1 ms poll (0, A/B bench switch for #170)");
+MODULE_PARM_DESC(dma_irq, "both units: complete DMA by interrupt (1, default) or by the 1 ms poll (0, A/B bench switch for #170)");
 
 #define DMA_IRQ_HW_TX	46	/* us48_cmic_irq hwirq: 32 + IRQ_STAT0 bit 14 (ch0 DESC_DONE) */
 #define DMA_IRQ_HW_RX	44	/* 32 + bit 12 (ch1 DESC_DONE) */
@@ -1161,13 +1239,28 @@ static int us48_dma_irq_setup(struct us48_cmic *u, struct device *dev)
 	return 0;
 }
 
+static int us48_pcie_irq_setup(struct us48_cmic *u, struct device *dev, struct device *dma_dev)
+{
+	int irq = dev_is_pci(dma_dev) ? to_pci_dev(dma_dev)->irq : 0;
+
+	if (!irq) {
+		dev_err(dev, "unit %u: PCI device has no INTx irq\n", u->modid);
+		return -ENODEV;
+	}
+	u->pcie_irq = irq;
+	spin_lock_init(&u->irq_lock);
+	pcie_mask_rmw(u, IRQ0_TX | IRQ0_RX, false);	/* handler first, sources enabled at open */
+	u->irq_mode = 2;
+	return devm_request_irq(dev, irq, us48_pcie_dma_irq, IRQF_SHARED, "us48-cmic1-dma", u);
+}
+
 static int us48_poll(struct napi_struct *napi, int budget)
 {
 	struct us48_cmic *u = container_of(napi, struct us48_cmic, napi);
 	int done = 0;
 
 	/* Clear the DESC_DONE latches first: a frame finishing during the reap below sets them again and re-fires the interrupt. */
-	if (u->dma_irq[0])
+	if (u->irq_mode)
 		wr(u, DMA_STAT_CLR, BIT(RX_CH) | BIT(TX_CH));
 	tx_reap(u);
 	while (done < budget) {
@@ -1191,7 +1284,7 @@ static int us48_poll(struct napi_struct *napi, int budget)
 		rx_arm(u);
 	if (skb_queue_len(&u->skb_pool) < SKB_POOL / 2)
 		schedule_work(&u->pool_work);
-	if (done < budget && napi_complete_done(napi, done) && u->dma_irq[0])
+	if (done < budget && napi_complete_done(napi, done) && u->irq_mode)
 		us48_dma_irq_rearm(u);
 	return done;
 }
@@ -1326,9 +1419,8 @@ static int us48_open(struct net_device *nd)
 		us48_pool_fill(&u->pool_work);
 		rx_arm(u);
 		napi_enable(&u->napi);
-		if (u->dma_irq[0]) {
-			enable_irq(u->dma_irq[0]);
-			enable_irq(u->dma_irq[1]);
+		if (u->irq_mode) {
+			us48_dma_irq_enable(u);
 		} else {
 			hrtimer_start(&u->poll_timer, ns_to_ktime(POLL_NS), HRTIMER_MODE_REL);
 		}
@@ -1363,7 +1455,7 @@ static int us48_stop(struct net_device *nd)
 	if (--u->nopen == 0) {
 		hrtimer_cancel(&u->poll_timer);
 		napi_disable(&u->napi);
-		if (u->dma_irq[0])
+		if (u->irq_mode)
 			us48_dma_irq_quiesce(u);
 		dma_abort(u, RX_CH);
 		spin_lock_bh(&u->tx_lock);
@@ -1488,6 +1580,8 @@ void us48_remove_common(struct us48_cmic *u)
 	us48_sw_unit_exit(u);
 	/* Stopped for good: ports that never opened still get the explicit abort. */
 	hrtimer_cancel(&u->poll_timer);
+	if (u->irq_mode == 2)
+		us48_dma_irq_quiesce(u);
 	WRITE_ONCE(u->quiesced, true);
 	spin_lock_bh(&u->tx_lock);
 	dma_stop_all(u);
@@ -1633,7 +1727,7 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	u->napi_dev = alloc_netdev_dummy(0);
 	if (!u->napi_dev)
 		return -ENOMEM;
-	if (modid == 0 && dma_irq && defer_irqs) {	/* read by netif_napi_add */
+	if (dma_irq && defer_irqs) {	/* read by netif_napi_add */
 		u->napi_dev->napi_defer_hard_irqs = defer_irqs;
 		u->napi_dev->gro_flush_timeout = defer_us * 1000;
 	}
@@ -1642,13 +1736,14 @@ int us48_probe_common(struct device *dev, struct device *dma_dev, void __iomem *
 	if (ret)
 		return ret;
 	hrtimer_setup(&u->poll_timer, us48_poll_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	if (modid == 0 && dma_irq) {
-		ret = us48_dma_irq_setup(u, dev);
+	if (dma_irq) {
+		ret = modid == 0 ? us48_dma_irq_setup(u, dev) : us48_pcie_irq_setup(u, dev, dma_dev);
 		if (ret)
 			return ret;
+		if (modid == 0)
+			u->irq_mode = 1;
 	} else {
-		dev_info(dev, "unit %u: %s, polling every %d us (#170)\n", modid, modid ? "no DMA interrupt route yet" : "dma_irq=0",
-			 POLL_NS / 1000);
+		dev_info(dev, "unit %u: dma_irq=0, polling every %d us (#170)\n", modid, POLL_NS / 1000);
 	}
 	us48_sw_unit_init(u);
 	ret = us48_mdio_register(u);	/* copper PHYs probe here and power down (BMCR PDN) until their netdev opens */
@@ -1746,6 +1841,8 @@ void us48_quiesce(struct us48_cmic *u)
 	schan_unit_set(u, false);
 	us48_pwr_xe_stop(u);
 	hrtimer_cancel(&u->poll_timer);
+	if (u->irq_mode == 2)
+		us48_dma_irq_quiesce(u);
 	WRITE_ONCE(u->quiesced, true);
 	dma_stop_all(u);
 	for (i = 0; i < u->nports; i++)

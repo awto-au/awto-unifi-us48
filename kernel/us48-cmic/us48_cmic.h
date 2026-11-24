@@ -165,7 +165,11 @@ struct us48_cmic {
 	struct napi_struct napi;
 	struct hrtimer poll_timer;	/* unit 1 only */
 	int dma_irq[2];			/* unit 0: virq of CMC0 IRQ_STAT0 ch0 / ch1 DESC_DONE (us48_cmic_irq); 0 = unit polls */
-	unsigned long irq_dis;		/* bit i: handler disabled dma_irq[i] until NAPI completes */
+	unsigned long irq_dis;		/* bit i (0 = TX, 1 = RX): handler masked that source until NAPI completes */
+	u8 irq_mode;			/* 0 = 1 ms poll, 1 = us48_cmic_irq virqs (unit 0), 2 = shared PCIe INTx (unit 1) */
+	int pcie_irq;			/* irq_mode 2: the endpoint's INTx (DT interrupt-map) */
+	spinlock_t irq_lock;		/* irq_mode 2: PCIE_IRQ_MASK0 read-modify-write, handler vs NAPI */
+	atomic_t irq_nopend;		/* irq_mode 2: INTx with none of our sources pending (shared line) */
 	struct mutex mdio;		/* TSC AER lane select + access must not interleave */
 	u8 tsc_phy;			/* MIIM address of us48_tsc_rd/wr: 0 = TSC0_PHY; set only while holding mdio */
 	struct mutex link_lock;		/* copper bring-up / MAC up-down vs the link poll */
