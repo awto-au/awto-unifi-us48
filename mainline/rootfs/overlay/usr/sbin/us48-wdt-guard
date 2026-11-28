@@ -1,0 +1,34 @@
+#!/bin/sh
+# us48-wdt-guard (#159): reboots the board when it stays unhealthy. Healthy = dropbear running (the only way in), a die/LM75
+# temperature readable (fan policy runs on it), ge1 present.
+# A clean `reboot` goes through driver shutdown, which stops the CMIC DMA; a bare SP805 reset with DMA running wedges unit 1 and loops (#167).
+# Period 5 s = the feeder period; 3 bad checks in a row (15 s) > any transient seen (module reload ~4 s, PoE scan stall < 2 s).
+# Acts only after 300 s uptime: a boot that never gets healthy must not become a reboot loop. `reboot -f` 30 s later if the clean reboot sticks.
+# `touch /tmp/wdt-guard-off` pauses it (bench work).
+exec 2>/dev/kmsg
+BAD=0
+while :; do
+	sleep 5
+	[ -e /tmp/wdt-guard-off ] && { BAD=0; continue; }
+	read UP _ < /proc/uptime
+	[ "${UP%.*}" -ge 300 ] || continue
+	WHY=
+	pidof dropbear >/dev/null || WHY="$WHY dropbear"
+	[ -d /sys/class/net/ge1 ] || WHY="$WHY ge1"
+	T=
+	for f in /sys/class/hwmon/hwmon*/temp1_input; do
+		[ -r "$f" ] && T=$(cat "$f" 2>/dev/null) && [ -n "$T" ] && break
+	done
+	[ -n "$T" ] || WHY="$WHY temp"
+	if [ -z "$WHY" ]; then BAD=0; continue; fi
+	BAD=$((BAD + 1))
+	echo "us48-wdt-guard: unhealthy ($BAD/3):$WHY" > /dev/kmsg
+	if [ "$BAD" -ge 3 ]; then
+		echo "us48-wdt-guard: rebooting" > /dev/kmsg
+		reboot
+		sleep 30
+		echo "us48-wdt-guard: reboot did not finish, forcing" > /dev/kmsg
+		reboot -f
+		exit 0
+	fi
+done

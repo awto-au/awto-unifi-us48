@@ -153,3 +153,11 @@ Cold power-cycle x2, t0 = relay ON call (normal profile, quiet off, a1 at 1000 M
   - Board 2026-11-16 (#34, gaps cut, normal profile, cold x2): `us48-net: done` +8.52 / +8.65, ping+ssh +14.7 / +15.2. `L2X` readable at 0, 0x1fff, 0x2000, 0x3fff, 0x7fff, parity regs and `ING_HW_RESET_CONTROL_2` 0 (`scripts/chip_health.py`). awto-uboot TFTP 8.5 MB crc matches host.
   - Warm path (awto-uboot ping/TFTP, then `us48boot`) FAILS: ge1 up, RX counts, TX stuck (see mainline.md Module reload).
 - Board 2026-11-16 (f4ce402, quiet fan rule, a2 cpu_mhz 1600; #88): normal profile; cold x2: ssh port +13.6 / +14.0 s, awto-uboot fan level 0 on both groups, Linux pwm1 128.
+
+## Reset recovery with the CMIC DMA running (#167, #159)
+
+- Bench 2026-11-27 (normal image, unit 0 + unit 1 DMA interrupts, `dma_irq=0` gives the same): an SP805 reset of a running Linux (feeder killed) or a kernel panic (`panic=5`) loops: uboot-1 -> awto-uboot -> `pcie: unit 1 ...` -> stall in `us48_unit1_cmic_arm()` -> awto-uboot's 10 s SP805 -> uboot-1. Only a relay power cycle clears it (same signature as the a2 note in `docs/a2-linux.md`).
+- Cause: the unit 1 RX DMA (RELOAD ring) still running at the reset. Same SP805 reset after `rmmod us48_cmic_xe`, or with only unit 1 `DMA_CTRL[1]` EN cleared, boots back to Linux. Linux `reboot` is fine (driver shutdown).
+- Fix in Linux: `us48_cmic` panic notifier clears DMA_EN on both units (priority max). Panic test (throwaway module calling `panic()`, unit 1 RX running): without the notifier loops, with it recovers.
+- Not covered: a hard kernel hang (no panic, no notifier) still wedges at the SP805 reset.
+- `us48-wdt-guard` (S96): reboots through the clean path after 3 bad checks (dropbear, ge1, a temperature) once uptime >= 300 s; `touch /tmp/wdt-guard-off` pauses it.

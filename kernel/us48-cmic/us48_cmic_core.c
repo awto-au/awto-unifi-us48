@@ -13,6 +13,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/if_vlan.h>
 #include <linux/interrupt.h>
+#include <linux/panic_notifier.h>
 #include <linux/iopoll.h>
 #include <linux/irqdomain.h>
 #include <linux/of.h>
@@ -1923,6 +1924,28 @@ static struct platform_driver us48_cmic_plat_driver = {
 	.remove		= us48_cmic_plat_remove,
 };
 
+/*
+ * Panic: stop both units' packet DMA before the reset that follows (panic=5). A CMIC whose RX ring runs into the reset
+ * wedges: awto-uboot's first unit 1 BAR read stalls and the SP805 loops until a power cycle (#167, bench 2026-11-27:
+ * SP805 reset with DMA running = loop; same reset after rmmod or with unit 1 RX DMA_EN cleared = recovers).
+ */
+static int us48_panic_dma_stop(struct notifier_block *nb, unsigned long ev, void *arg)
+{
+	int i, ch;
+
+	for (i = 0; i < 2; i++) {
+		struct us48_cmic *u = READ_ONCE(schan_units[i]);
+
+		if (!u)
+			continue;
+		for (ch = 0; ch < 2; ch++)
+			wr(u, DMA_CTRL(ch), rd(u, DMA_CTRL(ch)) & ~DMA_EN);
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block us48_panic_nb = { .notifier_call = us48_panic_dma_stop, .priority = INT_MAX };
+
 static int __init us48_cmic_init(void)
 {
 	int ret = us48_sw_init();	/* unit 1 (us48_cmic_xe.ko) ports use it too */
@@ -1935,6 +1958,7 @@ static int __init us48_cmic_init(void)
 	ret = us48_led_init();
 	if (ret)
 		goto err_phy;
+	atomic_notifier_chain_register(&panic_notifier_list, &us48_panic_nb);
 	if (!unit0)
 		return 0;
 	ret = platform_driver_register(&us48_cmic_plat_driver);
@@ -1948,6 +1972,7 @@ static int __init us48_cmic_init(void)
 	}
 	return 0;
 err_led:
+	atomic_notifier_chain_unregister(&panic_notifier_list, &us48_panic_nb);
 	us48_led_exit();
 err_phy:
 	us48_phy_exit();
@@ -1962,6 +1987,7 @@ static void __exit us48_cmic_exit(void)
 		platform_device_unregister(unit0_pdev);
 		platform_driver_unregister(&us48_cmic_plat_driver);
 	}
+	atomic_notifier_chain_unregister(&panic_notifier_list, &us48_panic_nb);
 	us48_led_exit();
 	us48_phy_exit();
 	us48_sw_exit();

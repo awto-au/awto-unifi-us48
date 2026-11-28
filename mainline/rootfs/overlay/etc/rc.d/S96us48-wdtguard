@@ -1,0 +1,3 @@
+#!/bin/sh
+# Last service: everything the guard checks is up by now (#159). The guard itself waits for 300 s uptime before acting.
+/usr/sbin/us48-wdt-guard &
